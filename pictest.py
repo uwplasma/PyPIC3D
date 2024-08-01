@@ -62,6 +62,7 @@ def compute_rho(electron_x, electron_y, electron_z, ion_x, ion_y, ion_z, dx, dy,
 def solve_poisson(rho):
     return jax.scipy.sparse.linalg.cg(laplacian, rho, rho, maxiter=500)[0]
 
+@jit
 def compute_Eforce(q, Ex, Ey, Ez, x, y, z):
     # This method computes the force from the electric field using interpolation
     Fx = q*jax.scipy.ndimage.map_coordinates(Ex, [x, y, z], order=1)
