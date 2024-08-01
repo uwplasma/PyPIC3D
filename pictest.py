@@ -35,7 +35,7 @@ def laplacian(field):
 
 
 @jit
-def compute_rho(electron_x, electron_y, electron_z, ion_x, ion_y, ion_z):
+def compute_rho(electron_x, electron_y, electron_z, ion_x, ion_y, ion_z, dx, dy, dz):
     rho = jax.numpy.zeros(shape = (Nx, Ny, Nz))
 
     for electron in range(N_electrons):
@@ -54,6 +54,8 @@ def compute_rho(electron_x, electron_y, electron_z, ion_x, ion_y, ion_z):
         # Ideally, I would like to partition the charge across array spacings.
         rho = rho.at[x,y,z].add(q_i)
 
+    rho = rho / (dx*dy*dz)
+    # divide by cell volume
     return rho
 
 @jit
@@ -69,6 +71,7 @@ def compute_Eforce(q, Ex, Ey, Ez, x, y, z):
     return Fx, Fy, Fz
 
 
+@jit
 def update_velocity(vx, vy, vz, Fx, Fy, Fz, dt, m):
     # update the velocity of the particles
     vx = vx + (Fx*dt/m)
@@ -76,6 +79,7 @@ def update_velocity(vx, vy, vz, Fx, Fy, Fz, dt, m):
     vz = vz + (Fz*dt/m)
     return vx, vy, vz
 
+@jit
 def update_position(x, y, z, vx, vy, vz):
     # update the position of the particles
     x = x + vx*dt
@@ -93,7 +97,7 @@ def plot(x, y, z, t):
     ax.set_ylabel('Y (m)')
     ax.set_zlabel('Z (m)')
     plt.title("Particle Positions")
-    plt.savefig(f"plots/particles.{t}.png", dpi=200)
+    plt.savefig(f"plots/particles.{t}.png", dpi=300)
     ax.cla()
 
 ############## DEBUG THIS ###########################################################################
@@ -144,8 +148,8 @@ q_i = -1.602e-19
 N_electrons = 500
 N_ions      = 500
 # specify the number of electrons and ions in the plasma
-t_wind = 10e-9
-Nt     = 10
+t_wind = 100e-9
+Nt     = 10000
 dt     = t_wind / Nt
 print(f'time window: {t_wind}')
 print(f'Nt:          {Nt}')
@@ -155,9 +159,9 @@ Nx = 1000
 Ny = 1000
 Nz = 1000
 # specify the number of array spacings in x, y, and z
-x_wind = 0.5
-y_wind = 0.5
-z_wind = 0.5
+x_wind = 0.5e-9
+y_wind = 0.5e-9
+z_wind = 0.5e-9
 # specify the size of the spatial window in meters
 
 dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
@@ -174,9 +178,10 @@ By = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
 Bz = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
 # initialize the electric and magnetic field arrays as 0
 
-key = random.key(0)
-electron_x, electron_y, electron_z, ev_x, ev_y, ev_z  = initial_particles(N_electrons, x_wind, y_wind, z_wind, key)
-ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions, x_wind, y_wind, z_wind, key)
+key1 = random.key(4353)
+key2 = random.key(1043)
+electron_x, electron_y, electron_z, ev_x, ev_y, ev_z  = initial_particles(N_electrons, x_wind, y_wind, z_wind, key1)
+ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions, x_wind, y_wind, z_wind, key2)
 # initialize the positions and velocities of the electrons and ions in the plasma.
 # eventually, I need to update the initialization to use a more accurate position and velocity distribution.
 
