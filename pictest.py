@@ -56,6 +56,10 @@ def compute_rho(electron_x, electron_y, electron_z, ion_x, ion_y, ion_z):
 
     return rho
 
+@jit
+def solve_poisson(rho):
+    return jax.scipy.sparse.linalg.cg(laplacian, rho, rho, maxiter=500)[0]
+
 def compute_Eforce(q, Ex, Ey, Ez, x, y, z):
     # This method computes the force from the electric field using interpolation
     Fx = q*jax.scipy.ndimage.map_coordinates(Ex, [x, y, z], order=1)
@@ -89,7 +93,7 @@ def plot(x, y, z, t):
     ax.set_ylabel('Y (m)')
     ax.set_zlabel('Z (m)')
     plt.title("Particle Positions")
-    plt.savefig(f"particles.{t}.png", dpi=200)
+    plt.savefig(f"plots/particles.{t}.png", dpi=200)
     ax.cla()
 
 ############## DEBUG THIS ###########################################################################
@@ -141,7 +145,7 @@ N_electrons = 500
 N_ions      = 500
 # specify the number of electrons and ions in the plasma
 t_wind = 10e-9
-Nt     = 1000
+Nt     = 10
 dt     = t_wind / Nt
 print(f'time window: {t_wind}')
 print(f'Nt:          {Nt}')
@@ -176,37 +180,41 @@ ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions
 # initialize the positions and velocities of the electrons and ions in the plasma.
 # eventually, I need to update the initialization to use a more accurate position and velocity distribution.
 
+for t in range(Nt):
+    ############### SOLVE E FIELD ######################################################################################
+    print(f'Time: {t*dt} s')
+    print("Solving Electric Field...")
+    rho    = compute_rho(electron_x, electron_y, electron_z, ion_x, ion_y, ion_z)
+    # compute the charge density of the plasma
+    #phi = jax.scipy.sparse.linalg.cg(laplacian, rho, rho, maxiter=1000)[0]
+    phi = solve_poisson(rho)
+    # Use conjugated gradients to calculate the electric potential from the charge density
+    E_fields = jnp.gradient(phi)
+    Ex       = -1 * E_fields[0]
+    Ey       = -1 * E_fields[1]
+    Ez       = -1 * E_fields[2]
+    # Calculate the E field using the gradient of the potential
 
-############### SOLVE E FIELD ######################################################################################
-print("Solving Electric Field...")
-rho    = compute_rho(electron_x, electron_y, electron_z, ion_x, ion_y, ion_z)
-# compute the charge density of the plasma
-phi = jax.scipy.sparse.linalg.cg(laplacian, rho, rho, maxiter=1000)[0]
-# Use conjugated gradients to calculate the electric potential from the charge density
-E_fields = jnp.gradient(phi)
-Ex       = -1 * E_fields[0]
-Ey       = -1 * E_fields[1]
-Ez       = -1 * E_fields[2]
-# Calculate the E field using the gradient of the potential
-
-############### UPDATE ELECTRONS ##########################################################################################
-print("Updating Electrons...")
-Fx, Fy, Fz = compute_Eforce(q_e, Ex, Ey, Ez, electron_x, electron_y, electron_z)
-# compute the force on the electrons from the electric field
-ev_x, ev_y, ev_z = update_velocity(ev_x, ev_y, ev_z, Fx, Fy, Fz, dt, me)
-# Update the velocties from the electric field
-electron_x, electron_y, electron_z = update_position(electron_x, electron_y, electron_z, ev_x, ev_y, ev_z)
-# Update the positions of the particles
+    ############### UPDATE ELECTRONS ##########################################################################################
+    print("Updating Electrons...")
+    Fx, Fy, Fz = compute_Eforce(q_e, Ex, Ey, Ez, electron_x, electron_y, electron_z)
+    # compute the force on the electrons from the electric field
+    ev_x, ev_y, ev_z = update_velocity(ev_x, ev_y, ev_z, Fx, Fy, Fz, dt, me)
+    # Update the velocties from the electric field
+    electron_x, electron_y, electron_z = update_position(electron_x, electron_y, electron_z, ev_x, ev_y, ev_z)
+    # Update the positions of the particles
 
 
-############### UPDATE IONS ################################################################################################
-print("Updating Ions...")
-Fx, Fy, Fz = compute_Eforce(q_i, Ex, Ey, Ez, ion_x, ion_y, ion_z)
-# compute the force on the ions from the electric field
-iv_x, iv_y, iv_z = update_velocity(iv_x, iv_y, iv_z, Fx, Fy, Fz, dt, mi)
-# Update the velocities from the electric field
-ion_x, ion_y, ion_z  = update_position(ion_x, ion_y, ion_z, iv_x, iv_y, iv_z)
-# Update the positions of the particles
-
-plot( jnp.concatenate(electron_x, ion_x),  jnp.concatenate(electron_y, ion_y), jnp.concatenate(electron_z, ion_z), 0)
-# plot the particles and save as png file
+    ############### UPDATE IONS ################################################################################################
+    print("Updating Ions...")
+    Fx, Fy, Fz = compute_Eforce(q_i, Ex, Ey, Ez, ion_x, ion_y, ion_z)
+    # compute the force on the ions from the electric field
+    iv_x, iv_y, iv_z = update_velocity(iv_x, iv_y, iv_z, Fx, Fy, Fz, dt, mi)
+    # Update the velocities from the electric field
+    ion_x, ion_y, ion_z  = update_position(ion_x, ion_y, ion_z, iv_x, iv_y, iv_z)
+    # Update the positions of the particles
+    x = jnp.concatenate([electron_x, ion_x])
+    y = jnp.concatenate([electron_y, ion_y])
+    z = jnp.concatenate([electron_z, ion_z])
+    plot( x, y, z, t)
+    # plot the particles and save as png file
