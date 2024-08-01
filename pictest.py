@@ -152,9 +152,12 @@ q_i = -1.602e-19
 N_electrons = 500
 N_ions      = 500
 # specify the number of electrons and ions in the plasma
+
 t_wind = 100e-9
 Nt     = 10000
+# Nt for resolution
 dt     = t_wind / Nt
+# Actual number of steps to loop over
 print(f'time window: {t_wind}')
 print(f'Nt:          {Nt}')
 print(f'dt:          {dt}')
@@ -194,16 +197,20 @@ for t in range(Nt):
     print(f'Time: {t*dt} s')
     print("Solving Electric Field...")
     rho    = compute_rho(electron_x, electron_y, electron_z, ion_x, ion_y, ion_z, dx, dy, dz)
+    print( f'Max Value of Rho: {jnp.max(rho)}' )
     # compute the charge density of the plasma
     #phi = jax.scipy.sparse.linalg.cg(laplacian, rho, rho, maxiter=1000)[0]
     phi = solve_poisson(rho)
+    print( f'Max Value of Phi: {jnp.max(phi)}' )
     # Use conjugated gradients to calculate the electric potential from the charge density
     E_fields = jnp.gradient(phi)
     Ex       = -1 * E_fields[0]
     Ey       = -1 * E_fields[1]
     Ez       = -1 * E_fields[2]
     # Calculate the E field using the gradient of the potential
-
+    print( f'Max Value of Ex: {jnp.max(Ex)}' )
+    print( f'Max Value of Ey: {jnp.max(Ey)}' )
+    print( f'Max Value of Ez: {jnp.max(Ez)}' )
     ############### UPDATE ELECTRONS ##########################################################################################
     print("Updating Electrons...")
     Fx, Fy, Fz = compute_Eforce(q_e, Ex, Ey, Ez, electron_x, electron_y, electron_z)
