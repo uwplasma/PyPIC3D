@@ -89,16 +89,19 @@ def update_position(x, y, z, vx, vy, vz):
     return x, y, z
 
 
-def plot(x, y, z, t):
+def plot(x, y, z, t, x_wind, y_wind, z_wind):
     # makes a 3d plot of the positions of the particles
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
+    ax.set_xlim( -x_wind, x_wind )
+    ax.set_ylim( -y_wind, y_wind )
+    ax.set_zlim( -z_wind, z_wind )
     ax.scatter(electron_x, electron_y, electron_z)
     ax.set_xlabel('X (m)')
     ax.set_ylabel('Y (m)')
     ax.set_zlabel('Z (m)')
     plt.title("Particle Positions")
-    plt.savefig(f"plots/particles.{t}.png", dpi=300)
+    plt.savefig(f"plots/particles.{t:09}.png", dpi=300)
     ax.cla()
 
 ############## DEBUG THIS ###########################################################################
@@ -160,9 +163,9 @@ Nx = 1000
 Ny = 1000
 Nz = 1000
 # specify the number of array spacings in x, y, and z
-x_wind = 0.5e-9
-y_wind = 0.5e-9
-z_wind = 0.5e-9
+x_wind = 0.5e-2
+y_wind = 0.5e-2
+z_wind = 0.5e-2
 # specify the size of the spatial window in meters
 
 dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
@@ -190,7 +193,7 @@ for t in range(Nt):
     ############### SOLVE E FIELD ######################################################################################
     print(f'Time: {t*dt} s')
     print("Solving Electric Field...")
-    rho    = compute_rho(electron_x, electron_y, electron_z, ion_x, ion_y, ion_z)
+    rho    = compute_rho(electron_x, electron_y, electron_z, ion_x, ion_y, ion_z, dx, dy, dz)
     # compute the charge density of the plasma
     #phi = jax.scipy.sparse.linalg.cg(laplacian, rho, rho, maxiter=1000)[0]
     phi = solve_poisson(rho)
@@ -222,5 +225,5 @@ for t in range(Nt):
     x = jnp.concatenate([electron_x, ion_x])
     y = jnp.concatenate([electron_y, ion_y])
     z = jnp.concatenate([electron_z, ion_z])
-    plot( x, y, z, t)
+    plot( x, y, z, t, x_wind, y_wind, z_wind)
     # plot the particles and save as png file
