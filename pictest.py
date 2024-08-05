@@ -170,6 +170,15 @@ ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions
 # initialize the positions and velocities of the electrons and ions in the plasma.
 # eventually, I need to update the initialization to use a more accurate position and velocity distribution.
 
+# plt.hist(np.sqrt( ev_x*ev_x + ev_y*ev_y + ev_z*ev_z), bins=50)
+# plt.xlabel("Velocity Magnitude (m/s)")
+# plt.ylabel("Counts")
+# plt.title("Electron Magnitude Velocity Histogram")
+# plt.show()
+# Plot test of velocity distribution
+# exit()
+
+
 for t in range(Nt):
     ############### SOLVE E FIELD ######################################################################################
     print(f'Time: {t*dt} s')
