@@ -16,9 +16,9 @@ import math
 
 def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key):
 # this method initializes the velocties and the positions of the particles
-    x = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=x_wind)
-    y = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=y_wind)
-    z = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=z_wind)
+    x = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.25 * x_wind)
+    y = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.25 * y_wind)
+    z = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.25 * z_wind)
     # initialize the positions of the particles
     std = kb * T / mass
     v_x = np.random.normal(0, std, N_particles)
