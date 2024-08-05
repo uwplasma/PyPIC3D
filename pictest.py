@@ -104,33 +104,6 @@ def plot(x, y, z, t, x_wind, y_wind, z_wind):
     plt.savefig(f"plots/particles.{t:09}.png", dpi=300)
     ax.cla()
 
-############## DEBUG THIS ###########################################################################
-def delx(field, dx):
-    return (jnp.roll(field.vals, shift=1, axis=0) - jnp.roll(field.vals, shift=-1, axis=0))/(2*dx)
-
-def dely(field, dy):
-    return (jnp.roll(field.vals, shift=1, axis=1) - jnp.roll(field.vals, shift=-1, axis=1))/(2*dy)
-
-def delz(field, dz):
-    return (jnp.roll(field.vals, shift=1, axis=2) - jnp.roll(field.vals, shift=-1, axis=2))/(2*dz)
-
-def curl(field_x, field_y, field_z, dx, dy, dz):
-    x_comp =  dely(field_z, dy) - delz(field_y, dz)
-    y_comp =  delz(field_z, dz) - delx(field_z, dz)
-    z_comp =  delx(field_y, dx) - dely(field_x, dz)
-    return x_comp, y_comp, z_comp
-
-def update_b(Bx, By, Bz, Ex, Ey, Ez, dt, dx, dy, dz):
-    dBx, dBy, dBz = -curl(Ex, Ey, Ez, dx, dy, dz) * dt
-    return Bx + dBx, By + dBy, Bz + dBz
-
-##########################################################################################################
-
-
-
-
-
-
 
 
 
@@ -180,10 +153,7 @@ print(f'Dz: {dz}')
 Ex = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
 Ey = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
 Ez = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
-Bx = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
-By = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
-Bz = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
-# initialize the electric and magnetic field arrays as 0
+# initialize the electric field arrays as 0
 
 key1 = random.key(4353)
 key2 = random.key(1043)
