@@ -11,19 +11,20 @@ import jax
 from jax import random
 from jax import jit
 import jax.numpy as jnp
+import math
 # Importing relevant libraries
 
-
-def initial_particles(N_particles, x_wind, y_wind, z_wind, key):
+def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key):
 # this method initializes the velocties and the positions of the particles
     x = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=x_wind)
     y = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=y_wind)
     z = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=z_wind)
     # initialize the positions of the particles
-    v_x        = jax.numpy.zeros(shape = (N_particles) )
-    v_y        = jax.numpy.zeros(shape = (N_particles) )
-    v_z        = jax.numpy.zeros(shape = (N_particles) )
-    # initialize the velocities of the particles
+    std = kb * T / mass
+    v_x = np.random.normal(0, std, N_particles)
+    v_y = np.random.normal(0, std, N_particles)
+    v_z = np.random.normal(0, std, N_particles)
+    # initialize the particles with a maxwell boltzmann distribution.
     return x, y, z, v_x, v_y, v_z
 
 @jit
@@ -113,14 +114,21 @@ def plot(x, y, z, t, x_wind, y_wind, z_wind):
 # I am starting by simulating a hydrogen plasma
 print("Initializing Simulation...")
 
-me = 9.1093837e-31
+kb = 1.380649e-23 # J/K
+# Boltzmann's constant
+me = 9.1093837e-31 # Kg
 # mass of the electron
-mi = 1.67e-23
+mi = 1.67e-23 # Kg
 # mass of the ion
 q_e = 1.602e-19
 # charge of electron
 q_i = -1.602e-19
 # charge of ion
+Te = 100 # K
+# electron temperature
+Ti = 100 # K
+# ion temperature
+# assuming an isothermal plasma for now
 
 N_electrons = 500
 N_ions      = 500
@@ -157,8 +165,8 @@ Ez = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
 
 key1 = random.key(4353)
 key2 = random.key(1043)
-electron_x, electron_y, electron_z, ev_x, ev_y, ev_z  = initial_particles(N_electrons, x_wind, y_wind, z_wind, key1)
-ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions, x_wind, y_wind, z_wind, key2)
+electron_x, electron_y, electron_z, ev_x, ev_y, ev_z  = initial_particles(N_electrons, x_wind, y_wind, z_wind, me, Te, kb, key1)
+ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions, x_wind, y_wind, z_wind, mi, Ti, kb, key2)
 # initialize the positions and velocities of the electrons and ions in the plasma.
 # eventually, I need to update the initialization to use a more accurate position and velocity distribution.
 
