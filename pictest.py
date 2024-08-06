@@ -127,7 +127,7 @@ N_ions      = 500
 # specify the number of electrons and ions in the plasma
 
 t_wind = 100e-9
-Nt     = 3#0000
+Nt     = 5#0000
 # Nt for resolution
 dt     = t_wind / Nt
 # Actual number of steps to loop over
@@ -246,11 +246,17 @@ for t in range(Nt):
     # plot the particles and save as png file
 
 
-    print(f"Average Rho: {np.mean(average_rho[1:])} s")
-    print(f"Average Poisson: {np.mean(average_poisson[1:])} s")
-    print(f"Average E: {np.mean(average_E[1:])} s")
-    print(f"Average Electron Force: {np.mean(average_electron_Force[1:])} s")
-    print(f"Average Ion Force: {np.mean(average_ion_Force[1:])} s")
-    print(f"Average Electron Update: {np.mean(average_e_update[1:])} s")
-    print(f"Average Ion Update: {np.mean(average_ion_update[1:])} s")
-    print(f"Average Plotting: {np.mean(average_plot[1:])} s")
+print(f"Average Rho: {np.mean(average_rho[1:])} s")
+print(f"Average Poisson: {np.mean(average_poisson[1:])} s")
+print(f"Average E: {np.mean(average_E[1:])} s")
+print(f"Average Electron Force: {np.mean(average_electron_Force[1:])} s")
+print(f"Average Ion Force: {np.mean(average_ion_Force[1:])} s")
+print(f"Average Electron Update: {np.mean(average_e_update[1:])} s")
+print(f"Average Ion Update: {np.mean(average_ion_update[1:])} s")
+print(f"Average Plotting: {np.mean(average_plot[1:])} s")
+
+totaltime = np.mean(average_rho[1:]) + np.mean(average_poisson[1:]) + np.mean(average_E[1:]) + np.mean(average_electron_Force[1:]) + np.mean(average_ion_Force[1:]) + np.mean(average_e_update[1:]) + np.mean(average_ion_update[1:]) + np.mean(average_plot[1:])
+print(f'Average Time Per Step {totaltime} s')
+
+totaljittime = np.mean(average_rho[0]) + np.mean(average_poisson[0]) + np.mean(average_E[0]) + np.mean(average_electron_Force[0]) + np.mean(average_ion_Force[0]) + np.mean(average_e_update[0]) + np.mean(average_ion_update[0]) + np.mean(average_plot[0])
+print(f'JIT Compile Time: {totaljittime} s')
