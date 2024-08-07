@@ -181,10 +181,10 @@ ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions
 
 for t in range(20):
     ############## PLOTTING ###################################################################
-    x = jnp.concatenate([electron_x, ion_x])                                                   │
-    y = jnp.concatenate([electron_y, ion_y])                                                   │
-    z = jnp.concatenate([electron_z, ion_z])                                                   │
-    plot( x, y, z, t, x_wind, y_wind, z_wind)                                                  │
+    x = jnp.concatenate([electron_x, ion_x])
+    y = jnp.concatenate([electron_y, ion_y])
+    z = jnp.concatenate([electron_z, ion_z])
+    plot( x, y, z, t, x_wind, y_wind, z_wind)
     # plot the particles and save as png file   
 
     ############### SOLVE E FIELD ######################################################################################
