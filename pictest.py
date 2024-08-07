@@ -16,9 +16,9 @@ import math
 
 def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key):
 # this method initializes the velocties and the positions of the particles
-    x = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=x_wind)
-    y = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=y_wind)
-    z = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=z_wind)
+    x = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.25 * x_wind)
+    y = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.25 * y_wind)
+    z = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.25 * z_wind)
     # initialize the positions of the particles
     std = kb * T / mass
     v_x = np.random.normal(0, std, N_particles)
@@ -134,8 +134,8 @@ N_electrons = 500
 N_ions      = 500
 # specify the number of electrons and ions in the plasma
 
-t_wind = 100e-9
-Nt     = 5#0000
+t_wind = 1e-9
+Nt     = 10000
 # Nt for resolution
 dt     = t_wind / Nt
 # Actual number of steps to loop over
@@ -189,69 +189,8 @@ average_plot           = []
 # exit()
 
 
-for t in range(Nt):
-    ############### SOLVE E FIELD ######################################################################################
-    print(f'Time: {t*dt} s')
-    print("Solving Electric Field...")
-    start = time.time()
-    rho    = compute_rho(electron_x, electron_y, electron_z, ion_x, ion_y, ion_z, dx, dy, dz)
-    end   = time.time()
-    print(f"Time Spent on Rho: {end-start} s")
-    average_rho.append(end-start)
-    print( f'Max Value of Rho: {jnp.max(rho)}' )
-    # compute the charge density of the plasma
-    start = time.time()
-    phi = solve_poisson(rho)
-    end   = time.time()
-    print(f"Time Spent on Phi: {end-start} s")
-    average_poisson.append(end-start)
-    print( f'Max Value of Phi: {jnp.max(phi)}' )
-    # Use conjugated gradients to calculate the electric potential from the charge density
-    start = time.time()
-    E_fields = jnp.gradient(phi)
-    Ex       = -1 * E_fields[0]
-    Ey       = -1 * E_fields[1]
-    Ez       = -1 * E_fields[2]
-    end = time.time()
-    print(f'Time Spent Calculating E: {end-start} s')
-    average_E.append(end-start)
-    # Calculate the E field using the gradient of the potential
-    print( f'Max Value of Ex: {jnp.max(Ex)}' )
-    print( f'Max Value of Ey: {jnp.max(Ey)}' )
-    print( f'Max Value of Ez: {jnp.max(Ez)}' )
-    ############### UPDATE ELECTRONS ##########################################################################################
-    print("Updating Electrons...")
-    start = time.time()
-    Fx, Fy, Fz = compute_Eforce(q_e, Ex, Ey, Ez, electron_x, electron_y, electron_z)
-    end = time.time()
-    print(f'Time Spent on Calculating Electrons Force: {end-start} s')
-    average_electron_Force.append(end-start)
-    # compute the force on the electrons from the electric field
-    start = time.time()
-    ev_x, ev_y, ev_z = update_velocity(ev_x, ev_y, ev_z, Fx, Fy, Fz, dt, me)
-    # Update the velocties from the electric field
-    electron_x, electron_y, electron_z = update_position(electron_x, electron_y, electron_z, ev_x, ev_y, ev_z)
-    # Update the positions of the particles
-    end   = time.time()
-    print(f'Time Spent on Updating Electrons: {end-start} s')
-    average_e_update.append(end-start)
-
-    ############### UPDATE IONS ################################################################################################
-    print("Updating Ions...")
-    start = time.time()
-    Fx, Fy, Fz = compute_Eforce(q_i, Ex, Ey, Ez, ion_x, ion_y, ion_z)
-    end   = time.time()
-    print(f"Time Spent on Calculating Ions Force: {end-start} s")
-    average_ion_Force.append(end-start)
-    # compute the force on the ions from the electric field
-    start = time.time()
-    iv_x, iv_y, iv_z = update_velocity(iv_x, iv_y, iv_z, Fx, Fy, Fz, dt, mi)
-    # Update the velocities from the electric field
-    ion_x, ion_y, ion_z  = update_position(ion_x, ion_y, ion_z, iv_x, iv_y, iv_z)
-    end   = time.time()
-    print(f"Time Spent on Updating Ions: {end-start} s")
-    average_ion_update.append(end-start)
-    # Update the positions of the particles
+for t in range(20):
+    ############## PLOTTING ###################################################################   
     start = time.time()
     x = jnp.concatenate([electron_x, ion_x])
     y = jnp.concatenate([electron_y, ion_y])
@@ -261,6 +200,70 @@ for t in range(Nt):
     print(f'Time Spent on Plotting: {end-start} s')
     average_plot.append(end-start)
     # plot the particles and save as png file
+
+    ############### SOLVE E FIELD ######################################################################################
+    print(f'Time: {t*dt} s')
+    print("Solving Electric Field...")
+    start = time.time()
+    rho    = compute_rho(electron_x, electron_y, electron_z, ion_x, ion_y, ion_z, dx, dy, dz)
+    end   = time.time()
+    #print(f"Time Spent on Rho: {end-start} s")
+    average_rho.append(end-start)
+    #print( f'Max Value of Rho: {jnp.max(rho)}' )
+    # compute the charge density of the plasma
+    start = time.time()
+    phi = solve_poisson(rho)
+    end   = time.time()
+    #print(f"Time Spent on Phi: {end-start} s")
+    average_poisson.append(end-start)
+    #print( f'Max Value of Phi: {jnp.max(phi)}' )
+    # Use conjugated gradients to calculate the electric potential from the charge density
+    start = time.time()
+    E_fields = jnp.gradient(phi)
+    Ex       = -1 * E_fields[0]
+    Ey       = -1 * E_fields[1]
+    Ez       = -1 * E_fields[2]
+    end = time.time()
+    #print(f'Time Spent Calculating E: {end-start} s')
+    average_E.append(end-start)
+    # Calculate the E field using the gradient of the potential
+    #print( f'Max Value of Ex: {jnp.max(Ex)}' )
+    #print( f'Max Value of Ey: {jnp.max(Ey)}' )
+    #print( f'Max Value of Ez: {jnp.max(Ez)}' )
+    ############### UPDATE ELECTRONS ##########################################################################################
+    print("Updating Electrons...")
+    start = time.time()
+    Fx, Fy, Fz = compute_Eforce(q_e, Ex, Ey, Ez, electron_x, electron_y, electron_z)
+    end = time.time()
+    #print(f'Time Spent on Calculating Electrons Force: {end-start} s')
+    average_electron_Force.append(end-start)
+    # compute the force on the electrons from the electric field
+    start = time.time()
+    ev_x, ev_y, ev_z = update_velocity(ev_x, ev_y, ev_z, Fx, Fy, Fz, dt, me)
+    # Update the velocties from the electric field
+    electron_x, electron_y, electron_z = update_position(electron_x, electron_y, electron_z, ev_x, ev_y, ev_z)
+    # Update the positions of the particles
+    end   = time.time()
+    #print(f'Time Spent on Updating Electrons: {end-start} s')
+    average_e_update.append(end-start)
+
+    ############### UPDATE IONS ################################################################################################
+    print("Updating Ions...")
+    start = time.time()
+    Fx, Fy, Fz = compute_Eforce(q_i, Ex, Ey, Ez, ion_x, ion_y, ion_z)
+    end   = time.time()
+    #print(f"Time Spent on Calculating Ions Force: {end-start} s")
+    average_ion_Force.append(end-start)
+    # compute the force on the ions from the electric field
+    start = time.time()
+    iv_x, iv_y, iv_z = update_velocity(iv_x, iv_y, iv_z, Fx, Fy, Fz, dt, mi)
+    # Update the velocities from the electric field
+    ion_x, ion_y, ion_z  = update_position(ion_x, ion_y, ion_z, iv_x, iv_y, iv_z)
+    end   = time.time()
+    #print(f"Time Spent on Updating Ions: {end-start} s")
+    average_ion_update.append(end-start)
+    # Update the positions of the particles
+    
 
 
 print(f"Average Rho: {np.mean(average_rho[1:])} s")
