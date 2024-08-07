@@ -114,6 +114,8 @@ def plot(x, y, z, t, x_wind, y_wind, z_wind):
 # I am starting by simulating a hydrogen plasma
 print("Initializing Simulation...")
 
+C = 3e8 # m/s
+# Speed of light
 kb = 1.380649e-23 # J/K
 # Boltzmann's constant
 me = 9.1093837e-31 # Kg
@@ -134,15 +136,6 @@ N_electrons = 500
 N_ions      = 500
 # specify the number of electrons and ions in the plasma
 
-t_wind = 1e-9
-Nt     = 10000
-# Nt for resolution
-dt     = t_wind / Nt
-# Actual number of steps to loop over
-print(f'time window: {t_wind}')
-print(f'Nt:          {Nt}')
-print(f'dt:          {dt}')
-
 Nx = 1000
 Ny = 1000
 Nz = 1000
@@ -157,6 +150,23 @@ dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
 print(f'Dx: {dx}')
 print(f'Dy: {dy}')
 print(f'Dz: {dz}')
+
+################ Courant Condition #############################################################################
+courant_number = 1
+dt = courant_number / (  C * ( (1/dx) + (1/dy) + (1/dz) )   )
+# calculate spatial resolution using courant condition
+
+t_wind = 1e-9
+# time window for simultion
+Nt     = int( t_wind / dt )
+# Nt for resolution
+
+
+print(f'time window: {t_wind}')
+print(f'Nt:          {Nt}')
+print(f'dt:          {dt}')
+
+
 
 Ex = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
 Ey = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
