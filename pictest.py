@@ -134,7 +134,7 @@ N_electrons = 500
 N_ions      = 500
 # specify the number of electrons and ions in the plasma
 
-t_wind = 100e-9
+t_wind = 1e-9
 Nt     = 10000
 # Nt for resolution
 dt     = t_wind / Nt
@@ -179,7 +179,14 @@ ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions
 # exit()
 
 
-for t in range(Nt):
+for t in range(20):
+    ############## PLOTTING ###################################################################
+    x = jnp.concatenate([electron_x, ion_x])                                                   │
+    y = jnp.concatenate([electron_y, ion_y])                                                   │
+    z = jnp.concatenate([electron_z, ion_z])                                                   │
+    plot( x, y, z, t, x_wind, y_wind, z_wind)                                                  │
+    # plot the particles and save as png file   
+
     ############### SOLVE E FIELD ######################################################################################
     print(f'Time: {t*dt} s')
     print("Solving Electric Field...")
@@ -216,8 +223,3 @@ for t in range(Nt):
     # Update the velocities from the electric field
     ion_x, ion_y, ion_z  = update_position(ion_x, ion_y, ion_z, iv_x, iv_y, iv_z)
     # Update the positions of the particles
-    x = jnp.concatenate([electron_x, ion_x])
-    y = jnp.concatenate([electron_y, ion_y])
-    z = jnp.concatenate([electron_z, ion_z])
-    plot( x, y, z, t, x_wind, y_wind, z_wind)
-    # plot the particles and save as png file
