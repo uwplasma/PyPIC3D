@@ -12,6 +12,8 @@ from jax import random
 from jax import jit
 import jax.numpy as jnp
 import math
+import scipy
+from cg import cg
 # Importing relevant libraries
 
 def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key):
@@ -59,9 +61,14 @@ def compute_rho(electron_x, electron_y, electron_z, ion_x, ion_y, ion_z, dx, dy,
     # divide by cell volume
     return rho
 
-@jit
-def solve_poisson(rho):
-    return jax.scipy.sparse.linalg.cg(laplacian, rho, rho, maxiter=500)[0]
+#@jit
+def solve_poisson(rho, eps, M = None):
+    phi, exitcode = jax.scipy.sparse.linalg.cg(laplacian, rho, rho, maxiter=500, M=M)
+    print(exitcode)
+    return eps * phi
+
+
+
 
 @jit
 def compute_Eforce(q, Ex, Ey, Ez, x, y, z):
@@ -114,6 +121,10 @@ def plot(x, y, z, t, x_wind, y_wind, z_wind):
 # I am starting by simulating a hydrogen plasma
 print("Initializing Simulation...")
 
+eps = 8.854e-12
+# permitivity of freespace
+C = 3e8 # m/s
+# Speed of light
 kb = 1.380649e-23 # J/K
 # Boltzmann's constant
 me = 9.1093837e-31 # Kg
@@ -187,6 +198,25 @@ average_plot           = []
 # plt.show()
 # Plot test of velocity distribution
 # exit()
+
+print("Computing Rho")
+rho    = compute_rho(electron_x, electron_y, electron_z, ion_x, ion_y, ion_z, dx, dy, dz)
+# compute the charge density of the plasma
+print("Solving Poisson")
+start = time.time()
+phi = solve_poisson(rho, eps)
+end   = time.time()
+print(f"Initial Poisson Solve: {end-start} s")
+
+start = time.time()
+M = (eps * phi * jnp.linalg.inv(rho))[:,:,0]
+phi = solve_poisson(rho, eps, M)
+end   = time.time()
+print(f"Poisson Solve with Precondition: {end-start} s")
+
+exit()
+
+
 
 
 for t in range(Nt):
