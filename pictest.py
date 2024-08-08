@@ -60,8 +60,13 @@ def compute_rho(electron_x, electron_y, electron_z, ion_x, ion_y, ion_z, dx, dy,
     return rho
 
 @jit
-def solve_poisson(rho, eps):
-    return eps * jax.scipy.sparse.linalg.cg(laplacian, rho, rho, maxiter=500)[0]
+def solve_poisson(rho, eps, M = None):
+    phi, exitcode = jax.scipy.sparse.linalg.cg(laplacian, rho, rho, maxiter=500, M=M)
+    #print(exitcode)
+    return eps * phi
+
+
+
 
 @jit
 def compute_Eforce(q, Ex, Ey, Ez, x, y, z):
@@ -114,6 +119,10 @@ def plot(x, y, z, t, x_wind, y_wind, z_wind):
 # I am starting by simulating a hydrogen plasma
 print("Initializing Simulation...")
 
+eps = 8.854e-12
+# permitivity of freespace
+C = 3e8 # m/s
+# Speed of light
 eps = 8.854e-12
 # permitivity of freespace
 C = 3e8 # m/s
@@ -192,13 +201,8 @@ average_ion_update     = []
 average_plot           = []
 # create lists for average times
 
-# plt.hist(np.sqrt( ev_x*ev_x + ev_y*ev_y + ev_z*ev_z), bins=50)
-# plt.xlabel("Velocity Magnitude (m/s)")
-# plt.ylabel("Counts")
-# plt.title("Electron Magnitude Velocity Histogram")
-# plt.show()
-# Plot test of velocity distribution
-# exit()
+M = None
+# set poisson solver precondition to None
 
 
 for t in range(20):
@@ -224,12 +228,15 @@ for t in range(20):
     #print( f'Max Value of Rho: {jnp.max(rho)}' )
     # compute the charge density of the plasma
     start = time.time()
-    phi = solve_poisson(rho, eps)
+    phi = solve_poisson(rho, eps, M)
     end   = time.time()
     #print(f"Time Spent on Phi: {end-start} s")
     average_poisson.append(end-start)
     #print( f'Max Value of Phi: {jnp.max(phi)}' )
     # Use conjugated gradients to calculate the electric potential from the charge density
+    M = (eps * phi * jnp.linalg.inv(rho))[:,:,0]
+    # Using the assumption that the timestep is small, precondition poisson solver with
+    # previous values for phi and rho
     start = time.time()
     E_fields = jnp.gradient(phi)
     Ex       = -1 * E_fields[0]
