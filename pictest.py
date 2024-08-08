@@ -12,8 +12,6 @@ from jax import random
 from jax import jit
 import jax.numpy as jnp
 import math
-import scipy
-from cg import cg
 # Importing relevant libraries
 
 def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key):
@@ -61,10 +59,10 @@ def compute_rho(electron_x, electron_y, electron_z, ion_x, ion_y, ion_z, dx, dy,
     # divide by cell volume
     return rho
 
-#@jit
+@jit
 def solve_poisson(rho, eps, M = None):
     phi, exitcode = jax.scipy.sparse.linalg.cg(laplacian, rho, rho, maxiter=500, M=M)
-    print(exitcode)
+    #print(exitcode)
     return eps * phi
 
 
@@ -191,32 +189,8 @@ average_ion_update     = []
 average_plot           = []
 # create lists for average times
 
-# plt.hist(np.sqrt( ev_x*ev_x + ev_y*ev_y + ev_z*ev_z), bins=50)
-# plt.xlabel("Velocity Magnitude (m/s)")
-# plt.ylabel("Counts")
-# plt.title("Electron Magnitude Velocity Histogram")
-# plt.show()
-# Plot test of velocity distribution
-# exit()
-
-print("Computing Rho")
-rho    = compute_rho(electron_x, electron_y, electron_z, ion_x, ion_y, ion_z, dx, dy, dz)
-# compute the charge density of the plasma
-print("Solving Poisson")
-start = time.time()
-phi = solve_poisson(rho, eps)
-end   = time.time()
-print(f"Initial Poisson Solve: {end-start} s")
-
-start = time.time()
-M = (eps * phi * jnp.linalg.inv(rho))[:,:,0]
-phi = solve_poisson(rho, eps, M)
-end   = time.time()
-print(f"Poisson Solve with Precondition: {end-start} s")
-
-exit()
-
-
+M = None
+# set poisson solver precondition to None at start
 
 
 for t in range(Nt):
@@ -231,12 +205,15 @@ for t in range(Nt):
     print( f'Max Value of Rho: {jnp.max(rho)}' )
     # compute the charge density of the plasma
     start = time.time()
-    phi = solve_poisson(rho)
+    phi = solve_poisson(rho, eps, M)
     end   = time.time()
     print(f"Time Spent on Phi: {end-start} s")
     average_poisson.append(end-start)
     print( f'Max Value of Phi: {jnp.max(phi)}' )
     # Use conjugated gradients to calculate the electric potential from the charge density
+    M = (eps * phi * jnp.linalg.inv(rho))[:,:,0]
+    # Using the assumption that the timestep is small, precondition poisson solver with
+    # previous values for phi and rho
     start = time.time()
     E_fields = jnp.gradient(phi)
     Ex       = -1 * E_fields[0]
