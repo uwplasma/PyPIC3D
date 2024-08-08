@@ -60,8 +60,8 @@ def compute_rho(electron_x, electron_y, electron_z, ion_x, ion_y, ion_z, dx, dy,
     return rho
 
 @jit
-def solve_poisson(rho):
-    return jax.scipy.sparse.linalg.cg(laplacian, rho, rho, maxiter=500)[0]
+def solve_poisson(rho, eps):
+    return eps * jax.scipy.sparse.linalg.cg(laplacian, rho, rho, maxiter=500)[0]
 
 @jit
 def compute_Eforce(q, Ex, Ey, Ez, x, y, z):
@@ -114,6 +114,8 @@ def plot(x, y, z, t, x_wind, y_wind, z_wind):
 # I am starting by simulating a hydrogen plasma
 print("Initializing Simulation...")
 
+eps = 8.854e-12
+# permitivity of freespace
 C = 3e8 # m/s
 # Speed of light
 kb = 1.380649e-23 # J/K
@@ -222,7 +224,7 @@ for t in range(20):
     #print( f'Max Value of Rho: {jnp.max(rho)}' )
     # compute the charge density of the plasma
     start = time.time()
-    phi = solve_poisson(rho)
+    phi = solve_poisson(rho, eps)
     end   = time.time()
     #print(f"Time Spent on Phi: {end-start} s")
     average_poisson.append(end-start)
