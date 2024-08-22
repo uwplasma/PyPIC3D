@@ -16,9 +16,9 @@ import math
 
 def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key):
 # this method initializes the velocties and the positions of the particles
-    x = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.25 * x_wind)
-    y = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.25 * y_wind)
-    z = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.25 * z_wind)
+    x = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.05 * x_wind)
+    y = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.05 * y_wind)
+    z = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.05 * z_wind)
     # initialize the positions of the particles
     std = kb * T / mass
     v_x = np.random.normal(0, std, N_particles)
@@ -61,9 +61,9 @@ def compute_rho(electron_x, electron_y, electron_z, ion_x, ion_y, ion_z, dx, dy,
 
 @jit
 def solve_poisson(rho, eps, M = None):
-    phi, exitcode = jax.scipy.sparse.linalg.cg(laplacian, rho, rho, maxiter=500, M=M)
+    phi, exitcode = jax.scipy.sparse.linalg.cg(laplacian, rho, rho, maxiter=8000, M=M)
     #print(exitcode)
-    return eps * phi
+    return (1/eps) * phi
 
 
 
@@ -108,7 +108,7 @@ def plot(x, y, z, t, x_wind, y_wind, z_wind):
     ax.set_zlabel('Z (m)')
     plt.title("Particle Positions")
     plt.savefig(f"plots/particles.{t:09}.png", dpi=300)
-    ax.cla()
+    plt.close()
 
 
 
@@ -205,7 +205,7 @@ M = None
 # set poisson solver precondition to None
 
 
-for t in range(20):
+for t in range(30):
     ############## PLOTTING ###################################################################   
     start = time.time()
     x = jnp.concatenate([electron_x, ion_x])
@@ -233,8 +233,17 @@ for t in range(20):
     #print(f"Time Spent on Phi: {end-start} s")
     average_poisson.append(end-start)
     #print( f'Max Value of Phi: {jnp.max(phi)}' )
+    print( f'Max Laplacian of Phi: {jnp.max(laplacian(phi))}')
+    print( f'Max Charge Density: {jnp.max(rho)}' )
+    print( f'Poisson Error: {jnp.max( laplacian(phi) - (1/eps)*rho )}' )
     # Use conjugated gradients to calculate the electric potential from the charge density
-    M = (eps * phi * jnp.linalg.inv(rho))[:,:,0]
+    #M = (eps * phi * jnp.linalg.inv(rho))[:,:,0]
+    #M = (eps * phi)[:,:,0]
+    #M = (1/eps) * jnp.linalg.inv(rho[:,:,0])
+    # testing a new approximation for M because it appears that rho does not always have an inverse matrix    
+
+
+    #print( f"Max Value of M: {jnp.max( M ) }" )
     # Using the assumption that the timestep is small, precondition poisson solver with
     # previous values for phi and rho
     start = time.time()
