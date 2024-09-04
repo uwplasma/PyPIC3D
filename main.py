@@ -116,7 +116,7 @@ M = None
 # set poisson solver precondition to None
 
 
-for t in range(20):
+for t in range(30):
     if t % plot_freq == 0:
     ############## PLOTTING ###################################################################   
         start = time.time()
