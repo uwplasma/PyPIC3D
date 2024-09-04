@@ -12,6 +12,7 @@ from jax import random
 from jax import jit
 import jax.numpy as jnp
 import math
+from pyevtk.hl import gridToVTK
 # Importing relevant libraries
 
 def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key):
@@ -60,42 +61,159 @@ def compute_rho(electron_x, electron_y, electron_z, ion_x, ion_y, ion_z, dx, dy,
     return rho
 
 @jit
-def solve_poisson(rho, eps, M = None):
+def solve_poisson(rho, eps, phi=None, M = None):
     phi, exitcode = jax.scipy.sparse.linalg.cg(laplacian, rho, rho, maxiter=8000, M=M)
     #print(exitcode)
-    return (1/eps) * phi
+    return phi
 
+    # b = rho/eps
+    # x = 0
+    # # initalize
+    # if phi is None:
+    #     r = b
+    # else:
+    #     r = b - laplacian(phi)
+    
+    # M = jnp.zeros((100,100,100))
+    # for i in range(1, rho.shape[0]):
+    #     M = M.at[i, i, i].add(1)
+    # print("Initialize Poisson Solver")
+    # print(f"M: {jnp.max(M)}")
+    # for i in range(10):
+    #     rt = jnp.transpose(r)
+    #     # compute the intial approximation for r and its transpose
 
+    #     Minv = M
+    #     # compute the inverse of the preconditioner
+    #     print(f"Minv: {jnp.max(Minv)}")
+    #     d = r  #jnp.multiply( M, r)
+    #     alpha = jnp.multiply(rt, laplacian(r) )
+    #     print(f"alpha: {alpha.shape}")
+    #     print(f"d: {d.shape}")
+    #     x = x + jnp.multiply( alpha, d )
+    #     print(f"x: {jnp.max(x)}")
+    #     rnew = r - jnp.multiply( alpha, laplacian(d) )
+    #     print(f"rnew: {jnp.max(x)}")
+    #     # need to work through all this
+    #     beta =jnp.multiply( jnp.multiply( jnp.transpose(rnew), laplacian(rnew) ),  1 / jnp.multiply(rt, r) )
+    #     print(f"beta: {jnp.max(beta)}")
+    #     d = jnp.dot( M, rnew ) + beta * d    
+    #     r = rnew
+    #     # reassign new value of r
+    #     print("Update")
+    #     print(f"Error: {jnp.max( b - laplacian(x) )}")
 
+    
+    # return x
 
 @jit
-def compute_Eforce(q, Ex, Ey, Ez, x, y, z):
-    # This method computes the force from the electric field using interpolation
-    Fx = q*jax.scipy.ndimage.map_coordinates(Ex, [x, y, z], order=1)
-    Fy = q*jax.scipy.ndimage.map_coordinates(Ey, [x, y, z], order=1)
-    Fz = q*jax.scipy.ndimage.map_coordinates(Ez, [x, y, z], order=1)
-    # interpolate the electric field component arrays and calculate the force
-    return Fx, Fy, Fz
+def boris(q, Ex, Ey, Ez, Bx, By, Bz, x, y, z, vx, vy, vz, dt, m):
+    efield_atx = jax.scipy.ndimage.map_coordinates(Ex, [x, y, z], order=1)
+    efield_aty = jax.scipy.ndimage.map_coordinates(Ey, [x, y, z], order=1)
+    efield_atz = jax.scipy.ndimage.map_coordinates(Ez, [x, y, z], order=1)
+    # interpolate the electric field component arrays and calculate the e field at the particle positions
+    bfield_atx = jax.scipy.ndimage.map_coordinates(Bx, [x, y, z], order=1)
+    bfield_aty = jax.scipy.ndimage.map_coordinates(By, [x, y, z], order=1)
+    bfield_atz = jax.scipy.ndimage.map_coordinates(Bz, [x, y, z], order=1)
+    # interpolate the magnetic field component arrays and calculate the b field at the particle positions
 
+
+    vxminus = vx + q*dt/(2*m)*efield_atx
+    vyminus = vy + q*dt/(2*m)*efield_aty
+    vzminus = vz + q*dt/(2*m)*efield_atz
+    # calculate the v minus vector used in the boris push algorithm
+    tx = q*dt/(2*m)*bfield_atx
+    ty = q*dt/(2*m)*bfield_aty
+    tz = q*dt/(2*m)*bfield_atz
+
+    vprimex = vxminus + (vyminus*tz - vzminus*ty)
+    vprimey = vyminus + (vzminus*tx - vxminus*tz)
+    vprimez = vzminus + (vxminus*ty - vyminus*tx)
+    # vprime = vminus + vminus cross t
+
+    smag = 2 / (1 + tx*tx + ty*ty + tz*tz)
+    sx = smag * tx
+    sy = smag * ty
+    sz = smag * tz
+    # calculate the scaled rotation vector
+
+    vxplus = vxminus + (vprimey*sz - vprimez*sy)
+    vyplus = vyminus + (vprimez*sx - vprimex*sz)
+    vzplus = vzminus + (vprimex*sy - vprimey*sx)
+
+    newvx = vxplus + q*dt/(2*m)*efield_atx
+    newvy = vyplus + q*dt/(2*m)*efield_aty
+    newvz = vzplus + q*dt/(2*m)*efield_atz
+    # calculate the new velocity
+
+    return newvx, newvy, newvz
+
+
+# @jit
+# def compute_Eforce(q, Ex, Ey, Ez, x, y, z):
+#     # This method computes the force from the electric field using interpolation
+#     Fx = q*jax.scipy.ndimage.map_coordinates(Ex, [x, y, z], order=1)
+#     Fy = q*jax.scipy.ndimage.map_coordinates(Ey, [x, y, z], order=1)
+#     Fz = q*jax.scipy.ndimage.map_coordinates(Ez, [x, y, z], order=1)
+#     # interpolate the electric field component arrays and calculate the force
+#     return Fx, Fy, Fz
 
 @jit
-def update_velocity(vx, vy, vz, Fx, Fy, Fz, dt, m):
-    # update the velocity of the particles
-    vx = vx + (Fx*dt/m)
-    vy = vy + (Fy*dt/m)
-    vz = vz + (Fz*dt/m)
-    return vx, vy, vz
+def curlx(yfield, zfield, dy, dz):
+    delZdely = (jnp.roll(zfield, shift=1, axis=1) + jnp.roll(zfield, shift=-1, axis=1) - 2*zfield)/(dy*dy)
+    delYdelz = (jnp.roll(yfield, shift=1, axis=2) + jnp.roll(yfield, shift=-1, axis=2) - 2*yfield)/(dz*dz)
+    return delZdely - delYdelz
+
+@jit
+def curly(xfield, zfield, dx, dz):
+    delXdelz = (jnp.roll(xfield, shift=1, axis=2) + jnp.roll(xfield, shift=-1, axis=2) - 2*xfield)/(dz*dz)
+    delZdelx = (jnp.roll(zfield, shift=1, axis=0) + jnp.roll(zfield, shift=-1, axis=0) - 2*zfield)/(dx*dx)
+    return delXdelz - delZdelx
+
+@jit
+def curlz(yfield, xfield, dx, dy):
+    delYdelx = (jnp.roll(yfield, shift=1, axis=0) + jnp.roll(yfield, shift=-1, axis=0) - 2*yfield)/(dx*dx)
+    delXdely = (jnp.roll(xfield, shift=1, axis=1) + jnp.roll(xfield, shift=-1, axis=1) - 2*xfield)/(dy*dy)
+    return delYdelx - delXdely
+
+@jit
+def update_B(Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt):
+    Bx = Bx - dt*curlx(Ey, Ez, dy, dz)
+    By = By - dt*curly(Ex, Ez, dx, dz)
+    Bz = Bz - dt*curlz(Ex, Ey, dx, dy)
+    return Bx, By, Bz
+
+
+
+# @jit
+# def update_velocity(vx, vy, vz, Fx, Fy, Fz, dt, m):
+#     # update the velocity of the particles
+#     vx = vx + (Fx*dt/2/m)
+#     vy = vy + (Fy*dt/2/m)
+#     vz = vz + (Fz*dt/2/m)
+#     return vx, vy, vz
 
 @jit
 def update_position(x, y, z, vx, vy, vz):
     # update the position of the particles
-    x = x + vx*dt
-    y = y + vy*dt
-    z = z + vz*dt
+    x = x + vx*dt/2
+    y = y + vy*dt/2
+    z = z + vz*dt/2
     return x, y, z
 
+def plot_fields(fieldx, fieldy, fieldz, t, name, dx, dy, dz):
+    Nx = Ex.shape[0]
+    Ny = Ex.shape[1]
+    Nz = Ex.shape[2]
+    x = np.linspace(0, Nx, Nx) * dx
+    y = np.linspace(0, Ny, Ny) * dy
+    z = np.linspace(0, Nz, Nz) * dz
+    gridToVTK(f"./plots/fields/{name}_{t:09}", x, y, z,   \
+            cellData = {f"{name}_x" : np.asarray(fieldx), \
+             f"{name}_y" : np.asarray(fieldy), f"{name}_z" : np.asarray(fieldz)}) 
+# plot the electric fields in the vtk file format
 
-def plot(x, y, z, t, x_wind, y_wind, z_wind):
+def plot_positions(x, y, z, t, x_wind, y_wind, z_wind):
     # makes a 3d plot of the positions of the particles
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
@@ -107,7 +225,7 @@ def plot(x, y, z, t, x_wind, y_wind, z_wind):
     ax.set_ylabel('Y (m)')
     ax.set_zlabel('Z (m)')
     plt.title("Particle Positions")
-    plt.savefig(f"plots/particles.{t:09}.png", dpi=300)
+    plt.savefig(f"plots/positions/particles.{t:09}.png", dpi=300)
     plt.close()
 
 
@@ -143,13 +261,13 @@ Ti = 100 # K
 # ion temperature
 # assuming an isothermal plasma for now
 
-N_electrons = 500
-N_ions      = 500
+N_electrons = 100
+N_ions      = 100
 # specify the number of electrons and ions in the plasma
 
-Nx = 1000
-Ny = 1000
-Nz = 1000
+Nx = 50
+Ny = 50
+Nz = 50
 # specify the number of array spacings in x, y, and z
 x_wind = 0.5e-2
 y_wind = 0.5e-2
@@ -177,12 +295,17 @@ print(f'time window: {t_wind}')
 print(f'Nt:          {Nt}')
 print(f'dt:          {dt}')
 
-
+plot_freq = 3
+# plot data every 5 timesteps
 
 Ex = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
 Ey = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
 Ez = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
 # initialize the electric field arrays as 0
+Bx = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+By = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+Bz = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+# initialize the magnetic field arrays as 0
 
 key1 = random.key(4353)
 key2 = random.key(1043)
@@ -205,16 +328,19 @@ M = None
 # set poisson solver precondition to None
 
 
-for t in range(30):
+for t in range(10):
+    if t % plot_freq == 0:
     ############## PLOTTING ###################################################################   
-    start = time.time()
-    x = jnp.concatenate([electron_x, ion_x])
-    y = jnp.concatenate([electron_y, ion_y])
-    z = jnp.concatenate([electron_z, ion_z])
-    plot( x, y, z, t, x_wind, y_wind, z_wind)
-    end  = time.time()
-    print(f'Time Spent on Plotting: {end-start} s')
-    average_plot.append(end-start)
+        start = time.time()
+        particlesx = jnp.concatenate([electron_x, ion_x])
+        particlesy = jnp.concatenate([electron_y, ion_y])
+        particlesz = jnp.concatenate([electron_z, ion_z])
+        plot_positions( particlesx, particlesy, particlesz, t, x_wind, y_wind, z_wind)
+        plot_fields(Ex, Ey, Ez, t, "E", dx, dy, dz)
+        plot_fields(Bx, By, Bz, t, "B", dx, dy, dz)
+        end  = time.time()
+        print(f'Time Spent on Plotting: {end-start} s')
+        average_plot.append(end-start)
     # plot the particles and save as png file
 
     ############### SOLVE E FIELD ######################################################################################
@@ -223,7 +349,7 @@ for t in range(30):
     start = time.time()
     rho    = compute_rho(electron_x, electron_y, electron_z, ion_x, ion_y, ion_z, dx, dy, dz)
     end   = time.time()
-    #print(f"Time Spent on Rho: {end-start} s")
+    print(f"Time Spent on Rho: {end-start} s")
     average_rho.append(end-start)
     #print( f'Max Value of Rho: {jnp.max(rho)}' )
     # compute the charge density of the plasma
@@ -246,6 +372,9 @@ for t in range(30):
     #print( f"Max Value of M: {jnp.max( M ) }" )
     # Using the assumption that the timestep is small, precondition poisson solver with
     # previous values for phi and rho
+
+    # exit()
+
     start = time.time()
     E_fields = jnp.gradient(phi)
     Ex       = -1 * E_fields[0]
@@ -258,17 +387,28 @@ for t in range(30):
     #print( f'Max Value of Ex: {jnp.max(Ex)}' )
     #print( f'Max Value of Ey: {jnp.max(Ey)}' )
     #print( f'Max Value of Ez: {jnp.max(Ez)}' )
+
+    ################ MAGNETIC FIELD UPDATE #######################################################################
+    Bx, By, Bz = update_B(Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
+
     ############### UPDATE ELECTRONS ##########################################################################################
     print("Updating Electrons...")
     start = time.time()
-    Fx, Fy, Fz = compute_Eforce(q_e, Ex, Ey, Ez, electron_x, electron_y, electron_z)
-    end = time.time()
-    #print(f'Time Spent on Calculating Electrons Force: {end-start} s')
-    average_electron_Force.append(end-start)
-    # compute the force on the electrons from the electric field
-    start = time.time()
-    ev_x, ev_y, ev_z = update_velocity(ev_x, ev_y, ev_z, Fx, Fy, Fz, dt, me)
-    # Update the velocties from the electric field
+    ev_x, ev_y, ev_z = boris(q_e, Ex, Ey, Ez, Bx, By, Bz, electron_x, \
+                             electron_y, electron_z, ev_x, ev_y, ev_z, dt, me)
+    # implement the boris push algorithm to solve for new particle velocities
+
+
+
+    # start = time.time()
+    # Fx, Fy, Fz = compute_Eforce(q_e, Ex, Ey, Ez, electron_x, electron_y, electron_z)
+    # end = time.time()
+    # #print(f'Time Spent on Calculating Electrons Force: {end-start} s')
+    # average_electron_Force.append(end-start)
+    # # compute the force on the electrons from the electric field
+    # start = time.time()
+    # ev_x, ev_y, ev_z = update_velocity(ev_x, ev_y, ev_z, Fx, Fy, Fz, dt, me)
+    # # Update the velocties from the electric field
     electron_x, electron_y, electron_z = update_position(electron_x, electron_y, electron_z, ev_x, ev_y, ev_z)
     # Update the positions of the particles
     end   = time.time()
@@ -277,15 +417,20 @@ for t in range(30):
 
     ############### UPDATE IONS ################################################################################################
     print("Updating Ions...")
+
     start = time.time()
-    Fx, Fy, Fz = compute_Eforce(q_i, Ex, Ey, Ez, ion_x, ion_y, ion_z)
-    end   = time.time()
-    #print(f"Time Spent on Calculating Ions Force: {end-start} s")
-    average_ion_Force.append(end-start)
-    # compute the force on the ions from the electric field
-    start = time.time()
-    iv_x, iv_y, iv_z = update_velocity(iv_x, iv_y, iv_z, Fx, Fy, Fz, dt, mi)
-    # Update the velocities from the electric field
+    iv_x, iv_y, iv_z = boris(q_i, Ex, Ey, Ez, Bx, By, Bz, ion_x, \
+                             ion_y, ion_z, iv_x, iv_y, iv_z, dt, mi)
+
+    # start = time.time()
+    # Fx, Fy, Fz = compute_Eforce(q_i, Ex, Ey, Ez, ion_x, ion_y, ion_z)
+    # end   = time.time()
+    # #print(f"Time Spent on Calculating Ions Force: {end-start} s")
+    # average_ion_Force.append(end-start)
+    # # compute the force on the ions from the electric field
+    # start = time.time()
+    # iv_x, iv_y, iv_z = update_velocity(iv_x, iv_y, iv_z, Fx, Fy, Fz, dt, mi)
+    # # Update the velocities from the electric field
     ion_x, ion_y, ion_z  = update_position(ion_x, ion_y, ion_z, iv_x, iv_y, iv_z)
     end   = time.time()
     #print(f"Time Spent on Updating Ions: {end-start} s")
