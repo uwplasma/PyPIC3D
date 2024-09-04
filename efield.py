@@ -45,6 +45,6 @@ def compute_rho(rho, electron_x, electron_y, electron_z, ion_x, ion_y, ion_z, dx
 @jit
 def solve_poisson(rho, eps, dx, dy, dz, phi=None, M = None):
     lapl = functools.partial(laplacian, dx=dx, dy=dy, dz=dz)
-    phi, exitcode = jax.scipy.sparse.linalg.cg(lapl, rho, rho, maxiter=8000, M=M)
+    phi, exitcode = jax.scipy.sparse.linalg.cg(lapl, rho, rho, maxiter=12000, M=M)
     #print(exitcode)
     return phi
