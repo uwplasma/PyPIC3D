@@ -16,7 +16,7 @@ from pyevtk.hl import gridToVTK
 
 from plotting import plot_fields, plot_positions
 from particle import initial_particles, update_position
-from efield import solve_poisson, laplacian, compute_rho
+from efield import solve_poisson, laplacian, update_rho #compute_rho
 from bfield import boris, curlx, curly, curlz, update_B
 # import code from other files
 
@@ -135,11 +135,18 @@ for t in range(30):
     print(f'Time: {t*dt} s')
     print("Solving Electric Field...")
     start = time.time()
-    rho = jax.numpy.zeros(shape = (Nx, Ny, Nz))
-    rho    = compute_rho(rho, electron_x, electron_y, electron_z, ion_x, ion_y, ion_z, dx, dy, dz, q_i, q_e)
+    rho = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+    rho = update_rho(N_electrons, electron_x, electron_y, electron_z, dx, dy, dz, q_e, rho)
+    rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, rho)
     end   = time.time()
     print(f"Time Spent on Rho: {end-start} s")
     average_rho.append(end-start)
+
+    # print(f"rho shape: {rho.shape}")
+    # rhoinv = jnp.linalg.tensorinv(rho, 3)
+    # print(f"Max rho inv: {jnp.maximum(rhoinv)}")
+
+    # exit()
     #print( f'Max Value of Rho: {jnp.max(rho)}' )
     # compute the charge density of the plasma
     start = time.time()
