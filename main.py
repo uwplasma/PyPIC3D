@@ -14,9 +14,9 @@ import math
 from pyevtk.hl import gridToVTK
 # Importing relevant libraries
 
-from plotting import plot_fields, plot_positions
+from plotting import plot_fields, plot_positions, plot_rho
 from particle import initial_particles, update_position
-from efield import solve_poisson, laplacian, update_rho #compute_rho
+from efield import solve_poisson, laplacian, update_rho
 from bfield import boris, curlx, curly, curlz, update_B
 # import code from other files
 
@@ -117,6 +117,9 @@ M = None
 
 
 for t in range(30):
+    rho = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+    # reset value of charge density
+
     if t % plot_freq == 0:
     ############## PLOTTING ###################################################################   
         start = time.time()
@@ -126,6 +129,7 @@ for t in range(30):
         plot_positions( particlesx, particlesy, particlesz, t, x_wind, y_wind, z_wind)
         plot_fields(Ex, Ey, Ez, t, "E", dx, dy, dz)
         plot_fields(Bx, By, Bz, t, "B", dx, dy, dz)
+        plot_rho(rho, t, "rho", dx, dy, dz)
         end  = time.time()
         print(f'Time Spent on Plotting: {end-start} s')
         average_plot.append(end-start)
@@ -135,9 +139,9 @@ for t in range(30):
     print(f'Time: {t*dt} s')
     print("Solving Electric Field...")
     start = time.time()
-    rho = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
     rho = update_rho(N_electrons, electron_x, electron_y, electron_z, dx, dy, dz, q_e, rho)
     rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, rho)
+    # updating the charge density
     end   = time.time()
     print(f"Time Spent on Rho: {end-start} s")
     average_rho.append(end-start)
@@ -199,6 +203,10 @@ for t in range(30):
     average_ion_update.append(end-start)
     # Update the positions of the particles
 
+    if t % plot_freq == 0:
+        jnp.save(f'data/rho/rho_{t:}', rho)
+        jnp.save(f'data/phi/phi_{t:}', phi)
+    # save the data for the charge density and potential for using in nn training
 
 print(f"Average Rho: {np.mean(average_rho[1:])} s")
 print(f"Average Poisson: {np.mean(average_poisson[1:])} s")

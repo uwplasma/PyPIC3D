@@ -8,6 +8,16 @@ import jax.numpy as jnp
 import math
 from pyevtk.hl import gridToVTK
 
+def plot_rho(rho, t, name, dx, dy, dz):
+    Nx = rho.shape[0]
+    Ny = rho.shape[1]
+    Nz = rho.shape[2]
+    x = np.linspace(0, Nx, Nx) * dx
+    y = np.linspace(0, Ny, Ny) * dy
+    z = np.linspace(0, Nz, Nz) * dz
+    gridToVTK(f"./plots/rho/{name}_{t:09}", x, y, z,   \
+            cellData = {f"{name}" : np.asarray(rho)}) 
+# plot the charge density in the vtk file format
 
 def plot_fields(fieldx, fieldy, fieldz, t, name, dx, dy, dz):
     Nx = fieldx.shape[0]
