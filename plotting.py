@@ -90,3 +90,9 @@ def plot_positions(x, y, z, t, x_wind, y_wind, z_wind):
     plt.title("Particle Positions")
     plt.savefig(f"plots/positions/particles.{t:09}.png", dpi=300)
     plt.close()
+
+
+def cond_decorator(flag, decorator):
+   def decorate(func):
+      return decorator(func).block_until_ready() if flag else func
+   return decorate

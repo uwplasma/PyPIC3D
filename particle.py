@@ -10,27 +10,27 @@ from pyevtk.hl import gridToVTK
 
 
 def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key):
-"""
-Initializes the velocities and positions of the particles.
+    """
+    Initializes the velocities and positions of the particles.
 
-Parameters:
-- N_particles (int): The number of particles.
-- x_wind (float): The maximum value for the x-coordinate of the particles' positions.
-- y_wind (float): The maximum value for the y-coordinate of the particles' positions.
-- z_wind (float): The maximum value for the z-coordinate of the particles' positions.
-- mass (float): The mass of the particles.
-- T (float): The temperature of the system.
-- kb (float): The Boltzmann constant.
-- key (jax.random.PRNGKey): The random key for generating random numbers.
+    Parameters:
+    - N_particles (int): The number of particles.
+    - x_wind (float): The maximum value for the x-coordinate of the particles' positions.
+    - y_wind (float): The maximum value for the y-coordinate of the particles' positions.
+    - z_wind (float): The maximum value for the z-coordinate of the particles' positions.
+    - mass (float): The mass of the particles.
+    - T (float): The temperature of the system.
+    - kb (float): The Boltzmann constant.
+    - key (jax.random.PRNGKey): The random key for generating random numbers.
 
-Returns:
-- x (jax.numpy.ndarray): The x-coordinates of the particles' positions.
-- y (jax.numpy.ndarray): The y-coordinates of the particles' positions.
-- z (jax.numpy.ndarray): The z-coordinates of the particles' positions.
-- v_x (numpy.ndarray): The x-component of the particles' velocities.
-- v_y (numpy.ndarray): The y-component of the particles' velocities.
-- v_z (numpy.ndarray): The z-component of the particles' velocities.
-"""
+    Returns:
+    - x (jax.numpy.ndarray): The x-coordinates of the particles' positions.
+    - y (jax.numpy.ndarray): The y-coordinates of the particles' positions.
+    - z (jax.numpy.ndarray): The z-coordinates of the particles' positions.
+    - v_x (numpy.ndarray): The x-component of the particles' velocities.
+    - v_y (numpy.ndarray): The y-component of the particles' velocities.
+    - v_z (numpy.ndarray): The z-component of the particles' velocities.
+    """
 
     x = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.025 * x_wind)
     y = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.025 * y_wind)
