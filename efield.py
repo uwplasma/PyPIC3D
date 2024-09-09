@@ -34,5 +34,16 @@ def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, rho):
 @jit
 def solve_poisson(rho, eps, dx, dy, dz, phi, M = None):
     lapl = functools.partial(laplacian, dx=dx, dy=dy, dz=dz)
-    phi, exitcode = jax.scipy.sparse.linalg.cg(lapl, rho/eps, phi, maxiter=5000, M=M)
+    phi, exitcode = jax.scipy.sparse.linalg.cg(lapl, rho/eps, phi, tol=1e-6, maxiter=20000, M=M)
     return phi
+
+
+
+def compute_pe(phi, rho, eps, dx, dy, dz):
+    x = laplacian(phi, dx, dy, dz)
+    y = rho/eps
+    poisson_error = x - y
+    index         = jnp.argmax(poisson_error)
+    return 200 * jnp.abs( jnp.ravel(x)[index] - jnp.ravel(y)[index] ) / ( (jnp.ravel(x)[index]) + (jnp.ravel(y)[index]) )
+
+    # this method computes the relative percentage difference of poisson solver

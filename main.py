@@ -16,13 +16,22 @@ from pyevtk.hl import gridToVTK
 
 from plotting import plot_fields, plot_positions, plot_rho
 from particle import initial_particles, update_position
-from efield import solve_poisson, laplacian, update_rho
+from efield import solve_poisson, laplacian, update_rho, compute_pe
 from bfield import boris, curlx, curly, curlz, update_B
 # import code from other files
 
+jax.config.update('jax_platform_name', 'cpu')
+# set Jax to use CPUs
+
+############################ SETTINGS #####################################################################
 save_data = False
 plotfields = False
 plotpositions = True
+# booleans for plotting/saving data
+
+benchmark = False
+verbose   = False
+# booleans for debugging
 
 ############################ INITIALIZE EVERYTHING #######################################################
 # I am starting by simulating a hydrogen plasma
@@ -136,19 +145,19 @@ for t in range(30):
             plot_fields(Bx, By, Bz, t, "B", dx, dy, dz)
             plot_rho(rho, t, "rho", dx, dy, dz)
         end  = time.time()
-        print(f'Time Spent on Plotting: {end-start} s')
+        #print(f'Time Spent on Plotting: {end-start} s')
         average_plot.append(end-start)
     # plot the particles and save as png file
 
     ############### SOLVE E FIELD ######################################################################################
     print(f'Time: {t*dt} s')
-    print("Solving Electric Field...")
+    #print("Solving Electric Field...")
     start = time.time()
     rho = update_rho(N_electrons, electron_x, electron_y, electron_z, dx, dy, dz, q_e, rho)
     rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, rho)
     # updating the charge density
     end   = time.time()
-    print(f"Time Spent on Rho: {end-start} s")
+    #print(f"Time Spent on Rho: {end-start} s")
     average_rho.append(end-start)
 
     # print(f"rho shape: {rho.shape}")
@@ -169,9 +178,10 @@ for t in range(30):
     #print(f"Time Spent on Phi: {end-start} s")
     average_poisson.append(end-start)
     #print( f'Max Value of Phi: {jnp.max(phi)}' )
-    print( f'Max Laplacian of Phi: {jnp.max(laplacian(phi, dx, dy, dz))}')
-    print( f'Max Charge Density: {jnp.max(rho)}' )
-    print( f'Poisson Error: {jnp.max(  (laplacian(phi, dx, dy, dz) - (rho/eps) ))}' )
+    #print( f'Max Laplacian of Phi: {jnp.max(laplacian(phi, dx, dy, dz))}')
+    #print( f'Max Charge Density: {jnp.max(rho)}' )
+    print( f'Poisson Relative Percent Difference: {compute_pe(phi, rho, eps, dx, dy, dz)}%')
+
     # Use conjugated gradients to calculate the electric potential from the charge density
 
     start = time.time()
@@ -188,7 +198,7 @@ for t in range(30):
     Bx, By, Bz = update_B(Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
 
     ############### UPDATE ELECTRONS ##########################################################################################
-    print("Updating Electrons...")
+    #print("Updating Electrons...")
     start = time.time()
     ev_x, ev_y, ev_z = boris(q_e, Ex, Ey, Ez, Bx, By, Bz, electron_x, \
                              electron_y, electron_z, ev_x, ev_y, ev_z, dt, me)
@@ -197,11 +207,11 @@ for t in range(30):
     electron_x, electron_y, electron_z = update_position(electron_x, electron_y, electron_z, ev_x, ev_y, ev_z, dt)
     # Update the positions of the particles
     end   = time.time()
-    print(f'Time Spent on Updating Electrons: {end-start} s')
+    #print(f'Time Spent on Updating Electrons: {end-start} s')
     average_e_update.append(end-start)
 
     ############### UPDATE IONS ################################################################################################
-    print("Updating Ions...")
+    #print("Updating Ions...")
 
     start = time.time()
     iv_x, iv_y, iv_z = boris(q_i, Ex, Ey, Ez, Bx, By, Bz, ion_x, \
@@ -209,7 +219,7 @@ for t in range(30):
     # use boris push for ion velocities
     ion_x, ion_y, ion_z  = update_position(ion_x, ion_y, ion_z, iv_x, iv_y, iv_z, dt)
     end   = time.time()
-    print(f"Time Spent on Updating Ions: {end-start} s")
+    #print(f"Time Spent on Updating Ions: {end-start} s")
     average_ion_update.append(end-start)
     # Update the positions of the particles
 
