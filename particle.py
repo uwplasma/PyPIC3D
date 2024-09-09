@@ -11,9 +11,9 @@ from pyevtk.hl import gridToVTK
 
 def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key):
 # this method initializes the velocties and the positions of the particles
-    x = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.05 * x_wind)
-    y = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.05 * y_wind)
-    z = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.05 * z_wind)
+    x = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.025 * x_wind)
+    y = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.025 * y_wind)
+    z = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.025 * z_wind)
     # initialize the positions of the particles
     std = kb * T / mass
     v_x = np.random.normal(0, std, N_particles)

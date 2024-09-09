@@ -60,9 +60,9 @@ Nx = 50
 Ny = 50
 Nz = 50
 # specify the number of array spacings in x, y, and z
-x_wind = 0.5e-2
-y_wind = 0.5e-2
-z_wind = 0.5e-2
+x_wind = 1e-2
+y_wind = 1e-2
+z_wind = 1e-2
 # specify the size of the spatial window in meters
 
 dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
@@ -171,7 +171,7 @@ for t in range(30):
     #print( f'Max Value of Phi: {jnp.max(phi)}' )
     print( f'Max Laplacian of Phi: {jnp.max(laplacian(phi, dx, dy, dz))}')
     print( f'Max Charge Density: {jnp.max(rho)}' )
-    print( f'Poisson Error: {jnp.max( laplacian(phi, dx, dy, dz) - (1/eps)*rho )}' )
+    print( f'Poisson Error: {jnp.max(  (laplacian(phi, dx, dy, dz) - (rho/eps) ))}' )
     # Use conjugated gradients to calculate the electric potential from the charge density
 
     start = time.time()
