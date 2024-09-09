@@ -32,8 +32,7 @@ def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, rho):
     return jax.lax.fori_loop(0, Nparticles-1, addto_rho, rho )
 
 @jit
-def solve_poisson(rho, eps, dx, dy, dz, phi=None, M = None):
+def solve_poisson(rho, eps, dx, dy, dz, phi, M = None):
     lapl = functools.partial(laplacian, dx=dx, dy=dy, dz=dz)
-    phi, exitcode = jax.scipy.sparse.linalg.cg(lapl, rho, rho, maxiter=12000, M=M)
-    #print(exitcode)
+    phi, exitcode = jax.scipy.sparse.linalg.cg(lapl, rho/eps, phi, maxiter=5000, M=M)
     return phi

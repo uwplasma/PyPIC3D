@@ -20,6 +20,9 @@ from efield import solve_poisson, laplacian, update_rho
 from bfield import boris, curlx, curly, curlz, update_B
 # import code from other files
 
+save_data = False
+plotfields = False
+plotpositions = True
 
 ############################ INITIALIZE EVERYTHING #######################################################
 # I am starting by simulating a hydrogen plasma
@@ -123,13 +126,15 @@ for t in range(30):
     if t % plot_freq == 0:
     ############## PLOTTING ###################################################################   
         start = time.time()
-        particlesx = jnp.concatenate([electron_x, ion_x])
-        particlesy = jnp.concatenate([electron_y, ion_y])
-        particlesz = jnp.concatenate([electron_z, ion_z])
-        plot_positions( particlesx, particlesy, particlesz, t, x_wind, y_wind, z_wind)
-        plot_fields(Ex, Ey, Ez, t, "E", dx, dy, dz)
-        plot_fields(Bx, By, Bz, t, "B", dx, dy, dz)
-        plot_rho(rho, t, "rho", dx, dy, dz)
+        if plotpositions:
+            particlesx = jnp.concatenate([electron_x, ion_x])
+            particlesy = jnp.concatenate([electron_y, ion_y])
+            particlesz = jnp.concatenate([electron_z, ion_z])
+            plot_positions( particlesx, particlesy, particlesz, t, x_wind, y_wind, z_wind)
+        if plotfields:
+            plot_fields(Ex, Ey, Ez, t, "E", dx, dy, dz)
+            plot_fields(Bx, By, Bz, t, "B", dx, dy, dz)
+            plot_rho(rho, t, "rho", dx, dy, dz)
         end  = time.time()
         print(f'Time Spent on Plotting: {end-start} s')
         average_plot.append(end-start)
@@ -153,9 +158,14 @@ for t in range(30):
     # exit()
     #print( f'Max Value of Rho: {jnp.max(rho)}' )
     # compute the charge density of the plasma
-    start = time.time()
-    phi = solve_poisson(rho, eps, dx, dy, dz, M)
-    end   = time.time()
+    if t == 0:
+        start = time.time()
+        phi = solve_poisson(rho, eps, dx, dy, dz, phi=rho, M=None)
+        end   = time.time()
+    else:
+        start = time.time()
+        phi = solve_poisson(rho, eps, dx, dy, dz, phi=phi, M=M)
+        end   = time.time()
     #print(f"Time Spent on Phi: {end-start} s")
     average_poisson.append(end-start)
     #print( f'Max Value of Phi: {jnp.max(phi)}' )
@@ -203,9 +213,10 @@ for t in range(30):
     average_ion_update.append(end-start)
     # Update the positions of the particles
 
-    if t % plot_freq == 0:
-        jnp.save(f'data/rho/rho_{t:}', rho)
-        jnp.save(f'data/phi/phi_{t:}', phi)
+    if save_data:
+        if t % plot_freq == 0:
+            jnp.save(f'data/rho/rho_{t:}', rho)
+            jnp.save(f'data/phi/phi_{t:}', phi)
     # save the data for the charge density and potential for using in nn training
 
 print(f"Average Rho: {np.mean(average_rho[1:])} s")
