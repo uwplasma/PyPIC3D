@@ -24,7 +24,7 @@ jax.config.update('jax_platform_name', 'cpu')
 # set Jax to use CPUs
 
 ############################ SETTINGS #####################################################################
-save_data = False
+save_data = True
 plotfields = False
 plotpositions = True
 # booleans for plotting/saving data
@@ -95,8 +95,8 @@ print(f'time window: {t_wind}')
 print(f'Nt:          {Nt}')
 print(f'dt:          {dt}')
 
-plot_freq = 3
-# plot data every 5 timesteps
+plot_freq = 1
+# how often to plot the data
 
 Ex = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
 Ey = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
