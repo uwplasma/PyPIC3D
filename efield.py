@@ -117,8 +117,6 @@ def compute_pe(phi, rho, eps, dx, dy, dz):
     Returns:
     float: The relative percentage difference of the Poisson solver.
     """
-    index = jnp.argmax(poisson_error)
-    return 200 * jnp.abs(jnp.ravel(x)[index] - jnp.ravel(y)[index]) / ((jnp.ravel(x)[index]) + (jnp.ravel(y)[index]))
     x = laplacian(phi, dx, dy, dz)
     y = rho/eps
     poisson_error = x - y
