@@ -149,15 +149,11 @@ for t in range(30):
     print( f'Poisson Relative Percent Difference: {compute_pe(phi, rho, eps, dx, dy, dz)}%')
     # Use conjugated gradients to calculate the electric potential from the charge density
 
-
     E_fields = jnp.gradient(phi)
     Ex       = -1 * E_fields[0]
     Ey       = -1 * E_fields[1]
     Ez       = -1 * E_fields[2]
     # Calculate the E field using the gradient of the potential
-
-    ################ MAGNETIC FIELD UPDATE #######################################################################
-    Bx, By, Bz = update_B(Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
 
     ############### UPDATE ELECTRONS ##########################################################################################
     ev_x, ev_y, ev_z = boris(q_e, Ex, Ey, Ez, Bx, By, Bz, electron_x, \
@@ -174,6 +170,10 @@ for t in range(30):
 
     ion_x, ion_y, ion_z  = update_position(ion_x, ion_y, ion_z, iv_x, iv_y, iv_z, dt)
     # Update the positions of the particles
+
+    ################ MAGNETIC FIELD UPDATE #######################################################################
+    Bx, By, Bz = update_B(Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
+    # update the magnetic field using the curl of the electric field
 
     if save_data:
         if t % plot_freq == 0:
