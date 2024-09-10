@@ -25,12 +25,14 @@ jax.config.update('jax_platform_name', 'cpu')
 
 ############################ SETTINGS #####################################################################
 save_data = True
-plotfields = False
+plotfields = True
 plotpositions = True
 # booleans for plotting/saving data
 
 benchmark = False
-verbose   = False
+# still need to implement benchmarking
+
+verbose   = True
 # booleans for debugging
 
 ############################ INITIALIZE EVERYTHING #######################################################
@@ -141,12 +143,17 @@ for t in range(30):
     rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, rho)
     # update the charge density field
 
+    if verbose: print(f"Calculating Charge Density, Max Value: {jnp.max(rho)}")
+    # print the maximum value of the charge density
+
     if t == 0:
         phi = solve_poisson(rho, eps, dx, dy, dz, phi=rho, M=None)
     else:
         phi = solve_poisson(rho, eps, dx, dy, dz, phi=phi, M=M)
 
-    print( f'Poisson Relative Percent Difference: {compute_pe(phi, rho, eps, dx, dy, dz)}%')
+    if verbose: print(f"Calculating Electric Potential, Max Value: {jnp.max(phi)}")
+    # print the maximum value of the electric potential
+    if verbose: print( f'Poisson Relative Percent Difference: {compute_pe(phi, rho, eps, dx, dy, dz)}%')
     # Use conjugated gradients to calculate the electric potential from the charge density
 
     E_fields = jnp.gradient(phi)
@@ -155,25 +162,41 @@ for t in range(30):
     Ez       = -1 * E_fields[2]
     # Calculate the E field using the gradient of the potential
 
+    if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(Ex)}")
+    # print the maximum value of the electric field
+
     ############### UPDATE ELECTRONS ##########################################################################################
     ev_x, ev_y, ev_z = boris(q_e, Ex, Ey, Ez, Bx, By, Bz, electron_x, \
                              electron_y, electron_z, ev_x, ev_y, ev_z, dt, me)
     # implement the boris push algorithm to solve for new electron velocities
 
+    if verbose: print(f"Calculating Electron Velocities, Max Value: {jnp.max(ev_x)}")
+    # print the maximum value of the electron velocities
+
     electron_x, electron_y, electron_z = update_position(electron_x, electron_y, electron_z, ev_x, ev_y, ev_z, dt)
     # Update the positions of the particles
+
+    if verbose: print(f"Calculating Electron Positions, Max Value: {jnp.max(electron_x)}")
+    # print the maximum value of the electron positions
 
     ############### UPDATE IONS ################################################################################################
     iv_x, iv_y, iv_z = boris(q_i, Ex, Ey, Ez, Bx, By, Bz, ion_x, \
                              ion_y, ion_z, iv_x, iv_y, iv_z, dt, mi)
     # use boris push for ion velocities
 
+    if verbose: print(f"Calculating Ion Velocities, Max Value: {jnp.max(iv_x)}")
+    # print the maximum value of the ion velocities
+
     ion_x, ion_y, ion_z  = update_position(ion_x, ion_y, ion_z, iv_x, iv_y, iv_z, dt)
     # Update the positions of the particles
+    if verbose: print(f"Calculating Ion Positions, Max Value: {jnp.max(ion_x)}")
+    # print the maximum value of the ion positions
 
     ################ MAGNETIC FIELD UPDATE #######################################################################
     Bx, By, Bz = update_B(Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
     # update the magnetic field using the curl of the electric field
+    if verbose: print(f"Calculating Magnetic Field, Max Value: {jnp.max(Bx)}")
+    # print the maximum value of the magnetic field
 
     if save_data:
         if t % plot_freq == 0:
