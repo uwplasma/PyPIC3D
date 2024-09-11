@@ -91,6 +91,59 @@ def plot_positions(x, y, z, t, x_wind, y_wind, z_wind):
     plt.savefig(f"plots/positions/particles.{t:09}.png", dpi=300)
     plt.close()
 
+def plot_velocity_histogram(vx, vy, vz, t, nbins=50):
+    """
+    Plots the histogram of the velocities of the particles.
+
+    Parameters:
+    vx (array-like): The x-component of the velocities of the particles.
+    vy (array-like): The y-component of the velocities of the particles.
+    vz (array-like): The z-component of the velocities of the particles.
+    t (float): The time value.
+
+    Returns:
+    None
+    """
+    fig, axs = plt.subplots(3)
+    fig.suptitle('Particle Velocities')
+    axs[0].hist(jnp.abs(vx), bins=nbins)
+    axs[0].set_title('X-Component')
+    axs[1].hist(jnp.abs(vy), bins=nbins)
+    axs[1].set_title('Y-Component')
+    axs[2].hist(jnp.abs(vz), bins=nbins)
+    axs[2].set_title('Z-Component')
+    plt.savefig(f"plots/velocity_histograms/velocities.{t:09}.png", dpi=300)
+    plt.close()
+
+def plot_velocities(x, y, z, vx, vy, vz, t, x_wind, y_wind, z_wind):
+    """
+    Makes a 3D plot of the velocities of the particles.
+
+    Parameters:
+    vx (array-like): The x-component of the velocities of the particles.
+    vy (array-like): The y-component of the velocities of the particles.
+    vz (array-like): The z-component of the velocities of the particles.
+    t (float): The time value.
+    x_wind (float): The x-axis wind limit.
+    y_wind (float): The y-axis wind limit.
+    z_wind (float): The z-axis wind limit.
+
+    Returns:
+    None
+    """
+    
+    fig = plt.figure()
+    ax = fig.add_subplot(projection='3d')
+    #ax.set_xlim( -x_wind, x_wind )
+    #ax.set_ylim( -y_wind, y_wind )
+    #ax.set_zlim( -z_wind, z_wind )
+    ax.quiver(x, y, z, vx, vy, vz, length=x_wind/1000)
+    ax.set_xlabel('X (m)')
+    ax.set_ylabel('Y (m)')
+    ax.set_zlabel('Z (m)')
+    plt.title("Particle Velocities")
+    plt.savefig(f"plots/velocities/velocities.{t:09}.png", dpi=300)
+    plt.close()
 
 def cond_decorator(flag, decorator):
    def decorate(func):

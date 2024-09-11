@@ -14,10 +14,9 @@ import math
 from pyevtk.hl import gridToVTK
 # Importing relevant libraries
 
-from plotting import plot_fields, plot_positions, plot_rho, cond_decorator
+from plotting import plot_fields, plot_positions, plot_rho, plot_velocities, plot_velocity_histogram
 from particle import initial_particles, update_position
-from efield import solve_poisson, laplacian, update_rho, compute_pe
-from bfield import boris, curlx, curly, curlz, update_B
+from fields import boris, update_B, calculateE, initialize_fields
 # import code from other files
 
 jax.config.update('jax_platform_name', 'cpu')
@@ -27,12 +26,13 @@ jax.config.update('jax_platform_name', 'cpu')
 save_data = True
 plotfields = True
 plotpositions = True
+plotvelocities = True
 # booleans for plotting/saving data
 
 benchmark = False
 # still need to implement benchmarking
 
-verbose   = True
+verbose   = False
 # booleans for debugging
 
 ############################ INITIALIZE EVERYTHING #######################################################
@@ -53,9 +53,9 @@ me = 9.1093837e-31 # Kg
 # mass of the electron
 mi = 1.67e-23 # Kg
 # mass of the ion
-q_e = 1.602e-19
+q_e = -1.602e-19
 # charge of electron
-q_i = -1.602e-19
+q_i = 1.602e-19
 # charge of ion
 Te = 100 # K
 # electron temperature
@@ -67,13 +67,13 @@ N_electrons = 100
 N_ions      = 100
 # specify the number of electrons and ions in the plasma
 
-Nx = 50
-Ny = 50
-Nz = 50
+Nx = 100
+Ny = 100
+Nz = 100
 # specify the number of array spacings in x, y, and z
-x_wind = 1e-2
-y_wind = 1e-2
-z_wind = 1e-2
+x_wind = 10e-2
+y_wind = 10e-2
+z_wind = 10e-2
 # specify the size of the spatial window in meters
 
 dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
@@ -100,14 +100,8 @@ print(f'dt:          {dt}')
 plot_freq = 1
 # how often to plot the data
 
-Ex = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
-Ey = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
-Ez = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
-# initialize the electric field arrays as 0
-Bx = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
-By = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
-Bz = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
-# initialize the magnetic field arrays as 0
+Ex, Ey, Ez, Bx, By, Bz, phi, rho = initialize_fields(Nx, Ny, Nz)
+# initialize the electric and magnetic fields
 
 key1 = random.key(4353)
 key2 = random.key(1043)
@@ -116,52 +110,32 @@ ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions
 # initialize the positions and velocities of the electrons and ions in the plasma.
 # eventually, I need to update the initialization to use a more accurate position and velocity distribution.
 
+#################################### Plasma Oscillations ########################################################
+# adding a perturbation to the particle velocities to simulate plasma oscillations
+
+perturbation_period = 5e-12 # starting with 3 dt's for now
+
+velocity_perturbation = 5e9 # m/s
+# perturbation velocity
+
+def perturb_function(t, dt, perturbation_period, velocity_perturbation):
+    perturbation = velocity_perturbation * jnp.sin(2 * jnp.pi * t * dt / perturbation_period)
+    return perturbation
+# function to calculate the perturbation
+
+
+#################################### MAIN LOOP #####################################################################
 M = None
-# set poisson solver precondition to None
+# set poisson solver precondition to None for now
 
+for t in range(100):
+    print(f'Iteration {t}, Time: {t*dt} s')
 
-for t in range(30):
-    rho = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
-    # reset value of charge density
-
-    if t % plot_freq == 0:
-    ############## PLOTTING ###################################################################
-        if plotpositions:
-            particlesx = jnp.concatenate([electron_x, ion_x])
-            particlesy = jnp.concatenate([electron_y, ion_y])
-            particlesz = jnp.concatenate([electron_z, ion_z])
-            plot_positions( particlesx, particlesy, particlesz, t, x_wind, y_wind, z_wind)
-        if plotfields:
-            plot_fields(Ex, Ey, Ez, t, "E", dx, dy, dz)
-            plot_fields(Bx, By, Bz, t, "B", dx, dy, dz)
-            plot_rho(rho, t, "rho", dx, dy, dz)
-    # plot the particles and save as png file
-
-    ############### SOLVE E FIELD ######################################################################################
-    print(f'Time: {t*dt} s')
-    rho = update_rho(N_electrons, electron_x, electron_y, electron_z, dx, dy, dz, q_e, rho)
-    rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, rho)
-    # update the charge density field
-
-    if verbose: print(f"Calculating Charge Density, Max Value: {jnp.max(rho)}")
-    # print the maximum value of the charge density
-
-    if t == 0:
-        phi = solve_poisson(rho, eps, dx, dy, dz, phi=rho, M=None)
-    else:
-        phi = solve_poisson(rho, eps, dx, dy, dz, phi=phi, M=M)
-
-    if verbose: print(f"Calculating Electric Potential, Max Value: {jnp.max(phi)}")
-    # print the maximum value of the electric potential
-    if verbose: print( f'Poisson Relative Percent Difference: {compute_pe(phi, rho, eps, dx, dy, dz)}%')
-    # Use conjugated gradients to calculate the electric potential from the charge density
-
-    E_fields = jnp.gradient(phi)
-    Ex       = -1 * E_fields[0]
-    Ey       = -1 * E_fields[1]
-    Ez       = -1 * E_fields[2]
-    # Calculate the E field using the gradient of the potential
-
+    ############### SOLVE E FIELD ############################################################################################
+    Ex, Ey, Ez, phi, rho = calculateE(N_electrons, electron_x, electron_y, electron_z, \
+               N_ions, ion_x, ion_y, ion_z,                                               \
+               dx, dy, dz, q_e, q_i, rho, eps, phi, t, M, Nx, Ny, Nz, verbose)
+    
     if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(Ex)}")
     # print the maximum value of the electric field
 
@@ -172,6 +146,10 @@ for t in range(30):
 
     if verbose: print(f"Calculating Electron Velocities, Max Value: {jnp.max(ev_x)}")
     # print the maximum value of the electron velocities
+    
+    if t > 5:
+        ev_x = ev_x.at[:].add(perturb_function(t, dt, perturbation_period, velocity_perturbation))
+    # add perturbation to the electron velocities
 
     electron_x, electron_y, electron_z = update_position(electron_x, electron_y, electron_z, ev_x, ev_y, ev_z, dt)
     # Update the positions of the particles
@@ -198,8 +176,31 @@ for t in range(30):
     if verbose: print(f"Calculating Magnetic Field, Max Value: {jnp.max(Bx)}")
     # print the maximum value of the magnetic field
 
-    if save_data:
-        if t % plot_freq == 0:
+
+    if t % plot_freq == 0:
+    ############## PLOTTING ###################################################################
+        if plotpositions:
+            particlesx = jnp.concatenate([electron_x, ion_x])
+            particlesy = jnp.concatenate([electron_y, ion_y])
+            particlesz = jnp.concatenate([electron_z, ion_z])
+            plot_positions( particlesx, particlesy, particlesz, t, x_wind, y_wind, z_wind)
+        if plotvelocities:
+            if not plotpositions:
+                particlesx = jnp.concatenate([electron_x, ion_x])
+                particlesy = jnp.concatenate([electron_y, ion_y])
+                particlesz = jnp.concatenate([electron_z, ion_z])
+                # get the particle positions if they haven't been computed
+            velocitiesx = jnp.concatenate([ev_x, iv_x])
+            velocitiesy = jnp.concatenate([ev_y, iv_y])
+            velocitiesz = jnp.concatenate([ev_z, iv_z])
+            plot_velocities( particlesx, particlesy, particlesz, velocitiesx, velocitiesy, velocitiesz, t, x_wind, y_wind, z_wind)
+            plot_velocity_histogram(velocitiesx, velocitiesy, velocitiesz, t, nbins=100)
+        if plotfields:
+            plot_fields(Ex, Ey, Ez, t, "E", dx, dy, dz)
+            plot_fields(Bx, By, Bz, t, "B", dx, dy, dz)
+            plot_rho(rho, t, "rho", dx, dy, dz)
+        # plot the particles and save as png file
+        if save_data:
             jnp.save(f'data/rho/rho_{t:}', rho)
             jnp.save(f'data/phi/phi_{t:}', phi)
-    # save the data for the charge density and potential
+        # save the data for the charge density and potential
