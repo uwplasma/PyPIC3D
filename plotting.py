@@ -61,6 +61,24 @@ def plot_fields(fieldx, fieldy, fieldz, t, name, dx, dy, dz):
              f"{name}_y" : np.asarray(fieldy), f"{name}_z" : np.asarray(fieldz)}) 
 # plot the electric fields in the vtk file format
 
+def plot_1dposition(x, name, particle):
+    """
+    Plot the 1D position of a particle.
+
+    Parameters:
+    - x (ndarray): The x-coordinates of the particle.
+    - name (str): The name of the plot.
+
+    Returns:
+    None
+    """
+    plt.plot(x)
+    plt.title(f"{name} Position")
+    plt.xlabel("Time")
+    plt.ylabel("Position")
+    plt.savefig(f"plots/{name}/{particle}_position.png", dpi=300)
+    plt.close()
+
 def plot_positions(x, y, z, t, x_wind, y_wind, z_wind):
     """
     Makes a 3D plot of the positions of the particles.

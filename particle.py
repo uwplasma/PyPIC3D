@@ -32,9 +32,9 @@ def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key):
     - v_z (numpy.ndarray): The z-component of the particles' velocities.
     """
 
-    x = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.0025 * x_wind)
-    y = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.0025 * y_wind)
-    z = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.0025 * z_wind)
+    x = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.005 * x_wind)
+    y = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.005 * y_wind)
+    z = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.005 * z_wind)
     # initialize the positions of the particles
     std = kb * T / mass
     v_x = np.random.normal(0, std, N_particles)
