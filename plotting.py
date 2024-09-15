@@ -80,9 +80,9 @@ def plot_positions(x, y, z, t, x_wind, y_wind, z_wind):
 
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
-    ax.set_xlim( -x_wind, x_wind )
-    ax.set_ylim( -y_wind, y_wind )
-    ax.set_zlim( -z_wind, z_wind )
+    ax.set_xlim( -(2/3)*x_wind, (2/3)*x_wind )
+    ax.set_ylim( -(2/3)*y_wind, (2/3)*y_wind )
+    ax.set_zlim( -(2/3)*z_wind, (2/3)*z_wind )
     ax.scatter(x, y, z)
     ax.set_xlabel('X (m)')
     ax.set_ylabel('Y (m)')
@@ -145,7 +145,38 @@ def plot_velocities(x, y, z, vx, vy, vz, t, x_wind, y_wind, z_wind):
     plt.savefig(f"plots/velocities/velocities.{t:09}.png", dpi=300)
     plt.close()
 
-def cond_decorator(flag, decorator):
-   def decorate(func):
-      return decorator(func).block_until_ready() if flag else func
-   return decorate
+def plot_KE(KE, t):
+    """
+    Plots the kinetic energy of the particles.
+
+    Parameters:
+    KE (array-like): The kinetic energy of the particles.
+    t (array-like): The time value.
+
+    Returns:
+    None
+    """
+    plt.plot(t, KE)
+    plt.xlabel("Time")
+    plt.ylabel("Kinetic Energy")
+    plt.title("Kinetic Energy vs. Time")
+    plt.savefig("plots/KE.png", dpi=300)
+    plt.close()
+
+
+def plot_probe(probe, name):
+    """
+    Plots a probe.
+
+    Parameters:
+    probe (array-like): The probe.
+
+    Returns:
+    None
+    """
+    plt.plot(probe)
+    plt.xlabel("Time")
+    plt.ylabel(f"{name}")
+    plt.title(f"{name} vs. Time")
+    plt.savefig(f"plots/{name}_probe.png", dpi=300)
+    plt.close()
