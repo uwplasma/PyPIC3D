@@ -31,10 +31,11 @@ def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key):
     - v_y (numpy.ndarray): The y-component of the particles' velocities.
     - v_z (numpy.ndarray): The z-component of the particles' velocities.
     """
-
-    x = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.0025 * x_wind)
-    y = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.0025 * y_wind)
-    z = jax.random.uniform(key, shape = (N_particles,), minval=0, maxval=0.0025 * z_wind)
+    initial_wind = 0.0025
+    # what is the initial window for the particles (as a fraction of spatial window)
+    x = jax.random.uniform(key, shape = (N_particles,), minval=-initial_wind*x_wind/2, maxval=initial_wind*x_wind/2)
+    y = jax.random.uniform(key, shape = (N_particles,), minval=-initial_wind*y_wind/2, maxval=initial_wind*y_wind/2)
+    z = jax.random.uniform(key, shape = (N_particles,), minval=-initial_wind*z_wind/2, maxval=initial_wind*z_wind/2)
     # initialize the positions of the particles
     std = kb * T / mass
     v_x = np.random.normal(0, std, N_particles)
@@ -44,7 +45,25 @@ def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key):
     return x, y, z, v_x, v_y, v_z
 
 @jit
-def update_position(x, y, z, vx, vy, vz, dt):
+def periodic_boundary_condition(x_wind, y_wind, z_wind, x, y, z):
+    """
+    Implement periodic boundary conditions for the particles.
+
+    Returns:
+    - x (jax.numpy.ndarray): The x-coordinates of the particles' positions.
+    - y (jax.numpy.ndarray): The y-coordinates of the particles' positions.
+    - z (jax.numpy.ndarray): The z-coordinates of the particles' positions.
+    """
+    x = jnp.where(x > x_wind/2, x - x_wind, x)
+    x = jnp.where(x < -x_wind/2, x + x_wind, x)
+    y = jnp.where(y > y_wind/2, y - y_wind, y)
+    y = jnp.where(y < -y_wind/2, y + y_wind, y)
+    z = jnp.where(z > z_wind/2, z - z_wind, z)
+    z = jnp.where(z < -z_wind/2, z + z_wind, z)
+    return x, y, z    
+
+@jit
+def update_position(x, y, z, vx, vy, vz, dt, x_wind, y_wind, z_wind):
     """
     Update the position of the particles.
 
@@ -64,4 +83,21 @@ def update_position(x, y, z, vx, vy, vz, dt):
     x = x + vx*dt/2
     y = y + vy*dt/2
     z = z + vz*dt/2
+    # update the position of the particles
+    x, y, z = periodic_boundary_condition(x_wind, y_wind, z_wind, x, y, z)
+    # apply periodic boundary conditions
     return x, y, z
+
+@jit
+def total_KE(m, vx, vy, vz):
+    """
+    Calculate the total kinetic energy of the particles.
+
+    Parameters:
+    - m (float): The mass of the particle.
+    - v (jax.numpy.ndarray): The velocity of the particle.
+
+    Returns:
+    - float: The total kinetic energy of the particle.
+    """
+    return 0.5 * m * jnp.sum( vx**2 + vy**2 + vz**2 )
