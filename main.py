@@ -14,19 +14,23 @@ import math
 from pyevtk.hl import gridToVTK
 # Importing relevant libraries
 
-from plotting import plot_fields, plot_positions, plot_rho, plot_velocities, plot_velocity_histogram
-from particle import initial_particles, update_position
-from fields import boris, update_B, calculateE, initialize_fields
+from plotting import plot_fields, plot_positions, plot_rho
+from plotting import plot_velocities, plot_velocity_histogram, plot_KE
+from plotting import plot_probe
+from particle import initial_particles, update_position, total_KE
+from fields import boris, update_B, calculateE, initialize_fields, probe
+from fields import magnitude_probe
 # import code from other files
 
 jax.config.update('jax_platform_name', 'cpu')
 # set Jax to use CPUs
 
 ############################ SETTINGS #####################################################################
-save_data = True
+save_data = False
 plotfields = True
 plotpositions = True
-plotvelocities = True
+plotvelocities = False
+plotKE = True
 # booleans for plotting/saving data
 
 benchmark = False
@@ -67,13 +71,13 @@ N_electrons = 100
 N_ions      = 100
 # specify the number of electrons and ions in the plasma
 
-Nx = 100
-Ny = 100
-Nz = 100
+Nx = 50
+Ny = 50
+Nz = 50
 # specify the number of array spacings in x, y, and z
-x_wind = 10e-2
-y_wind = 10e-2
-z_wind = 10e-2
+x_wind = 5e-2
+y_wind = 5e-2
+z_wind = 5e-2
 # specify the size of the spatial window in meters
 
 dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
@@ -97,7 +101,7 @@ print(f'time window: {t_wind}')
 print(f'Nt:          {Nt}')
 print(f'dt:          {dt}')
 
-plot_freq = 1
+plot_freq = 2
 # how often to plot the data
 
 Ex, Ey, Ez, Bx, By, Bz, phi, rho = initialize_fields(Nx, Ny, Nz)
@@ -113,7 +117,7 @@ ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions
 #################################### Plasma Oscillations ########################################################
 # adding a perturbation to the particle velocities to simulate plasma oscillations
 
-perturbation_period = 5e-12 # starting with 3 dt's for now
+perturbation_period = 5*dt # starting with 5 dt's for now
 
 velocity_perturbation = 5e9 # m/s
 # perturbation velocity
@@ -125,23 +129,30 @@ def perturb_function(t, dt, perturbation_period, velocity_perturbation):
 
 
 #################################### MAIN LOOP #####################################################################
+
+
 M = None
 # set poisson solver precondition to None for now
 
-for t in range(100):
+if plotfields: Eprobe = []
+if plotKE:
+    KE = []
+    KE_time = []
+
+for t in range(Nt):
     print(f'Iteration {t}, Time: {t*dt} s')
 
     ############### SOLVE E FIELD ############################################################################################
     Ex, Ey, Ez, phi, rho = calculateE(N_electrons, electron_x, electron_y, electron_z, \
-               N_ions, ion_x, ion_y, ion_z,                                               \
-               dx, dy, dz, q_e, q_i, rho, eps, phi, t, M, Nx, Ny, Nz, verbose)
+            N_ions, ion_x, ion_y, ion_z,                                               \
+            dx, dy, dz, q_e, q_i, rho, eps, phi, t, M, Nx, Ny, Nz, verbose)
     
     if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(Ex)}")
     # print the maximum value of the electric field
 
     ############### UPDATE ELECTRONS ##########################################################################################
     ev_x, ev_y, ev_z = boris(q_e, Ex, Ey, Ez, Bx, By, Bz, electron_x, \
-                             electron_y, electron_z, ev_x, ev_y, ev_z, dt, me)
+                            electron_y, electron_z, ev_x, ev_y, ev_z, dt, me)
     # implement the boris push algorithm to solve for new electron velocities
 
     if verbose: print(f"Calculating Electron Velocities, Max Value: {jnp.max(ev_x)}")
@@ -151,7 +162,7 @@ for t in range(100):
         ev_x = ev_x.at[:].add(perturb_function(t, dt, perturbation_period, velocity_perturbation))
     # add perturbation to the electron velocities
 
-    electron_x, electron_y, electron_z = update_position(electron_x, electron_y, electron_z, ev_x, ev_y, ev_z, dt)
+    electron_x, electron_y, electron_z = update_position(electron_x, electron_y, electron_z, ev_x, ev_y, ev_z, dt, x_wind, y_wind, z_wind)
     # Update the positions of the particles
 
     if verbose: print(f"Calculating Electron Positions, Max Value: {jnp.max(electron_x)}")
@@ -159,19 +170,19 @@ for t in range(100):
 
     ############### UPDATE IONS ################################################################################################
     iv_x, iv_y, iv_z = boris(q_i, Ex, Ey, Ez, Bx, By, Bz, ion_x, \
-                             ion_y, ion_z, iv_x, iv_y, iv_z, dt, mi)
+                            ion_y, ion_z, iv_x, iv_y, iv_z, dt, mi)
     # use boris push for ion velocities
 
     if verbose: print(f"Calculating Ion Velocities, Max Value: {jnp.max(iv_x)}")
     # print the maximum value of the ion velocities
 
-    ion_x, ion_y, ion_z  = update_position(ion_x, ion_y, ion_z, iv_x, iv_y, iv_z, dt)
+    ion_x, ion_y, ion_z  = update_position(ion_x, ion_y, ion_z, iv_x, iv_y, iv_z, dt, x_wind, y_wind, z_wind)
     # Update the positions of the particles
     if verbose: print(f"Calculating Ion Positions, Max Value: {jnp.max(ion_x)}")
     # print the maximum value of the ion positions
 
     ################ MAGNETIC FIELD UPDATE #######################################################################
-    Bx, By, Bz = update_B(Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
+    #Bx, By, Bz = update_B(Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
     # update the magnetic field using the curl of the electric field
     if verbose: print(f"Calculating Magnetic Field, Max Value: {jnp.max(Bx)}")
     # print the maximum value of the magnetic field
@@ -199,8 +210,19 @@ for t in range(100):
             plot_fields(Ex, Ey, Ez, t, "E", dx, dy, dz)
             plot_fields(Bx, By, Bz, t, "B", dx, dy, dz)
             plot_rho(rho, t, "rho", dx, dy, dz)
+            Eprobe.append(magnitude_probe(Ex, Ey, Ez, int(Nx/2), int(Ny/2), int(Nz/2)))
         # plot the particles and save as png file
+        if plotKE:
+            KE.append(total_KE(me, ev_x, ev_y, ev_z) + total_KE(mi, iv_x, iv_y, iv_z))
+            KE_time.append(t*dt)
+        # calculate the total kinetic energy of the particles
         if save_data:
-            jnp.save(f'data/rho/rho_{t:}', rho)
-            jnp.save(f'data/phi/phi_{t:}', phi)
+            jnp.save(f'data/rho/rho_{t:09}', rho)
+            jnp.save(f'data/phi/phi_{t:09}', phi)
         # save the data for the charge density and potential
+if plotfields:
+    plot_probe(Eprobe, "ElectricField")
+    # plot the electric field probe
+if plotKE:
+    plot_KE(KE, KE_time)
+    # plot the total kinetic energy of the particles
