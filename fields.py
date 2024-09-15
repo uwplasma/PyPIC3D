@@ -135,7 +135,7 @@ def solve_poisson(rho, eps, dx, dy, dz, phi, M = None):
     - phi (ndarray): Solution to the Poisson equation.
     """
     lapl = functools.partial(laplacian, dx=dx, dy=dy, dz=dz)
-    phi, exitcode = jax.scipy.sparse.linalg.cg(lapl, rho/eps, phi, tol=1e-6, maxiter=20000, M=M)
+    phi, exitcode = jax.scipy.sparse.linalg.cg(lapl, rho/eps, phi, tol=1e-6, maxiter=5000, M=M)
     return phi
 
 
