@@ -373,3 +373,39 @@ def update_B(Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt):
     By = By - dt*curly(Ex, Ez, dx, dz)
     Bz = Bz - dt*curlz(Ex, Ey, dx, dy)
     return Bx, By, Bz
+
+
+def probe(fieldx, fieldy, fieldz, x, y, z):
+    """
+    Probe the value of a vector field at a given point.
+
+    Parameters:
+    - fieldx (ndarray): The x-component of the vector field.
+    - fieldy (ndarray): The y-component of the vector field.
+    - fieldz (ndarray): The z-component of the vector field.
+    - x (float): The x-coordinate of the point.
+    - y (float): The y-coordinate of the point.
+    - z (float): The z-coordinate of the point.
+
+    Returns:
+    - tuple: The value of the vector field at the given point.
+    """
+    return fieldx.at[x, y, z].get(), fieldy.at[x, y, z].get(), fieldz.at[x, y, z].get()
+
+
+def magnitude_probe(fieldx, fieldy, fieldz, x, y, z):
+    """
+    Probe the magnitude of a vector field at a given point.
+
+    Parameters:
+    - fieldx (ndarray): The x-component of the vector field.
+    - fieldy (ndarray): The y-component of the vector field.
+    - fieldz (ndarray): The z-component of the vector field.
+    - x (float): The x-coordinate of the point.
+    - y (float): The y-coordinate of the point.
+    - z (float): The z-coordinate of the point.
+
+    Returns:
+    - float: The magnitude of the vector field at the given point.
+    """
+    return jnp.sqrt(fieldx.at[x, y, z].get()**2 + fieldy.at[x, y, z].get()**2 + fieldz.at[x, y, z].get()**2)
