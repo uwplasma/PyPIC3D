@@ -79,8 +79,7 @@ def index_particles(particle, positions, ds):
     Parameters:
     - particle: int
         The index of the particle.
-    - positions: pandas.DataFrame
-        The position array containing the particle positions.
+    - positions (array-like): The position array containing the particle positions.
     - ds: float
         The grid spacing.
 
@@ -409,3 +408,58 @@ def magnitude_probe(fieldx, fieldy, fieldz, x, y, z):
     - float: The magnitude of the vector field at the given point.
     """
     return jnp.sqrt(fieldx.at[x, y, z].get()**2 + fieldy.at[x, y, z].get()**2 + fieldz.at[x, y, z].get()**2)
+@jit
+def number_density(n, Nparticles, particlex, particley, particlez, dx, dy, dz, Nx, Ny, Nz):
+    """
+    Calculate the number density of particles at each grid point.
+
+    Parameters:
+    - n (array-like): The initial number density array.
+    - Nparticles (int): The number of particles.
+    - particlex (array-like): The x-coordinates of the particles.
+    - particley (array-like): The y-coordinates of the particles.
+    - particlez (array-like): The z-coordinates of the particles.
+    - dx (float): The grid spacing in the x-direction.
+    - dy (float): The grid spacing in the y-direction.
+    - dz (float): The grid spacing in the z-direction.
+
+    Returns:
+    - ndarray: The number density of particles at each grid point.
+    """
+
+    n = update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, 1, n)
+
+    return n
+
+def freq(n, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
+    ne = number_density(n, Nelectrons, ex, ey, ez, dx, dy, dz, Nx, Ny, Nz)
+    # compute the number density of the electrons
+    eps = 8.854e-12
+    # permitivity of freespace
+    q_e = -1.602e-19
+    # charge of electron
+    me = 9.1093837e-31 # Kg
+    # mass of the electron
+    c1 = q_e**2 / (eps*me)
+
+    mask = jnp.where(  ne.at[int(Nx/4):int(3*Nx/4), int(Ny/4):int(3*Ny/4), int(Nz/4):int(3*Nz/4)].get()  != 0  )
+    # Calculate mean using the mask
+    mean_nonzero = jnp.mean(ne.at[int(Nx/4):int(3*Nx/4), int(Ny/4):int(3*Ny/4), int(Nz/4):int(3*Nz/4)].get()[mask])
+    freq = jnp.sqrt( c1 * mean_nonzero )
+    return freq
+# computes the average plasma frequency over the middle 75% of the world volume
+
+def freq_probe(n, x, y, z, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
+    ne = number_density(n, Nelectrons, ex, ey, ez, dx, dy, dz, Nx, Ny, Nz)
+    # compute the number density of the electrons
+    eps = 8.854e-12
+    # permitivity of freespace
+    q_e = -1.602e-19
+    # charge of electron
+    me = 9.1093837e-31 # Kg
+    # mass of the electron
+    xi, yi, zi = int(x/dx + Nx/2), int(y/dy + Ny/2), int(z/dz + Nz/2)
+    # get the array spacings for x, y, and z
+    c1 = q_e**2 / (eps*me)
+    freq = jnp.sqrt( c1 * ne.at[xi,yi,zi].get() )    # calculate the plasma frequency at the array point: x, y, z
+    return freq
