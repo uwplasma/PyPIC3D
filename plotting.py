@@ -7,6 +7,7 @@ from jax import jit
 import jax.numpy as jnp
 import math
 from pyevtk.hl import gridToVTK
+import scipy
 
 def plot_rho(rho, t, name, dx, dy, dz):
     """
@@ -198,3 +199,42 @@ def plot_probe(probe, name):
     plt.title(f"{name} vs. Time")
     plt.savefig(f"plots/{name}_probe.png", dpi=300)
     plt.close()
+
+def fft(signal, dt):
+    """
+    Perform a Fast Fourier Transform (FFT) on the given signal.
+
+    Parameters:
+    - signal: The input signal to be transformed. It can be a list or a numpy array.
+    - dt: The time interval between samples in the signal.
+
+    Returns:
+    - xf: The frequency index for the FFT.
+    - yf: The transformed signal after FFT.
+
+    Note:
+    - The input signal will be converted to a numpy array if it is a list.
+    """
+    if type(signal) is list:
+        signal = np.asarray(signal)
+
+    N = signal.shape[0]
+    # get the total length of the signal
+    yf = scipy.fft.fft(signal)[:int(N/2)]
+    # do a fast fourier transform
+    xf = scipy.fft.fftfreq(N, dt)[:int(N/2)]
+    # get the frequency index for the fast fourier transform
+    return xf, yf
+
+
+def plot_fft(signal, dt, name, savename):
+    xf, yf = fft(signal, dt)
+
+    plt.plot(xf, np.abs(yf))
+    plt.xlabel("Frequency (Hz)")
+    plt.ylabel("Amplitude")
+    plt.title(f"FFT of {name}")
+    plt.savefig(f"plots/{savename}.png", dpi=300)
+    plt.close()
+    return xf[ np.argmax(np.abs(yf)[1:]) ]
+    # plot the fft of a signal
