@@ -165,7 +165,7 @@ def compute_pe(phi, rho, eps, dx, dy, dz):
 
 def calculateE(N_electrons, electron_x, electron_y, electron_z, \
                N_ions, ion_x, ion_y, ion_z,                     \
-               dx, dy, dz, q_e, q_i, rho, eps, phi, t, M, Nx, Ny, Nz, verbose):
+               dx, dy, dz, q_e, q_i, rho, eps, phi, t, M, Nx, Ny, Nz, verbose, GPUs):
     """
                 Calculates the electric field components (Ex, Ey, Ez), electric potential (phi), and charge density (rho) based on the given parameters.
 
@@ -192,6 +192,7 @@ def calculateE(N_electrons, electron_x, electron_y, electron_z, \
                 - Ny (int): Number of grid points in the y-direction.
                 - Nz (int): Number of grid points in the z-direction.
                 - verbose (bool): Whether to print additional information.
+                - GPUs (bool): Whether to use GPUs for Poisson solver.
 
                 Returns:
                 - Ex (array-like): x-component of the electric field.
@@ -200,19 +201,37 @@ def calculateE(N_electrons, electron_x, electron_y, electron_z, \
                 - phi (array-like): Updated electric potential.
                 - rho (array-like): Updated charge density.
                 """
-    rho = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
-    # reset value of charge density
-    rho = update_rho(N_electrons, electron_x, electron_y, electron_z, dx, dy, dz, q_e, rho)
-    rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, rho)
-    # update the charge density field
+    
+    if GPUs:
+        with jax.default_device(jax.devices('gpu')[0]):
+                rho = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+                # reset value of charge density
+                rho = update_rho(N_electrons, electron_x, electron_y, electron_z, dx, dy, dz, q_e, rho)
+                rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, rho)
+                # update the charge density field
+    else:
+        rho = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+        # reset value of charge density
+        rho = update_rho(N_electrons, electron_x, electron_y, electron_z, dx, dy, dz, q_e, rho)
+        rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, rho)
+        # update the charge density field
 
     if verbose: print(f"Calculating Charge Density, Max Value: {jnp.max(rho)}")
     # print the maximum value of the charge density
 
-    if t == 0:
-        phi = solve_poisson(rho, eps, dx, dy, dz, phi=rho, M=None)
+    if GPUs:
+        with jax.default_device(jax.devices('gpu')[0]):
+                if t == 0:
+                    phi = solve_poisson(rho, eps, dx, dy, dz, phi=rho, M=None)
+                else:
+                    phi = solve_poisson(rho, eps, dx, dy, dz, phi=phi, M=M)
     else:
-        phi = solve_poisson(rho, eps, dx, dy, dz, phi=phi, M=M)
+        if t == 0:
+            phi = solve_poisson(rho, eps, dx, dy, dz, phi=rho, M=None)
+        else:
+            phi = solve_poisson(rho, eps, dx, dy, dz, phi=phi, M=M)
+
+
 
     if verbose: print(f"Calculating Electric Potential, Max Value: {jnp.max(phi)}")
     # print the maximum value of the electric potential
