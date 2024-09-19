@@ -25,6 +25,10 @@ from fields import magnitude_probe,  freq_probe, freq
 jax.config.update('jax_platform_name', 'cpu')
 # set Jax to use CPUs
 
+############################# GPUS   #######################################################################
+GPUs = True #False
+# booleans for using GPUs to solve Poisson's equation
+
 ############################ SETTINGS #####################################################################
 save_data = False
 plotfields = False
@@ -68,13 +72,13 @@ N_electrons = 1000
 N_ions      = 1000
 # specify the number of electrons and ions in the plasma
 
-Nx = 50
-Ny = 50
-Nz = 50
+Nx = 30
+Ny = 30
+Nz = 30
 # specify the number of array spacings in x, y, and z
-x_wind = 5e-2
-y_wind = 5e-2
-z_wind = 5e-2
+x_wind = 3e-2
+y_wind = 3e-2
+z_wind = 3e-2
 # specify the size of the spatial window in meters
 
 dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
@@ -161,13 +165,13 @@ for num in range(10):
         KE_time = []
     if plasmaFreq: freqs = []
 
-    for t in range(int(Nt/2)):
+    for t in range(100):
         print(f'Iteration {t}, Time: {t*dt} s')
 
         ############### SOLVE E FIELD ############################################################################################
         Ex, Ey, Ez, phi, rho = calculateE(N_electrons, electron_x, electron_y, electron_z, \
                 N_ions, ion_x, ion_y, ion_z,                                               \
-                dx, dy, dz, q_e, q_i, rho, eps, phi, t, M, Nx, Ny, Nz, verbose)
+                dx, dy, dz, q_e, q_i, rho, eps, phi, t, M, Nx, Ny, Nz, verbose, GPUs)
         
         if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(Ex)}")
         # print the maximum value of the electric field
