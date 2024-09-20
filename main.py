@@ -17,11 +17,11 @@ import equinox as eqx
 
 from plotting import plot_fields, plot_positions, plot_rho
 from plotting import plot_velocities, plot_velocity_histogram, plot_KE
-from plotting import plot_probe, plot_fft, phase_space
+from plotting import plot_probe, plot_fft, phase_space, multi_phase_space
 from particle import initial_particles, update_position, total_KE
 from fields import boris, update_B, calculateE, initialize_fields, probe
 from fields import magnitude_probe,  freq_probe, freq
-#from model import PoissonPrecondition
+from model import PoissonPrecondition
 # import code from other files
 
 jax.config.update('jax_platform_name', 'cpu')
@@ -36,9 +36,9 @@ NN = False
 # booleans for using a neural network to precondition Poisson's equation solver
 
 ############################ SETTINGS #####################################################################
-save_data = True
+save_data = False
 plotfields = False
-plotpositions = False
+plotpositions = True
 plotvelocities = False
 plotKE = False
 plasmaFreq = False
@@ -68,15 +68,15 @@ kb = 1.380649e-23 # J/K
 # Boltzmann's constant
 me = 9.1093837e-31 # Kg
 # mass of the electron
-mi = 1.67e-23 # Kg
+mi = 1.67e-27 # Kg
 # mass of the ion
 q_e = -1.602e-19
 # charge of electron
 q_i = 1.602e-19
 # charge of ion
-Te = 100 # K
+Te = 10000 # K
 # electron temperature
-Ti = 100 # K
+Ti = 10000 # K
 # ion temperature
 # assuming an isothermal plasma for now
 
@@ -142,12 +142,12 @@ def perturb_function(t, dt, perturbation_period, velocity_perturbation):
 
 ##################################### Neural Network Preconditioner ################################################
 
-# key = jax.random.PRNGKey(0)
-# # define the random key
-# model = PoissonPrecondition( Nx=Nx, Ny=Ny, Nz=Nz, hidden_dim=500, key=key)
-# # define the model
-# model = eqx.tree_deserialise_leaves("Preconditioner.eqx", model)
-# # load the model from file
+key = jax.random.PRNGKey(0)
+# define the random key
+model = PoissonPrecondition( Nx=Nx, Ny=Ny, Nz=Nz, hidden_dim=500, key=key)
+# define the model
+#model = eqx.tree_deserialise_leaves("Preconditioner.eqx", model)
+# load the model from file
 
 #################################### MAIN LOOP #####################################################################
 
@@ -258,12 +258,16 @@ for t in range(Nt):
             jnp.save(f'data/phi/phi_{t:09}', phi)
         # save the data for the charge density and potential
         if phaseSpace:
-            phase_space(electron_x, ev_x, t, "Electronx")
-            phase_space(electron_y, ev_y, t, "Electrony")
-            phase_space(electron_z, ev_z, t, "Electronz")
-            phase_space(ion_x, iv_x, t, "Ionx")
-            phase_space(ion_y, iv_y, t, "Iony")
-            phase_space(ion_z, iv_z, t, "Ionz")
+            # phase_space(electron_x, ev_x, t, "Electronx")
+            # phase_space(electron_y, ev_y, t, "Electrony")
+            # phase_space(electron_z, ev_z, t, "Electronz")
+            # phase_space(ion_x, iv_x, t, "Ionx")
+            # phase_space(ion_y, iv_y, t, "Iony")
+            # phase_space(ion_z, iv_z, t, "Ionz")
+
+            multi_phase_space(electron_x, ion_x, ev_x, iv_x, t, "Electrons", "Ions", "x", x_wind)
+            multi_phase_space(electron_y, ion_y, ev_y, iv_y, t, "Electrons", "Ions", "y", y_wind)
+            multi_phase_space(electron_z, ion_z, ev_z, iv_z, t, "Electrons", "Ions", "z", z_wind)
         # save the phase space data
 if plotfields:
     plot_probe(Eprobe, "ElectricField")

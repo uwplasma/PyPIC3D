@@ -54,12 +54,12 @@ def periodic_boundary_condition(x_wind, y_wind, z_wind, x, y, z):
     - y (jax.numpy.ndarray): The y-coordinates of the particles' positions.
     - z (jax.numpy.ndarray): The z-coordinates of the particles' positions.
     """
-    x = jnp.where(x > x_wind/2, x - x_wind, x)
-    x = jnp.where(x < -x_wind/2, x + x_wind, x)
-    y = jnp.where(y > y_wind/2, y - y_wind, y)
-    y = jnp.where(y < -y_wind/2, y + y_wind, y)
-    z = jnp.where(z > z_wind/2, z - z_wind, z)
-    z = jnp.where(z < -z_wind/2, z + z_wind, z)
+    x = jnp.where(x > x_wind/2, -x_wind/2, x)
+    x = jnp.where(x < -x_wind/2,  x_wind/2, x)
+    y = jnp.where(y > y_wind/2, -y_wind/2, y)
+    y = jnp.where(y < -y_wind/2,  y_wind/2, y)
+    z = jnp.where(z > z_wind/2, -z_wind/2, z)
+    z = jnp.where(z < -z_wind/2,  z_wind/2, z)
     return x, y, z    
 
 @jit
@@ -99,6 +99,7 @@ def update_position(x, y, z, vx, vy, vz, dt, x_wind, y_wind, z_wind, bc='periodi
     y = euler_update(y, vy, dt)
     z = euler_update(z, vz, dt)
     # update the position of the particles
+
     if bc == 'periodic':
         x, y, z = periodic_boundary_condition(x_wind, y_wind, z_wind, x, y, z)
     # apply periodic boundary conditions

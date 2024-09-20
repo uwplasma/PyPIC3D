@@ -291,12 +291,12 @@ def solve_poisson(rho, eps, dx, dy, dz, phi, bc='periodic', M = None):
     elif bc == 'neumann':
         lapl = functools.partial(neumann_laplacian, dx=dx, dy=dy, dz=dz)
     #phi = conjugate_grad(lapl, rho/eps, phi, tol=1e-6, maxiter=10000, M=M)
-    phi, exitcode = jax.scipy.sparse.linalg.cg(lapl, rho/eps, phi, tol=1e-6, maxiter=5000, M=M)
+    phi, exitcode = jax.scipy.sparse.linalg.cg(lapl, -rho/eps, phi, tol=1e-6, maxiter=5000, M=M)
     return phi
 
 
 
-def compute_pe(phi, rho, eps, dx, dy, dz, bc):
+def compute_pe(phi, rho, eps, dx, dy, dz, bc='periodic'):
     """
     Compute the relative percentage difference of the Poisson solver.
 
@@ -312,7 +312,12 @@ def compute_pe(phi, rho, eps, dx, dy, dz, bc):
     Returns:
     float: The relative percentage difference of the Poisson solver.
     """
-    x = laplacian(phi, dx, dy, dz, bc=bc)
+    if bc == 'periodic':
+        x = periodic_laplacian(phi, dx, dy, dz)
+    elif bc == 'dirichlet':
+        x = dirichlet_laplacian(phi, dx, dy, dz)
+    elif bc == 'neumann':
+        x = neumann_laplacian(phi, dx, dy, dz)
     y = rho/eps
     poisson_error = x - y
     index         = jnp.argmax(poisson_error)
