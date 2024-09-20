@@ -4,10 +4,14 @@ import matplotlib.pyplot as plt
 import jax
 from jax import random
 from jax import jit
+from jax import lax
+from jax._src.scipy.sparse.linalg import _vdot_real_tree, _add, _sub, _mul
+from jax.tree_util import tree_leaves
 import jax.numpy as jnp
 import math
 from pyevtk.hl import gridToVTK
 import functools
+from functools import partial
 
 
 
@@ -116,7 +120,83 @@ def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, rho):
     
     return jax.lax.fori_loop(0, Nparticles-1, addto_rho, rho )
 
-@jit
+
+# def conjugate_grad(A, b, x0, tol=1e-6, atol=0.0, maxiter=10000, M=None):
+
+#     _dot = functools.partial(jnp.dot, precision=lax.Precision.HIGHEST)
+
+#     if M is None:
+#         noM = True
+#         M = lambda x: x
+#     else:
+#         noM = False
+#         M = partial(_dot, M)
+
+#     # tolerance handling uses the "non-legacy" behavior of scipy.sparse.linalg.cg
+#     bs = _vdot_real_tree(b, b)
+#     atol2 = jnp.maximum(jnp.square(tol) * bs, jnp.square(atol))
+
+#     # https://en.wikipedia.org/wiki/Conjugate_gradient_method#The_preconditioned_conjugate_gradient_method
+
+#     def cond_fun(value):
+#         _, r, gamma, _, k = value
+#         rs = gamma.real if noM is True else _vdot_real_tree(r, r)
+#         return (rs > atol2) & (k < maxiter)
+
+
+#     def body_fun(value):
+#         x, r, gamma, p, k = value
+#         Ap = A(p)
+#         alpha = gamma / _vdot_real_tree(p, Ap).astype(dtype)
+#         x_ = _add(x, _mul(alpha, p))
+#         r_ = _sub(r, _mul(alpha, Ap))
+#         z_ = M(r_)
+#         gamma_ = _vdot_real_tree(r_, z_).astype(dtype)
+#         beta_ = gamma_ / gamma
+#         p_ = _add(z_, _mul(beta_, p))
+#         return x_, r_, gamma_, p_, k + 1
+
+
+#     r0 = _sub(b, A(x0))
+#     p0 = z0 = M(r0)
+#     dtype = jnp.result_type(*tree_leaves(p0))
+#     gamma0 = _vdot_real_tree(r0, z0).astype(dtype)
+#     initial_value = (x0, r0, gamma0, p0, 0)
+
+#     x_final, *_ = lax.while_loop(cond_fun, body_fun, initial_value)
+
+#     return x_final
+
+
+
+
+
+# @jit
+# def cg_loop(p, rk_norm, x, residual, dx, dy, dz):
+#     Ap = laplacian(p, dx, dy, dz)
+#     pAp = jnp.tensordot(p, Ap, axes=3)
+#     alpha = rk_norm / pAp
+#     x = x + alpha * p
+#     residual = residual - alpha * Ap
+#     newrk_norm = jnp.linalg.norm(residual)
+#     beta = newrk_norm / rk_norm
+#     rk_norm = newrk_norm
+#     p = beta * p + residual
+#     return x, residual, rk_norm, p
+
+# def conjugate_grad(b, x, dx, dy, dz, tol=1e-6, max_iter=10000):
+#     residual  = b - laplacian(x, dx, dy, dz)
+#     # r = b - Ax
+#     p = residual
+#     rk_norm = jnp.linalg.norm(residual)
+#     for k in range(max_iter):
+#         x, residual, rk_norm, p = cg_loop(p, rk_norm, x, residual, dx, dy, dz)
+#         if rk_norm < tol:
+#             return x
+#     print(f"Did not converge, residual norm = {rk_norm}")
+#     return x
+
+
 def solve_poisson(rho, eps, dx, dy, dz, phi, M = None):
     """
     Solve the Poisson equation for electrostatic potential.
@@ -134,6 +214,7 @@ def solve_poisson(rho, eps, dx, dy, dz, phi, M = None):
     - phi (ndarray): Solution to the Poisson equation.
     """
     lapl = functools.partial(laplacian, dx=dx, dy=dy, dz=dz)
+    #phi = conjugate_grad(lapl, rho/eps, phi, tol=1e-6, maxiter=10000, M=M)
     phi, exitcode = jax.scipy.sparse.linalg.cg(lapl, rho/eps, phi, tol=1e-6, maxiter=5000, M=M)
     return phi
 
