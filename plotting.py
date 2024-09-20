@@ -238,3 +238,23 @@ def plot_fft(signal, dt, name, savename):
     plt.close()
     return xf[ np.argmax(np.abs(yf)[1:]) ]
     # plot the fft of a signal
+
+def phase_space(x, vx, t, name):
+    """
+    Plot the phase space of the particles.
+
+    Parameters:
+    - x (ndarray): The x-coordinates of the particles.
+    - vx (ndarray): The x-component of the velocities of the particles.
+    - t (ndarray): The time values.
+    - name (str): The name of the plot.
+
+    Returns:
+    None
+    """
+    plt.scatter(x, vx)
+    plt.xlabel("Position")
+    plt.ylabel("Velocity")
+    plt.title(f"{name} Phase Space")
+    plt.savefig(f"plots/phase_space/{name}_phase_space.{t:09}.png", dpi=300)
+    plt.close()
