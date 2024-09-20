@@ -17,11 +17,11 @@ import equinox as eqx
 
 from plotting import plot_fields, plot_positions, plot_rho
 from plotting import plot_velocities, plot_velocity_histogram, plot_KE
-from plotting import plot_probe, plot_fft
+from plotting import plot_probe, plot_fft, phase_space
 from particle import initial_particles, update_position, total_KE
 from fields import boris, update_B, calculateE, initialize_fields, probe
 from fields import magnitude_probe,  freq_probe, freq
-from model import PoissonPrecondition
+#from model import PoissonPrecondition
 # import code from other files
 
 jax.config.update('jax_platform_name', 'cpu')
@@ -42,6 +42,7 @@ plotpositions = False
 plotvelocities = False
 plotKE = False
 plasmaFreq = False
+phaseSpace = True
 # booleans for plotting/saving data
 
 benchmark = False
@@ -53,6 +54,11 @@ verbose   = False
 ############################ INITIALIZE EVERYTHING #######################################################
 # I am starting by simulating a hydrogen plasma
 print("Initializing Simulation...")
+
+
+############################# SIMULATION PARAMETERS ########################################################
+bc = "periodic"
+# boundary conditions: periodic, dirichlet, neumann
 
 eps = 8.854e-12
 # permitivity of freespace
@@ -98,7 +104,7 @@ courant_number = 1
 dt = courant_number / (  C * ( (1/dx) + (1/dy) + (1/dz) )   )
 # calculate spatial resolution using courant condition
 
-t_wind = 2e-9
+t_wind = 1e-9
 # time window for simultion
 Nt     = int( t_wind / dt )
 # Nt for resolution
@@ -136,12 +142,12 @@ def perturb_function(t, dt, perturbation_period, velocity_perturbation):
 
 ##################################### Neural Network Preconditioner ################################################
 
-key = jax.random.PRNGKey(0)
-# define the random key
-model = PoissonPrecondition( Nx=Nx, Ny=Ny, Nz=Nz, hidden_dim=500, key=key)
-# define the model
-model = eqx.tree_deserialise_leaves("Preconditioner.eqx", model)
-# load the model from file
+# key = jax.random.PRNGKey(0)
+# # define the random key
+# model = PoissonPrecondition( Nx=Nx, Ny=Ny, Nz=Nz, hidden_dim=500, key=key)
+# # define the model
+# model = eqx.tree_deserialise_leaves("Preconditioner.eqx", model)
+# # load the model from file
 
 #################################### MAIN LOOP #####################################################################
 
@@ -169,7 +175,7 @@ for t in range(Nt):
 
     Ex, Ey, Ez, phi, rho = calculateE(N_electrons, electron_x, electron_y, electron_z, \
             N_ions, ion_x, ion_y, ion_z,                                               \
-            dx, dy, dz, q_e, q_i, rho, eps, phi, t, M, Nx, Ny, Nz, verbose, GPUs)
+            dx, dy, dz, q_e, q_i, rho, eps, phi, t, M, Nx, Ny, Nz, bc, verbose, GPUs)
     
     if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(Ex)}")
     # print the maximum value of the electric field
@@ -186,7 +192,7 @@ for t in range(Nt):
         ev_x = ev_x.at[:].add(perturb_function(t, dt, perturbation_period, velocity_perturbation))
     # add perturbation to the electron velocities
 
-    electron_x, electron_y, electron_z = update_position(electron_x, electron_y, electron_z, ev_x, ev_y, ev_z, dt, x_wind, y_wind, z_wind)
+    electron_x, electron_y, electron_z = update_position(electron_x, electron_y, electron_z, ev_x, ev_y, ev_z, dt, x_wind, y_wind, z_wind, bc)
     # Update the positions of the particles
 
     if verbose: print(f"Calculating Electron Positions, Max Value: {jnp.max(electron_x)}")
@@ -200,7 +206,7 @@ for t in range(Nt):
     if verbose: print(f"Calculating Ion Velocities, Max Value: {jnp.max(iv_x)}")
     # print the maximum value of the ion velocities
 
-    ion_x, ion_y, ion_z  = update_position(ion_x, ion_y, ion_z, iv_x, iv_y, iv_z, dt, x_wind, y_wind, z_wind)
+    ion_x, ion_y, ion_z  = update_position(ion_x, ion_y, ion_z, iv_x, iv_y, iv_z, dt, x_wind, y_wind, z_wind, bc)
     # Update the positions of the particles
     if verbose: print(f"Calculating Ion Positions, Max Value: {jnp.max(ion_x)}")
     # print the maximum value of the ion positions
@@ -251,6 +257,14 @@ for t in range(Nt):
             jnp.save(f'data/rho/rho_{t:09}', rho)
             jnp.save(f'data/phi/phi_{t:09}', phi)
         # save the data for the charge density and potential
+        if phaseSpace:
+            phase_space(electron_x, ev_x, t, "Electronx")
+            phase_space(electron_y, ev_y, t, "Electrony")
+            phase_space(electron_z, ev_z, t, "Electronz")
+            phase_space(ion_x, iv_x, t, "Ionx")
+            phase_space(ion_y, iv_y, t, "Iony")
+            phase_space(ion_z, iv_z, t, "Ionz")
+        # save the phase space data
 if plotfields:
     plot_probe(Eprobe, "ElectricField")
     # plot the electric field probe

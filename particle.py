@@ -63,7 +63,22 @@ def periodic_boundary_condition(x_wind, y_wind, z_wind, x, y, z):
     return x, y, z    
 
 @jit
-def update_position(x, y, z, vx, vy, vz, dt, x_wind, y_wind, z_wind):
+def euler_update(s, v, dt):
+    """
+    Update the position of the particles using the Euler method.
+
+    Parameters:
+    - s (jax.numpy.ndarray): The current position of the particles.
+    - v (jax.numpy.ndarray): The velocity of the particles.
+    - dt (float): The time step for the update.
+
+    Returns:
+    - jax.numpy.ndarray: The updated position of the particles.
+    """
+    return s + v * dt
+
+
+def update_position(x, y, z, vx, vy, vz, dt, x_wind, y_wind, z_wind, bc='periodic'):
     """
     Update the position of the particles.
 
@@ -79,12 +94,13 @@ def update_position(x, y, z, vx, vy, vz, dt, x_wind, y_wind, z_wind):
     Returns:
     tuple: A tuple containing the updated x, y, and z coordinates of the particle.
     """
-    
-    x = x + vx*dt/2
-    y = y + vy*dt/2
-    z = z + vz*dt/2
+
+    x = euler_update(x, vx, dt)
+    y = euler_update(y, vy, dt)
+    z = euler_update(z, vz, dt)
     # update the position of the particles
-    x, y, z = periodic_boundary_condition(x_wind, y_wind, z_wind, x, y, z)
+    if bc == 'periodic':
+        x, y, z = periodic_boundary_condition(x_wind, y_wind, z_wind, x, y, z)
     # apply periodic boundary conditions
     return x, y, z
 

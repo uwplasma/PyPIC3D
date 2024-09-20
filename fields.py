@@ -52,9 +52,9 @@ def initialize_fields(Nx, Ny, Nz):
 
 
 @jit
-def laplacian(field, dx, dy, dz):
+def periodic_laplacian(field, dx, dy, dz):
     """
-    Calculates the Laplacian of a given field.
+    Calculates the Laplacian of a given field with Periodic boundary conditions.
 
     Parameters:
     - field: numpy.ndarray
@@ -73,6 +73,75 @@ def laplacian(field, dx, dy, dz):
     x_comp = (jnp.roll(field, shift=1, axis=0) + jnp.roll(field, shift=-1, axis=0) - 2*field)/(dx*dx)
     y_comp = (jnp.roll(field, shift=1, axis=1) + jnp.roll(field, shift=-1, axis=1) - 2*field)/(dy*dy)
     z_comp = (jnp.roll(field, shift=1, axis=2) + jnp.roll(field, shift=-1, axis=2) - 2*field)/(dz*dz)
+    return x_comp + y_comp + z_comp
+
+@jit
+def neumann_laplacian(field, dx, dy, dz):
+    """
+    Calculates the Laplacian of a given field with Neumann boundary conditions.
+
+    Parameters:
+    - field: numpy.ndarray
+        The input field.
+    - dx: float
+        The spacing between grid points in the x-direction.
+    - dy: float
+        The spacing between grid points in the y-direction.
+    - dz: float
+        The spacing between grid points in the z-direction.
+    - bc: str
+        The boundary condition.
+
+    Returns:
+    - numpy.ndarray
+        The Laplacian of the field.
+    """
+
+
+    x_comp = (jnp.roll(field, shift=1, axis=0) + jnp.roll(field, shift=-1, axis=0) - 2*field)/(dx*dx) 
+    y_comp = (jnp.roll(field, shift=1, axis=1) + jnp.roll(field, shift=-1, axis=1) - 2*field)/(dy*dy)
+    z_comp = (jnp.roll(field, shift=1, axis=2) + jnp.roll(field, shift=-1, axis=2) - 2*field)/(dz*dz)
+    Nx, Ny, Nz = field.shape[0], field.shape[1], field.shape[2]
+    x_comp.at[0, :, :] = 0
+    x_comp.at[Nx-1, :, :] = 0
+    y_comp.at[:, 0, :] = 0
+    y_comp.at[:, Ny-1, :] = 0
+    z_comp.at[:, :, 0] = 0
+    z_comp.at[:, :, Nz-1] = 0
+
+    return x_comp + y_comp + z_comp
+@jit
+def dirichlet_laplacian(field, dx, dy, dz):
+    """
+    Calculates the Laplacian of a given field with Dirichlet boundary conditions.
+
+    Parameters:
+    - field: numpy.ndarray
+        The input field.
+    - dx: float
+        The spacing between grid points in the x-direction.
+    - dy: float
+        The spacing between grid points in the y-direction.
+    - dz: float
+        The spacing between grid points in the z-direction.
+    - bc: str
+        The boundary condition.
+
+    Returns:
+    - numpy.ndarray
+        The Laplacian of the field.
+    """
+    x_comp = (jnp.roll(field, shift=1, axis=0) + jnp.roll(field, shift=-1, axis=0) - 2*field)/(dx*dx)
+    y_comp = (jnp.roll(field, shift=1, axis=1) + jnp.roll(field, shift=-1, axis=1) - 2*field)/(dy*dy)
+    z_comp = (jnp.roll(field, shift=1, axis=2) + jnp.roll(field, shift=-1, axis=2) - 2*field)/(dz*dz)
+    Nx, Ny, Nz = field.shape[0], field.shape[1], field.shape[2]
+    x_comp.at[0, :, :] = ((jnp.roll(field, shift=1, axis=0) - 2*field).at[0, :, :].get()/(dx*dx))
+    x_comp.at[Nx-1, :, :] = ((jnp.roll(field, shift=-1, axis=0) - 2*field).at[Nx-1, :, :].get()/(dx*dx))
+    y_comp.at[:, 0, :] = ((jnp.roll(field, shift=1, axis=1) - 2*field).at[:, 0, :].get()/(dy*dy))
+    y_comp.at[:, Ny-1, :] = ((jnp.roll(field, shift=-1, axis=1) - 2*field).at[:, Ny-1, :].get()/(dy*dy))
+    z_comp.at[:, :, 0] = ((jnp.roll(field, shift=1, axis=2) - 2*field).at[:, :, 0].get()/(dz*dz))
+    z_comp.at[:, :, Nz-1] = ((jnp.roll(field, shift=-1, axis=2) - 2*field).at[:, :, Nz-1].get()/(dz*dz))
+
     return x_comp + y_comp + z_comp
 
 @jit
@@ -197,7 +266,7 @@ def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, rho):
 #     return x
 
 
-def solve_poisson(rho, eps, dx, dy, dz, phi, M = None):
+def solve_poisson(rho, eps, dx, dy, dz, phi, bc='periodic', M = None):
     """
     Solve the Poisson equation for electrostatic potential.
 
@@ -208,19 +277,26 @@ def solve_poisson(rho, eps, dx, dy, dz, phi, M = None):
     - dy (float): Grid spacing in the y-direction.
     - dz (float): Grid spacing in the z-direction.
     - phi (ndarray): Initial guess for the electrostatic potential.
+    - bc (str): Boundary condition.
     - M (ndarray, optional): Preconditioner matrix for the conjugate gradient solver.
 
     Returns:
     - phi (ndarray): Solution to the Poisson equation.
     """
-    lapl = functools.partial(laplacian, dx=dx, dy=dy, dz=dz)
+
+    if bc == 'periodic':
+        lapl = functools.partial(periodic_laplacian, dx=dx, dy=dy, dz=dz)
+    elif bc == 'dirichlet':
+        lapl = functools.partial(dirichlet_laplacian, dx=dx, dy=dy, dz=dz)
+    elif bc == 'neumann':
+        lapl = functools.partial(neumann_laplacian, dx=dx, dy=dy, dz=dz)
     #phi = conjugate_grad(lapl, rho/eps, phi, tol=1e-6, maxiter=10000, M=M)
     phi, exitcode = jax.scipy.sparse.linalg.cg(lapl, rho/eps, phi, tol=1e-6, maxiter=5000, M=M)
     return phi
 
 
 
-def compute_pe(phi, rho, eps, dx, dy, dz):
+def compute_pe(phi, rho, eps, dx, dy, dz, bc):
     """
     Compute the relative percentage difference of the Poisson solver.
 
@@ -231,11 +307,12 @@ def compute_pe(phi, rho, eps, dx, dy, dz):
     dx (float): The grid spacing in the x-direction.
     dy (float): The grid spacing in the y-direction.
     dz (float): The grid spacing in the z-direction.
+    bc (str): The boundary condition.
 
     Returns:
     float: The relative percentage difference of the Poisson solver.
     """
-    x = laplacian(phi, dx, dy, dz)
+    x = laplacian(phi, dx, dy, dz, bc=bc)
     y = rho/eps
     poisson_error = x - y
     index         = jnp.argmax(poisson_error)
@@ -246,7 +323,7 @@ def compute_pe(phi, rho, eps, dx, dy, dz):
 
 def calculateE(N_electrons, electron_x, electron_y, electron_z, \
                N_ions, ion_x, ion_y, ion_z,                     \
-               dx, dy, dz, q_e, q_i, rho, eps, phi, t, M, Nx, Ny, Nz, verbose, GPUs):
+               dx, dy, dz, q_e, q_i, rho, eps, phi, t, M, Nx, Ny, Nz, bc, verbose, GPUs):
     """
                 Calculates the electric field components (Ex, Ey, Ez), electric potential (phi), and charge density (rho) based on the given parameters.
 
@@ -272,6 +349,7 @@ def calculateE(N_electrons, electron_x, electron_y, electron_z, \
                 - Nx (int): Number of grid points in the x-direction.
                 - Ny (int): Number of grid points in the y-direction.
                 - Nz (int): Number of grid points in the z-direction.
+                - bc (str): Boundary condition.
                 - verbose (bool): Whether to print additional information.
                 - GPUs (bool): Whether to use GPUs for Poisson solver.
 
@@ -303,14 +381,14 @@ def calculateE(N_electrons, electron_x, electron_y, electron_z, \
     if GPUs:
         with jax.default_device(jax.devices('gpu')[0]):
                 if t == 0:
-                    phi = solve_poisson(rho, eps, dx, dy, dz, phi=rho, M=None)
+                    phi = solve_poisson(rho, eps, dx, dy, dz, phi=rho, bc=bc, M=None)
                 else:
-                    phi = solve_poisson(rho, eps, dx, dy, dz, phi=phi, M=M)
+                    phi = solve_poisson(rho, eps, dx, dy, dz, phi=phi, bc=bc, M=M)
     else:
         if t == 0:
-            phi = solve_poisson(rho, eps, dx, dy, dz, phi=rho, M=None)
+            phi = solve_poisson(rho, eps, dx, dy, dz, phi=rho, bc=bc, M=None)
         else:
-            phi = solve_poisson(rho, eps, dx, dy, dz, phi=phi, M=M)
+            phi = solve_poisson(rho, eps, dx, dy, dz, phi=phi, bc=bc, M=M)
 
 
 
