@@ -13,7 +13,8 @@ from pyevtk.hl import gridToVTK
 import functools
 from functools import partial
 
-
+def debugprint(value):
+    jax.debug.print('{x}', x=value)
 
 def initialize_fields(Nx, Ny, Nz):
     """
@@ -101,13 +102,13 @@ def neumann_laplacian(field, dx, dy, dz):
     x_comp = (jnp.roll(field, shift=1, axis=0) + jnp.roll(field, shift=-1, axis=0) - 2*field)/(dx*dx) 
     y_comp = (jnp.roll(field, shift=1, axis=1) + jnp.roll(field, shift=-1, axis=1) - 2*field)/(dy*dy)
     z_comp = (jnp.roll(field, shift=1, axis=2) + jnp.roll(field, shift=-1, axis=2) - 2*field)/(dz*dz)
-    Nx, Ny, Nz = field.shape[0], field.shape[1], field.shape[2]
-    x_comp.at[0, :, :] = 0
-    x_comp.at[Nx-1, :, :] = 0
-    y_comp.at[:, 0, :] = 0
-    y_comp.at[:, Ny-1, :] = 0
-    z_comp.at[:, :, 0] = 0
-    z_comp.at[:, :, Nz-1] = 0
+
+    x_comp = x_comp.at[0, :, :].set(0)
+    x_comp = x_comp.at[-1, :, :].set(0)
+    y_comp = y_comp .at[:, 0, :].set(0)
+    y_comp = y_comp.at[:, -1, :].set(0)
+    z_comp = z_comp.at[:, :, 0].set(0)
+    z_comp = z_comp.at[:, :, -1].set(0)
 
     return x_comp + y_comp + z_comp
 @jit
@@ -134,13 +135,13 @@ def dirichlet_laplacian(field, dx, dy, dz):
     x_comp = (jnp.roll(field, shift=1, axis=0) + jnp.roll(field, shift=-1, axis=0) - 2*field)/(dx*dx)
     y_comp = (jnp.roll(field, shift=1, axis=1) + jnp.roll(field, shift=-1, axis=1) - 2*field)/(dy*dy)
     z_comp = (jnp.roll(field, shift=1, axis=2) + jnp.roll(field, shift=-1, axis=2) - 2*field)/(dz*dz)
-    Nx, Ny, Nz = field.shape[0], field.shape[1], field.shape[2]
-    x_comp.at[0, :, :] = ((jnp.roll(field, shift=1, axis=0) - 2*field).at[0, :, :].get()/(dx*dx))
-    x_comp.at[Nx-1, :, :] = ((jnp.roll(field, shift=-1, axis=0) - 2*field).at[Nx-1, :, :].get()/(dx*dx))
-    y_comp.at[:, 0, :] = ((jnp.roll(field, shift=1, axis=1) - 2*field).at[:, 0, :].get()/(dy*dy))
-    y_comp.at[:, Ny-1, :] = ((jnp.roll(field, shift=-1, axis=1) - 2*field).at[:, Ny-1, :].get()/(dy*dy))
-    z_comp.at[:, :, 0] = ((jnp.roll(field, shift=1, axis=2) - 2*field).at[:, :, 0].get()/(dz*dz))
-    z_comp.at[:, :, Nz-1] = ((jnp.roll(field, shift=-1, axis=2) - 2*field).at[:, :, Nz-1].get()/(dz*dz))
+
+    x_comp = x_comp.at[0, :, :].set((jnp.roll(field, shift=1, axis=0) - 2*field).at[0, :, :].get()/(dx*dx))
+    x_comp = x_comp.at[-1, :, :].set((jnp.roll(field, shift=-1, axis=0) - 2*field).at[-1, :, :].get()/(dx*dx))
+    y_comp = y_comp.at[:, 0, :].set((jnp.roll(field, shift=1, axis=1) - 2*field).at[:, 0, :].get()/(dy*dy))
+    y_comp = y_comp.at[:, -1, :].set((jnp.roll(field, shift=-1, axis=1) - 2*field).at[:, -1, :].get()/(dy*dy))
+    z_comp = z_comp.at[:, :, 0].set((jnp.roll(field, shift=1, axis=2) - 2*field).at[:, :, 0].get()/(dz*dz))
+    z_comp = z_comp.at[:, :, -1].set((jnp.roll(field, shift=-1, axis=2) - 2*field).at[:, :, -1].get()/(dz*dz))
 
     return x_comp + y_comp + z_comp
 
@@ -162,23 +163,73 @@ def index_particles(particle, positions, ds):
     """
     return (positions.at[particle].get() / ds).astype(int)
 
-@jit
-def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, rho):
+def particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
     """
-    Update the charge density field based on the positions of particles.
+    Distributes the charge of a particle to the surrounding grid points.
+
     Parameters:
-    - Nparticles (int): The number of particles.
-    - particlex (array-like): The x-coordinates of the particles.
-    - particley (array-like): The y-coordinates of the particles.
-    - particlez (array-like): The z-coordinates of the particles.
-    - dx (float): The grid spacing in the x-direction.
-    - dy (float): The grid spacing in the y-direction.
-    - dz (float): The grid spacing in the z-direction.
-    - q (float): The charge of each particle.
-    - rho (array-like): The charge density field.
+    q (float): Charge of the particle.
+    x (float): x-coordinate of the particle.
+    y (float): y-coordinate of the particle.
+    z (float): z-coordinate of the particle.
+    rho (ndarray): Charge density array.
+    dx (float): Grid spacing in the x-direction.
+    dy (float): Grid spacing in the y-direction.
+    dz (float): Grid spacing in the z-direction.
+    x_wind (float): Window in the x-direction.
+    y_wind (float): Window in the y-direction.
+    z_wind (float): Window in the z-direction.
+
     Returns:
-    - rho (array-like): The updated charge density field.
+    ndarray: Updated charge density array.
     """
+
+
+    x0, y0, z0 = (x + x_wind/2).astype(int), (y + y_wind/2).astype(int), (z + z_wind/2).astype(int)
+    x1, y1, z1 = x0 + 1, y0 + 1, z0 + 1
+    wx = (x + x_wind/2 - x0*dx)/(100*dx)
+    wy = (y + y_wind/2 - y0*dy)/(100*dy)
+    wz = (z + z_wind/2 - z0*dz)/(100*dz)
+
+    dv = dx*dy*dz
+
+    rho = rho.at[x0, y0, z0].add( (q/dv)*(1 - wx)*(1 - wy)*(1 - wz), mode='drop' )
+    rho = rho.at[x0, y0, z0].add( (q/dv)*(1 - wx)*(1 - wy)*(1 - wz), mode='drop' )
+    rho = rho.at[x1, y0, z0].add( (q/dv)*wx*(1 - wy)*(1 - wz)      , mode='drop')
+    rho = rho.at[x0, y1, z0].add( (q/dv)*(1 - wx)*wy*(1 - wz)      , mode='drop')
+    rho = rho.at[x0, y0, z1].add( (q/dv)*(1 - wx)*(1 - wy)*wz      , mode='drop')
+    # distribute the charge of the particle to the surrounding grid points
+
+    return rho
+
+@jit
+def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_wind, y_wind, z_wind, rho):
+    """
+    Update the charge density (rho) based on the positions of particles.
+    Parameters:
+    Nparticles (int): Number of particles.
+    particlex (array-like): Array containing the x-coordinates of particles.
+    particley (array-like): Array containing the y-coordinates of particles.
+    particlez (array-like): Array containing the z-coordinates of particles.
+    dx (float): Grid spacing in the x-direction.
+    dy (float): Grid spacing in the y-direction.
+    dz (float): Grid spacing in the z-direction.
+    q (float): Charge of a single particle.
+    x_wind (array-like): Window function in the x-direction.
+    y_wind (array-like): Window function in the y-direction.
+    z_wind (array-like): Window in the z-direction.
+    rho (array-like): Initial charge density array to be updated.
+    Returns:
+    array-like: Updated charge density array.
+    """
+
+
+    # def addto_rho(particle, rho):
+    #     x = particlex.at[particle].get()
+    #     y = particley.at[particle].get()
+    #     z = particlez.at[particle].get()
+    #     rho = particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind)
+    #     return rho
 
     def addto_rho(particle, rho):
         x = index_particles(particle, particlex, dx)
@@ -291,7 +342,7 @@ def solve_poisson(rho, eps, dx, dy, dz, phi, bc='periodic', M = None):
     elif bc == 'neumann':
         lapl = functools.partial(neumann_laplacian, dx=dx, dy=dy, dz=dz)
     #phi = conjugate_grad(lapl, rho/eps, phi, tol=1e-6, maxiter=10000, M=M)
-    phi, exitcode = jax.scipy.sparse.linalg.cg(lapl, -rho/eps, phi, tol=1e-6, maxiter=5000, M=M)
+    phi, exitcode = jax.scipy.sparse.linalg.cg(lapl, -rho/eps, phi, tol=1e-6, maxiter=40000, M=M)
     return phi
 
 
@@ -318,17 +369,15 @@ def compute_pe(phi, rho, eps, dx, dy, dz, bc='periodic'):
         x = dirichlet_laplacian(phi, dx, dy, dz)
     elif bc == 'neumann':
         x = neumann_laplacian(phi, dx, dy, dz)
-    y = rho/eps
-    poisson_error = x - y
+    poisson_error = x + rho/eps
     index         = jnp.argmax(poisson_error)
-    return 100 * jnp.abs( jnp.ravel(x)[index] - jnp.ravel(y)[index] ) / ( ( jnp.abs(jnp.ravel(x)[index]) + jnp.abs(jnp.ravel(y)[index]) ) / 2 )
-
+    return 200 * jnp.abs( jnp.ravel(poisson_error)[index]) / ( jnp.abs(jnp.ravel(rho/eps)[index])+ jnp.abs(jnp.ravel(x)[index]) )
     # this method computes the relative percentage difference of poisson solver
 
 
 def calculateE(N_electrons, electron_x, electron_y, electron_z, \
                N_ions, ion_x, ion_y, ion_z,                     \
-               dx, dy, dz, q_e, q_i, rho, eps, phi, t, M, Nx, Ny, Nz, bc, verbose, GPUs):
+               dx, dy, dz, q_e, q_i, rho, eps, phi, t, M, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs):
     """
                 Calculates the electric field components (Ex, Ey, Ez), electric potential (phi), and charge density (rho) based on the given parameters.
 
@@ -370,14 +419,14 @@ def calculateE(N_electrons, electron_x, electron_y, electron_z, \
         with jax.default_device(jax.devices('gpu')[0]):
                 rho = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
                 # reset value of charge density
-                rho = update_rho(N_electrons, electron_x, electron_y, electron_z, dx, dy, dz, q_e, rho)
-                rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, rho)
+                rho = update_rho(N_electrons, electron_x, electron_y, electron_z, dx, dy, dz, q_e, x_wind, y_wind, z_wind, rho)
+                rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, x_wind, y_wind, z_wind, rho)
                 # update the charge density field
     else:
         rho = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
         # reset value of charge density
-        rho = update_rho(N_electrons, electron_x, electron_y, electron_z, dx, dy, dz, q_e, rho)
-        rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, rho)
+        rho = update_rho(N_electrons, electron_x, electron_y, electron_z, dx, dy, dz, q_e, x_wind, y_wind, z_wind, rho)
+        rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, x_wind, y_wind, z_wind, rho)
         # update the charge density field
 
     if verbose: print(f"Calculating Charge Density, Max Value: {jnp.max(rho)}")

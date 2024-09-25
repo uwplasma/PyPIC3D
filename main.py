@@ -28,7 +28,7 @@ jax.config.update('jax_platform_name', 'cpu')
 # set Jax to use CPUs
 
 ############################# GPUS   #######################################################################
-GPUs = False
+GPUs = True
 # booleans for using GPUs to solve Poisson's equation
 
 ############################## Neural Network Preconditioner ################################################
@@ -36,13 +36,13 @@ NN = False
 # booleans for using a neural network to precondition Poisson's equation solver
 
 ############################ SETTINGS #####################################################################
-save_data = False
+save_data = True
 plotfields = False
 plotpositions = True
 plotvelocities = False
 plotKE = False
 plasmaFreq = False
-phaseSpace = True
+phaseSpace = False
 # booleans for plotting/saving data
 
 benchmark = False
@@ -57,7 +57,7 @@ print("Initializing Simulation...")
 
 
 ############################# SIMULATION PARAMETERS ########################################################
-bc = "periodic"
+bc = "dirichlet"
 # boundary conditions: periodic, dirichlet, neumann
 
 eps = 8.854e-12
@@ -74,23 +74,23 @@ q_e = -1.602e-19
 # charge of electron
 q_i = 1.602e-19
 # charge of ion
-Te = 10000 # K
+Te = 100 # K
 # electron temperature
-Ti = 10000 # K
+Ti = 100 # K
 # ion temperature
 # assuming an isothermal plasma for now
 
-N_electrons = 1000
-N_ions      = 1000
+N_electrons = 100
+N_ions      = 100
 # specify the number of electrons and ions in the plasma
 
 Nx = 30
 Ny = 30
 Nz = 30
 # specify the number of array spacings in x, y, and z
-x_wind = 3e-2
-y_wind = 3e-2
-z_wind = 3e-2
+x_wind = 1e-3
+y_wind = 1e-3
+z_wind = 1e-3
 # specify the size of the spatial window in meters
 
 dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
@@ -132,7 +132,7 @@ ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions
 
 perturbation_period = 5*dt # starting with 5 dt's for now
 
-velocity_perturbation = 5e9 # m/s
+velocity_perturbation = 0.0e11 # m/s
 # perturbation velocity
 
 def perturb_function(t, dt, perturbation_period, velocity_perturbation):
@@ -175,7 +175,7 @@ for t in range(Nt):
 
     Ex, Ey, Ez, phi, rho = calculateE(N_electrons, electron_x, electron_y, electron_z, \
             N_ions, ion_x, ion_y, ion_z,                                               \
-            dx, dy, dz, q_e, q_i, rho, eps, phi, t, M, Nx, Ny, Nz, bc, verbose, GPUs)
+            dx, dy, dz, q_e, q_i, rho, eps, phi, t, M, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
     
     if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(Ex)}")
     # print the maximum value of the electric field
@@ -192,7 +192,7 @@ for t in range(Nt):
         ev_x = ev_x.at[:].add(perturb_function(t, dt, perturbation_period, velocity_perturbation))
     # add perturbation to the electron velocities
 
-    electron_x, electron_y, electron_z = update_position(electron_x, electron_y, electron_z, ev_x, ev_y, ev_z, dt, x_wind, y_wind, z_wind, bc)
+    electron_x, electron_y, electron_z = update_position(electron_x, electron_y, electron_z, ev_x, ev_y, ev_z, dt, x_wind, y_wind, z_wind)
     # Update the positions of the particles
 
     if verbose: print(f"Calculating Electron Positions, Max Value: {jnp.max(electron_x)}")
@@ -206,7 +206,7 @@ for t in range(Nt):
     if verbose: print(f"Calculating Ion Velocities, Max Value: {jnp.max(iv_x)}")
     # print the maximum value of the ion velocities
 
-    ion_x, ion_y, ion_z  = update_position(ion_x, ion_y, ion_z, iv_x, iv_y, iv_z, dt, x_wind, y_wind, z_wind, bc)
+    ion_x, ion_y, ion_z  = update_position(ion_x, ion_y, ion_z, iv_x, iv_y, iv_z, dt, x_wind, y_wind, z_wind)
     # Update the positions of the particles
     if verbose: print(f"Calculating Ion Positions, Max Value: {jnp.max(ion_x)}")
     # print the maximum value of the ion positions
