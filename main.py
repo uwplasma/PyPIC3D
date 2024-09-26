@@ -36,19 +36,19 @@ NN = False
 # booleans for using a neural network to precondition Poisson's equation solver
 
 ############################ SETTINGS #####################################################################
-save_data = True
+save_data = False
 plotfields = False
 plotpositions = True
 plotvelocities = False
-plotKE = False
-plasmaFreq = False
+plotKE = True
+plasmaFreq = True
 phaseSpace = False
 # booleans for plotting/saving data
 
 benchmark = False
 # still need to implement benchmarking
 
-verbose   = False
+verbose   = True
 # booleans for debugging
 
 ############################ INITIALIZE EVERYTHING #######################################################
@@ -80,8 +80,8 @@ Ti = 100 # K
 # ion temperature
 # assuming an isothermal plasma for now
 
-N_electrons = 100
-N_ions      = 100
+N_electrons = 10000
+N_ions      = 10000
 # specify the number of electrons and ions in the plasma
 
 Nx = 30
@@ -104,11 +104,11 @@ courant_number = 1
 dt = courant_number / (  C * ( (1/dx) + (1/dy) + (1/dz) )   )
 # calculate spatial resolution using courant condition
 
-t_wind = 1e-9
+t_wind = 0.5e-9
 # time window for simultion
 Nt     = int( t_wind / dt )
 # Nt for resolution
-
+Nt = 500
 
 print(f'time window: {t_wind}')
 print(f'Nt:          {Nt}')

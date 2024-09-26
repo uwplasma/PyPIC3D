@@ -658,13 +658,15 @@ def number_density(n, Nparticles, particlex, particley, particlez, dx, dy, dz, N
     Returns:
     - ndarray: The number density of particles at each grid point.
     """
-
-    n = update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, 1, n)
+    x_wind = (Nx * dx).astype(int)
+    y_wind = (Ny * dy).astype(int)
+    z_wind = (Nz * dz).astype(int)
+    n = update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, 1, x_wind, y_wind, z_wind, n)
 
     return n
 
 def freq(n, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
-    ne = number_density(n, Nelectrons, ex, ey, ez, dx, dy, dz, Nx, Ny, Nz)
+    ne = jnp.ravel(number_density(n, Nelectrons, ex, ey, ez, dx, dy, dz, Nx, Ny, Nz))
     # compute the number density of the electrons
     eps = 8.854e-12
     # permitivity of freespace
@@ -674,10 +676,10 @@ def freq(n, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
     # mass of the electron
     c1 = q_e**2 / (eps*me)
 
-    mask = jnp.where(  ne.at[int(Nx/4):int(3*Nx/4), int(Ny/4):int(3*Ny/4), int(Nz/4):int(3*Nz/4)].get()  != 0  )
+    mask = jnp.where(  ne  > 0  )[0]
     # Calculate mean using the mask
-    mean_nonzero = jnp.mean(ne.at[int(Nx/4):int(3*Nx/4), int(Ny/4):int(3*Ny/4), int(Nz/4):int(3*Nz/4)].get()[mask])
-    freq = jnp.sqrt( c1 * mean_nonzero )
+    electron_density = jnp.mean(ne[mask])
+    freq = jnp.sqrt( c1 * electron_density )
     return freq
 # computes the average plasma frequency over the middle 75% of the world volume
 
