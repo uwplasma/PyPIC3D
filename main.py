@@ -45,7 +45,7 @@ plasmaFreq = True
 phaseSpace = True
 # booleans for plotting/saving data
 
-benchmark = False
+benchmark = True
 # still need to implement benchmarking
 
 verbose   = False
@@ -112,7 +112,7 @@ t_wind = 0.75e-9
 # time window for simultion
 Nt     = int( t_wind / dt )
 # Nt for resolution
-
+Nt = 500
 
 print(f'time window: {t_wind}')
 print(f'Nt:          {Nt}')
