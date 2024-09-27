@@ -39,17 +39,21 @@ NN = False
 save_data = False
 plotfields = False
 plotpositions = True
-plotvelocities = False
+plotvelocities = True
 plotKE = True
 plasmaFreq = True
-phaseSpace = False
+phaseSpace = True
 # booleans for plotting/saving data
 
 benchmark = False
 # still need to implement benchmarking
 
-verbose   = True
+verbose   = False
 # booleans for debugging
+
+
+if verbose: jax.profiler.start_trace("tensorboard")
+# start the profiler using tensorboard
 
 ############################ INITIALIZE EVERYTHING #######################################################
 # I am starting by simulating a hydrogen plasma
@@ -80,8 +84,8 @@ Ti = 100 # K
 # ion temperature
 # assuming an isothermal plasma for now
 
-N_electrons = 10000
-N_ions      = 10000
+N_electrons = 1000
+N_ions      = 1000
 # specify the number of electrons and ions in the plasma
 
 Nx = 30
@@ -104,17 +108,17 @@ courant_number = 1
 dt = courant_number / (  C * ( (1/dx) + (1/dy) + (1/dz) )   )
 # calculate spatial resolution using courant condition
 
-t_wind = 0.5e-9
+t_wind = 0.75e-9
 # time window for simultion
 Nt     = int( t_wind / dt )
 # Nt for resolution
-Nt = 500
+
 
 print(f'time window: {t_wind}')
 print(f'Nt:          {Nt}')
 print(f'dt:          {dt}')
 
-plot_freq = 1
+plot_freq = 10
 # how often to plot the data
 
 Ex, Ey, Ez, Bx, By, Bz, phi, rho = initialize_fields(Nx, Ny, Nz)
@@ -132,7 +136,7 @@ ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions
 
 perturbation_period = 5*dt # starting with 5 dt's for now
 
-velocity_perturbation = 0.0e11 # m/s
+velocity_perturbation = 0.25e9 # m/s
 # perturbation velocity
 
 def perturb_function(t, dt, perturbation_period, velocity_perturbation):
@@ -181,7 +185,12 @@ for t in range(Nt):
     # print the maximum value of the electric field
 
     ############### UPDATE ELECTRONS ##########################################################################################
-    ev_x, ev_y, ev_z = boris(q_e, Ex, Ey, Ez, Bx, By, Bz, electron_x, \
+    if GPUs:
+        with jax.default_device(jax.devices('gpu')[0]):
+            ev_x, ev_y, ev_z = boris(q_e, Ex, Ey, Ez, Bx, By, Bz, electron_x, \
+                        electron_y, electron_z, ev_x, ev_y, ev_z, dt, me)
+    else:
+        ev_x, ev_y, ev_z = boris(q_e, Ex, Ey, Ez, Bx, By, Bz, electron_x, \
                             electron_y, electron_z, ev_x, ev_y, ev_z, dt, me)
     # implement the boris push algorithm to solve for new electron velocities
 
@@ -199,8 +208,13 @@ for t in range(Nt):
     # print the maximum value of the electron positions
 
     ############### UPDATE IONS ################################################################################################
-    iv_x, iv_y, iv_z = boris(q_i, Ex, Ey, Ez, Bx, By, Bz, ion_x, \
-                            ion_y, ion_z, iv_x, iv_y, iv_z, dt, mi)
+    if GPUs:
+        with jax.default_device(jax.devices('gpu')[0]):
+            iv_x, iv_y, iv_z = boris(q_i, Ex, Ey, Ez, Bx, By, Bz, ion_x, \
+                        ion_y, ion_z, iv_x, iv_y, iv_z, dt, mi)
+    else:
+        iv_x, iv_y, iv_z = boris(q_i, Ex, Ey, Ez, Bx, By, Bz, ion_x, \
+                                ion_y, ion_z, iv_x, iv_y, iv_z, dt, mi)
     # use boris push for ion velocities
 
     if verbose: print(f"Calculating Ion Velocities, Max Value: {jnp.max(iv_x)}")
@@ -282,3 +296,6 @@ if plasmaFreq:
     # plot the plasma frequency
     average_freq = jnp.mean( jnp.asarray(freqs[ int(len(freqs)/4):int(3*len(freqs)/4)  ] ) )
     print(f'Average Plasma Frequency: {average_freq}')
+
+if verbose: jax.profiler.stop_trace()
+# stop the profiler and save the data to tensorboard
