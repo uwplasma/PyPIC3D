@@ -342,7 +342,7 @@ def solve_poisson(rho, eps, dx, dy, dz, phi, bc='periodic', M = None):
     elif bc == 'neumann':
         lapl = functools.partial(neumann_laplacian, dx=dx, dy=dy, dz=dz)
     #phi = conjugate_grad(lapl, rho/eps, phi, tol=1e-6, maxiter=10000, M=M)
-    phi, exitcode = jax.scipy.sparse.linalg.cg(lapl, -rho/eps, phi, tol=1e-6, maxiter=40000, M=M)
+    phi, exitcode = jax.scipy.sparse.linalg.cg(lapl, -rho/eps, phi, tol=1e-6, maxiter=20000, M=M)
     return phi
 
 
