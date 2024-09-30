@@ -28,7 +28,7 @@ jax.config.update('jax_platform_name', 'cpu')
 # set Jax to use CPUs
 
 ############################# GPUS   #######################################################################
-GPUs = True
+GPUs = False
 # booleans for using GPUs to solve Poisson's equation
 
 ############################## Neural Network Preconditioner ################################################
@@ -38,21 +38,21 @@ NN = False
 ############################ SETTINGS #####################################################################
 save_data = False
 plotfields = False
-plotpositions = True
-plotvelocities = True
+plotpositions = False
+plotvelocities = False
 plotKE = True
 plasmaFreq = True
-phaseSpace = True
+phaseSpace = False
 # booleans for plotting/saving data
 
-benchmark = True
+benchmark = False
 # still need to implement benchmarking
 
 verbose   = False
 # booleans for debugging
 
 
-if verbose: jax.profiler.start_trace("tensorboard")
+if benchmark: jax.profiler.start_trace("/home/christopherwoolford/Documents/PyPIC3D/tensorboard")
 # start the profiler using tensorboard
 
 ############################ INITIALIZE EVERYTHING #######################################################
@@ -84,17 +84,17 @@ Ti = 100 # K
 # ion temperature
 # assuming an isothermal plasma for now
 
-N_electrons = 1000
-N_ions      = 1000
+N_electrons = 2000000
+N_ions      = 2000000
 # specify the number of electrons and ions in the plasma
 
 Nx = 30
 Ny = 30
 Nz = 30
 # specify the number of array spacings in x, y, and z
-x_wind = 1e-3
-y_wind = 1e-3
-z_wind = 1e-3
+x_wind = 0.5e-3
+y_wind = 0.5e-3
+z_wind = 0.5e-3
 # specify the size of the spatial window in meters
 
 dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
@@ -134,9 +134,9 @@ ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions
 #################################### Plasma Oscillations ########################################################
 # adding a perturbation to the particle velocities to simulate plasma oscillations
 
-perturbation_period = 5*dt # starting with 5 dt's for now
+perturbation_period = 10*dt # starting with 5 dt's for now
 
-velocity_perturbation = 0.25e9 # m/s
+velocity_perturbation = 1e9 # m/s
 # perturbation velocity
 
 def perturb_function(t, dt, perturbation_period, velocity_perturbation):
@@ -297,5 +297,5 @@ if plasmaFreq:
     average_freq = jnp.mean( jnp.asarray(freqs[ int(len(freqs)/4):int(3*len(freqs)/4)  ] ) )
     print(f'Average Plasma Frequency: {average_freq}')
 
-if verbose: jax.profiler.stop_trace()
+if benchmark: jax.profiler.stop_trace()
 # stop the profiler and save the data to tensorboard

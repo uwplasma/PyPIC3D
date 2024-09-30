@@ -163,6 +163,7 @@ def index_particles(particle, positions, ds):
     """
     return (positions.at[particle].get() / ds).astype(int)
 
+@jit
 def particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
     """
     Distributes the charge of a particle to the surrounding grid points.
@@ -186,14 +187,19 @@ def particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
 
 
     x0, y0, z0 = (x + x_wind/2).astype(int), (y + y_wind/2).astype(int), (z + z_wind/2).astype(int)
+    deltax, deltay, deltaz = (x + x_wind/2) - x0, (y + y_wind/2) - y0, (z + z_wind/2) - z0
+    # calculate the difference between x and its nearest grid point
     x1, y1, z1 = x0 + 1, y0 + 1, z0 + 1
-    wx = (x + x_wind/2 - x0*dx)/(100*dx)
-    wy = (y + y_wind/2 - y0*dy)/(100*dy)
-    wz = (z + z_wind/2 - z0*dz)/(100*dz)
+    # calculate the index of the next grid point
+
+    wx = jnp.select( [x0 == 0, deltax == 0, deltax != 0], [0, 0, deltax/( x + x_wind/2 )] )
+    wy = jnp.select( [y0 == 0, deltay == 0, deltay != 0], [0, 0, deltay/( y + y_wind/2 )] )
+    wz = jnp.select( [z0 == 0, deltaz == 0, deltaz != 0], [0, 0, deltaz/( z + z_wind/2 )] )
+    # calculate the weights for the surrounding grid points
 
     dv = dx*dy*dz
+    # calculate the volume of each grid point
 
-    rho = rho.at[x0, y0, z0].add( (q/dv)*(1 - wx)*(1 - wy)*(1 - wz), mode='drop' )
     rho = rho.at[x0, y0, z0].add( (q/dv)*(1 - wx)*(1 - wy)*(1 - wz), mode='drop' )
     rho = rho.at[x1, y0, z0].add( (q/dv)*wx*(1 - wy)*(1 - wz)      , mode='drop')
     rho = rho.at[x0, y1, z0].add( (q/dv)*(1 - wx)*wy*(1 - wz)      , mode='drop')
@@ -224,19 +230,19 @@ def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_win
     """
 
 
-    # def addto_rho(particle, rho):
-    #     x = particlex.at[particle].get()
-    #     y = particley.at[particle].get()
-    #     z = particlez.at[particle].get()
-    #     rho = particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind)
-    #     return rho
-
     def addto_rho(particle, rho):
-        x = index_particles(particle, particlex, dx)
-        y = index_particles(particle, particley, dy)
-        z = index_particles(particle, particlez, dz)
-        rho = rho.at[x, y, z].add( q / (dx*dy*dz) )
+        x = particlex.at[particle].get()
+        y = particley.at[particle].get()
+        z = particlez.at[particle].get()
+        rho = particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind)
         return rho
+
+    # def addto_rho(particle, rho):
+    #     x = index_particles(particle, particlex, dx)
+    #     y = index_particles(particle, particley, dy)
+    #     z = index_particles(particle, particlez, dz)
+    #     rho = rho.at[x, y, z].add( q / (dx*dy*dz) )
+    #     return rho
     
     return jax.lax.fori_loop(0, Nparticles-1, addto_rho, rho )
 
