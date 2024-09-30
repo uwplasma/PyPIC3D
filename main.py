@@ -84,8 +84,8 @@ Ti = 100 # K
 # ion temperature
 # assuming an isothermal plasma for now
 
-N_electrons = 2000000
-N_ions      = 2000000
+N_electrons = 4500000
+N_ions      = 4500000
 # specify the number of electrons and ions in the plasma
 
 Nx = 30
