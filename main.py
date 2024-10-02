@@ -33,15 +33,16 @@ GPUs = False
 
 ############################## Neural Network Preconditioner ################################################
 NN = False
+model_name = "Preconditioner.eqx"
 # booleans for using a neural network to precondition Poisson's equation solver
 
 ############################ SETTINGS #####################################################################
-save_data = False
+save_data = True
 plotfields = False
 plotpositions = False
 plotvelocities = False
-plotKE = True
-plasmaFreq = True
+plotKE = False
+plasmaFreq = False
 phaseSpace = False
 # booleans for plotting/saving data
 
@@ -84,8 +85,8 @@ Ti = 100 # K
 # ion temperature
 # assuming an isothermal plasma for now
 
-N_electrons = 4500000
-N_ions      = 4500000
+N_electrons = 10000
+N_ions      = 10000
 # specify the number of electrons and ions in the plasma
 
 Nx = 30
@@ -108,11 +109,11 @@ courant_number = 1
 dt = courant_number / (  C * ( (1/dx) + (1/dy) + (1/dz) )   )
 # calculate spatial resolution using courant condition
 
-t_wind = 0.75e-9
+t_wind = 0.25e-9
 # time window for simultion
 Nt     = int( t_wind / dt )
 # Nt for resolution
-Nt = 500
+Nt = 1500
 
 print(f'time window: {t_wind}')
 print(f'Nt:          {Nt}')
@@ -134,7 +135,7 @@ ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions
 #################################### Plasma Oscillations ########################################################
 # adding a perturbation to the particle velocities to simulate plasma oscillations
 
-perturbation_period = 10*dt # starting with 5 dt's for now
+perturbation_period = 20*dt # starting with 5 dt's for now
 
 velocity_perturbation = 1e9 # m/s
 # perturbation velocity
@@ -148,10 +149,11 @@ def perturb_function(t, dt, perturbation_period, velocity_perturbation):
 
 key = jax.random.PRNGKey(0)
 # define the random key
-model = PoissonPrecondition( Nx=Nx, Ny=Ny, Nz=Nz, hidden_dim=500, key=key)
-# define the model
-#model = eqx.tree_deserialise_leaves("Preconditioner.eqx", model)
-# load the model from file
+if NN:
+    model = PoissonPrecondition( Nx=Nx, Ny=Ny, Nz=Nz, hidden_dim=500, key=key)
+    # define the model
+    model = eqx.tree_deserialise_leaves(model_name, model)
+    # load the model from file
 
 #################################### MAIN LOOP #####################################################################
 
@@ -285,6 +287,8 @@ for t in range(Nt):
         # save the phase space data
 if plotfields:
     plot_probe(Eprobe, "ElectricField")
+    efield_freq = plot_fft(Eprobe, dt*plot_freq, "FFT of Electric Field", "E_FFT")
+    print(f'Electric Field Frequency: {efield_freq}')
     # plot the electric field probe
 if plotKE:
     plot_KE(KE, KE_time)
