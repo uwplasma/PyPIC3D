@@ -247,51 +247,73 @@ def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_win
     return jax.lax.fori_loop(0, Nparticles-1, addto_rho, rho )
 
 
-# def conjugate_grad(A, b, x0, tol=1e-6, atol=0.0, maxiter=10000, M=None):
+@jit
+def apply_M(M, Ax):
+    """
+    Apply the preconditioner
 
-#     _dot = functools.partial(jnp.dot, precision=lax.Precision.HIGHEST)
+    Parameters:
+    M (ndarray): The preconditioner.
+    Ax (ndarray): The laplacian of x.
 
-#     if M is None:
-#         noM = True
-#         M = lambda x: x
-#     else:
-#         noM = False
-#         M = partial(_dot, M)
+    Returns:
+    ndarray: The inverse laplacian of the laplacian of the data.
+    """
 
-#     # tolerance handling uses the "non-legacy" behavior of scipy.sparse.linalg.cg
-#     bs = _vdot_real_tree(b, b)
-#     atol2 = jnp.maximum(jnp.square(tol) * bs, jnp.square(atol))
+    M_Ax = jnp.einsum('ij,jlk -> ilk', M, Ax)
+    M_Ay = jnp.einsum('ij, lik -> ljk', M, Ax)
+    M_Az = jnp.einsum('ij, lki -> lkj', M, Ax)
 
-#     # https://en.wikipedia.org/wiki/Conjugate_gradient_method#The_preconditioned_conjugate_gradient_method
-
-#     def cond_fun(value):
-#         _, r, gamma, _, k = value
-#         rs = gamma.real if noM is True else _vdot_real_tree(r, r)
-#         return (rs > atol2) & (k < maxiter)
+    return (1/9)*(M_Ax + M_Ay + M_Az)
 
 
-#     def body_fun(value):
-#         x, r, gamma, p, k = value
-#         Ap = A(p)
-#         alpha = gamma / _vdot_real_tree(p, Ap).astype(dtype)
-#         x_ = _add(x, _mul(alpha, p))
-#         r_ = _sub(r, _mul(alpha, Ap))
-#         z_ = M(r_)
-#         gamma_ = _vdot_real_tree(r_, z_).astype(dtype)
-#         beta_ = gamma_ / gamma
-#         p_ = _add(z_, _mul(beta_, p))
-#         return x_, r_, gamma_, p_, k + 1
+
+def conjugate_grad(A, b, x0, tol=1e-6, atol=0.0, maxiter=10000, M=None):
+
+    #_dot = functools.partial(jnp.dot, precision=lax.Precision.HIGHEST)
+
+    if M is None:
+        noM = True
+        M = lambda x: x
+    else:
+        noM = False
+        #M = partial(_dot, M)
+        M = partial(apply_M, M=M)
+
+    # tolerance handling uses the "non-legacy" behavior of scipy.sparse.linalg.cg
+    bs = _vdot_real_tree(b, b)
+    atol2 = jnp.maximum(jnp.square(tol) * bs, jnp.square(atol))
+
+    # https://en.wikipedia.org/wiki/Conjugate_gradient_method#The_preconditioned_conjugate_gradient_method
+
+    def cond_fun(value):
+        _, r, gamma, _, k = value
+        rs = gamma.real if noM is True else _vdot_real_tree(r, r)
+        return (rs > atol2) & (k < maxiter)
 
 
-#     r0 = _sub(b, A(x0))
-#     p0 = z0 = M(r0)
-#     dtype = jnp.result_type(*tree_leaves(p0))
-#     gamma0 = _vdot_real_tree(r0, z0).astype(dtype)
-#     initial_value = (x0, r0, gamma0, p0, 0)
+    def body_fun(value):
+        x, r, gamma, p, k = value
+        Ap = A(p)
+        alpha = gamma / _vdot_real_tree(p, Ap).astype(dtype)
+        x_ = _add(x, _mul(alpha, p))
+        r_ = _sub(r, _mul(alpha, Ap))
+        z_ = M(r_)
+        gamma_ = _vdot_real_tree(r_, z_).astype(dtype)
+        beta_ = gamma_ / gamma
+        p_ = _add(z_, _mul(beta_, p))
+        return x_, r_, gamma_, p_, k + 1
 
-#     x_final, *_ = lax.while_loop(cond_fun, body_fun, initial_value)
 
-#     return x_final
+    r0 = _sub(b, A(x0))
+    p0 = z0 = M(r0)
+    dtype = jnp.result_type(*tree_leaves(p0))
+    gamma0 = _vdot_real_tree(r0, z0).astype(dtype)
+    initial_value = (x0, r0, gamma0, p0, 0)
+
+    x_final, *_ = lax.while_loop(cond_fun, body_fun, initial_value)
+
+    return x_final
 
 
 
@@ -348,7 +370,8 @@ def solve_poisson(rho, eps, dx, dy, dz, phi, bc='periodic', M = None):
     elif bc == 'neumann':
         lapl = functools.partial(neumann_laplacian, dx=dx, dy=dy, dz=dz)
     #phi = conjugate_grad(lapl, rho/eps, phi, tol=1e-6, maxiter=10000, M=M)
-    phi, exitcode = jax.scipy.sparse.linalg.cg(lapl, -rho/eps, phi, tol=1e-6, maxiter=20000, M=M)
+    #phi, exitcode = jax.scipy.sparse.linalg.cg(lapl, -rho/eps, phi, tol=1e-6, maxiter=20000, M=M)
+    phi = conjugate_grad(lapl, -rho/eps, phi, tol=1e-6, maxiter=20000, M=M)
     return phi
 
 
