@@ -33,17 +33,17 @@ GPUs = False
 
 ############################## Neural Network Preconditioner ################################################
 NN = False
-model_name = "Preconditioner.eqx"
+model_name = "Preconditioner2.eqx"
 # booleans for using a neural network to precondition Poisson's equation solver
 
 ############################ SETTINGS #####################################################################
-save_data = True
+save_data = False
 plotfields = False
-plotpositions = False
+plotpositions = True
 plotvelocities = False
 plotKE = False
 plasmaFreq = False
-phaseSpace = False
+phaseSpace = True
 # booleans for plotting/saving data
 
 benchmark = False
@@ -59,7 +59,7 @@ if benchmark: jax.profiler.start_trace("/home/christopherwoolford/Documents/PyPI
 ############################ INITIALIZE EVERYTHING #######################################################
 # I am starting by simulating a hydrogen plasma
 print("Initializing Simulation...")
-
+start = time.time()
 
 ############################# SIMULATION PARAMETERS ########################################################
 bc = "dirichlet"
@@ -109,11 +109,11 @@ courant_number = 1
 dt = courant_number / (  C * ( (1/dx) + (1/dy) + (1/dz) )   )
 # calculate spatial resolution using courant condition
 
-t_wind = 0.25e-9
+t_wind = 0.5e-9
 # time window for simultion
 Nt     = int( t_wind / dt )
 # Nt for resolution
-Nt = 1500
+
 
 print(f'time window: {t_wind}')
 print(f'Nt:          {Nt}')
@@ -132,12 +132,22 @@ ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions
 # initialize the positions and velocities of the electrons and ions in the plasma.
 # eventually, I need to update the initialization to use a more accurate position and velocity distribution.
 
+#################################### Two Stream Instability #####################################################
+vmax = 0.5e9
+ev_x[:int(N_electrons/2)] = -vmax
+ev_x[int(N_electrons/2):] = vmax
+
+# electron_x = electron_x.at[:int(N_electrons/2)].set(x_wind/2)
+# electron_x = electron_x.at[int(N_electrons/2):].set(-x_wind/2)
+
+electron_x = jax.random.uniform(key1, shape = (N_electrons,), minval=-x_wind/2, maxval=x_wind/2)
+
 #################################### Plasma Oscillations ########################################################
 # adding a perturbation to the particle velocities to simulate plasma oscillations
 
 perturbation_period = 20*dt # starting with 5 dt's for now
 
-velocity_perturbation = 1e9 # m/s
+velocity_perturbation = 0 #1e9 # m/s
 # perturbation velocity
 
 def perturb_function(t, dt, perturbation_period, velocity_perturbation):
@@ -150,7 +160,7 @@ def perturb_function(t, dt, perturbation_period, velocity_perturbation):
 key = jax.random.PRNGKey(0)
 # define the random key
 if NN:
-    model = PoissonPrecondition( Nx=Nx, Ny=Ny, Nz=Nz, hidden_dim=500, key=key)
+    model = PoissonPrecondition( Nx=Nx, Ny=Ny, Nz=Nz, hidden_dim=3000, key=key)
     # define the model
     model = eqx.tree_deserialise_leaves(model_name, model)
     # load the model from file
@@ -300,6 +310,8 @@ if plasmaFreq:
     # plot the plasma frequency
     average_freq = jnp.mean( jnp.asarray(freqs[ int(len(freqs)/4):int(3*len(freqs)/4)  ] ) )
     print(f'Average Plasma Frequency: {average_freq}')
+end = time.time()
+print(f"Total Simulation Time: {end-start}")
 
 if benchmark: jax.profiler.stop_trace()
 # stop the profiler and save the data to tensorboard
