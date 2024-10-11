@@ -248,7 +248,7 @@ def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_win
 
 
 @jit
-def apply_M(M, Ax):
+def apply_M(Ax, M):
     """
     Apply the preconditioner
 

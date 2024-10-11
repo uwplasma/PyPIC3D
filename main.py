@@ -33,17 +33,17 @@ GPUs = False
 
 ############################## Neural Network Preconditioner ################################################
 NN = False
-model_name = "Preconditioner2.eqx"
+model_name = "Preconditioner.eqx"
 # booleans for using a neural network to precondition Poisson's equation solver
 
 ############################ SETTINGS #####################################################################
-save_data = False
+save_data = True
 plotfields = False
-plotpositions = True
+plotpositions = False
 plotvelocities = False
 plotKE = False
 plasmaFreq = False
-phaseSpace = True
+phaseSpace = False
 # booleans for plotting/saving data
 
 benchmark = False
@@ -85,17 +85,17 @@ Ti = 100 # K
 # ion temperature
 # assuming an isothermal plasma for now
 
-N_electrons = 10000
-N_ions      = 10000
+N_electrons = 5000
+N_ions      = 5000
 # specify the number of electrons and ions in the plasma
 
-Nx = 30
-Ny = 30
-Nz = 30
+Nx = 15
+Ny = 15
+Nz = 15
 # specify the number of array spacings in x, y, and z
-x_wind = 0.5e-3
-y_wind = 0.5e-3
-z_wind = 0.5e-3
+x_wind = 1e-2
+y_wind = 1e-2
+z_wind = 1e-2
 # specify the size of the spatial window in meters
 
 dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
@@ -109,17 +109,16 @@ courant_number = 1
 dt = courant_number / (  C * ( (1/dx) + (1/dy) + (1/dz) )   )
 # calculate spatial resolution using courant condition
 
-t_wind = 0.5e-9
+t_wind = 15e-9
 # time window for simultion
 Nt     = int( t_wind / dt )
 # Nt for resolution
-
 
 print(f'time window: {t_wind}')
 print(f'Nt:          {Nt}')
 print(f'dt:          {dt}')
 
-plot_freq = 10
+plot_freq = 5
 # how often to plot the data
 
 Ex, Ey, Ez, Bx, By, Bz, phi, rho = initialize_fields(Nx, Ny, Nz)
@@ -133,14 +132,17 @@ ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions
 # eventually, I need to update the initialization to use a more accurate position and velocity distribution.
 
 #################################### Two Stream Instability #####################################################
-vmax = 0.5e9
-ev_x[:int(N_electrons/2)] = -vmax
-ev_x[int(N_electrons/2):] = vmax
+# vmax = 0.5e9
+# ev_x[:int(N_electrons/2)] = -vmax
+# ev_x[int(N_electrons/2):] = vmax
 
-# electron_x = electron_x.at[:int(N_electrons/2)].set(x_wind/2)
-# electron_x = electron_x.at[int(N_electrons/2):].set(-x_wind/2)
+# # electron_x = electron_x.at[:int(N_electrons/2)].set(x_wind/2)
+# # electron_x = electron_x.at[int(N_electrons/2):].set(-x_wind/2)
 
-electron_x = jax.random.uniform(key1, shape = (N_electrons,), minval=-x_wind/2, maxval=x_wind/2)
+# electron_x = jax.random.uniform(key1, shape = (N_electrons,), minval=-x_wind/2, maxval=x_wind/2)
+# ion_x = jax.random.uniform(key1, shape = (N_ions,), minval=-x_wind/2, maxval=x_wind/2)
+# ion_y = jax.random.uniform(key1, shape = (N_ions,), minval=-y_wind/2, maxval=y_wind/2)
+# ion_z = jax.random.uniform(key1, shape = (N_ions,), minval=-z_wind/2, maxval=z_wind/2)
 
 #################################### Plasma Oscillations ########################################################
 # adding a perturbation to the particle velocities to simulate plasma oscillations
