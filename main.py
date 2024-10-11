@@ -37,7 +37,7 @@ model_name = "Preconditioner.eqx"
 # booleans for using a neural network to precondition Poisson's equation solver
 
 ############################ SETTINGS #####################################################################
-save_data = True
+save_data = False
 plotfields = False
 plotpositions = False
 plotvelocities = False
@@ -49,7 +49,7 @@ phaseSpace = False
 benchmark = False
 # still need to implement benchmarking
 
-verbose   = False
+verbose   = True
 # booleans for debugging
 
 
@@ -62,8 +62,8 @@ print("Initializing Simulation...")
 start = time.time()
 
 ############################# SIMULATION PARAMETERS ########################################################
-bc = "dirichlet"
-# boundary conditions: periodic, dirichlet, neumann
+bc = "periodic"
+# boundary conditions: periodic, dirichlet, neumann, spectral
 
 eps = 8.854e-12
 # permitivity of freespace
@@ -109,7 +109,7 @@ courant_number = 1
 dt = courant_number / (  C * ( (1/dx) + (1/dy) + (1/dz) )   )
 # calculate spatial resolution using courant condition
 
-t_wind = 15e-9
+t_wind = 1e-9
 # time window for simultion
 Nt     = int( t_wind / dt )
 # Nt for resolution
