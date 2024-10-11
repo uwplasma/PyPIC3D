@@ -50,12 +50,10 @@ def initialize_fields(Nx, Ny, Nz):
 
     return Ex, Ey, Ez, Bx, By, Bz, phi, rho
 
-
-
 @jit
 def periodic_laplacian(field, dx, dy, dz):
     """
-    Calculates the Laplacian of a given field with Periodic boundary conditions.
+    Calculates the Laplacian of a given field using 2nd order finite difference with Periodic boundary conditions.
 
     Parameters:
     - field: numpy.ndarray
@@ -75,6 +73,36 @@ def periodic_laplacian(field, dx, dy, dz):
     y_comp = (jnp.roll(field, shift=1, axis=1) + jnp.roll(field, shift=-1, axis=1) - 2*field)/(dy*dy)
     z_comp = (jnp.roll(field, shift=1, axis=2) + jnp.roll(field, shift=-1, axis=2) - 2*field)/(dz*dz)
     return x_comp + y_comp + z_comp
+
+
+@jit
+def spectral_laplacian(field, dx, dy, dz):
+    """
+    Calculates the Laplacian of a given field using spectral method. Assumes periodic boundary conditions.
+
+    Parameters:
+    - field: numpy.ndarray
+        The input field.
+    - dx: float
+        The spacing between grid points in the x-direction.
+    - dy: float
+        The spacing between grid points in the y-direction.
+    - dz: float
+        The spacing between grid points in the z-direction.
+
+    Returns:
+    - numpy.ndarray
+        The Laplacian of the field.
+    """
+    Nx, Ny, Nz = field.shape
+    kx = jnp.fft.fftfreq(Nx, dx) * 2 * jnp.pi
+    ky = jnp.fft.fftfreq(Ny, dy) * 2 * jnp.pi
+    kz = jnp.fft.fftfreq(Nz, dz) * 2 * jnp.pi
+    kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
+    # create 3D meshgrid of wavenumbers
+    lapl = -(kx**2 + ky**2 + kz**2) * jnp.fft.fftn(field)
+    # calculate the laplacian in Fourier space
+    return jnp.fft.ifftn(lapl).real
 
 @jit
 def neumann_laplacian(field, dx, dy, dz):
@@ -261,8 +289,8 @@ def apply_M(Ax, M):
     """
 
     M_Ax = jnp.einsum('ij,jlk -> ilk', M, Ax)
-    M_Ay = jnp.einsum('ij, lik -> ljk', M, Ax)
-    M_Az = jnp.einsum('ij, lki -> lkj', M, Ax)
+    M_Ay = jnp.einsum('ij, lik -> jlk', M, Ax)
+    M_Az = jnp.einsum('ij, lki -> jlk', M, Ax)
 
     return (1/9)*(M_Ax + M_Ay + M_Az)
 
@@ -363,7 +391,9 @@ def solve_poisson(rho, eps, dx, dy, dz, phi, bc='periodic', M = None):
     - phi (ndarray): Solution to the Poisson equation.
     """
 
-    if bc == 'periodic':
+    if bc == 'spectral':
+        lapl = functools.partial(spectral_laplacian, dx=dx, dy=dy, dz=dz)
+    elif bc == 'periodic':
         lapl = functools.partial(periodic_laplacian, dx=dx, dy=dy, dz=dz)
     elif bc == 'dirichlet':
         lapl = functools.partial(dirichlet_laplacian, dx=dx, dy=dy, dz=dz)
@@ -392,7 +422,9 @@ def compute_pe(phi, rho, eps, dx, dy, dz, bc='periodic'):
     Returns:
     float: The relative percentage difference of the Poisson solver.
     """
-    if bc == 'periodic':
+    if bc == 'spectral':
+        x = spectral_laplacian(phi, dx, dy, dz)
+    elif bc == 'periodic':
         x = periodic_laplacian(phi, dx, dy, dz)
     elif bc == 'dirichlet':
         x = dirichlet_laplacian(phi, dx, dy, dz)
