@@ -38,18 +38,18 @@ model_name = "Preconditioner.eqx"
 
 ############################ SETTINGS #####################################################################
 save_data = False
-plotfields = False
+plotfields = True
 plotpositions = False
 plotvelocities = False
 plotKE = False
 plasmaFreq = False
-phaseSpace = False
+phaseSpace = True
 # booleans for plotting/saving data
 
 benchmark = False
 # still need to implement benchmarking
 
-verbose   = True
+verbose   = False
 # booleans for debugging
 
 
@@ -62,7 +62,7 @@ print("Initializing Simulation...")
 start = time.time()
 
 ############################# SIMULATION PARAMETERS ########################################################
-bc = "periodic"
+bc = "spectral"
 # boundary conditions: periodic, dirichlet, neumann, spectral
 
 eps = 8.854e-12
@@ -109,7 +109,7 @@ courant_number = 1
 dt = courant_number / (  C * ( (1/dx) + (1/dy) + (1/dz) )   )
 # calculate spatial resolution using courant condition
 
-t_wind = 1e-9
+t_wind = 10e-9
 # time window for simultion
 Nt     = int( t_wind / dt )
 # Nt for resolution
@@ -118,7 +118,7 @@ print(f'time window: {t_wind}')
 print(f'Nt:          {Nt}')
 print(f'dt:          {dt}')
 
-plot_freq = 5
+plot_freq = 50
 # how often to plot the data
 
 Ex, Ey, Ez, Bx, By, Bz, phi, rho = initialize_fields(Nx, Ny, Nz)
@@ -126,36 +126,23 @@ Ex, Ey, Ez, Bx, By, Bz, phi, rho = initialize_fields(Nx, Ny, Nz)
 
 key1 = random.key(4353)
 key2 = random.key(1043)
+key3 = random.key(1234)
+key4 = random.key(2345)
+key5 = random.key(3456)
+# random keys for initializing the particles
 electron_x, electron_y, electron_z, ev_x, ev_y, ev_z  = initial_particles(N_electrons, x_wind, y_wind, z_wind, me, Te, kb, key1)
 ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions, x_wind, y_wind, z_wind, mi, Ti, kb, key2)
 # initialize the positions and velocities of the electrons and ions in the plasma.
 # eventually, I need to update the initialization to use a more accurate position and velocity distribution.
 
 #################################### Two Stream Instability #####################################################
-# vmax = 0.5e9
-# ev_x[:int(N_electrons/2)] = -vmax
-# ev_x[int(N_electrons/2):] = vmax
-
-# # electron_x = electron_x.at[:int(N_electrons/2)].set(x_wind/2)
-# # electron_x = electron_x.at[int(N_electrons/2):].set(-x_wind/2)
-
-# electron_x = jax.random.uniform(key1, shape = (N_electrons,), minval=-x_wind/2, maxval=x_wind/2)
-# ion_x = jax.random.uniform(key1, shape = (N_ions,), minval=-x_wind/2, maxval=x_wind/2)
-# ion_y = jax.random.uniform(key1, shape = (N_ions,), minval=-y_wind/2, maxval=y_wind/2)
-# ion_z = jax.random.uniform(key1, shape = (N_ions,), minval=-z_wind/2, maxval=z_wind/2)
-
-#################################### Plasma Oscillations ########################################################
-# adding a perturbation to the particle velocities to simulate plasma oscillations
-
-perturbation_period = 20*dt # starting with 5 dt's for now
-
-velocity_perturbation = 0 #1e9 # m/s
-# perturbation velocity
-
-def perturb_function(t, dt, perturbation_period, velocity_perturbation):
-    perturbation = velocity_perturbation * jnp.sin(2 * jnp.pi * t * dt / perturbation_period)
-    return perturbation
-# function to calculate the perturbation
+vmax = 0.5e8
+vp   = 0.15e8
+ev_x = vp * np.random.randn(N_electrons) + vmax
+ev_x[:int(N_electrons/2)] *= -1
+# antisymmetric streams
+ev_x *= ( 1 + 0.1*jnp.sin(2*jnp.pi * electron_x / x_wind) )
+# add perturbation to the electron velocities
 
 ##################################### Neural Network Preconditioner ################################################
 
@@ -210,10 +197,6 @@ for t in range(Nt):
 
     if verbose: print(f"Calculating Electron Velocities, Max Value: {jnp.max(ev_x)}")
     # print the maximum value of the electron velocities
-    
-    if t > 5:
-        ev_x = ev_x.at[:].add(perturb_function(t, dt, perturbation_period, velocity_perturbation))
-    # add perturbation to the electron velocities
 
     electron_x, electron_y, electron_z = update_position(electron_x, electron_y, electron_z, ev_x, ev_y, ev_z, dt, x_wind, y_wind, z_wind)
     # Update the positions of the particles
@@ -222,22 +205,23 @@ for t in range(Nt):
     # print the maximum value of the electron positions
 
     ############### UPDATE IONS ################################################################################################
-    if GPUs:
-        with jax.default_device(jax.devices('gpu')[0]):
+    if N_ions > 0:
+        if GPUs:
+            with jax.default_device(jax.devices('gpu')[0]):
+                iv_x, iv_y, iv_z = boris(q_i, Ex, Ey, Ez, Bx, By, Bz, ion_x, \
+                            ion_y, ion_z, iv_x, iv_y, iv_z, dt, mi)
+        else:
             iv_x, iv_y, iv_z = boris(q_i, Ex, Ey, Ez, Bx, By, Bz, ion_x, \
-                        ion_y, ion_z, iv_x, iv_y, iv_z, dt, mi)
-    else:
-        iv_x, iv_y, iv_z = boris(q_i, Ex, Ey, Ez, Bx, By, Bz, ion_x, \
-                                ion_y, ion_z, iv_x, iv_y, iv_z, dt, mi)
-    # use boris push for ion velocities
+                                    ion_y, ion_z, iv_x, iv_y, iv_z, dt, mi)
+        # use boris push for ion velocities
 
-    if verbose: print(f"Calculating Ion Velocities, Max Value: {jnp.max(iv_x)}")
-    # print the maximum value of the ion velocities
+        if verbose: print(f"Calculating Ion Velocities, Max Value: {jnp.max(iv_x)}")
+        # print the maximum value of the ion velocities
 
-    ion_x, ion_y, ion_z  = update_position(ion_x, ion_y, ion_z, iv_x, iv_y, iv_z, dt, x_wind, y_wind, z_wind)
-    # Update the positions of the particles
-    if verbose: print(f"Calculating Ion Positions, Max Value: {jnp.max(ion_x)}")
-    # print the maximum value of the ion positions
+        ion_x, ion_y, ion_z  = update_position(ion_x, ion_y, ion_z, iv_x, iv_y, iv_z, dt, x_wind, y_wind, z_wind)
+        # Update the positions of the particles
+        if verbose: print(f"Calculating Ion Positions, Max Value: {jnp.max(ion_x)}")
+        # print the maximum value of the ion positions
 
     ################ MAGNETIC FIELD UPDATE #######################################################################
     #Bx, By, Bz = update_B(Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
@@ -286,10 +270,10 @@ for t in range(Nt):
             jnp.save(f'data/phi/phi_{t:09}', phi)
         # save the data for the charge density and potential
         if phaseSpace:
-            # phase_space(electron_x, ev_x, t, "Electronx")
+            phase_space(electron_x, ev_x, t, "Electronx")
             # phase_space(electron_y, ev_y, t, "Electrony")
             # phase_space(electron_z, ev_z, t, "Electronz")
-            # phase_space(ion_x, iv_x, t, "Ionx")
+            phase_space(ion_x, iv_x, t, "Ionx")
             # phase_space(ion_y, iv_y, t, "Iony")
             # phase_space(ion_z, iv_z, t, "Ionz")
 
