@@ -295,7 +295,6 @@ def apply_M(Ax, M):
     return (1/9)*(M_Ax + M_Ay + M_Az)
 
 
-
 def conjugate_grad(A, b, x0, tol=1e-6, atol=0.0, maxiter=10000, M=None):
 
     #_dot = functools.partial(jnp.dot, precision=lax.Precision.HIGHEST)
@@ -344,9 +343,6 @@ def conjugate_grad(A, b, x0, tol=1e-6, atol=0.0, maxiter=10000, M=None):
     return x_final
 
 
-
-
-
 # @jit
 # def cg_loop(p, rk_norm, x, residual, dx, dy, dz):
 #     Ap = laplacian(p, dx, dy, dz)
@@ -372,6 +368,36 @@ def conjugate_grad(A, b, x0, tol=1e-6, atol=0.0, maxiter=10000, M=None):
 #     print(f"Did not converge, residual norm = {rk_norm}")
 #     return x
 
+@jit
+def spectral_poisson_solve(rho, eps, dx, dy, dz):
+    """
+    Solve the Poisson equation for electrostatic potential using spectral method.
+
+    Parameters:
+    - rho (ndarray): Charge density.
+    - eps (float): Permittivity.
+    - dx (float): Grid spacing in the x-direction.
+    - dy (float): Grid spacing in the y-direction.
+    - dz (float): Grid spacing in the z-direction.
+
+    Returns:
+    - phi (ndarray): Solution to the Poisson equation.
+    """
+    Nx, Ny, Nz = rho.shape
+    kx = jnp.fft.fftfreq(Nx, dx) * 2 * jnp.pi
+    ky = jnp.fft.fftfreq(Ny, dy) * 2 * jnp.pi
+    kz = jnp.fft.fftfreq(Nz, dz) * 2 * jnp.pi
+    kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
+    # create 3D meshgrid of wavenumbers
+    k2 = kx**2 + ky**2 + kz**2
+    # calculate the squared wavenumber
+    k2 = jnp.where(k2 == 0, 1e-6, k2)
+    # avoid division by zero
+    phi = -jnp.fft.fftn(rho) / (eps*k2)
+    # calculate the Fourier transform of the charge density and divide by the permittivity and squared wavenumber
+    phi = jnp.fft.ifftn(phi).real
+    # calculate the inverse Fourier transform to obtain the electric potential
+    return phi
 
 def solve_poisson(rho, eps, dx, dy, dz, phi, bc='periodic', M = None):
     """
@@ -391,9 +417,7 @@ def solve_poisson(rho, eps, dx, dy, dz, phi, bc='periodic', M = None):
     - phi (ndarray): Solution to the Poisson equation.
     """
 
-    if bc == 'spectral':
-        lapl = functools.partial(spectral_laplacian, dx=dx, dy=dy, dz=dz)
-    elif bc == 'periodic':
+    if bc == 'periodic':
         lapl = functools.partial(periodic_laplacian, dx=dx, dy=dy, dz=dz)
     elif bc == 'dirichlet':
         lapl = functools.partial(dirichlet_laplacian, dx=dx, dy=dy, dz=dz)
@@ -401,7 +425,10 @@ def solve_poisson(rho, eps, dx, dy, dz, phi, bc='periodic', M = None):
         lapl = functools.partial(neumann_laplacian, dx=dx, dy=dy, dz=dz)
     #phi = conjugate_grad(lapl, rho/eps, phi, tol=1e-6, maxiter=10000, M=M)
     #phi, exitcode = jax.scipy.sparse.linalg.cg(lapl, -rho/eps, phi, tol=1e-6, maxiter=20000, M=M)
-    phi = conjugate_grad(lapl, -rho/eps, phi, tol=1e-6, maxiter=20000, M=M)
+    if bc == 'spectral':
+        phi = spectral_poisson_solve(rho, eps, dx, dy, dz)
+    else:
+        phi = conjugate_grad(lapl, -rho/eps, phi, tol=1e-6, maxiter=20000, M=M)
     return phi
 
 
@@ -481,14 +508,16 @@ def calculateE(N_electrons, electron_x, electron_y, electron_z, \
                 rho = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
                 # reset value of charge density
                 rho = update_rho(N_electrons, electron_x, electron_y, electron_z, dx, dy, dz, q_e, x_wind, y_wind, z_wind, rho)
-                rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, x_wind, y_wind, z_wind, rho)
-                # update the charge density field
+                if N_ions > 0:
+                    rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, x_wind, y_wind, z_wind, rho)
+                    # update the charge density field
     else:
         rho = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
         # reset value of charge density
         rho = update_rho(N_electrons, electron_x, electron_y, electron_z, dx, dy, dz, q_e, x_wind, y_wind, z_wind, rho)
-        rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, x_wind, y_wind, z_wind, rho)
-        # update the charge density field
+        if N_ions > 0:
+            rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, x_wind, y_wind, z_wind, rho)
+            # update the charge density field
 
     if verbose: print(f"Calculating Charge Density, Max Value: {jnp.max(rho)}")
     # print the maximum value of the charge density
