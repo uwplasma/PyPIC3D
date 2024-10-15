@@ -258,19 +258,19 @@ def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_win
     """
 
 
-    def addto_rho(particle, rho):
-        x = particlex.at[particle].get()
-        y = particley.at[particle].get()
-        z = particlez.at[particle].get()
-        rho = particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind)
-        return rho
-
     # def addto_rho(particle, rho):
-    #     x = index_particles(particle, particlex, dx)
-    #     y = index_particles(particle, particley, dy)
-    #     z = index_particles(particle, particlez, dz)
-    #     rho = rho.at[x, y, z].add( q / (dx*dy*dz) )
+    #     x = particlex.at[particle].get()
+    #     y = particley.at[particle].get()
+    #     z = particlez.at[particle].get()
+    #     rho = particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind)
     #     return rho
+
+    def addto_rho(particle, rho):
+        x = index_particles(particle, particlex, dx)
+        y = index_particles(particle, particley, dy)
+        z = index_particles(particle, particlez, dz)
+        rho = rho.at[x, y, z].add( q / (dx*dy*dz) )
+        return rho
     
     return jax.lax.fori_loop(0, Nparticles-1, addto_rho, rho )
 
@@ -341,32 +341,6 @@ def conjugate_grad(A, b, x0, tol=1e-6, atol=0.0, maxiter=10000, M=None):
     x_final, *_ = lax.while_loop(cond_fun, body_fun, initial_value)
 
     return x_final
-
-
-# @jit
-# def cg_loop(p, rk_norm, x, residual, dx, dy, dz):
-#     Ap = laplacian(p, dx, dy, dz)
-#     pAp = jnp.tensordot(p, Ap, axes=3)
-#     alpha = rk_norm / pAp
-#     x = x + alpha * p
-#     residual = residual - alpha * Ap
-#     newrk_norm = jnp.linalg.norm(residual)
-#     beta = newrk_norm / rk_norm
-#     rk_norm = newrk_norm
-#     p = beta * p + residual
-#     return x, residual, rk_norm, p
-
-# def conjugate_grad(b, x, dx, dy, dz, tol=1e-6, max_iter=10000):
-#     residual  = b - laplacian(x, dx, dy, dz)
-#     # r = b - Ax
-#     p = residual
-#     rk_norm = jnp.linalg.norm(residual)
-#     for k in range(max_iter):
-#         x, residual, rk_norm, p = cg_loop(p, rk_norm, x, residual, dx, dy, dz)
-#         if rk_norm < tol:
-#             return x
-#     print(f"Did not converge, residual norm = {rk_norm}")
-#     return x
 
 @jit
 def spectral_poisson_solve(rho, eps, dx, dy, dz):
@@ -538,7 +512,7 @@ def calculateE(N_electrons, electron_x, electron_y, electron_z, \
 
     if verbose: print(f"Calculating Electric Potential, Max Value: {jnp.max(phi)}")
     # print the maximum value of the electric potential
-    if verbose: print( f'Poisson Relative Percent Difference: {compute_pe(phi, rho, eps, dx, dy, dz)}%')
+    #if verbose: print( f'Poisson Relative Percent Difference: {compute_pe(phi, rho, eps, dx, dy, dz)}%')
     # Use conjugated gradients to calculate the electric potential from the charge density
 
     E_fields = jnp.gradient(phi)
@@ -612,6 +586,74 @@ def boris(q, Ex, Ey, Ez, Bx, By, Bz, x, y, z, vx, vy, vz, dt, m):
     # calculate the new velocity
 
     return newvx, newvy, newvz
+
+@jit
+def spectral_curl(xfield, yfield, zfield, dx, dy, dz):
+    """
+    Compute the curl of a 3D vector field using spectral methods.
+
+    Parameters:
+    xfield (ndarray): The x-component of the vector field.
+    yfield (ndarray): The y-component of the vector field.
+    zfield (ndarray): The z-component of the vector field.
+    dx (float): The grid spacing in the x-direction.
+    dy (float): The grid spacing in the y-direction.
+    dz (float): The grid spacing in the z-direction.
+
+    Returns:
+    tuple: A tuple containing the x, y, and z components of the curl of the vector field.
+    """
+
+    Nx, Ny, Nz = xfield.shape
+    kx = jnp.fft.fftfreq(Nx, dx) * 2 * jnp.pi
+    ky = jnp.fft.fftfreq(Ny, dy) * 2 * jnp.pi
+    kz = jnp.fft.fftfreq(Nz, dz) * 2 * jnp.pi
+    kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
+    # create 3D meshgrid of wavenumbers
+
+    xfft = jnp.fft.fftn(xfield)
+    yfft = jnp.fft.fftn(yfield)
+    zfft = jnp.fft.fftn(zfield)
+    # calculate the Fourier transform of the vector field
+
+    curlx = 1j*kz*yfft - 1j*ky*zfft
+    curly = 1j*kx*zfft - 1j*kz*xfft
+    curlz = 1j*ky*xfft - 1j*kx*yfft
+    # calculate the curl of the vector field
+
+    return jnp.fft.ifftn(curlx).real, jnp.fft.ifftn(curly).real, jnp.fft.ifftn(curlz).real
+
+@jit
+def spectralBsolve(Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt):
+    """
+    Solve the magnetic field equations using the spectral method and half leapfrog.
+
+    Parameters:
+    - Bx (ndarray): The x-component of the magnetic field.
+    - By (ndarray): The y-component of the magnetic field.
+    - Bz (ndarray): The z-component of the magnetic field.
+    - Ex (ndarray): The x-component of the electric field.
+    - Ey (ndarray): The y-component of the electric field.
+    - Ez (ndarray): The z-component of the electric field.
+    - dx (float): The grid spacing in the x-direction.
+    - dy (float): The grid spacing in the y-direction.
+    - dz (float): The grid spacing in the z-direction.
+    - dt (float): The time step.
+
+    Returns:
+    - Bx (ndarray): The updated x-component of the magnetic field.
+    - By (ndarray): The updated y-component of the magnetic field.
+    - Bz (ndarray): The updated z-component of the magnetic field.
+    """
+    curlx, curly, curlz = spectral_curl(Ex, Ey, Ez, dx, dy, dz)
+    Bx = Bx - dt/2*curlx
+    By = By - dt/2*curly
+    Bz = Bz - dt/2*curlz
+
+    return Bx, By, Bz
+
+
+
 
 @jit
 def curlx(yfield, zfield, dy, dz):
@@ -690,9 +732,9 @@ def update_B(Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt):
     - By (float): The updated y-component of the magnetic field.
     - Bz (float): The updated z-component of the magnetic field.
     """
-    Bx = Bx - dt*curlx(Ey, Ez, dy, dz)
-    By = By - dt*curly(Ex, Ez, dx, dz)
-    Bz = Bz - dt*curlz(Ex, Ey, dx, dy)
+    Bx = Bx - dt/2*curlx(Ey, Ez, dy, dz)
+    By = By - dt/2*curly(Ex, Ez, dx, dz)
+    Bz = Bz - dt/2*curlz(Ex, Ey, dx, dy)
     return Bx, By, Bz
 
 
@@ -787,3 +829,24 @@ def freq_probe(n, x, y, z, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
     c1 = q_e**2 / (eps*me)
     freq = jnp.sqrt( c1 * ne.at[xi,yi,zi].get() )    # calculate the plasma frequency at the array point: x, y, z
     return freq
+
+
+def totalfield_energy(Ex, Ey, Ez, Bx, By, Bz, mu, eps):
+    """
+    Calculate the total field energy of the electric and magnetic fields.
+
+    Parameters:
+    - Ex (ndarray): The x-component of the electric field.
+    - Ey (ndarray): The y-component of the electric field.
+    - Ez (ndarray): The z-component of the electric field.
+    - Bx (ndarray): The x-component of the magnetic field.
+    - By (ndarray): The y-component of the magnetic field.
+    - Bz (ndarray): The z-component of the magnetic field.
+
+    Returns:
+    - float: The total field energy.
+    """
+
+    total_magnetic_energy = (0.5/mu)*jnp.sum(Bx**2 + By**2 + Bz**2)
+    total_electric_energy = (0.5*eps)*jnp.sum(Ex**2 + Ey**2 + Ez**2)
+    return total_magnetic_energy + total_electric_energy

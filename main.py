@@ -18,9 +18,9 @@ import equinox as eqx
 from plotting import plot_fields, plot_positions, plot_rho
 from plotting import plot_velocities, plot_velocity_histogram, plot_KE
 from plotting import plot_probe, plot_fft, phase_space, multi_phase_space
-from particle import initial_particles, update_position, total_KE
+from particle import initial_particles, update_position, total_KE, total_momentum
 from fields import boris, update_B, calculateE, initialize_fields, probe
-from fields import magnitude_probe,  freq_probe, freq
+from fields import magnitude_probe,  freq_probe, freq, spectralBsolve, totalfield_energy
 from model import PoissonPrecondition
 # import code from other files
 
@@ -39,9 +39,10 @@ model_name = "Preconditioner.eqx"
 ############################ SETTINGS #####################################################################
 save_data = False
 plotfields = True
-plotpositions = False
+plotpositions = True
 plotvelocities = False
 plotKE = False
+plotEnergy = True
 plasmaFreq = False
 phaseSpace = True
 # booleans for plotting/saving data
@@ -49,9 +50,10 @@ phaseSpace = True
 benchmark = False
 # still need to implement benchmarking
 
-verbose   = False
+verbose   = True
 # booleans for debugging
 
+electrostatic = True
 
 if benchmark: jax.profiler.start_trace("/home/christopherwoolford/Documents/PyPIC3D/tensorboard")
 # start the profiler using tensorboard
@@ -109,7 +111,7 @@ courant_number = 1
 dt = courant_number / (  C * ( (1/dx) + (1/dy) + (1/dz) )   )
 # calculate spatial resolution using courant condition
 
-t_wind = 10e-9
+t_wind = 100e-9
 # time window for simultion
 Nt     = int( t_wind / dt )
 # Nt for resolution
@@ -118,7 +120,7 @@ print(f'time window: {t_wind}')
 print(f'Nt:          {Nt}')
 print(f'dt:          {dt}')
 
-plot_freq = 50
+plot_freq = 200
 # how often to plot the data
 
 Ex, Ey, Ez, Bx, By, Bz, phi, rho = initialize_fields(Nx, Ny, Nz)
@@ -165,6 +167,8 @@ if plotKE:
     KE = []
     KE_time = []
 if plasmaFreq: freqs = []
+if plotEnergy: total_energy = []
+if plotEnergy: total_p      = []
 
 for t in range(Nt):
     print(f'Iteration {t}, Time: {t*dt} s')
@@ -224,14 +228,25 @@ for t in range(Nt):
         # print the maximum value of the ion positions
 
     ################ MAGNETIC FIELD UPDATE #######################################################################
-    #Bx, By, Bz = update_B(Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
-    # update the magnetic field using the curl of the electric field
-    if verbose: print(f"Calculating Magnetic Field, Max Value: {jnp.max(Bx)}")
-    # print the maximum value of the magnetic field
+    if not electrostatic:
+        if bc == "spectral":
+            Bx, By, Bz = spectralBsolve(Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
+        else:
+            Bx, By, Bz = update_B(Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
+        # update the magnetic field using the curl of the electric field
+        if verbose: print(f"Calculating Magnetic Field, Max Value: {jnp.max(Bx)}")
+        # print the maximum value of the magnetic field
 
 
     if t % plot_freq == 0:
     ############## PLOTTING ###################################################################
+        if plotEnergy:
+            mu = 1.2566370613e-6
+            # permeability of free space
+            total_energy.append(  \
+                totalfield_energy(Ex, Ey, Ez, Bx, By, Bz, mu, eps) + \
+                total_KE(me, ev_x, ev_y, ev_z) + total_KE(mi, iv_x, iv_y, iv_z) )
+            total_p.append( total_momentum(me, ev_x, ev_y, ev_z) + total_momentum(mi, iv_x, iv_y, iv_z) )
         if plotpositions:
             particlesx = jnp.concatenate([electron_x, ion_x])
             particlesy = jnp.concatenate([electron_y, ion_y])
@@ -296,6 +311,17 @@ if plasmaFreq:
     # plot the plasma frequency
     average_freq = jnp.mean( jnp.asarray(freqs[ int(len(freqs)/4):int(3*len(freqs)/4)  ] ) )
     print(f'Average Plasma Frequency: {average_freq}')
+if plotEnergy:
+    plot_probe(total_energy, "TotalEnergy")
+    energy_freq = plot_fft(total_energy, dt*plot_freq, "FFT of Total Energy", "Energy_FFT")
+    print(f'Energy Frequency: {energy_freq}')
+    # plot the total energy of the system
+
+    plot_probe(total_p, "TotalMomentum")
+    momentum_freq = plot_fft(total_p, dt*plot_freq, "FFT of Total Momentum", "Momentum_FFT")
+    print(f'Momentum Frequency: {momentum_freq}')
+    # plot the total momentum of the system
+
 end = time.time()
 print(f"Total Simulation Time: {end-start}")
 

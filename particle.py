@@ -118,3 +118,18 @@ def total_KE(m, vx, vy, vz):
     - float: The total kinetic energy of the particle.
     """
     return 0.5 * m * jnp.sum( vx**2 + vy**2 + vz**2 )
+
+@jit
+def total_momentum(m, vx, vy, vz):
+    """
+    Calculate the total momentum of the particles.
+
+    Parameters:
+    - m (float): The mass of the particle.
+    - v (jax.numpy.ndarray): The velocity of the particle.
+
+    Returns:
+    - float: The total momentum of the particle.
+    """
+    px, py, pz = m * jnp.sum(vx), m * jnp.sum(vy), m * jnp.sum(vz)
+    return jnp.sqrt(px**2 + py**2 + pz**2)
