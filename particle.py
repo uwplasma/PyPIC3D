@@ -131,5 +131,4 @@ def total_momentum(m, vx, vy, vz):
     Returns:
     - float: The total momentum of the particle.
     """
-    px, py, pz = m * jnp.sum(vx), m * jnp.sum(vy), m * jnp.sum(vz)
-    return jnp.sqrt(px**2 + py**2 + pz**2)
+    return m * jnp.sum( jnp.sqrt( vx**2 + vy**2 + vz**2 ) )
