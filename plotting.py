@@ -183,7 +183,7 @@ def plot_KE(KE, t):
     plt.close()
 
 
-def plot_probe(probe, name):
+def plot_probe(probe, name, savename):
     """
     Plots a probe.
 
@@ -196,8 +196,8 @@ def plot_probe(probe, name):
     plt.plot(probe)
     plt.xlabel("Time")
     plt.ylabel(f"{name}")
-    plt.title(f"{name} vs. Time")
-    plt.savefig(f"plots/{name}_probe.png", dpi=300)
+    plt.title(f"{name}")
+    plt.savefig(f"plots/{savename}_probe.png", dpi=300)
     plt.close()
 
 def fft(signal, dt):
@@ -284,6 +284,6 @@ def multi_phase_space(x1, x2, vx1, vx2, t, species1, species2, name, x_wind):
     ax.set_xlabel("Position")
     ax.set_ylabel("Velocity")
     ax.set_title(f"{name} Phase Space")
-    ax.legend()
+    ax.legend(loc='upper right')
     plt.savefig(f"plots/phase_space/{name}/{name}_phase_space.{t:09}.png", dpi=300)
     plt.close()
