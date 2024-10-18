@@ -9,7 +9,7 @@ import math
 from pyevtk.hl import gridToVTK
 
 
-def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key):
+def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, key2, key3):
     """
     Initializes the velocities and positions of the particles.
 
@@ -31,11 +31,11 @@ def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key):
     - v_y (numpy.ndarray): The y-component of the particles' velocities.
     - v_z (numpy.ndarray): The z-component of the particles' velocities.
     """
-    initial_wind = 0.0025
+    initial_wind = 1.0
     # what is the initial window for the particles (as a fraction of spatial window)
-    x = jax.random.uniform(key, shape = (N_particles,), minval=-initial_wind*x_wind/2, maxval=initial_wind*x_wind/2)
-    y = jax.random.uniform(key, shape = (N_particles,), minval=-initial_wind*y_wind/2, maxval=initial_wind*y_wind/2)
-    z = jax.random.uniform(key, shape = (N_particles,), minval=-initial_wind*z_wind/2, maxval=initial_wind*z_wind/2)
+    x = jax.random.uniform(key1, shape = (N_particles,), minval=-initial_wind*x_wind/2, maxval=initial_wind*x_wind/2)
+    y = jax.random.uniform(key2, shape = (N_particles,), minval=-initial_wind*y_wind/2, maxval=initial_wind*y_wind/2)
+    z = jax.random.uniform(key3, shape = (N_particles,), minval=-initial_wind*z_wind/2, maxval=initial_wind*z_wind/2)
     # initialize the positions of the particles
     std = kb * T / mass
     v_x = np.random.normal(0, std, N_particles)
