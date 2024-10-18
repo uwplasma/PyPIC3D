@@ -20,7 +20,8 @@ from plotting import plot_velocities, plot_velocity_histogram, plot_KE
 from plotting import plot_probe, plot_fft, phase_space, multi_phase_space
 from particle import initial_particles, update_position, total_KE, total_momentum
 from fields import boris, update_B, calculateE, initialize_fields, probe
-from fields import magnitude_probe,  freq_probe, freq, spectralBsolve, totalfield_energy
+from fields import magnitude_probe,  freq_probe, freq, spectralBsolve, totalfield_energy, spectralEsolve
+from fields import update_E
 from model import PoissonPrecondition
 # import code from other files
 
@@ -39,7 +40,7 @@ model_name = "Preconditioner.eqx"
 ############################ SETTINGS #####################################################################
 save_data = False
 plotfields = False
-plotpositions = False
+plotpositions = True
 plotvelocities = False
 plotKE = False
 plotEnergy = False
@@ -64,7 +65,7 @@ print("Initializing Simulation...")
 start = time.time()
 
 ############################# SIMULATION PARAMETERS ########################################################
-bc = "spectral"
+bc = "periodic"
 # boundary conditions: periodic, dirichlet, neumann, spectral
 
 eps = 8.854e-12
@@ -87,13 +88,13 @@ Ti = 100 # K
 # ion temperature
 # assuming an isothermal plasma for now
 
-N_electrons = 200000
-N_ions      = 200000
+N_electrons = 5000
+N_ions      = 5000
 # specify the number of electrons and ions in the plasma
 
-Nx = 40
-Ny = 40
-Nz = 40
+Nx = 30
+Ny = 30
+Nz = 30
 # specify the number of array spacings in x, y, and z
 x_wind = 1e-2
 y_wind = 1e-2
@@ -109,9 +110,23 @@ print(f'Dz: {dz}')
 ################ Courant Condition #############################################################################
 courant_number = 1
 dt = courant_number / (  C * ( (1/dx) + (1/dy) + (1/dz) )   )
+# dt = courant_number * min(dx, dy, dz) / (C)
 # calculate spatial resolution using courant condition
 
-t_wind = 5e-9
+
+
+theoretical_freq = jnp.sqrt(  (N_electrons / (x_wind*y_wind*z_wind)) * q_e**2  / (eps*me)  )
+# calculate the expected plasma frequency from analytical theory, w = sqrt( ne^2 / (eps * me) )
+#assert theoretical_freq * dt < 2
+# enforce an additional condition on dt
+
+print(f"Theoretical Plasma Frequency: {theoretical_freq} Hz")
+
+if theoretical_freq * dt > 2.0:
+    print(f"# of Electrons is Low and may introduce numerical stability")
+    print(f"In order to correct this, # of Electrons needs to be at least { (2/dt)**2 * (me*eps/q_e**2) } for this spatial resolution")
+
+t_wind = 1e-9
 # time window for simultion
 Nt     = int( t_wind / dt )
 # Nt for resolution
@@ -120,7 +135,7 @@ print(f'time window: {t_wind}')
 print(f'Nt:          {Nt}')
 print(f'dt:          {dt}')
 
-plot_freq = 500
+plot_freq = 200
 # how often to plot the data
 
 Ex, Ey, Ez, Bx, By, Bz, phi, rho = initialize_fields(Nx, Ny, Nz)
@@ -132,34 +147,34 @@ key3 = random.key(1234)
 key4 = random.key(2345)
 key5 = random.key(3456)
 # random keys for initializing the particles
-electron_x, electron_y, electron_z, ev_x, ev_y, ev_z  = initial_particles(N_electrons, x_wind, y_wind, z_wind, me, Te, kb, key1)
-ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions, x_wind, y_wind, z_wind, mi, Ti, kb, key2)
+electron_x, electron_y, electron_z, ev_x, ev_y, ev_z  = initial_particles(N_electrons, x_wind, y_wind, z_wind, me, Te, kb, key1, key2, key3)
+ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions, x_wind, y_wind, z_wind, mi, Ti, kb, key3, key4, key5)
 # initialize the positions and velocities of the electrons and ions in the plasma.
 # eventually, I need to update the initialization to use a more accurate position and velocity distribution.
 
 #################################### Two Stream Instability #####################################################
-electron_x = jnp.linspace(-x_wind/2, x_wind/2, N_electrons)
-electron_x = electron_x.at[:int(N_electrons/2)].set(-x_wind/2)
-electron_x = electron_x.at[int(N_electrons/2):].set(x_wind/2)
-# alternating_ones = (-1)**jnp.array(range(0,N_electrons))
-# v0=1e8
-# ev_x = v0*alternating_ones
-vmax = 1e8
-vp   = 0.1e8
-ev_x = vp * np.random.randn(N_electrons) + vmax
-ev_x[int(N_electrons/2):] *= -1
+# electron_x = jnp.linspace(-x_wind/2, x_wind/2, N_electrons)
+# electron_x = electron_x.at[:int(N_electrons/2)].set(-x_wind/2)
+# electron_x = electron_x.at[int(N_electrons/2):].set(x_wind/2)
+alternating_ones = (-1)**jnp.array(range(0,N_electrons))
+v0=3e7
+ev_x = v0*alternating_ones
+#vmax = 1e8
+#vp   = 0.1e8
+#ev_x = vp * np.random.randn(N_electrons) + vmax
+#ev_x[int(N_electrons/2):] *= -1
 # vmax = 0.5e8
 # vp   = 0.08e8
 # ev_x = vp * np.random.randn(N_electrons) + vmax
 # ev_x[:int(N_electrons/2)] *= -1
 # # antisymmetric streams
-ev_x *= ( 1 + 0.1*jnp.sin(2*jnp.pi * electron_x / x_wind) )
+ev_x *= ( 1 + 0.1*jnp.sin(6*jnp.pi * electron_x / x_wind) )
 # add perturbation to the electron velocities
 
-ion_x = jax.random.uniform(key2, shape=(N_ions,), minval=-x_wind/2, maxval=x_wind/2)
-ion_y = jax.random.uniform(key3, shape=(N_ions,), minval=-y_wind/2, maxval=y_wind/2)
-ion_z = jax.random.uniform(key4, shape=(N_ions,), minval=-z_wind/2, maxval=z_wind/2)
-# initialize the positions of the ions
+# ion_x = jax.random.uniform(key2, shape=(N_ions,), minval=-x_wind/2, maxval=x_wind/2)
+# ion_y = jax.random.uniform(key3, shape=(N_ions,), minval=-y_wind/2, maxval=y_wind/2)
+# ion_z = jax.random.uniform(key4, shape=(N_ions,), minval=-z_wind/2, maxval=z_wind/2)
+# # initialize the positions of the ions
 
 iv_x = 0
 iv_y = 0
@@ -193,6 +208,11 @@ if plasmaFreq: freqs = []
 if plotEnergy: total_energy = []
 if plotEnergy: total_p      = []
 
+if not electrostatic:
+        Ex, Ey, Ez, phi, rho = calculateE(N_electrons, electron_x, electron_y, electron_z, \
+            N_ions, ion_x, ion_y, ion_z,                                               \
+            dx, dy, dz, q_e, q_i, rho, eps, phi, 0, M, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
+    
 for t in range(Nt):
     print(f'Iteration {t}, Time: {t*dt} s')
 
@@ -204,13 +224,13 @@ for t in range(Nt):
         else:
             M = model(phi, rho)
     # solve for the preconditioner using the neural network
-
-    Ex, Ey, Ez, phi, rho = calculateE(N_electrons, electron_x, electron_y, electron_z, \
-            N_ions, ion_x, ion_y, ion_z,                                               \
-            dx, dy, dz, q_e, q_i, rho, eps, phi, t, M, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
-    
-    if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(Ex)}")
-    # print the maximum value of the electric field
+    if electrostatic:
+        Ex, Ey, Ez, phi, rho = calculateE(N_electrons, electron_x, electron_y, electron_z, \
+                N_ions, ion_x, ion_y, ion_z,                                               \
+                dx, dy, dz, q_e, q_i, rho, eps, phi, t, M, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
+        
+        if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(Ex)}")
+        # print the maximum value of the electric field
 
     ############### UPDATE ELECTRONS ##########################################################################################
     if GPUs:
@@ -259,6 +279,11 @@ for t in range(Nt):
         # update the magnetic field using the curl of the electric field
         if verbose: print(f"Calculating Magnetic Field, Max Value: {jnp.max(Bx)}")
         # print the maximum value of the magnetic field
+
+        if bc == "spectral":
+            Ex, Ey, Ez = spectralEsolve(Ex, Ey, Ez, Bx, By, Bz, dx, dy, dz, dt, C)
+        else:
+            Ex, Ex, Ez = update_E(Ex, Ey, Ez, Bx, By, Bz, dx, dy, dz, dt, C)
 
 
     if t % plot_freq == 0:

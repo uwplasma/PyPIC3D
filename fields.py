@@ -652,6 +652,37 @@ def spectralBsolve(Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt):
 
     return Bx, By, Bz
 
+@jit
+def spectralEsolve(Ex, Ey, Ez, Bx, By, Bz, dx, dy, dz, dt, C):
+    """
+    Solve the electric field equations using the spectral method and half leapfrog.
+
+    Parameters:
+    - Ex (ndarray): The x-component of the electric field.
+    - Ey (ndarray): The y-component of the electric field.
+    - Ez (ndarray): The z-component of the electric field.
+    - Bx (ndarray): The x-component of the magnetic field.
+    - By (ndarray): The y-component of the magnetic field.
+    - Bz (ndarray): The z-component of the magnetic field.
+    - dx (float): The grid spacing in the x-direction.
+    - dy (float): The grid spacing in the y-direction.
+    - dz (float): The grid spacing in the z-direction.
+    - dt (float): The time step.
+    - q (float): The charge of the particle.
+    - m (float): The mass of the particle.
+
+    Returns:
+    - Ex (ndarray): The updated x-component of the electric field.
+    - Ey (ndarray): The updated y-component of the electric field.
+    - Ez (ndarray): The updated z-component of the electric field.
+    """
+    curlx, curly, curlz = spectral_curl(Bx, By, Bz, dx, dy, dz)
+    Ex = Ex + C**2 * curlx * dt/2
+    Ey = Ey + C**2 * curly * dt/2
+    Ez = Ez + C**2 * curlz * dt/2
+
+    return Ex, Ey, Ez
+
 
 
 
@@ -736,6 +767,35 @@ def update_B(Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt):
     By = By - dt/2*curly(Ex, Ez, dx, dz)
     Bz = Bz - dt/2*curlz(Ex, Ey, dx, dy)
     return Bx, By, Bz
+
+
+@jit
+def update_E(Ex, Ey, Ez, Bx, By, Bz, dx, dy, dz, dt, C):
+    """
+    Update the electric field components Ex, Ey, and Ez based on the magnetic field components Bx, By, and Bz.
+
+    Parameters:
+    - Ex (float): The x-component of the electric field.
+    - Ey (float): The y-component of the electric field.
+    - Ez (float): The z-component of the electric field.
+    - Bx (float): The x-component of the magnetic field.
+    - By (float): The y-component of the magnetic field.
+    - Bz (float): The z-component of the magnetic field.
+    - dx (float): The spacing in the x-direction.
+    - dy (float): The spacing in the y-direction.
+    - dz (float): The spacing in the z-direction.
+    - dt (float): The time step.
+    - C (float): The Courant number.
+
+    Returns:
+    - Ex (float): The updated x-component of the electric field.
+    - Ey (float): The updated y-component of the electric field.
+    - Ez (float): The updated z-component of the electric field.
+    """
+    Ex = Ex + C**2*curlx(By, Bz, dy, dz)*dt/2
+    Ey = Ey + C**2*curly(Bx, Bz, dx, dz)*dt/2
+    Ez = Ez + C**2*curlz(Bx, By, dx, dy)*dt/2
+    return Ex, Ey, Ez
 
 
 def probe(fieldx, fieldy, fieldz, x, y, z):
