@@ -113,18 +113,25 @@ dt = courant_number / (  C * ( (1/dx) + (1/dy) + (1/dz) )   )
 # dt = courant_number * min(dx, dy, dz) / (C)
 # calculate spatial resolution using courant condition
 
-
-
-theoretical_freq = jnp.sqrt(  (N_electrons / (x_wind*y_wind*z_wind)) * q_e**2  / (eps*me)  )
+ne = N_electrons / (x_wind*y_wind*z_wind)
+theoretical_freq = jnp.sqrt(  ne * q_e**2  / (eps*me)  )
 # calculate the expected plasma frequency from analytical theory, w = sqrt( ne^2 / (eps * me) )
-#assert theoretical_freq * dt < 2
-# enforce an additional condition on dt
 
 print(f"Theoretical Plasma Frequency: {theoretical_freq} Hz")
 
 if theoretical_freq * dt > 2.0:
     print(f"# of Electrons is Low and may introduce numerical stability")
     print(f"In order to correct this, # of Electrons needs to be at least { (2/dt)**2 * (me*eps/q_e**2) } for this spatial resolution")
+
+
+debye_length = jnp.sqrt( eps * kb * Te / (ne * q_e**2) )
+# calculate the debye length of the plasma
+print(f"Debye Length: {debye_length} m")
+
+if debye_length < dx:
+    print(f"Debye Length is less than the spatial resolution, this may introduce numerical instability")
+
+
 
 t_wind = 1e-9
 # time window for simultion
