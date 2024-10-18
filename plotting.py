@@ -8,6 +8,7 @@ import jax.numpy as jnp
 import math
 from pyevtk.hl import gridToVTK
 import scipy
+import os
 
 def plot_rho(rho, t, name, dx, dy, dz):
     """
@@ -30,6 +31,13 @@ def plot_rho(rho, t, name, dx, dy, dz):
     x = np.linspace(0, Nx, Nx) * dx
     y = np.linspace(0, Ny, Ny) * dy
     z = np.linspace(0, Nz, Nz) * dz
+
+    # Create directory if it doesn't exist
+    directory = "./plots/rho"
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+
     gridToVTK(f"./plots/rho/{name}_{t:09}", x, y, z,   \
             cellData = {f"{name}" : np.asarray(rho)}) 
 # plot the charge density in the vtk file format
@@ -57,6 +65,12 @@ def plot_fields(fieldx, fieldy, fieldz, t, name, dx, dy, dz):
     x = np.linspace(0, Nx, Nx) * dx
     y = np.linspace(0, Ny, Ny) * dy
     z = np.linspace(0, Nz, Nz) * dz
+
+    # Create directory if it doesn't exist
+    directory = "./plots/fields"
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
     gridToVTK(f"./plots/fields/{name}_{t:09}", x, y, z,   \
             cellData = {f"{name}_x" : np.asarray(fieldx), \
              f"{name}_y" : np.asarray(fieldy), f"{name}_z" : np.asarray(fieldz)}) 
@@ -77,6 +91,10 @@ def plot_1dposition(x, name, particle):
     plt.title(f"{name} Position")
     plt.xlabel("Time")
     plt.ylabel("Position")
+
+    if not os.path.exists(f"plots/{name}"):
+        os.makedirs(f"plots/{name}")
+
     plt.savefig(f"plots/{name}/{particle}_position.png", dpi=300)
     plt.close()
 
@@ -107,6 +125,10 @@ def plot_positions(x, y, z, t, x_wind, y_wind, z_wind):
     ax.set_ylabel('Y (m)')
     ax.set_zlabel('Z (m)')
     plt.title("Particle Positions")
+
+    if not os.path.exists("plots/positions"):
+        os.makedirs("plots/positions")
+
     plt.savefig(f"plots/positions/particles.{t:09}.png", dpi=300)
     plt.close()
 
@@ -131,6 +153,10 @@ def plot_velocity_histogram(vx, vy, vz, t, nbins=50):
     axs[1].set_title('Y-Component')
     axs[2].hist(jnp.abs(vz), bins=nbins)
     axs[2].set_title('Z-Component')
+
+    if not os.path.exists("plots/velocity_histograms"):
+        os.makedirs("plots/velocity_histograms")
+
     plt.savefig(f"plots/velocity_histograms/velocities.{t:09}.png", dpi=300)
     plt.close()
 
@@ -161,6 +187,10 @@ def plot_velocities(x, y, z, vx, vy, vz, t, x_wind, y_wind, z_wind):
     ax.set_ylabel('Y (m)')
     ax.set_zlabel('Z (m)')
     plt.title("Particle Velocities")
+
+    if not os.path.exists("plots/velocities"):
+        os.makedirs("plots/velocities")
+
     plt.savefig(f"plots/velocities/velocities.{t:09}.png", dpi=300)
     plt.close()
 
@@ -179,6 +209,10 @@ def plot_KE(KE, t):
     plt.xlabel("Time")
     plt.ylabel("Kinetic Energy")
     plt.title("Kinetic Energy vs. Time")
+
+    if not os.path.exists("plots"):
+        os.makedirs("plots")
+
     plt.savefig("plots/KE.png", dpi=300)
     plt.close()
 
@@ -197,6 +231,10 @@ def plot_probe(probe, name, savename):
     plt.xlabel("Time")
     plt.ylabel(f"{name}")
     plt.title(f"{name}")
+
+    if not os.path.exists("plots"):
+        os.makedirs("plots")
+
     plt.savefig(f"plots/{savename}_probe.png", dpi=300)
     plt.close()
 
@@ -234,6 +272,10 @@ def plot_fft(signal, dt, name, savename):
     plt.xlabel("Frequency (Hz)")
     plt.ylabel("Amplitude")
     plt.title(f"FFT of {name}")
+
+    if not os.path.exists("plots"):
+        os.makedirs("plots")
+
     plt.savefig(f"plots/{savename}.png", dpi=300)
     plt.close()
     return xf[ np.argmax(np.abs(yf)[1:]) ]
@@ -256,6 +298,10 @@ def phase_space(x, vx, t, name):
     plt.xlabel("Position")
     plt.ylabel("Velocity")
     plt.title(f"{name} Phase Space")
+
+    if not os.path.exists(f"plots/phase_space/{name}"):
+        os.makedirs(f"plots/phase_space/{name}")
+
     plt.savefig(f"plots/phase_space/{name}/{name}_phase_space.{t:09}.png", dpi=300)
     plt.close()
 
@@ -285,5 +331,9 @@ def multi_phase_space(x1, x2, vx1, vx2, t, species1, species2, name, x_wind):
     ax.set_ylabel("Velocity")
     ax.set_title(f"{name} Phase Space")
     ax.legend(loc='upper right')
+
+    if not os.path.exists(f"plots/phase_space/{name}"):
+        os.makedirs(f"plots/phase_space/{name}")
+        
     plt.savefig(f"plots/phase_space/{name}/{name}_phase_space.{t:09}.png", dpi=300)
     plt.close()
