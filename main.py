@@ -19,6 +19,7 @@ from plotting import plot_fields, plot_positions, plot_rho
 from plotting import plot_velocities, plot_velocity_histogram, plot_KE
 from plotting import plot_probe, plot_fft, phase_space, multi_phase_space
 from particle import initial_particles, update_position, total_KE, total_momentum
+from particle import cold_start_init
 from fields import boris, update_B, calculateE, initialize_fields, probe
 from fields import magnitude_probe,  freq_probe, freq, spectralBsolve, totalfield_energy, spectralEsolve
 from fields import update_E
@@ -43,7 +44,7 @@ plotfields = False
 plotpositions = True
 plotvelocities = False
 plotKE = False
-plotEnergy = False
+plotEnergy = True
 plasmaFreq = False
 phaseSpace = True
 # booleans for plotting/saving data
@@ -55,6 +56,8 @@ verbose   = False
 # booleans for debugging
 
 electrostatic = True
+cold_start = False
+# start all the particles at the same place (rho = 0)
 
 if benchmark: jax.profiler.start_trace("/home/christopherwoolford/Documents/PyPIC3D/tensorboard")
 # start the profiler using tensorboard
@@ -65,7 +68,7 @@ print("Initializing Simulation...")
 start = time.time()
 
 ############################# SIMULATION PARAMETERS ########################################################
-bc = "periodic"
+bc = "spectral"
 # boundary conditions: periodic, dirichlet, neumann, spectral
 
 eps = 8.854e-12
@@ -108,7 +111,7 @@ print(f'Dy: {dy}')
 print(f'Dz: {dz}')
 
 ################ Courant Condition #############################################################################
-courant_number = 1
+courant_number = 2
 dt = courant_number / (  C * ( (1/dx) + (1/dy) + (1/dz) )   )
 # dt = courant_number * min(dx, dy, dz) / (C)
 # calculate spatial resolution using courant condition
@@ -133,7 +136,7 @@ if debye_length < dx:
 
 
 
-t_wind = 1e-9
+t_wind = 0.25e-9
 # time window for simultion
 Nt     = int( t_wind / dt )
 # Nt for resolution
@@ -154,8 +157,12 @@ key3 = random.key(1234)
 key4 = random.key(2345)
 key5 = random.key(3456)
 # random keys for initializing the particles
-electron_x, electron_y, electron_z, ev_x, ev_y, ev_z  = initial_particles(N_electrons, x_wind, y_wind, z_wind, me, Te, kb, key1, key2, key3)
-ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions, x_wind, y_wind, z_wind, mi, Ti, kb, key3, key4, key5)
+if cold_start:
+    electron_x, electron_y, electron_z, ev_x, ev_y, ev_z = cold_start_init(0, N_electrons, x_wind, y_wind, z_wind, me, Te, kb, key1, key2, key3)
+    ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = cold_start_init(0, N_ions, x_wind, y_wind, z_wind, mi, Ti, kb, key3, key4, key5)
+else:
+    electron_x, electron_y, electron_z, ev_x, ev_y, ev_z  = initial_particles(N_electrons, x_wind, y_wind, z_wind, me, Te, kb, key1, key2, key3)
+    ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions, x_wind, y_wind, z_wind, mi, Ti, kb, key3, key4, key5)
 # initialize the positions and velocities of the electrons and ions in the plasma.
 # eventually, I need to update the initialization to use a more accurate position and velocity distribution.
 
@@ -166,22 +173,22 @@ ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions
 alternating_ones = (-1)**jnp.array(range(0,N_electrons))
 v0=3e7
 ev_x = v0*alternating_ones
-#vmax = 1e8
-#vp   = 0.1e8
-#ev_x = vp * np.random.randn(N_electrons) + vmax
-#ev_x[int(N_electrons/2):] *= -1
-# vmax = 0.5e8
-# vp   = 0.08e8
-# ev_x = vp * np.random.randn(N_electrons) + vmax
-# ev_x[:int(N_electrons/2)] *= -1
-# # antisymmetric streams
+# #vmax = 1e8
+# #vp   = 0.1e8
+# #ev_x = vp * np.random.randn(N_electrons) + vmax
+# #ev_x[int(N_electrons/2):] *= -1
+# # vmax = 0.5e8
+# # vp   = 0.08e8
+# # ev_x = vp * np.random.randn(N_electrons) + vmax
+# # ev_x[:int(N_electrons/2)] *= -1
+# # # antisymmetric streams
 ev_x *= ( 1 + 0.1*jnp.sin(6*jnp.pi * electron_x / x_wind) )
 # add perturbation to the electron velocities
 
-# ion_x = jax.random.uniform(key2, shape=(N_ions,), minval=-x_wind/2, maxval=x_wind/2)
-# ion_y = jax.random.uniform(key3, shape=(N_ions,), minval=-y_wind/2, maxval=y_wind/2)
-# ion_z = jax.random.uniform(key4, shape=(N_ions,), minval=-z_wind/2, maxval=z_wind/2)
-# # initialize the positions of the ions
+# # ion_x = jax.random.uniform(key2, shape=(N_ions,), minval=-x_wind/2, maxval=x_wind/2)
+# # ion_y = jax.random.uniform(key3, shape=(N_ions,), minval=-y_wind/2, maxval=y_wind/2)
+# # ion_z = jax.random.uniform(key4, shape=(N_ions,), minval=-z_wind/2, maxval=z_wind/2)
+# # # initialize the positions of the ions
 
 iv_x = 0
 iv_y = 0
@@ -368,13 +375,13 @@ if plasmaFreq:
     print(f'Average Plasma Frequency: {average_freq}')
 if plotEnergy:
     plot_probe(total_energy, "Total Energy", "TotalEnergy")
-    energy_freq = plot_fft(total_energy, dt*plot_freq, "FFT of Total Energy", "Energy_FFT")
-    print(f'Energy Frequency: {energy_freq}')
+    #energy_freq = plot_fft(total_energy, dt*plot_freq, "FFT of Total Energy", "Energy_FFT")
+    #print(f'Energy Frequency: {energy_freq}')
     # plot the total energy of the system
 
     plot_probe(total_p, "Total Momentum", "TotalMomentum")
-    momentum_freq = plot_fft(total_p, dt*plot_freq, "FFT of Total Momentum", "Momentum_FFT")
-    print(f'Momentum Frequency: {momentum_freq}')
+    #momentum_freq = plot_fft(total_p, dt*plot_freq, "FFT of Total Momentum", "Momentum_FFT")
+    #print(f'Momentum Frequency: {momentum_freq}')
     # plot the total momentum of the system
 
 end = time.time()
