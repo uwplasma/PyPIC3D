@@ -233,13 +233,17 @@ for t in range(Nt):
         # print the maximum value of the electric field
 
     ############### UPDATE ELECTRONS ##########################################################################################
+    grid = jnp.arange(-x_wind/2, x_wind/2, dx), jnp.arange(-y_wind/2, y_wind/2, dy), jnp.arange(-z_wind/2, z_wind/2, dz)
+    staggered_grid = jnp.arange(-x_wind/2 + dx/2, x_wind/2 + dx/2, dx), jnp.arange(-y_wind/2 + dy/2, y_wind/2 + dy/2, dy), jnp.arange(-z_wind/2 + dz/2, z_wind/2 + dz/2, dz)
+    # create the grid space
+
     if GPUs:
         with jax.default_device(jax.devices('gpu')[0]):
             ev_x, ev_y, ev_z = boris(q_e, Ex, Ey, Ez, Bx, By, Bz, electron_x, \
                         electron_y, electron_z, ev_x, ev_y, ev_z, dt, me)
     else:
         ev_x, ev_y, ev_z = boris(q_e, Ex, Ey, Ez, Bx, By, Bz, electron_x, \
-                            electron_y, electron_z, ev_x, ev_y, ev_z, dt, me)
+                            electron_y, electron_z, ev_x, ev_y, ev_z, grid, staggered_grid, dt, me)
     # implement the boris push algorithm to solve for new electron velocities
 
     if verbose: print(f"Calculating Electron Velocities, Max Value: {jnp.max(ev_x)}")
@@ -259,7 +263,7 @@ for t in range(Nt):
                             ion_y, ion_z, iv_x, iv_y, iv_z, dt, mi)
         else:
             iv_x, iv_y, iv_z = boris(q_i, Ex, Ey, Ez, Bx, By, Bz, ion_x, \
-                                    ion_y, ion_z, iv_x, iv_y, iv_z, dt, mi)
+                                    ion_y, ion_z, iv_x, iv_y, iv_z, grid, staggered_grid, dt, mi)
         # use boris push for ion velocities
 
         if verbose: print(f"Calculating Ion Velocities, Max Value: {jnp.max(iv_x)}")

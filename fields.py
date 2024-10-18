@@ -523,8 +523,16 @@ def calculateE(N_electrons, electron_x, electron_y, electron_z, \
 
     return Ex, Ey, Ez, phi, rho
 
+
 @jit
-def boris(q, Ex, Ey, Ez, Bx, By, Bz, x, y, z, vx, vy, vz, dt, m):
+def interpolate_field(field, grid, x, y, z):
+    interpolate = jax.scipy.interpolate.RegularGridInterpolator(grid, field, fill_value=0)
+    # create the interpolator
+    points = jnp.stack([x, y, z], axis=-1)
+    return interpolate(points)
+
+@jit
+def boris(q, Ex, Ey, Ez, Bx, By, Bz, x, y, z, vx, vy, vz, grid, staggered_grid, dt, m):
     """
     Perform Boris push algorithm to update the velocity of a charged particle in an electromagnetic field.
 
@@ -548,14 +556,26 @@ def boris(q, Ex, Ey, Ez, Bx, By, Bz, x, y, z, vx, vy, vz, dt, m):
     Returns:
     tuple: Updated velocity of the particle in the x, y, and z directions.
     """
-    efield_atx = jax.scipy.ndimage.map_coordinates(Ex, [x, y, z], order=1)
-    efield_aty = jax.scipy.ndimage.map_coordinates(Ey, [x, y, z], order=1)
-    efield_atz = jax.scipy.ndimage.map_coordinates(Ez, [x, y, z], order=1)
+
+
+
+    efield_atx = interpolate_field(Ex, grid, x, y, z)
+    efield_aty = interpolate_field(Ey, grid, x, y, z)
+    efield_atz = interpolate_field(Ez, grid, x, y, z)
     # interpolate the electric field component arrays and calculate the e field at the particle positions
-    bfield_atx = jax.scipy.ndimage.map_coordinates(Bx, [x, y, z], order=1)
-    bfield_aty = jax.scipy.ndimage.map_coordinates(By, [x, y, z], order=1)
-    bfield_atz = jax.scipy.ndimage.map_coordinates(Bz, [x, y, z], order=1)
+    bfield_atx = interpolate_field(Bx, staggered_grid, x, y, z)
+    bfield_aty = interpolate_field(By, staggered_grid, x, y, z)
+    bfield_atz = interpolate_field(Bz, staggered_grid, x, y, z)
     # interpolate the magnetic field component arrays and calculate the b field at the particle positions
+
+    # efield_atx = jax.scipy.ndimage.map_coordinates(Ex, [x, y, z], order=1)
+    # efield_aty = jax.scipy.ndimage.map_coordinates(Ey, [x, y, z], order=1)
+    # efield_atz = jax.scipy.ndimage.map_coordinates(Ez, [x, y, z], order=1)
+    # # interpolate the electric field component arrays and calculate the e field at the particle positions
+    # bfield_atx = jax.scipy.ndimage.map_coordinates(Bx, [x, y, z], order=1)
+    # bfield_aty = jax.scipy.ndimage.map_coordinates(By, [x, y, z], order=1)
+    # bfield_atz = jax.scipy.ndimage.map_coordinates(Bz, [x, y, z], order=1)
+    # # interpolate the magnetic field component arrays and calculate the b field at the particle positions
 
     vxminus = vx + q*dt/(2*m)*efield_atx
     vyminus = vy + q*dt/(2*m)*efield_aty
