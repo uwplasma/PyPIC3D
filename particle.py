@@ -44,6 +44,42 @@ def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, ke
     # initialize the particles with a maxwell boltzmann distribution.
     return x, y, z, v_x, v_y, v_z
 
+
+def cold_start_init(start, N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, key2, key3):
+    """
+    Initializes the velocities and positions of the particles.
+
+    Parameters:
+    - N_particles (int): The number of particles.
+    - x_wind (float): The maximum value for the x-coordinate of the particles' positions.
+    - y_wind (float): The maximum value for the y-coordinate of the particles' positions.
+    - z_wind (float): The maximum value for the z-coordinate of the particles' positions.
+    - mass (float): The mass of the particles.
+    - T (float): The temperature of the system.
+    - kb (float): The Boltzmann constant.
+    - key (jax.random.PRNGKey): The random key for generating random numbers.
+
+    Returns:
+    - x (jax.numpy.ndarray): The x-coordinates of the particles' positions.
+    - y (jax.numpy.ndarray): The y-coordinates of the particles' positions.
+    - z (jax.numpy.ndarray): The z-coordinates of the particles' positions.
+    - v_x (numpy.ndarray): The x-component of the particles' velocities.
+    - v_y (numpy.ndarray): The y-component of the particles' velocities.
+    - v_z (numpy.ndarray): The z-component of the particles' velocities.
+    """
+    x = start * jnp.ones(N_particles)
+    y = start * jnp.ones(N_particles)
+    z = start * jnp.ones(N_particles)
+    # initialize the positions of the particles
+
+    std = kb * T / mass
+    v_x = np.random.normal(0, std, N_particles)
+    v_y = np.random.normal(0, std, N_particles)
+    v_z = np.random.normal(0, std, N_particles)
+    # initialize the particles with a maxwell boltzmann distribution.
+    return x, y, z, v_x, v_y, v_z
+
+
 @jit
 def periodic_boundary_condition(x_wind, y_wind, z_wind, x, y, z):
     """
