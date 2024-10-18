@@ -214,8 +214,8 @@ def particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
     """
 
 
-    x0, y0, z0 = (x + x_wind/2).astype(int), (y + y_wind/2).astype(int), (z + z_wind/2).astype(int)
-    deltax, deltay, deltaz = (x + x_wind/2) - x0, (y + y_wind/2) - y0, (z + z_wind/2) - z0
+    x0, y0, z0 = ((x + x_wind/2)/dx).astype(int), ((y + y_wind/2)/dy).astype(int), ((z + z_wind/2)/dz).astype(int)
+    deltax, deltay, deltaz = (x + x_wind/2) - x0*dx, (y + y_wind/2) - y0*dy, (z + z_wind/2) - z0*dz
     # calculate the difference between x and its nearest grid point
     x1, y1, z1 = x0 + 1, y0 + 1, z0 + 1
     # calculate the index of the next grid point
