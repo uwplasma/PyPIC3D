@@ -4,27 +4,44 @@
 # Jax's auto-differentiation capabilities
 
 import time
-import numpy as np
-import matplotlib.pyplot as plt
 import jax
 from jax import random
-from jax import jit
 import jax.numpy as jnp
-import math
-from pyevtk.hl import gridToVTK
 import equinox as eqx
 # Importing relevant libraries
 
-from plotting import plot_fields, plot_positions, plot_rho
-from plotting import plot_velocities, plot_velocity_histogram, plot_KE
-from plotting import plot_probe, plot_fft, phase_space, multi_phase_space
-from particle import initial_particles, update_position, total_KE, total_momentum
-from particle import cold_start_init
-from fields import boris, update_B, calculateE, initialize_fields, probe
-from fields import magnitude_probe,  freq_probe, freq, spectralBsolve, totalfield_energy, spectralEsolve
-from fields import update_E
-from model import PoissonPrecondition
-# import code from other files
+from plotting import (
+    plot_fields, plot_positions, plot_rho, plot_velocities, 
+    plot_velocity_histogram, plot_KE, plot_probe, plot_fft, 
+    phase_space, multi_phase_space
+)
+from particle import (
+    initial_particles, update_position, total_KE, total_momentum, 
+    cold_start_init
+)
+from fields import (
+    calculateE, initialize_fields
+)
+
+from spectral import (
+    spectralBsolve, spectralEsolve
+)
+
+from fdtd import (
+    update_B, update_E
+)
+from particlepush import (
+    boris
+)
+
+from utils import (
+    totalfield_energy, probe, number_density, freq, magnitude_probe
+)
+
+from model import (
+    PoissonPrecondition
+)
+# Importing functions from other files
 
 jax.config.update('jax_platform_name', 'cpu')
 # set Jax to use CPUs
@@ -113,7 +130,6 @@ print(f'Dz: {dz}')
 ################ Courant Condition #############################################################################
 courant_number = 1
 dt = courant_number / (  C * ( (1/dx) + (1/dy) + (1/dz) )   )
-dt = dt/10
 # dt = courant_number * min(dx, dy, dz) / (C)
 # calculate spatial resolution using courant condition
 
@@ -137,7 +153,7 @@ if debye_length < dx:
 
 
 
-t_wind = 0.25e-10
+t_wind = 4e-9
 # time window for simultion
 Nt     = int( t_wind / dt )
 # Nt for resolution
@@ -146,7 +162,7 @@ print(f'time window: {t_wind}')
 print(f'Nt:          {Nt}')
 print(f'dt:          {dt}')
 
-plot_freq = 100
+plot_freq = 400
 # how often to plot the data
 
 Ex, Ey, Ez, Bx, By, Bz, phi, rho = initialize_fields(Nx, Ny, Nz)
@@ -174,7 +190,7 @@ alternating_ones = (-1)**jnp.array(range(0,N_electrons))
 v0=1.5*2657603.0
 ev_x = v0*alternating_ones
 
-# ev_x *= ( 1 + 0.1*jnp.sin(6*jnp.pi * electron_x / x_wind) )
+#ev_x *= ( 1 + 0.1*jnp.sin(6*jnp.pi * electron_x / x_wind) )
 # add perturbation to the electron velocities
 
 iv_x = 0
@@ -238,7 +254,7 @@ for t in range(Nt):
     if GPUs:
         with jax.default_device(jax.devices('gpu')[0]):
             ev_x, ev_y, ev_z = boris(q_e, Ex, Ey, Ez, Bx, By, Bz, electron_x, \
-                        electron_y, electron_z, ev_x, ev_y, ev_z, dt, me)
+                        electron_y, electron_z, ev_x, ev_y, ev_z, grid, staggered_grid, dt, me)
     else:
         ev_x, ev_y, ev_z = boris(q_e, Ex, Ey, Ez, Bx, By, Bz, electron_x, \
                             electron_y, electron_z, ev_x, ev_y, ev_z, grid, staggered_grid, dt, me)
@@ -258,7 +274,7 @@ for t in range(Nt):
         if GPUs:
             with jax.default_device(jax.devices('gpu')[0]):
                 iv_x, iv_y, iv_z = boris(q_i, Ex, Ey, Ez, Bx, By, Bz, ion_x, \
-                            ion_y, ion_z, iv_x, iv_y, iv_z, dt, mi)
+                            ion_y, ion_z, iv_x, iv_y, iv_z, grid, staggered_grid, dt, mi)
         else:
             iv_x, iv_y, iv_z = boris(q_i, Ex, Ey, Ez, Bx, By, Bz, ion_x, \
                                     ion_y, ion_z, iv_x, iv_y, iv_z, grid, staggered_grid, dt, mi)
