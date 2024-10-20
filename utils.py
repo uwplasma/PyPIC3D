@@ -14,9 +14,17 @@ import functools
 from functools import partial
 # import external libraries
 
+from rho import update_rho
+
 def debugprint(value):
+    """
+    Prints the given value using JAX's debug print functionality.
+
+    Args:
+        value: The value to be printed. Can be of any type that is supported by JAX's debug print.
+    """
     jax.debug.print('{x}', x=value)
-    
+
 def probe(fieldx, fieldy, fieldz, x, y, z):
     """
     Probe the value of a vector field at a given point.
@@ -77,6 +85,24 @@ def number_density(n, Nparticles, particlex, particley, particlez, dx, dy, dz, N
     return n
 
 def freq(n, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
+    """
+    Calculate the plasma frequency based on the given parameters.
+    Parameters:
+    n (array-like): Input array representing the electron distribution.
+    Nelectrons (int): Total number of electrons.
+    ex (float): Electric field component in the x-direction.
+    ey (float): Electric field component in the y-direction.
+    ez (float): Electric field component in the z-direction.
+    Nx (int): Number of grid points in the x-direction.
+    Ny (int): Number of grid points in the y-direction.
+    Nz (int): Number of grid points in the z-direction.
+    dx (float): Grid spacing in the x-direction.
+    dy (float): Grid spacing in the y-direction.
+    dz (float): Grid spacing in the z-direction.
+    Returns:
+    float: The calculated plasma frequency.
+    """
+
     ne = jnp.ravel(number_density(n, Nelectrons, ex, ey, ez, dx, dy, dz, Nx, Ny, Nz))
     # compute the number density of the electrons
     eps = 8.854e-12
@@ -95,6 +121,27 @@ def freq(n, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
 # computes the average plasma frequency over the middle 75% of the world volume
 
 def freq_probe(n, x, y, z, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
+    """
+    Calculate the plasma frequency at a given point in a 3D grid.
+    Parameters:
+    n (ndarray): The electron density array.
+    x (float): The x-coordinate of the probe point.
+    y (float): The y-coordinate of the probe point.
+    z (float): The z-coordinate of the probe point.
+    Nelectrons (int): The total number of electrons.
+    ex (float): The extent of the grid in the x-direction.
+    ey (float): The extent of the grid in the y-direction.
+    ez (float): The extent of the grid in the z-direction.
+    Nx (int): The number of grid points in the x-direction.
+    Ny (int): The number of grid points in the y-direction.
+    Nz (int): The number of grid points in the z-direction.
+    dx (float): The grid spacing in the x-direction.
+    dy (float): The grid spacing in the y-direction.
+    dz (float): The grid spacing in the z-direction.
+    Returns:
+    float: The plasma frequency at the specified point.
+    """
+
     ne = number_density(n, Nelectrons, ex, ey, ez, dx, dy, dz, Nx, Ny, Nz)
     # compute the number density of the electrons
     eps = 8.854e-12

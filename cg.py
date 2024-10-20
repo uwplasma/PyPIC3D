@@ -34,9 +34,26 @@ def apply_M(Ax, M):
     return (1/9)*(M_Ax + M_Ay + M_Az)
 
 def conjugate_grad(A, b, x0, tol=1e-6, atol=0.0, maxiter=10000, M=None):
+    """
+    Solve the linear system Ax = b using the Conjugate Gradient method.
 
-    #_dot = functools.partial(jnp.dot, precision=lax.Precision.HIGHEST)
+    Parameters:
+    A (callable): Function that computes the matrix-vector product Ax.
+    b (array-like): Right-hand side vector.
+    x0 (array-like): Initial guess for the solution.
+    tol (float, optional): Tolerance for the stopping criterion. Default is 1e-6.
+    atol (float, optional): Absolute tolerance for the stopping criterion. Default is 0.0.
+    maxiter (int, optional): Maximum number of iterations. Default is 10000.
+    M (callable, optional): Preconditioner function. Default is None.
 
+    Returns:
+    array-like: Approximate solution to the linear system Ax = b.
+
+    Notes:
+    This function implements the preconditioned Conjugate Gradient method.
+    If no preconditioner is provided, the identity preconditioner is used.
+    """
+    
     if M is None:
         noM = True
         M = lambda x: x
