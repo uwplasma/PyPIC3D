@@ -16,6 +16,18 @@ from functools import partial
 
 @jit
 def interpolate_field(field, grid, x, y, z):
+    """
+    Interpolates the given field at the specified (x, y, z) coordinates using a regular grid interpolator.
+    Args:
+        field (array-like): The field values to be interpolated.
+        grid (tuple of array-like): The grid points for each dimension (x, y, z).
+        x (array-like): The x-coordinates where interpolation is desired.
+        y (array-like): The y-coordinates where interpolation is desired.
+        z (array-like): The z-coordinates where interpolation is desired.
+    Returns:
+        array-like: Interpolated values at the specified (x, y, z) coordinates.
+    """
+
     interpolate = jax.scipy.interpolate.RegularGridInterpolator(grid, field, fill_value=0)
     # create the interpolator
     points = jnp.stack([x, y, z], axis=-1)
