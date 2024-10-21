@@ -8,6 +8,7 @@ import jax
 from jax import random
 import jax.numpy as jnp
 import equinox as eqx
+import os, sys
 # Importing relevant libraries
 
 from plotting import (
@@ -35,7 +36,9 @@ from particlepush import (
 )
 
 from utils import (
-    totalfield_energy, probe, number_density, freq, magnitude_probe, plasma_frequency, courant_condition, debye_length
+    totalfield_energy, probe, number_density, freq,
+    magnitude_probe, plasma_frequency, courant_condition,
+    debye_length, update_parameters_from_toml
 )
 
 from defaults import (
@@ -59,26 +62,15 @@ model_name = "Preconditioner.eqx"
 # booleans for using a neural network to precondition Poisson's equation solver
 
 ############################ SETTINGS #####################################################################
-plotting_parameters = {
-    "save_data": False,
-    "plotfields": True,
-    "plotpositions": False,
-    "plotvelocities": False,
-    "plotKE": False,
-    "plotEnergy": False,
-    "plasmaFreq": False,
-    "phaseSpace": True
-}
-# dictionary for plotting/saving data
-save_data = plotting_parameters["save_data"]
-plotfields = plotting_parameters["plotfields"]
-plotpositions = plotting_parameters["plotpositions"]
-plotvelocities = plotting_parameters["plotvelocities"]
-plotKE = plotting_parameters["plotKE"]
-plotEnergy = plotting_parameters["plotEnergy"]
-plasmaFreq = plotting_parameters["plasmaFreq"]
-phaseSpace = plotting_parameters["phaseSpace"]
-# booleans for plotting/saving data
+config_file = "config.toml"
+# path to the configuration file
+
+plotting_parameters, simulation_parameters = default_parameters()
+# load the default parameters
+
+if os.path.exists(config_file):
+    simulation_parameters, plotting_parameters = update_parameters_from_toml(config_file, simulation_parameters, plotting_parameters)
+
 
 electrostatic = True
 cold_start = False
@@ -90,29 +82,18 @@ print("Initializing Simulation...")
 start = time.time()
 
 ############################# SIMULATION PARAMETERS ########################################################
-simulation_parameters = {
-    "bc": "spectral",  # boundary conditions: periodic, dirichlet, neumann, spectral
-    "eps": 8.854e-12,  # permitivity of freespace
-    "mu" : 1.2566370613e-6, # permeability of free space
-    "C": 3e8,  # Speed of light in m/s
-    "kb": 1.380649e-23,  # Boltzmann's constant in J/K
-    "me": 9.1093837e-31,  # mass of the electron in Kg
-    "mi": 1.67e-27,  # mass of the ion in Kg
-    "q_e": -1.602e-19,  # charge of electron
-    "q_i": 1.602e-19,  # charge of ion
-    "Te": 233000,  # electron temperature in K
-    "Ti": 233000,  # ion temperature in K
-    "N_electrons": 5000,  # number of electrons
-    "N_ions": 5000,  # number of ions
-    "Nx": 30,  # number of array spacings in x
-    "Ny": 30,  # number of array spacings in y
-    "Nz": 30,  # number of array spacings in z
-    "x_wind": 1e-2,  # size of the spatial window in x in meters
-    "y_wind": 1e-2,  # size of the spatial window in y in meters
-    "z_wind": 1e-2,  # size of the spatial window in z in meters
-    "benchmark": False, # boolean for using the profiler
-    "verbose": False # boolean for printing verbose output
-}
+
+
+save_data = plotting_parameters["save_data"]
+plotfields = plotting_parameters["plotfields"]
+plotpositions = plotting_parameters["plotpositions"]
+plotvelocities = plotting_parameters["plotvelocities"]
+plotKE = plotting_parameters["plotKE"]
+plotEnergy = plotting_parameters["plotEnergy"]
+plasmaFreq = plotting_parameters["plasmaFreq"]
+phaseSpace = plotting_parameters["phaseSpace"]
+plot_freq = plotting_parameters["plotting_interval"]
+# booleans for plotting/saving data
 
 bc = simulation_parameters["bc"]
 eps = simulation_parameters["eps"]
@@ -133,6 +114,7 @@ Nz = simulation_parameters["Nz"]
 x_wind = simulation_parameters["x_wind"]
 y_wind = simulation_parameters["y_wind"]
 z_wind = simulation_parameters["z_wind"]
+t_wind = simulation_parameters["t_wind"]
 benchmark = simulation_parameters["benchmark"]
 verbose = simulation_parameters["verbose"]
 # set the simulation parameters
@@ -168,8 +150,6 @@ print(f"Debye Length: {debye} m")
 if debye < dx:
     print(f"Debye Length is less than the spatial resolution, this may introduce numerical instability")
 
-t_wind = 4e-9
-# time window for simultion
 Nt     = int( t_wind / dt )
 # Nt for resolution
 
@@ -177,9 +157,7 @@ print(f'time window: {t_wind}')
 print(f'Nt:          {Nt}')
 print(f'dt:          {dt}')
 
-plot_freq = 400
-# how often to plot the data
-
+################################### INITIALIZE PARTICLES ########################################################
 Ex, Ey, Ez, Bx, By, Bz, phi, rho = initialize_fields(Nx, Ny, Nz)
 # initialize the electric and magnetic fields
 
@@ -368,17 +346,17 @@ for t in range(Nt):
 #             multi_phase_space(electron_y, ion_y, ev_y, iv_y, t, "Electrons", "Ions", "y", y_wind)
 #             multi_phase_space(electron_z, ion_z, ev_z, iv_z, t, "Electrons", "Ions", "z", z_wind)
 #         # save the phase space data
-if plotfields:
-    plot_probe(Eprobe, "Electric Field", "ElectricField")
-    efield_freq = plot_fft(Eprobe, dt*plot_freq, "FFT of Electric Field", "E_FFT")
-    plot_probe(averageE, "Electric Field", "AvgElectricField")
-    print(f'Electric Field Frequency: {efield_freq}')
-    # plot the electric field probe
-if plotKE:
-    plot_KE(KE, KE_time)
-    ke_freq = plot_fft(KE, dt*plot_freq, "FFT of Kinetic Energy", "KE_FFT")
-    print(f'KE Frequency: {ke_freq}')
-    # plot the total kinetic energy of the particles
+# if plotfields:
+#     plot_probe(Eprobe, "Electric Field", "ElectricField")
+#     efield_freq = plot_fft(Eprobe, dt*plot_freq, "FFT of Electric Field", "E_FFT")
+#     plot_probe(averageE, "Electric Field", "AvgElectricField")
+#     print(f'Electric Field Frequency: {efield_freq}')
+#     # plot the electric field probe
+# if plotKE:
+#     plot_KE(KE, KE_time)
+#     ke_freq = plot_fft(KE, dt*plot_freq, "FFT of Kinetic Energy", "KE_FFT")
+#     print(f'KE Frequency: {ke_freq}')
+#     # plot the total kinetic energy of the particles
 # if plasmaFreq:
 #     plot_probe(freqs, "Plasma Frequency", "PlasmaFrequency")
 #     # plot the plasma frequency
