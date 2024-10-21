@@ -1,8 +1,7 @@
-[simulation]
+# This is a configuration file for PyPIC3D
+[simulation_parameters]
 name = "Test Simulation"
+t_wind = 5e-12
+output_dir = "/home/christopherwoolford/Documents/PyPIC3D"
 
 [plotting]
-
-
-[simulation_parameters]
-t_wind = 5e-12

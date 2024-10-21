@@ -38,7 +38,7 @@ from particlepush import (
 from utils import (
     totalfield_energy, probe, number_density, freq,
     magnitude_probe, plasma_frequency, courant_condition,
-    debye_length, update_parameters_from_toml
+    debye_length, update_parameters_from_toml, dump_parameters_to_toml
 )
 
 from defaults import (
@@ -76,11 +76,6 @@ electrostatic = True
 cold_start = False
 # start all the particles at the same place (rho = 0)
 
-############################ INITIALIZE EVERYTHING #######################################################
-# I am starting by simulating a hydrogen plasma
-print("Initializing Simulation...")
-start = time.time()
-
 ############################# SIMULATION PARAMETERS ########################################################
 
 
@@ -95,6 +90,7 @@ phaseSpace = plotting_parameters["phaseSpace"]
 plot_freq = plotting_parameters["plotting_interval"]
 # booleans for plotting/saving data
 
+name = simulation_parameters["name"]
 bc = simulation_parameters["bc"]
 eps = simulation_parameters["eps"]
 mu = simulation_parameters["mu"]
@@ -122,12 +118,12 @@ verbose = simulation_parameters["verbose"]
 if benchmark: jax.profiler.start_trace("/home/christopherwoolford/Documents/PyPIC3D/tensorboard")
 # start the profiler using tensorboard
 
+print(f"Initializing Simulation: {name}\n")
+start = time.time()
+# start the timer
 
 dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
 # compute the spatial resolution
-print(f'Dx: {dx}')
-print(f'Dy: {dy}')
-print(f'Dz: {dz}')
 
 ################ Courant Condition #############################################################################
 courant_number = 1
@@ -137,15 +133,13 @@ dt = courant_condition(courant_number, dx, dy, dz, C)
 theoretical_freq = plasma_frequency(N_electrons, x_wind, y_wind, z_wind, eps, me, q_e)
 # calculate the expected plasma frequency from analytical theory, w = sqrt( ne^2 / (eps * me) )
 
-print(f"Theoretical Plasma Frequency: {theoretical_freq} Hz")
-
 if theoretical_freq * dt > 2.0:
     print(f"# of Electrons is Low and may introduce numerical stability")
     print(f"In order to correct this, # of Electrons needs to be at least { (2/dt)**2 * (me*eps/q_e**2) } for this spatial resolution")
 
 debye = debye_length(eps, Te, N_electrons, x_wind, y_wind, z_wind, q_e, kb)
 # calculate the debye length of the plasma
-print(f"Debye Length: {debye} m")
+
 
 if debye < dx:
     print(f"Debye Length is less than the spatial resolution, this may introduce numerical instability")
@@ -153,9 +147,17 @@ if debye < dx:
 Nt     = int( t_wind / dt )
 # Nt for resolution
 
+
 print(f'time window: {t_wind}')
-print(f'Nt:          {Nt}')
+print(f'x window: {x_wind}')
+print(f'y window: {y_wind}')
+print(f'z window: {z_wind}')
+print(f"\nResolution")
+print(f'dx: {dx}')
+print(f'dy: {dy}')
+print(f'dz: {dz}')
 print(f'dt:          {dt}')
+print(f'Nt:          {Nt}\n')
 
 ################################### INITIALIZE PARTICLES ########################################################
 Ex, Ey, Ez, Bx, By, Bz, phi, rho = initialize_fields(Nx, Ny, Nz)
@@ -184,8 +186,6 @@ particles = [electrons, ions]
 # create the particle species
 
 #################################### Two Stream Instability #####################################################
-print(f"Thermal Velocity: {jnp.sqrt(2*kb*Te/me)}")
-
 alternating_ones = (-1)**jnp.array(range(0,N_electrons))
 v0=1.5*2657603.0
 ev_x = v0*alternating_ones
@@ -232,6 +232,10 @@ if not electrostatic:
 grid = jnp.arange(-x_wind/2, x_wind/2, dx), jnp.arange(-y_wind/2, y_wind/2, dy), jnp.arange(-z_wind/2, z_wind/2, dz)
 staggered_grid = jnp.arange(-x_wind/2 + dx/2, x_wind/2 + dx/2, dx), jnp.arange(-y_wind/2 + dy/2, y_wind/2 + dy/2, dy), jnp.arange(-z_wind/2 + dz/2, z_wind/2 + dz/2, dz)
 # create the grid space
+
+print(f"Theoretical Plasma Frequency: {theoretical_freq} Hz")
+print(f"Debye Length: {debye} m")
+print(f"Thermal Velocity: {jnp.sqrt(2*kb*Te/me)}\n")
 
 for t in range(Nt):
     print(f'Iteration {t}, Time: {t*dt} s')
@@ -369,7 +373,16 @@ for t in range(Nt):
 #     # plot the total momentum of the system
 
 end = time.time()
-print(f"Total Simulation Time: {end-start}")
+# end the timer
+duration = end - start
+# calculate the total simulation time
+
+simulation_stats = {"total_time": duration, "total_iterations": Nt, "time_per_iteration": duration/Nt}
+dump_parameters_to_toml(simulation_stats, simulation_parameters, plotting_parameters)
+# save the parameters to an output file
+
+print(f"\nSimulation Complete")
+print(f"Total Simulation Time: {duration} s")
 
 if benchmark: jax.profiler.stop_trace()
 # stop the profiler and save the data to tensorboard

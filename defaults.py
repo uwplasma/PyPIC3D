@@ -35,6 +35,8 @@ def default_parameters():
     # dictionary for plotting/saving data
 
     simulation_parameters = {
+        "name": "Default Simulation",
+        "output_dir": ".",
         "bc": "spectral",  # boundary conditions: periodic, dirichlet, neumann, spectral
         "eps": 8.854e-12,  # permitivity of freespace
         "mu" : 1.2566370613e-6, # permeability of free space

@@ -13,6 +13,7 @@ from pyevtk.hl import gridToVTK
 import functools
 from functools import partial
 import toml
+import os, sys
 # import external libraries
 
 from rho import update_rho
@@ -52,20 +53,27 @@ def update_parameters_from_toml(config_file, simulation_parameters, plotting_par
     
     return simulation_parameters, plotting_parameters
 
-def read_simulation_parameters(file_path):
+def dump_parameters_to_toml(simulation_stats, simulation_parameters, plotting_parameters):
     """
-    Reads simulation parameters from a TOML file.
+    Dump the simulation and plotting parameters into an output TOML file.
 
-    Args:
-        file_path (str): Path to the TOML file.
-
-    Returns:
-        dict: Dictionary containing simulation parameters.
+    Parameters:
+    - output_file (str): Path to the output TOML file.
+    - simulation_parameters (dict): Dictionary of simulation parameters.
+    - plotting_parameters (dict): Dictionary of plotting parameters.
     """
-    with open(file_path, 'r') as file:
-        parameters = toml.load(file)
-    return parameters
 
+    output_path = simulation_parameters["output_dir"]
+    output_file = os.path.join(output_path, "output.toml")
+
+    config = {
+        "simulation_stats": simulation_stats,
+        "simulation_parameters": simulation_parameters,
+        "plotting": plotting_parameters
+    }
+    
+    with open(output_file, 'w') as f:
+        toml.dump(config, f)
 
 def courant_condition(courant_number, dx, dy, dz, C):
     """
