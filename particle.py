@@ -175,26 +175,28 @@ class particle_species:
     A class to represent a species of particles in a simulation.
     Attributes:
     -----------
+    name : str
+        The name of the particle species.
     N_particles : int
-        Number of particles in the species.
+        The number of particles in the species.
     charge : float
-        Charge of the particles.
+        The charge of the particles.
     mass : float
-        Mass of the particles.
+        The mass of the particles.
     vx : array-like
-        Velocity of the particles in the x-direction.
+        The velocity of the particles in the x-direction.
     vy : array-like
-        Velocity of the particles in the y-direction.
+        The velocity of the particles in the y-direction.
     vz : array-like
-        Velocity of the particles in the z-direction.
+        The velocity of the particles in the z-direction.
     x : array-like
-        Position of the particles in the x-direction.
+        The position of the particles in the x-direction.
     y : array-like
-        Position of the particles in the y-direction.
+        The position of the particles in the y-direction.
     z : array-like
-        Position of the particles in the z-direction.
+        The position of the particles in the z-direction.
     bc : str, optional
-        Boundary condition type (default is 'periodic').
+        The boundary condition type (default is 'periodic').
     Methods:
     --------
     get_charge():
@@ -220,10 +222,11 @@ class particle_species:
     periodic_boundary_condition(x_wind, y_wind, z_wind):
         Applies periodic boundary conditions to the particles' positions.
     update_position(dt, x_wind, y_wind, z_wind):
-        Updates the position of the particles using the Euler method and applies boundary conditions if necessary.
+        Updates the position of the particles based on their velocity and time step, 
+        and applies periodic boundary conditions if specified.
     """
-
-    def __init__(self, N_particles, charge, mass, vx, vy, vz, x, y, z, bc='periodic'):
+    def __init__(self, name, N_particles, charge, mass, vx, vy, vz, x, y, z, bc='periodic'):
+        self.name = name
         self.N_particles = N_particles
         self.charge = charge
         self.mass = mass
@@ -235,6 +238,9 @@ class particle_species:
         self.z = z
         self.bc = bc
 
+    def get_name(self):
+        return self.name
+    
     def get_charge(self):
         return self.charge
     

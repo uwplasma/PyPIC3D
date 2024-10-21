@@ -198,8 +198,11 @@ else:
 
 electron_masses = jnp.ones(N_electrons) * me
 ion_masses = jnp.ones(N_ions) * mi
-electrons = particle_species(N_electrons, q_e, electron_masses, ev_x, ev_y, ev_z, electron_x, electron_y, electron_z)
-ions = particle_species(N_ions, q_i, ion_masses, iv_x, iv_y, iv_z, ion_x, ion_y, ion_z)
+electrons = particle_species("electrons", N_electrons, q_e, electron_masses, ev_x, ev_y, ev_z, electron_x, electron_y, electron_z)
+ions = particle_species("ions", N_ions, q_i, ion_masses, iv_x, iv_y, iv_z, ion_x, ion_y, ion_z)
+particles = [electrons, ions]
+# create the particle species
+
 #################################### Two Stream Instability #####################################################
 print(f"Thermal Velocity: {jnp.sqrt(2*kb*Te/me)}")
 
@@ -215,8 +218,8 @@ iv_y = jnp.zeros(N_ions)
 iv_z = jnp.zeros(N_ions)
 # initialize the ion velocities to zero
 
-electrons.set_velocity(ev_x, ev_y, ev_z)
-ions.set_velocity(iv_x, iv_y, iv_z)
+particles[0].set_velocity(ev_x, ev_y, ev_z)
+particles[1].set_velocity(iv_x, iv_y, iv_z)
 # update the velocities of the particles
 ##################################### Neural Network Preconditioner ################################################
 
@@ -244,12 +247,10 @@ if plotEnergy: total_energy = []
 if plotEnergy: total_p      = []
 
 if not electrostatic:
-        Ex, Ey, Ez, phi, rho = calculateE(electrons, ions, dx, dy, dz, q_e, q_i, rho, eps, phi, M, t, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
+        Ex, Ey, Ez, phi, rho = calculateE(particles[0], particles[1], dx, dy, dz, q_e, q_i, rho, eps, phi, M, t, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
 for t in range(Nt):
     print(f'Iteration {t}, Time: {t*dt} s')
-
     ############### SOLVE E FIELD ############################################################################################
-
     if NN:
         if t == 0:
             M = None
@@ -257,48 +258,30 @@ for t in range(Nt):
             M = model(phi, rho)
     # solve for the preconditioner using the neural network
     if electrostatic:
-        Ex, Ey, Ez, phi, rho = calculateE(electrons, ions, dx, dy, dz, q_e, q_i, rho, eps, phi, M, t, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
+        Ex, Ey, Ez, phi, rho = calculateE(particles[0], particles[1], dx, dy, dz, q_e, q_i, rho, eps, phi, M, t, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
 
         if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(Ex)}")
         # print the maximum value of the electric field
 
-    ############### UPDATE ELECTRONS ##########################################################################################
     grid = jnp.arange(-x_wind/2, x_wind/2, dx), jnp.arange(-y_wind/2, y_wind/2, dy), jnp.arange(-z_wind/2, z_wind/2, dz)
     staggered_grid = jnp.arange(-x_wind/2 + dx/2, x_wind/2 + dx/2, dx), jnp.arange(-y_wind/2 + dy/2, y_wind/2 + dy/2, dy), jnp.arange(-z_wind/2 + dz/2, z_wind/2 + dz/2, dz)
     # create the grid space
 
-    if GPUs:
-        with jax.default_device(jax.devices('gpu')[0]):
-            electrons = particle_push(electrons, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
-    else:
-        electrons = particle_push(electrons, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
-    # implement the boris push algorithm to solve for new electron velocities
-
-    if verbose: print(f"Calculating Electron Velocities, Max Value: {jnp.max(ev_x)}")
-    # print the maximum value of the electron velocities
-
-    electrons.update_position(dt, x_wind, y_wind, z_wind)
-    # Update the positions of the particles
-
-    if verbose: print(f"Calculating Electron Positions, Max Value: {jnp.max(electron_x)}")
-    # print the maximum value of the electron positions
-
-    ############### UPDATE IONS ################################################################################################
-    if N_ions > 0:
+    ################ PARTICLE PUSH ########################################################################################
+    for i in range(len(particles)):
+        print(particles[i].get_name())
         if GPUs:
             with jax.default_device(jax.devices('gpu')[0]):
-                ions = particle_push(ions, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
+                particles[i] = particle_push(particles[i], Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
         else:
-            ions = particle_push(ions, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
-        # use boris push for ion velocities
+            particles[i] = particle_push(particles[i], Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
+        # use boris push for particle velocities
 
-        if verbose: print(f"Calculating Ion Velocities, Max Value: {jnp.max(iv_x)}")
-        # print the maximum value of the ion velocities
+        if verbose: print(f"Calculating {particles[i].get_name()} Velocities, Max Value: {jnp.max(particles[i].get_velocity()[0])}")
 
-        ions.update_position(dt, x_wind, y_wind, z_wind)
-        # Update the positions of the particles
-        if verbose: print(f"Calculating Ion Positions, Max Value: {jnp.max(ion_x)}")
-        # print the maximum value of the ion positions
+        particles[i] = particles[i].update_position(dt, x_wind, y_wind, z_wind)
+
+        if verbose: print(f"Calculating {particles[i].get_name()} Positions, Max Value: {jnp.max(particles[i].get_position()[0])}")
 
     ################ MAGNETIC FIELD UPDATE #######################################################################
     if not electrostatic:
@@ -315,83 +298,81 @@ for t in range(Nt):
         else:
             Ex, Ex, Ez = update_E(Ex, Ey, Ez, Bx, By, Bz, dx, dy, dz, dt, C)
 
-
-    if t % plot_freq == 0:
-    ############## PLOTTING ###################################################################
-        if plotEnergy:
-            mu = 1.2566370613e-6
-            # permeability of free space
-            total_energy.append(  \
-                totalfield_energy(Ex, Ey, Ez, Bx, By, Bz, mu, eps) + \
-                total_KE(me, ev_x, ev_y, ev_z) + total_KE(mi, iv_x, iv_y, iv_z) )
-            total_p.append( total_momentum(me, ev_x, ev_y, ev_z) + total_momentum(mi, iv_x, iv_y, iv_z) )
-        if plotpositions:
-            particlesx = jnp.concatenate([electron_x, ion_x])
-            particlesy = jnp.concatenate([electron_y, ion_y])
-            particlesz = jnp.concatenate([electron_z, ion_z])
-            plot_positions( particlesx, particlesy, particlesz, t, x_wind, y_wind, z_wind)
-        if plotvelocities:
-            if not plotpositions:
-                particlesx = jnp.concatenate([electron_x, ion_x])
-                particlesy = jnp.concatenate([electron_y, ion_y])
-                particlesz = jnp.concatenate([electron_z, ion_z])
-                # get the particle positions if they haven't been computed
-            velocitiesx = jnp.concatenate([ev_x, iv_x])
-            velocitiesy = jnp.concatenate([ev_y, iv_y])
-            velocitiesz = jnp.concatenate([ev_z, iv_z])
-            plot_velocities( particlesx, particlesy, particlesz, velocitiesx, velocitiesy, velocitiesz, t, x_wind, y_wind, z_wind)
-            plot_velocity_histogram(velocitiesx, velocitiesy, velocitiesz, t, nbins=100)
-        if plotfields:
-            plot_fields(Ex, Ey, Ez, t, "E", dx, dy, dz)
-            plot_fields(Bx, By, Bz, t, "B", dx, dy, dz)
-            plot_rho(rho, t, "rho", dx, dy, dz)
-            Eprobe.append(magnitude_probe(Ex, Ey, Ez, int(Nx/2), int(Ny/2), int(Nz/2)))
-            averageE.append(  jnp.mean( jnp.sqrt( Ex**2 + Ey**2 + Ez**2 ) )   )
-        # plot the particles and save as png file
-        if plotKE:
-            KE.append(total_KE(me, ev_x, ev_y, ev_z) + total_KE(mi, iv_x, iv_y, iv_z))
-            KE_time.append(t*dt)
-        # calculate the total kinetic energy of the particles
-        if plasmaFreq:
-            n = jnp.zeros((Nx, Ny, Nz))
-            current_freq = freq( n, N_electrons, electron_x, electron_y, electron_z, Nx, Ny, Nz, dx, dy, dz) 
-            # calculate the current plasma frequency at time t
-            freqs.append( current_freq )
-            if verbose: print(f"Plasma Frequency: {current_freq} Hz")
-        # calculate the plasma frequency
-        if save_data:
-            jnp.save(f'data/rho/rho_{t:09}', rho)
-            jnp.save(f'data/phi/phi_{t:09}', phi)
-        # save the data for the charge density and potential
-        if phaseSpace:
-            phase_space(electron_x, ev_x, t, "Electronx")
-            phase_space(ion_x, iv_x, t, "Ionx")
-
-            multi_phase_space(electron_x, ion_x, ev_x, iv_x, t, "Electrons", "Ions", "x", x_wind)
-            multi_phase_space(electron_y, ion_y, ev_y, iv_y, t, "Electrons", "Ions", "y", y_wind)
-            multi_phase_space(electron_z, ion_z, ev_z, iv_z, t, "Electrons", "Ions", "z", z_wind)
-        # save the phase space data
-if plotfields:
-    plot_probe(Eprobe, "Electric Field", "ElectricField")
-    efield_freq = plot_fft(Eprobe, dt*plot_freq, "FFT of Electric Field", "E_FFT")
-    plot_probe(averageE, "Electric Field", "AvgElectricField")
-    print(f'Electric Field Frequency: {efield_freq}')
-    # plot the electric field probe
-if plotKE:
-    plot_KE(KE, KE_time)
-    ke_freq = plot_fft(KE, dt*plot_freq, "FFT of Kinetic Energy", "KE_FFT")
-    print(f'KE Frequency: {ke_freq}')
-    # plot the total kinetic energy of the particles
-if plasmaFreq:
-    plot_probe(freqs, "Plasma Frequency", "PlasmaFrequency")
-    # plot the plasma frequency
-    average_freq = jnp.mean( jnp.asarray(freqs[ int(len(freqs)/4):int(3*len(freqs)/4)  ] ) )
-    print(f'Average Plasma Frequency: {average_freq}')
-if plotEnergy:
-    plot_probe(total_energy, "Total Energy", "TotalEnergy")
-    # plot the total energy of the system
-    plot_probe(total_p, "Total Momentum", "TotalMomentum")
-    # plot the total momentum of the system
+#     if t % plot_freq == 0:
+#     ############## PLOTTING ###################################################################
+#         if plotEnergy:
+#             mu = 1.2566370613e-6
+#             # permeability of free space
+#             total_energy.append(  \
+#                 totalfield_energy(Ex, Ey, Ez, Bx, By, Bz, mu, eps) + \
+#                 total_KE(me, ev_x, ev_y, ev_z) + total_KE(mi, iv_x, iv_y, iv_z) )
+#             total_p.append( total_momentum(me, ev_x, ev_y, ev_z) + total_momentum(mi, iv_x, iv_y, iv_z) )
+#         if plotpositions:
+#             particlesx = jnp.concatenate([electron_x, ion_x])
+#             particlesy = jnp.concatenate([electron_y, ion_y])
+#             particlesz = jnp.concatenate([electron_z, ion_z])
+#             plot_positions( particlesx, particlesy, particlesz, t, x_wind, y_wind, z_wind)
+#         if plotvelocities:
+#             if not plotpositions:
+#                 particlesx = jnp.concatenate([electron_x, ion_x])
+#                 particlesy = jnp.concatenate([electron_y, ion_y])
+#                 particlesz = jnp.concatenate([electron_z, ion_z])
+#                 # get the particle positions if they haven't been computed
+#             velocitiesx = jnp.concatenate([ev_x, iv_x])
+#             velocitiesy = jnp.concatenate([ev_y, iv_y])
+#             velocitiesz = jnp.concatenate([ev_z, iv_z])
+#             plot_velocities( particlesx, particlesy, particlesz, velocitiesx, velocitiesy, velocitiesz, t, x_wind, y_wind, z_wind)
+#             plot_velocity_histogram(velocitiesx, velocitiesy, velocitiesz, t, nbins=100)
+#         if plotfields:
+#             plot_fields(Ex, Ey, Ez, t, "E", dx, dy, dz)
+#             plot_fields(Bx, By, Bz, t, "B", dx, dy, dz)
+#             plot_rho(rho, t, "rho", dx, dy, dz)
+#             Eprobe.append(magnitude_probe(Ex, Ey, Ez, int(Nx/2), int(Ny/2), int(Nz/2)))
+#             averageE.append(  jnp.mean( jnp.sqrt( Ex**2 + Ey**2 + Ez**2 ) )   )
+#         # plot the particles and save as png file
+#         if plotKE:
+#             KE.append(total_KE(me, ev_x, ev_y, ev_z) + total_KE(mi, iv_x, iv_y, iv_z))
+#             KE_time.append(t*dt)
+#         # calculate the total kinetic energy of the particles
+#         if plasmaFreq:
+#             n = jnp.zeros((Nx, Ny, Nz))
+#             current_freq = freq( n, N_electrons, electron_x, electron_y, electron_z, Nx, Ny, Nz, dx, dy, dz) 
+#             # calculate the current plasma frequency at time t
+#             freqs.append( current_freq )
+#             if verbose: print(f"Plasma Frequency: {current_freq} Hz")
+#         # calculate the plasma frequency
+#         if save_data:
+#             jnp.save(f'data/rho/rho_{t:09}', rho)
+#             jnp.save(f'data/phi/phi_{t:09}', phi)
+#         # save the data for the charge density and potential
+#         if phaseSpace:
+#             phase_space(electron_x, ev_x, t, "Electronx")
+#             phase_space(ion_x, iv_x, t, "Ionx")
+#             multi_phase_space(electron_x, ion_x, ev_x, iv_x, t, "Electrons", "Ions", "x", x_wind)
+#             multi_phase_space(electron_y, ion_y, ev_y, iv_y, t, "Electrons", "Ions", "y", y_wind)
+#             multi_phase_space(electron_z, ion_z, ev_z, iv_z, t, "Electrons", "Ions", "z", z_wind)
+#         # save the phase space data
+# if plotfields:
+#     plot_probe(Eprobe, "Electric Field", "ElectricField")
+#     efield_freq = plot_fft(Eprobe, dt*plot_freq, "FFT of Electric Field", "E_FFT")
+#     plot_probe(averageE, "Electric Field", "AvgElectricField")
+#     print(f'Electric Field Frequency: {efield_freq}')
+#     # plot the electric field probe
+# if plotKE:
+#     plot_KE(KE, KE_time)
+#     ke_freq = plot_fft(KE, dt*plot_freq, "FFT of Kinetic Energy", "KE_FFT")
+#     print(f'KE Frequency: {ke_freq}')
+#     # plot the total kinetic energy of the particles
+# if plasmaFreq:
+#     plot_probe(freqs, "Plasma Frequency", "PlasmaFrequency")
+#     # plot the plasma frequency
+#     average_freq = jnp.mean( jnp.asarray(freqs[ int(len(freqs)/4):int(3*len(freqs)/4)  ] ) )
+#     print(f'Average Plasma Frequency: {average_freq}')
+# if plotEnergy:
+#     plot_probe(total_energy, "Total Energy", "TotalEnergy")
+#     # plot the total energy of the system
+#     plot_probe(total_p, "Total Momentum", "TotalMomentum")
+#     # plot the total momentum of the system
 
 end = time.time()
 print(f"Total Simulation Time: {end-start}")
