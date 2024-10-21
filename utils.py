@@ -12,6 +12,7 @@ import math
 from pyevtk.hl import gridToVTK
 import functools
 from functools import partial
+import toml
 # import external libraries
 
 from rho import update_rho
@@ -24,6 +25,22 @@ def debugprint(value):
         value: The value to be printed. Can be of any type that is supported by JAX's debug print.
     """
     jax.debug.print('{x}', x=value)
+
+
+def read_simulation_parameters(file_path):
+    """
+    Reads simulation parameters from a TOML file.
+
+    Args:
+        file_path (str): Path to the TOML file.
+
+    Returns:
+        dict: Dictionary containing simulation parameters.
+    """
+    with open(file_path, 'r') as file:
+        parameters = toml.load(file)
+    return parameters
+
 
 def courant_condition(courant_number, dx, dy, dz, C):
     """
