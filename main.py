@@ -31,7 +31,7 @@ from fdtd import (
     update_B, update_E
 )
 from particlepush import (
-    boris
+    particle_push
 )
 
 from utils import (
@@ -198,8 +198,8 @@ else:
 
 electron_masses = jnp.ones(N_electrons) * me
 ion_masses = jnp.ones(N_ions) * mi
-electrons = particle_species(N_electrons, electron_masses, ev_x, ev_y, ev_z, electron_x, electron_y, electron_z)
-ions = particle_species(N_ions, ion_masses, iv_x, iv_y, iv_z, ion_x, ion_y, ion_z)
+electrons = particle_species(N_electrons, q_e, electron_masses, ev_x, ev_y, ev_z, electron_x, electron_y, electron_z)
+ions = particle_species(N_ions, q_i, ion_masses, iv_x, iv_y, iv_z, ion_x, ion_y, ion_z)
 #################################### Two Stream Instability #####################################################
 print(f"Thermal Velocity: {jnp.sqrt(2*kb*Te/me)}")
 
@@ -207,7 +207,7 @@ alternating_ones = (-1)**jnp.array(range(0,N_electrons))
 v0=1.5*2657603.0
 ev_x = v0*alternating_ones
 
-#ev_x *= ( 1 + 0.1*jnp.sin(6*jnp.pi * electron_x / x_wind) )
+ev_x *= ( 1 + 0.1*jnp.sin(6*jnp.pi * electron_x / x_wind) )
 # add perturbation to the electron velocities
 
 iv_x = jnp.zeros(N_ions)
@@ -269,9 +269,9 @@ for t in range(Nt):
 
     if GPUs:
         with jax.default_device(jax.devices('gpu')[0]):
-            electrons = boris(electrons, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
+            electrons = particle_push(electrons, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
     else:
-        electrons = boris(electrons, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
+        electrons = particle_push(electrons, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
     # implement the boris push algorithm to solve for new electron velocities
 
     if verbose: print(f"Calculating Electron Velocities, Max Value: {jnp.max(ev_x)}")
@@ -287,9 +287,9 @@ for t in range(Nt):
     if N_ions > 0:
         if GPUs:
             with jax.default_device(jax.devices('gpu')[0]):
-                ions = boris(ions, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
+                ions = particle_push(ions, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
         else:
-            ions = boris(ions, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
+            ions = particle_push(ions, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
         # use boris push for ion velocities
 
         if verbose: print(f"Calculating Ion Velocities, Max Value: {jnp.max(iv_x)}")
@@ -365,11 +365,7 @@ for t in range(Nt):
         # save the data for the charge density and potential
         if phaseSpace:
             phase_space(electron_x, ev_x, t, "Electronx")
-            # phase_space(electron_y, ev_y, t, "Electrony")
-            # phase_space(electron_z, ev_z, t, "Electronz")
             phase_space(ion_x, iv_x, t, "Ionx")
-            # phase_space(ion_y, iv_y, t, "Iony")
-            # phase_space(ion_z, iv_z, t, "Ionz")
 
             multi_phase_space(electron_x, ion_x, ev_x, iv_x, t, "Electrons", "Ions", "x", x_wind)
             multi_phase_space(electron_y, ion_y, ev_y, iv_y, t, "Electrons", "Ions", "y", y_wind)
@@ -393,13 +389,8 @@ if plasmaFreq:
     print(f'Average Plasma Frequency: {average_freq}')
 if plotEnergy:
     plot_probe(total_energy, "Total Energy", "TotalEnergy")
-    #energy_freq = plot_fft(total_energy, dt*plot_freq, "FFT of Total Energy", "Energy_FFT")
-    #print(f'Energy Frequency: {energy_freq}')
     # plot the total energy of the system
-
     plot_probe(total_p, "Total Momentum", "TotalMomentum")
-    #momentum_freq = plot_fft(total_p, dt*plot_freq, "FFT of Total Momentum", "Momentum_FFT")
-    #print(f'Momentum Frequency: {momentum_freq}')
     # plot the total momentum of the system
 
 end = time.time()
