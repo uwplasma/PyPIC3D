@@ -98,14 +98,12 @@ def plot_1dposition(x, name, particle):
     plt.savefig(f"plots/{name}/{particle}_position.png", dpi=300)
     plt.close()
 
-def plot_positions(x, y, z, t, x_wind, y_wind, z_wind):
+def plot_positions(particles, t, x_wind, y_wind, z_wind):
     """
     Makes a 3D plot of the positions of the particles.
 
     Parameters:
-    x (array-like): The x-coordinates of the particles.
-    y (array-like): The y-coordinates of the particles.
-    z (array-like): The z-coordinates of the particles.
+    particles (list): A list of ParticleSpecies objects containing positions.
     t (float): The time value.
     x_wind (float): The x-axis wind limit.
     y_wind (float): The y-axis wind limit.
@@ -114,6 +112,14 @@ def plot_positions(x, y, z, t, x_wind, y_wind, z_wind):
     Returns:
     None
     """
+    x, y, z = [], [], []
+    for species in particles:
+        x.append(species.get_position()[0])
+        y.append(species.get_position()[1])
+        z.append(species.get_position()[2])
+    x = jnp.concatenate(x)
+    y = jnp.concatenate(y)
+    z = jnp.concatenate(z)
 
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
@@ -160,14 +166,12 @@ def plot_velocity_histogram(vx, vy, vz, t, nbins=50):
     plt.savefig(f"plots/velocity_histograms/velocities.{t:09}.png", dpi=300)
     plt.close()
 
-def plot_velocities(x, y, z, vx, vy, vz, t, x_wind, y_wind, z_wind):
+def plot_velocities(particles, t, x_wind, y_wind, z_wind):
     """
     Makes a 3D plot of the velocities of the particles.
 
     Parameters:
-    vx (array-like): The x-component of the velocities of the particles.
-    vy (array-like): The y-component of the velocities of the particles.
-    vz (array-like): The z-component of the velocities of the particles.
+    particles (list): A list of ParticleSpecies objects containing positions and velocities.
     t (float): The time value.
     x_wind (float): The x-axis wind limit.
     y_wind (float): The y-axis wind limit.
@@ -176,12 +180,26 @@ def plot_velocities(x, y, z, vx, vy, vz, t, x_wind, y_wind, z_wind):
     Returns:
     None
     """
+    x, y, z, vx, vy, vz = [], [], [], [], [], []
+    for species in particles:
+        pos = species.get_position()
+        vel = species.get_velocity()
+        x.append(pos[0])
+        y.append(pos[1])
+        z.append(pos[2])
+        vx.append(vel[0])
+        vy.append(vel[1])
+        vz.append(vel[2])
     
+    x = jnp.concatenate(x)
+    y = jnp.concatenate(y)
+    z = jnp.concatenate(z)
+    vx = jnp.concatenate(vx)
+    vy = jnp.concatenate(vy)
+    vz = jnp.concatenate(vz)
+
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
-    #ax.set_xlim( -x_wind, x_wind )
-    #ax.set_ylim( -y_wind, y_wind )
-    #ax.set_zlim( -z_wind, z_wind )
     ax.quiver(x, y, z, vx, vy, vz, length=x_wind/1000)
     ax.set_xlabel('X (m)')
     ax.set_ylabel('Y (m)')

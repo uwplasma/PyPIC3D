@@ -271,7 +271,7 @@ for t in range(Nt):
 
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
-        print(particles[i].get_name())
+        if verbose: print(f'Updating {particles[i].get_name()}')
         if GPUs:
             with jax.default_device(jax.devices('gpu')[0]):
                 particles[i] = particle_push(particles[i], Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
@@ -279,7 +279,7 @@ for t in range(Nt):
             particles[i] = particle_push(particles[i], Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
         # use boris push for particle velocities
         if verbose: print(f"Calculating {particles[i].get_name()} Velocities, Max Value: {jnp.max(particles[i].get_velocity()[0])}")
-        particles[i] = particles[i].update_position(dt, x_wind, y_wind, z_wind)
+        particles[i].update_position(dt, x_wind, y_wind, z_wind)
         if verbose: print(f"Calculating {particles[i].get_name()} Positions, Max Value: {jnp.max(particles[i].get_position()[0])}")
 
     ################ MAGNETIC FIELD UPDATE #######################################################################
@@ -297,6 +297,23 @@ for t in range(Nt):
         else:
             Ex, Ex, Ez = update_E(Ex, Ey, Ez, Bx, By, Bz, dx, dy, dz, dt, C)
 
+
+    ################## PLOTTING ########################################################################################
+
+    if t % plot_freq == 0:
+        if plotpositions:
+            plotpositions(particles, t, x_wind, y_wind, z_wind)
+        if plotvelocities:
+            plotvelocities(particles, t, x_wind, y_wind, z_wind)
+        if plotfields:
+            plot_fields(Ex, Ey, Ez, t, "E", dx, dy, dz)
+            plot_fields(Bx, By, Bz, t, "B", dx, dy, dz)
+            plot_rho(rho, t, "rho", dx, dy, dz)
+            Eprobe.append(magnitude_probe(Ex, Ey, Ez, int(Nx/2), int(Ny/2), int(Nz/2)))
+            averageE.append(  jnp.mean( jnp.sqrt( Ex**2 + Ey**2 + Ez**2 ) )   )
+        if plotKE:
+            KE.append(total_KE(particles))
+            KE_time.append(t*dt)
 #     if t % plot_freq == 0:
 #     ############## PLOTTING ###################################################################
 #         if plotEnergy:
@@ -351,17 +368,17 @@ for t in range(Nt):
 #             multi_phase_space(electron_y, ion_y, ev_y, iv_y, t, "Electrons", "Ions", "y", y_wind)
 #             multi_phase_space(electron_z, ion_z, ev_z, iv_z, t, "Electrons", "Ions", "z", z_wind)
 #         # save the phase space data
-# if plotfields:
-#     plot_probe(Eprobe, "Electric Field", "ElectricField")
-#     efield_freq = plot_fft(Eprobe, dt*plot_freq, "FFT of Electric Field", "E_FFT")
-#     plot_probe(averageE, "Electric Field", "AvgElectricField")
-#     print(f'Electric Field Frequency: {efield_freq}')
-#     # plot the electric field probe
-# if plotKE:
-#     plot_KE(KE, KE_time)
-#     ke_freq = plot_fft(KE, dt*plot_freq, "FFT of Kinetic Energy", "KE_FFT")
-#     print(f'KE Frequency: {ke_freq}')
-#     # plot the total kinetic energy of the particles
+if plotfields:
+    plot_probe(Eprobe, "Electric Field", "ElectricField")
+    efield_freq = plot_fft(Eprobe, dt*plot_freq, "FFT of Electric Field", "E_FFT")
+    plot_probe(averageE, "Electric Field", "AvgElectricField")
+    print(f'Electric Field Frequency: {efield_freq}')
+    # plot the electric field probe
+if plotKE:
+    plot_KE(KE, KE_time)
+    ke_freq = plot_fft(KE, dt*plot_freq, "FFT of Kinetic Energy", "KE_FFT")
+    print(f'KE Frequency: {ke_freq}')
+    # plot the total kinetic energy of the particles
 # if plasmaFreq:
 #     plot_probe(freqs, "Plasma Frequency", "PlasmaFrequency")
 #     # plot the plasma frequency

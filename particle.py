@@ -142,18 +142,21 @@ def update_position(x, y, z, vx, vy, vz, dt, x_wind, y_wind, z_wind, bc='periodi
     return x, y, z
 
 @jit
-def total_KE(m, vx, vy, vz):
+def total_KE(particle_species_list):
     """
-    Calculate the total kinetic energy of the particles.
+    Calculate the total kinetic energy of all particle species.
 
     Parameters:
-    - m (float): The mass of the particle.
-    - v (jax.numpy.ndarray): The velocity of the particle.
+    - particle_species_list (list): A list of particle_species objects.
 
     Returns:
-    - float: The total kinetic energy of the particle.
+    - float: The total kinetic energy of all particle species.
     """
-    return 0.5 * m * jnp.sum( vx**2 + vy**2 + vz**2 )
+    total_ke = 0.0
+    for species in particle_species_list:
+        vx, vy, vz = species.get_velocity()
+        total_ke += 0.5 * species.mass * jnp.sum(vx**2 + vy**2 + vz**2)
+    return total_ke
 
 @jit
 def total_momentum(m, vx, vy, vz):
