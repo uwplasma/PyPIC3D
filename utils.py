@@ -25,6 +25,62 @@ def debugprint(value):
     """
     jax.debug.print('{x}', x=value)
 
+def courant_condition(courant_number, dx, dy, dz, C):
+    """
+    Calculate the Courant condition for a given grid spacing and wave speed.
+
+    The Courant condition is a stability criterion for numerical solutions of partial differential equations. 
+    It ensures that the numerical domain of dependence contains the true domain of dependence.
+
+    Parameters:
+    dx (float): Grid spacing in the x-direction.
+    dy (float): Grid spacing in the y-direction.
+    dz (float): Grid spacing in the z-direction.
+    C (float): Wave speed or Courant number.
+
+    Returns:
+    float: The maximum allowable time step for stability.
+    """
+    return 1 / (C * ( (1/dx) + (1/dy) + (1/dz) ) )
+# calculate the courant condition
+
+def plasma_frequency(N_electrons, x_wind, y_wind, z_wind, eps, me, q_e):
+    """
+    Calculate the theoretical frequency of a system based on the given parameters.
+
+    Parameters:
+    N_electrons (float): Number of electrons in the system.
+    x_wind (float): Width of the system in the x-dimension.
+    y_wind (float): Width of the system in the y-dimension.
+    z_wind (float): Width of the system in the z-dimension.
+    eps (float): Permittivity of the medium.
+    me (float): Mass of an electron.
+    q_e (float): Charge of an electron.
+
+    Returns:
+    float: Theoretical frequency of the system.
+    """
+    ne = N_electrons / (x_wind*y_wind*z_wind)
+    return jnp.sqrt(  ne * q_e**2  / (eps*me)  )
+# calculate the expected plasma frequency from analytical theory
+
+def debye_length(eps, T, N_electrons, x_wind, y_wind, z_wind, q_e):
+    """
+    Calculate the Debye length of a system based on the given parameters.
+
+    Parameters:
+    eps (float): Permittivity of the medium.
+    T (float): Temperature of the system.
+    N_electrons (float): Number of electrons in the system.
+    q_e (float): Charge of an electron.
+
+    Returns:
+    float: Debye length of the system.
+    """
+
+    ne = N_electrons / (x_wind*y_wind*z_wind)
+    return jnp.sqrt( eps * kb * Te / (ne * q_e**2) )
+
 def probe(fieldx, fieldy, fieldz, x, y, z):
     """
     Probe the value of a vector field at a given point.
