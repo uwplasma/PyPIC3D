@@ -17,7 +17,7 @@ from plotting import (
 )
 from particle import (
     initial_particles, update_position, total_KE, total_momentum,
-    cold_start_init
+    cold_start_init, particle_species
 )
 from fields import (
     calculateE, initialize_fields
@@ -159,14 +159,12 @@ if theoretical_freq * dt > 2.0:
     print(f"# of Electrons is Low and may introduce numerical stability")
     print(f"In order to correct this, # of Electrons needs to be at least { (2/dt)**2 * (me*eps/q_e**2) } for this spatial resolution")
 
-debye = debye_length(eps, T, N_electrons, x_wind, y_wind, z_wind, q_e)
+debye = debye_length(eps, Te, N_electrons, x_wind, y_wind, z_wind, q_e, kb)
 # calculate the debye length of the plasma
-print(f"Debye Length: {debye_length} m")
+print(f"Debye Length: {debye} m")
 
-if debye_length < dx:
+if debye < dx:
     print(f"Debye Length is less than the spatial resolution, this may introduce numerical instability")
-
-
 
 t_wind = 4e-9
 # time window for simultion
@@ -198,6 +196,10 @@ else:
 # initialize the positions and velocities of the electrons and ions in the plasma.
 # eventually, I need to update the initialization to use a more accurate position and velocity distribution.
 
+electron_masses = jnp.ones(N_electrons) * me
+ion_masses = jnp.ones(N_ions) * mi
+electrons = particle_species(N_electrons, electron_masses, ev_x, ev_y, ev_z, electron_x, electron_y, electron_z)
+ions = particle_species(N_ions, ion_masses, iv_x, iv_y, iv_z, ion_x, ion_y, ion_z)
 #################################### Two Stream Instability #####################################################
 print(f"Thermal Velocity: {jnp.sqrt(2*kb*Te/me)}")
 
@@ -205,13 +207,17 @@ alternating_ones = (-1)**jnp.array(range(0,N_electrons))
 v0=1.5*2657603.0
 ev_x = v0*alternating_ones
 
-ev_x *= ( 1 + 0.1*jnp.sin(6*jnp.pi * electron_x / x_wind) )
+#ev_x *= ( 1 + 0.1*jnp.sin(6*jnp.pi * electron_x / x_wind) )
 # add perturbation to the electron velocities
 
-iv_x = 0
-iv_y = 0
-iv_z = 0
+iv_x = jnp.zeros(N_ions)
+iv_y = jnp.zeros(N_ions)
+iv_z = jnp.zeros(N_ions)
 # initialize the ion velocities to zero
+
+electrons.set_velocity(ev_x, ev_y, ev_z)
+ions.set_velocity(iv_x, iv_y, iv_z)
+# update the velocities of the particles
 ##################################### Neural Network Preconditioner ################################################
 
 key = jax.random.PRNGKey(0)
@@ -238,10 +244,7 @@ if plotEnergy: total_energy = []
 if plotEnergy: total_p      = []
 
 if not electrostatic:
-        Ex, Ey, Ez, phi, rho = calculateE(N_electrons, electron_x, electron_y, electron_z, \
-            N_ions, ion_x, ion_y, ion_z,                                               \
-            dx, dy, dz, q_e, q_i, rho, eps, phi, 0, M, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
-
+        Ex, Ey, Ez, phi, rho = calculateE(electrons, ions, dx, dy, dz, q_e, q_i, rho, eps, phi, M, t, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
 for t in range(Nt):
     print(f'Iteration {t}, Time: {t*dt} s')
 
@@ -254,9 +257,7 @@ for t in range(Nt):
             M = model(phi, rho)
     # solve for the preconditioner using the neural network
     if electrostatic:
-        Ex, Ey, Ez, phi, rho = calculateE(N_electrons, electron_x, electron_y, electron_z, \
-                N_ions, ion_x, ion_y, ion_z,                                               \
-                dx, dy, dz, q_e, q_i, rho, eps, phi, t, M, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
+        Ex, Ey, Ez, phi, rho = calculateE(electrons, ions, dx, dy, dz, q_e, q_i, rho, eps, phi, M, t, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
 
         if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(Ex)}")
         # print the maximum value of the electric field
@@ -268,17 +269,15 @@ for t in range(Nt):
 
     if GPUs:
         with jax.default_device(jax.devices('gpu')[0]):
-            ev_x, ev_y, ev_z = boris(q_e, Ex, Ey, Ez, Bx, By, Bz, electron_x, \
-                        electron_y, electron_z, ev_x, ev_y, ev_z, grid, staggered_grid, dt, me)
+            electrons = boris(electrons, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
     else:
-        ev_x, ev_y, ev_z = boris(q_e, Ex, Ey, Ez, Bx, By, Bz, electron_x, \
-                            electron_y, electron_z, ev_x, ev_y, ev_z, grid, staggered_grid, dt, me)
+        electrons = boris(electrons, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
     # implement the boris push algorithm to solve for new electron velocities
 
     if verbose: print(f"Calculating Electron Velocities, Max Value: {jnp.max(ev_x)}")
     # print the maximum value of the electron velocities
 
-    electron_x, electron_y, electron_z = update_position(electron_x, electron_y, electron_z, ev_x, ev_y, ev_z, dt, x_wind, y_wind, z_wind)
+    electrons.update_position(dt, x_wind, y_wind, z_wind)
     # Update the positions of the particles
 
     if verbose: print(f"Calculating Electron Positions, Max Value: {jnp.max(electron_x)}")
@@ -288,17 +287,15 @@ for t in range(Nt):
     if N_ions > 0:
         if GPUs:
             with jax.default_device(jax.devices('gpu')[0]):
-                iv_x, iv_y, iv_z = boris(q_i, Ex, Ey, Ez, Bx, By, Bz, ion_x, \
-                            ion_y, ion_z, iv_x, iv_y, iv_z, grid, staggered_grid, dt, mi)
+                ions = boris(ions, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
         else:
-            iv_x, iv_y, iv_z = boris(q_i, Ex, Ey, Ez, Bx, By, Bz, ion_x, \
-                                    ion_y, ion_z, iv_x, iv_y, iv_z, grid, staggered_grid, dt, mi)
+            ions = boris(ions, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
         # use boris push for ion velocities
 
         if verbose: print(f"Calculating Ion Velocities, Max Value: {jnp.max(iv_x)}")
         # print the maximum value of the ion velocities
 
-        ion_x, ion_y, ion_z  = update_position(ion_x, ion_y, ion_z, iv_x, iv_y, iv_z, dt, x_wind, y_wind, z_wind)
+        ions.update_position(dt, x_wind, y_wind, z_wind)
         # Update the positions of the particles
         if verbose: print(f"Calculating Ion Positions, Max Value: {jnp.max(ion_x)}")
         # print the maximum value of the ion positions

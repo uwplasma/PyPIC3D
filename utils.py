@@ -81,7 +81,7 @@ def plasma_frequency(N_electrons, x_wind, y_wind, z_wind, eps, me, q_e):
     return jnp.sqrt(  ne * q_e**2  / (eps*me)  )
 # calculate the expected plasma frequency from analytical theory
 
-def debye_length(eps, T, N_electrons, x_wind, y_wind, z_wind, q_e):
+def debye_length(eps, Te, N_electrons, x_wind, y_wind, z_wind, q_e, kb):
     """
     Calculate the Debye length of a system based on the given parameters.
 
