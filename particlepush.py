@@ -14,6 +14,8 @@ import functools
 from functools import partial
 # import external libraries
 
+from particle import particle_species
+
 @jit
 def interpolate_field(field, grid, x, y, z):
     """
@@ -91,8 +93,7 @@ def boris(q, m, x, y, z, vx, vy, vz, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_gri
     Returns:
     tuple: Updated velocity components (newvx, newvy, newvz).
     """
-
-
+    
     efield_atx = interpolate_field(Ex, grid, x, y, z)
     efield_aty = interpolate_field(Ey, grid, x, y, z)
     efield_atz = interpolate_field(Ez, grid, x, y, z)
