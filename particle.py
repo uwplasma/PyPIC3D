@@ -169,7 +169,7 @@ def total_momentum(m, vx, vy, vz):
     """
     return m * jnp.sum( jnp.sqrt( vx**2 + vy**2 + vz**2 ) )
 
-@jit
+
 class particle:
     """
     A class to represent a particle in 3D space.
@@ -238,7 +238,7 @@ class particle:
     def momentum(self):
         return self.mass * jnp.sqrt( self.vx**2 + self.vy**2 + self.vz**2 )
 
-@jit
+
 class particle_species:
     """
     A class to represent a species of particles.
@@ -278,13 +278,19 @@ class particle_species:
     def __init__(self, N_particles, mass, vx, vy, vz, x, y, z, bc='periodic'):
         self.N_particles = N_particles
         self.mass = mass
-        if isinstance(self.mass, jnp.array):
-            self.particles = [particle(mass[i], vx[i], vy[i], vz[i], x[i], y[i], z[i]) for i in range(N_particles)]
-        else:
-            self.particles = [particle(mass, vx[i], vy[i], vz[i], x[i], y[i], z[i]) for i in range(N_particles)]
+        self.particles = []
+        # def add_particle(i, particles):
+        #         particles.append(particle(mass[i], vx[i], vy[i], vz[i], x[i], y[i], z[i]))
+        #         return particles
+        # self.particles = jax.lax.fori_loop(0, self.N_particles, add_particle, self.particles)
+        self.particles = [particle(mass[i], vx[i], vy[i], vz[i], x[i], y[i], z[i]) for i in range(N_particles)]
         # build a list of particles
         self.bc = bc
 
+    def get_charge(self):
+        return self.charge
+    def get_number_of_particles(self):
+        return self.N_particles
     def get_velocity(self):
         return [p.get_velocity() for p in self.particles]
     def get_position(self):

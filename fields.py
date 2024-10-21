@@ -115,88 +115,77 @@ def compute_pe(phi, rho, eps, dx, dy, dz, bc='periodic'):
     return 200 * jnp.abs( jnp.ravel(poisson_error)[index]) / ( jnp.abs(jnp.ravel(rho/eps)[index])+ jnp.abs(jnp.ravel(x)[index]) )
     # this method computes the relative percentage difference of poisson solver
 
-
-def calculateE(N_electrons, electron_x, electron_y, electron_z, \
-               N_ions, ion_x, ion_y, ion_z,                     \
-               dx, dy, dz, q_e, q_i, rho, eps, phi, t, M, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs):
+def calculateE(electrons, ions, dx, dy, dz, q_e, q_i, rho, eps, phi, M, t, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs):
     """
-                Calculates the electric field components (Ex, Ey, Ez), electric potential (phi), and charge density (rho) based on the given parameters.
+    Calculates the electric field components (Ex, Ey, Ez), electric potential (phi), and charge density (rho) based on the given parameters.
 
-                Parameters:
-                - N_electrons (int): Number of electrons.
-                - electron_x (array-like): x-coordinates of electrons.
-                - electron_y (array-like): y-coordinates of electrons.
-                - electron_z (array-like): z-coordinates of electrons.
-                - N_ions (int): Number of ions.
-                - ion_x (array-like): x-coordinates of ions.
-                - ion_y (array-like): y-coordinates of ions.
-                - ion_z (array-like): z-coordinates of ions.
-                - dx (float): Grid spacing in the x-direction.
-                - dy (float): Grid spacing in the y-direction.
-                - dz (float): Grid spacing in the z-direction.
-                - q_e (float): Charge of an electron.
-                - q_i (float): Charge of an ion.
-                - rho (array-like): Initial charge density.
-                - eps (float): Permittivity of the medium.
-                - phi (array-like): Initial electric potential.
-                - t (int): Time step.
-                - M (array-like): Matrix for solving Poisson's equation.
-                - Nx (int): Number of grid points in the x-direction.
-                - Ny (int): Number of grid points in the y-direction.
-                - Nz (int): Number of grid points in the z-direction.
-                - bc (str): Boundary condition.
-                - verbose (bool): Whether to print additional information.
-                - GPUs (bool): Whether to use GPUs for Poisson solver.
+    Parameters:
+    - electrons (object): Object containing information about the electrons.
+    - ions (object): Object containing information about the ions.
+    - dx (float): Grid spacing in the x-direction.
+    - dy (float): Grid spacing in the y-direction.
+    - dz (float): Grid spacing in the z-direction.
+    - q_e (float): Charge of an electron.
+    - q_i (float): Charge of an ion.
+    - rho (array-like): Initial charge density.
+    - eps (float): Permittivity of the medium.
+    - phi (array-like): Initial electric potential.
+    - t (int): Time step.
+    - M (array-like): Matrix for solving Poisson's equation.
+    - Nx (int): Number of grid points in the x-direction.
+    - Ny (int): Number of grid points in the y-direction.
+    - Nz (int): Number of grid points in the z-direction.
+    - bc (str): Boundary condition.
+    - verbose (bool): Whether to print additional information.
+    - GPUs (bool): Whether to use GPUs for Poisson solver.
 
-                Returns:
-                - Ex (array-like): x-component of the electric field.
-                - Ey (array-like): y-component of the electric field.
-                - Ez (array-like): z-component of the electric field.
-                - phi (array-like): Updated electric potential.
-                - rho (array-like): Updated charge density.
-                """
-    
+    Returns:
+    - Ex (array-like): x-component of the electric field.
+    - Ey (array-like): y-component of the electric field.
+    - Ez (array-like): z-component of the electric field.
+    - phi (array-like): Updated electric potential.
+    - rho (array-like): Updated charge density.
+    """
+
+    N_electrons = electrons.get_number_of_particles()
+    electron_x, electron_y, electron_z = electrons.get_position()
+    N_ions = ions.get_number_of_particles()
+    ion_x, ion_y, ion_z = ions.get_position()
+    # get the particle properties
+
     if GPUs:
         with jax.default_device(jax.devices('gpu')[0]):
-                rho = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
-                # reset value of charge density
-                rho = update_rho(N_electrons, electron_x, electron_y, electron_z, dx, dy, dz, q_e, x_wind, y_wind, z_wind, rho)
-                if N_ions > 0:
-                    rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, x_wind, y_wind, z_wind, rho)
-                    # update the charge density field
+            rho = jax.numpy.zeros(shape=(Nx, Ny, Nz))
+            rho = update_rho(N_electrons, electron_x, electron_y, electron_z, dx, dy, dz, q_e, x_wind, y_wind, z_wind, rho)
+            if N_ions > 0:
+                rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, x_wind, y_wind, z_wind, rho)
     else:
-        rho = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
-        # reset value of charge density
+        rho = jax.numpy.zeros(shape=(Nx, Ny, Nz))
         rho = update_rho(N_electrons, electron_x, electron_y, electron_z, dx, dy, dz, q_e, x_wind, y_wind, z_wind, rho)
         if N_ions > 0:
             rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, x_wind, y_wind, z_wind, rho)
-            # update the charge density field
 
-    if verbose: print(f"Calculating Charge Density, Max Value: {jnp.max(rho)}")
-    # print the maximum value of the charge density
+    if verbose:
+        print(f"Calculating Charge Density, Max Value: {jnp.max(rho)}")
 
     if GPUs:
         with jax.default_device(jax.devices('gpu')[0]):
-                if t == 0:
-                    phi = solve_poisson(rho, eps, dx, dy, dz, phi=rho, bc=bc, M=None)
-                else:
-                    phi = solve_poisson(rho, eps, dx, dy, dz, phi=phi, bc=bc, M=M)
+            if t == 0:
+                phi = solve_poisson(rho, eps, dx, dy, dz, phi=rho, bc=bc, M=None)
+            else:
+                phi = solve_poisson(rho, eps, dx, dy, dz, phi=phi, bc=bc, M=M)
     else:
         if t == 0:
             phi = solve_poisson(rho, eps, dx, dy, dz, phi=rho, bc=bc, M=None)
         else:
             phi = solve_poisson(rho, eps, dx, dy, dz, phi=phi, bc=bc, M=M)
-    # solve the poisson equation for the electric potential
 
-    if verbose: print(f"Calculating Electric Potential, Max Value: {jnp.max(phi)}")
-    # print the maximum value of the electric potential
-    #if verbose: print( f'Poisson Relative Percent Difference: {compute_pe(phi, rho, eps, dx, dy, dz)}%')
-    # Use conjugated gradients to calculate the electric potential from the charge density
+    if verbose:
+        print(f"Calculating Electric Potential, Max Value: {jnp.max(phi)}")
 
     E_fields = jnp.gradient(phi)
-    Ex       = -1*E_fields[0]
-    Ey       = -1*E_fields[1]
-    Ez       = -1*E_fields[2]
-    # Calculate the E field using the gradient of the potential
+    Ex = -1 * E_fields[0]
+    Ey = -1 * E_fields[1]
+    Ez = -1 * E_fields[2]
 
     return Ex, Ey, Ez, phi, rho

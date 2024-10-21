@@ -34,30 +34,31 @@ def interpolate_field(field, grid, x, y, z):
     return interpolate(points)
 
 @jit
-def boris(q, Ex, Ey, Ez, Bx, By, Bz, x, y, z, vx, vy, vz, grid, staggered_grid, dt, m):
+def boris(particles, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt):
     """
-    Perform Boris push algorithm to update the velocity of a charged particle in an electromagnetic field.
+    Perform the Boris algorithm to update the velocities of charged particles in an electromagnetic field.
 
     Parameters:
-    q (float): Charge of the particle.
-    Ex (ndarray): Electric field component array in the x-direction.
-    Ey (ndarray): Electric field component array in the y-direction.
-    Ez (ndarray): Electric field component array in the z-direction.
-    Bx (ndarray): Magnetic field component array in the x-direction.
-    By (ndarray): Magnetic field component array in the y-direction.
-    Bz (ndarray): Magnetic field component array in the z-direction.
-    x (ndarray): Particle position array in the x-direction.
-    y (ndarray): Particle position array in the y-direction.
-    z (ndarray): Particle position array in the z-direction.
-    vx (ndarray): Particle velocity array in the x-direction.
-    vy (ndarray): Particle velocity array in the y-direction.
-    vz (ndarray): Particle velocity array in the z-direction.
-    dt (float): Time step size.
-    m (float): Mass of the particle.
+    particles (Particles): An object representing the particles, which must have methods to get and set charge, mass, position, and velocity.
+    Ex (ndarray): Electric field component in the x-direction.
+    Ey (ndarray): Electric field component in the y-direction.
+    Ez (ndarray): Electric field component in the z-direction.
+    Bx (ndarray): Magnetic field component in the x-direction.
+    By (ndarray): Magnetic field component in the y-direction.
+    Bz (ndarray): Magnetic field component in the z-direction.
+    grid (Grid): The grid object for the electric field.
+    staggered_grid (Grid): The staggered grid object for the magnetic field.
+    dt (float): The time step for the update.
 
     Returns:
-    tuple: Updated velocity of the particle in the x, y, and z directions.
+    None
     """
+
+
+    q = particles.get_charge()
+    m = particles.get_mass()
+    x, y, z = particles.get_position()
+    vx, vy, vz = particles.get_velocity()
 
     efield_atx = interpolate_field(Ex, grid, x, y, z)
     efield_aty = interpolate_field(Ey, grid, x, y, z)
@@ -96,4 +97,5 @@ def boris(q, Ex, Ey, Ez, Bx, By, Bz, x, y, z, vx, vy, vz, grid, staggered_grid, 
     newvz = vzplus + q*dt/(2*m)*efield_atz
     # calculate the new velocity
 
-    return newvx, newvy, newvz
+    particles.set_velocity(newvx, newvy, newvz)
+    return particles
