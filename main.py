@@ -211,9 +211,7 @@ if NN:
     model = eqx.tree_deserialise_leaves(model_name, model)
     # load the model from file
 
-#################################### MAIN LOOP #####################################################################
-
-
+#################################### MAIN LOOP ####################################################################
 M = None
 # set poisson solver precondition to None for now
 
@@ -278,8 +276,7 @@ for t in range(Nt):
             Ex, Ey, Ez = spectralEsolve(Ex, Ey, Ez, Bx, By, Bz, dx, dy, dz, dt, C)
         else:
             Ex, Ex, Ez = update_E(Ex, Ey, Ez, Bx, By, Bz, dx, dy, dz, dt, C)
-
-
+        # update the electric field using the curl of the magnetic field
     ################## PLOTTING ########################################################################################
 
     if t % plot_freq == 0:
