@@ -26,6 +26,31 @@ def debugprint(value):
     """
     jax.debug.print('{x}', x=value)
 
+def update_parameters_from_toml(config_file, simulation_parameters, plotting_parameters):
+    """
+    Update the simulation parameters with values from a TOML config file.
+
+    Parameters:
+    - config_file (str): Path to the TOML config file.
+    - simulation_parameters (dict): Dictionary of default simulation parameters.
+    - plotting_parameters (dict): Dictionary of default plotting parameters.
+
+    Returns:
+    - tuple: Updated simulation parameters and plotting parameters.
+    """
+    # Load the TOML config file
+    config = toml.load(config_file)
+    
+    # Update the simulation parameters with values from the config file
+    for key, value in config["simulation_parameters"].items():
+        if key in simulation_parameters:
+            simulation_parameters[key] = value
+
+    for key, value in config["plotting"].items():
+        if key in plotting_parameters:
+            plotting_parameters[key] = value
+    
+    return simulation_parameters, plotting_parameters
 
 def read_simulation_parameters(file_path):
     """

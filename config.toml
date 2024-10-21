@@ -1,0 +1,8 @@
+[simulation]
+name = "Test Simulation"
+
+[plotting]
+
+
+[simulation_parameters]
+t_wind = 5e-12
