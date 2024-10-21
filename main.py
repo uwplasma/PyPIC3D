@@ -11,12 +11,12 @@ import equinox as eqx
 # Importing relevant libraries
 
 from plotting import (
-    plot_fields, plot_positions, plot_rho, plot_velocities, 
-    plot_velocity_histogram, plot_KE, plot_probe, plot_fft, 
+    plot_fields, plot_positions, plot_rho, plot_velocities,
+    plot_velocity_histogram, plot_KE, plot_probe, plot_fft,
     phase_space, multi_phase_space
 )
 from particle import (
-    initial_particles, update_position, total_KE, total_momentum, 
+    initial_particles, update_position, total_KE, total_momentum,
     cold_start_init
 )
 from fields import (
@@ -35,9 +35,12 @@ from particlepush import (
 )
 
 from utils import (
-    totalfield_energy, probe, number_density, freq, magnitude_probe
+    totalfield_energy, probe, number_density, freq, magnitude_probe, plasma_frequency, courant_condition, debye_length
 )
 
+from defaults import (
+    default_parameters
+)
 from model import (
     PoissonPrecondition
 )
@@ -56,28 +59,30 @@ model_name = "Preconditioner.eqx"
 # booleans for using a neural network to precondition Poisson's equation solver
 
 ############################ SETTINGS #####################################################################
-save_data = False
-plotfields = True
-plotpositions = False
-plotvelocities = False
-plotKE = False
-plotEnergy = False
-plasmaFreq = False
-phaseSpace = True
+plotting_parameters = {
+    "save_data": False,
+    "plotfields": True,
+    "plotpositions": False,
+    "plotvelocities": False,
+    "plotKE": False,
+    "plotEnergy": False,
+    "plasmaFreq": False,
+    "phaseSpace": True
+}
+# dictionary for plotting/saving data
+save_data = plotting_parameters["save_data"]
+plotfields = plotting_parameters["plotfields"]
+plotpositions = plotting_parameters["plotpositions"]
+plotvelocities = plotting_parameters["plotvelocities"]
+plotKE = plotting_parameters["plotKE"]
+plotEnergy = plotting_parameters["plotEnergy"]
+plasmaFreq = plotting_parameters["plasmaFreq"]
+phaseSpace = plotting_parameters["phaseSpace"]
 # booleans for plotting/saving data
-
-benchmark = False
-# still need to implement benchmarking
-
-verbose   = False
-# booleans for debugging
 
 electrostatic = True
 cold_start = False
 # start all the particles at the same place (rho = 0)
-
-if benchmark: jax.profiler.start_trace("/home/christopherwoolford/Documents/PyPIC3D/tensorboard")
-# start the profiler using tensorboard
 
 ############################ INITIALIZE EVERYTHING #######################################################
 # I am starting by simulating a hydrogen plasma
@@ -85,41 +90,54 @@ print("Initializing Simulation...")
 start = time.time()
 
 ############################# SIMULATION PARAMETERS ########################################################
-bc = "spectral"
-# boundary conditions: periodic, dirichlet, neumann, spectral
+simulation_parameters = {
+    "bc": "spectral",  # boundary conditions: periodic, dirichlet, neumann, spectral
+    "eps": 8.854e-12,  # permitivity of freespace
+    "C": 3e8,  # Speed of light in m/s
+    "kb": 1.380649e-23,  # Boltzmann's constant in J/K
+    "me": 9.1093837e-31,  # mass of the electron in Kg
+    "mi": 1.67e-27,  # mass of the ion in Kg
+    "q_e": -1.602e-19,  # charge of electron
+    "q_i": 1.602e-19,  # charge of ion
+    "Te": 233000,  # electron temperature in K
+    "Ti": 233000,  # ion temperature in K
+    "N_electrons": 5000,  # number of electrons
+    "N_ions": 5000,  # number of ions
+    "Nx": 30,  # number of array spacings in x
+    "Ny": 30,  # number of array spacings in y
+    "Nz": 30,  # number of array spacings in z
+    "x_wind": 1e-2,  # size of the spatial window in x in meters
+    "y_wind": 1e-2,  # size of the spatial window in y in meters
+    "z_wind": 1e-2,  # size of the spatial window in z in meters
+    "benchmark": False, # boolean for using the profiler
+    "verbose": False # boolean for printing verbose output
+}
 
-eps = 8.854e-12
-# permitivity of freespace
-C = 3e8 # m/s
-# Speed of light
-kb = 1.380649e-23 # J/K
-# Boltzmann's constant
-me = 9.1093837e-31 # Kg
-# mass of the electron
-mi = 1.67e-27 # Kg
-# mass of the ion
-q_e = -1.602e-19
-# charge of electron
-q_i = 1.602e-19
-# charge of ion
-Te = 233000 # K
-# electron temperature
-Ti = 233000 # K
-# ion temperature
-# assuming an isothermal plasma for now
+bc = simulation_parameters["bc"]
+eps = simulation_parameters["eps"]
+C = simulation_parameters["C"]
+kb = simulation_parameters["kb"]
+me = simulation_parameters["me"]
+mi = simulation_parameters["mi"]
+q_e = simulation_parameters["q_e"]
+q_i = simulation_parameters["q_i"]
+Te = simulation_parameters["Te"]
+Ti = simulation_parameters["Ti"]
+N_electrons = simulation_parameters["N_electrons"]
+N_ions = simulation_parameters["N_ions"]
+Nx = simulation_parameters["Nx"]
+Ny = simulation_parameters["Ny"]
+Nz = simulation_parameters["Nz"]
+x_wind = simulation_parameters["x_wind"]
+y_wind = simulation_parameters["y_wind"]
+z_wind = simulation_parameters["z_wind"]
+benchmark = simulation_parameters["benchmark"]
+verbose = simulation_parameters["verbose"]
+# set the simulation parameters
 
-N_electrons = 5000
-N_ions      = 5000
-# specify the number of electrons and ions in the plasma
+if benchmark: jax.profiler.start_trace("/home/christopherwoolford/Documents/PyPIC3D/tensorboard")
+# start the profiler using tensorboard
 
-Nx = 30
-Ny = 30
-Nz = 30
-# specify the number of array spacings in x, y, and z
-x_wind = 1e-2
-y_wind = 1e-2
-z_wind = 1e-2
-# specify the size of the spatial window in meters
 
 dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
 # compute the spatial resolution
@@ -129,12 +147,10 @@ print(f'Dz: {dz}')
 
 ################ Courant Condition #############################################################################
 courant_number = 1
-dt = courant_number / (  C * ( (1/dx) + (1/dy) + (1/dz) )   )
-# dt = courant_number * min(dx, dy, dz) / (C)
+dt = courant_condition(courant_number, dx, dy, dz, C)
 # calculate spatial resolution using courant condition
 
-ne = N_electrons / (x_wind*y_wind*z_wind)
-theoretical_freq = jnp.sqrt(  ne * q_e**2  / (eps*me)  )
+theoretical_freq = plasma_frequency(N_electrons, x_wind, y_wind, z_wind, eps, me, q_e)
 # calculate the expected plasma frequency from analytical theory, w = sqrt( ne^2 / (eps * me) )
 
 print(f"Theoretical Plasma Frequency: {theoretical_freq} Hz")
@@ -143,8 +159,7 @@ if theoretical_freq * dt > 2.0:
     print(f"# of Electrons is Low and may introduce numerical stability")
     print(f"In order to correct this, # of Electrons needs to be at least { (2/dt)**2 * (me*eps/q_e**2) } for this spatial resolution")
 
-
-debye_length = jnp.sqrt( eps * kb * Te / (ne * q_e**2) )
+debye = debye_length(eps, T, N_electrons, x_wind, y_wind, z_wind, q_e)
 # calculate the debye length of the plasma
 print(f"Debye Length: {debye_length} m")
 
@@ -153,7 +168,7 @@ if debye_length < dx:
 
 
 
-t_wind = 8e-9
+t_wind = 4e-9
 # time window for simultion
 Nt     = int( t_wind / dt )
 # Nt for resolution
@@ -226,7 +241,7 @@ if not electrostatic:
         Ex, Ey, Ez, phi, rho = calculateE(N_electrons, electron_x, electron_y, electron_z, \
             N_ions, ion_x, ion_y, ion_z,                                               \
             dx, dy, dz, q_e, q_i, rho, eps, phi, 0, M, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
-    
+
 for t in range(Nt):
     print(f'Iteration {t}, Time: {t*dt} s')
 
@@ -242,7 +257,7 @@ for t in range(Nt):
         Ex, Ey, Ez, phi, rho = calculateE(N_electrons, electron_x, electron_y, electron_z, \
                 N_ions, ion_x, ion_y, ion_z,                                               \
                 dx, dy, dz, q_e, q_i, rho, eps, phi, t, M, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
-        
+
         if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(Ex)}")
         # print the maximum value of the electric field
 
