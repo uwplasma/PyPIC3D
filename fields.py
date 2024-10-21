@@ -148,10 +148,12 @@ def calculateE(electrons, ions, dx, dy, dz, q_e, q_i, rho, eps, phi, M, t, Nx, N
     """
 
     N_electrons = electrons.get_number_of_particles()
-    electron_x, electron_y, electron_z = electrons.get_position()
     N_ions = ions.get_number_of_particles()
+    # get the number of particles
+    electron_x, electron_y, electron_z = electrons.get_position()
     ion_x, ion_y, ion_z = ions.get_position()
     # get the particle properties
+
 
     if GPUs:
         with jax.default_device(jax.devices('gpu')[0]):

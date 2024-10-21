@@ -13,7 +13,6 @@ from pyevtk.hl import gridToVTK
 import functools
 from functools import partial
 # import external libraries
-
 @jit
 def index_particles(particle, positions, ds):
     """
@@ -113,4 +112,4 @@ def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_win
         rho = rho.at[x, y, z].add( q / (dx*dy*dz) )
         return rho
     
-    return jax.lax.fori_loop(0, Nparticles-1, addto_rho, rho )
+    return jax.lax.fori_loop(0, Nparticles, addto_rho, rho )
