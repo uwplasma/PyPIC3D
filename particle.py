@@ -168,3 +168,158 @@ def total_momentum(m, vx, vy, vz):
     - float: The total momentum of the particle.
     """
     return m * jnp.sum( jnp.sqrt( vx**2 + vy**2 + vz**2 ) )
+
+@jit
+class particle:
+    """
+    A class to represent a particle in 3D space.
+    Attributes
+    ----------
+    mass : float
+        Mass of the particle.
+    vx : float
+        Velocity of the particle along the x-axis.
+    vy : float
+        Velocity of the particle along the y-axis.
+    vz : float
+        Velocity of the particle along the z-axis.
+    x : float
+        Position of the particle along the x-axis.
+    y : float
+        Position of the particle along the y-axis.
+    z : float
+        Position of the particle along the z-axis.
+    Methods
+    -------
+    get_velocity():
+        Returns the velocity components (vx, vy, vz) of the particle.
+    get_position():
+        Returns the position components (x, y, z) of the particle.
+    get_mass():
+        Returns the mass of the particle.
+    set_velocity(vx, vy, vz):
+        Sets the velocity components (vx, vy, vz) of the particle.
+    set_position(x, y, z):
+        Sets the position components (x, y, z) of the particle.
+    set_mass(mass):
+        Sets the mass of the particle.
+    kinetic_energy():
+        Calculates and returns the kinetic energy of the particle.
+    momentum():
+        Calculates and returns the momentum of the particle.
+    """
+
+    def __init__(self, mass, vx, vy, vz, x, y, z):
+        self.vx = vx
+        self.vy = vy
+        self.vz = vz
+        self.x = x
+        self.y = y
+        self.z = z
+        self.mass = mass
+    def get_velocity(self):
+        return self.vx, self.vy, self.vz
+    def get_position(self):
+        return self.x, self.y, self.z
+    def get_mass(self):
+        return self.mass
+    def set_velocity(self, vx, vy, vz):
+        self.vx = vx
+        self.vy = vy
+        self.vz = vz
+    def set_position(self, x, y, z):
+        self.x = x
+        self.y = y
+        self.z = z
+    def set_mass(self, mass):
+        self.mass = mass
+    def kinetic_energy(self):
+        return 0.5 * self.mass * (self.vx**2 + self.vy**2 + self.vz**2)
+    def momentum(self):
+        return self.mass * jnp.sqrt( self.vx**2 + self.vy**2 + self.vz**2 )
+
+@jit
+class particle_species:
+    """
+    A class to represent a species of particles.
+    Attributes
+    ----------
+    N_particles : int
+        Number of particles in the species.
+    mass : float or jnp.array
+        Mass of the particles. Can be a single value or an array of values.
+    particles : list
+        List of particle objects.
+    bc : str
+        Boundary condition type. Default is 'periodic'.
+    Methods
+    -------
+    get_velocity():
+        Returns the velocities of all particles.
+    get_position():
+        Returns the positions of all particles.
+    get_mass():
+        Returns the masses of all particles.
+    set_velocity(vx, vy, vz):
+        Sets the velocities of all particles.
+    set_position(x, y, z):
+        Sets the positions of all particles.
+    set_mass(mass):
+        Sets the masses of all particles.
+    kinetic_energy():
+        Returns the total kinetic energy of all particles.
+    momentum():
+        Returns the total momentum of all particles.
+    periodic_boundary_condition(x_wind, y_wind, z_wind):
+        Applies periodic boundary conditions to the particles.
+    update_position(dt, x_wind, y_wind, z_wind):
+        Updates the positions of the particles using Euler's method and applies boundary conditions.
+    """
+    def __init__(self, N_particles, mass, vx, vy, vz, x, y, z, bc='periodic'):
+        self.N_particles = N_particles
+        self.mass = mass
+        if isinstance(self.mass, jnp.array):
+            self.particles = [particle(mass[i], vx[i], vy[i], vz[i], x[i], y[i], z[i]) for i in range(N_particles)]
+        else:
+            self.particles = [particle(mass, vx[i], vy[i], vz[i], x[i], y[i], z[i]) for i in range(N_particles)]
+        # build a list of particles
+        self.bc = bc
+
+    def get_velocity(self):
+        return [p.get_velocity() for p in self.particles]
+    def get_position(self):
+        return [p.get_position() for p in self.particles]
+    def get_mass(self):
+        return [p.get_mass() for p in self.particles]
+    def set_velocity(self, vx, vy, vz):
+        for i in range(self.N_particles):
+            self.particles[i].set_velocity(vx[i], vy[i], vz[i])
+    def set_position(self, x, y, z):
+        for i in range(self.N_particles):
+            self.particles[i].set_position(x[i], y[i], z[i])
+    def set_mass(self, mass):
+        for i in range(self.N_particles):
+            self.particles[i].set_mass(mass[i])
+    def kinetic_energy(self):
+        return sum([p.kinetic_energy() for p in self.particles])
+    def momentum(self):
+        return sum([p.momentum() for p in self.particles])
+    
+    def periodic_boundary_condition(self, x_wind, y_wind, z_wind):
+        for i in range(self.N_particles):
+            x, y, z = self.particles[i].get_position()
+            x, y, z = periodic_boundary_condition(x_wind, y_wind, z_wind, x, y, z)
+            self.particles[i].set_position(x, y, z)
+
+    def update_position(self, dt, x_wind, y_wind, z_wind):
+        for i in range(self.N_particles):
+            x, y, z = self.particles[i].get_position()
+            vx, vy, vz = self.particles[i].get_velocity()
+            x = euler_update(x, vx, dt)
+            y = euler_update(y, vy, dt)
+            z = euler_update(z, vz, dt)
+            # update the position of the particles
+            self.particles[i].set_position(x, y, z)
+        if self.bc == 'periodic':
+            self.periodic_boundary_condition(x_wind, y_wind, z_wind)
+        # apply periodic boundary conditions
