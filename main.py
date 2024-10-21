@@ -93,6 +93,7 @@ start = time.time()
 simulation_parameters = {
     "bc": "spectral",  # boundary conditions: periodic, dirichlet, neumann, spectral
     "eps": 8.854e-12,  # permitivity of freespace
+    "mu" : 1.2566370613e-6, # permeability of free space
     "C": 3e8,  # Speed of light in m/s
     "kb": 1.380649e-23,  # Boltzmann's constant in J/K
     "me": 9.1093837e-31,  # mass of the electron in Kg
@@ -115,6 +116,7 @@ simulation_parameters = {
 
 bc = simulation_parameters["bc"]
 eps = simulation_parameters["eps"]
+mu = simulation_parameters["mu"]
 C = simulation_parameters["C"]
 kb = simulation_parameters["kb"]
 me = simulation_parameters["me"]
@@ -248,6 +250,11 @@ if plotEnergy: total_p      = []
 
 if not electrostatic:
         Ex, Ey, Ez, phi, rho = calculateE(particles[0], particles[1], dx, dy, dz, q_e, q_i, rho, eps, phi, M, t, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
+
+grid = jnp.arange(-x_wind/2, x_wind/2, dx), jnp.arange(-y_wind/2, y_wind/2, dy), jnp.arange(-z_wind/2, z_wind/2, dz)
+staggered_grid = jnp.arange(-x_wind/2 + dx/2, x_wind/2 + dx/2, dx), jnp.arange(-y_wind/2 + dy/2, y_wind/2 + dy/2, dy), jnp.arange(-z_wind/2 + dz/2, z_wind/2 + dz/2, dz)
+# create the grid space
+
 for t in range(Nt):
     print(f'Iteration {t}, Time: {t*dt} s')
     ############### SOLVE E FIELD ############################################################################################
@@ -259,13 +266,8 @@ for t in range(Nt):
     # solve for the preconditioner using the neural network
     if electrostatic:
         Ex, Ey, Ez, phi, rho = calculateE(particles[0], particles[1], dx, dy, dz, q_e, q_i, rho, eps, phi, M, t, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
-
         if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(Ex)}")
         # print the maximum value of the electric field
-
-    grid = jnp.arange(-x_wind/2, x_wind/2, dx), jnp.arange(-y_wind/2, y_wind/2, dy), jnp.arange(-z_wind/2, z_wind/2, dz)
-    staggered_grid = jnp.arange(-x_wind/2 + dx/2, x_wind/2 + dx/2, dx), jnp.arange(-y_wind/2 + dy/2, y_wind/2 + dy/2, dy), jnp.arange(-z_wind/2 + dz/2, z_wind/2 + dz/2, dz)
-    # create the grid space
 
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
@@ -276,11 +278,8 @@ for t in range(Nt):
         else:
             particles[i] = particle_push(particles[i], Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
         # use boris push for particle velocities
-
         if verbose: print(f"Calculating {particles[i].get_name()} Velocities, Max Value: {jnp.max(particles[i].get_velocity()[0])}")
-
         particles[i] = particles[i].update_position(dt, x_wind, y_wind, z_wind)
-
         if verbose: print(f"Calculating {particles[i].get_name()} Positions, Max Value: {jnp.max(particles[i].get_position()[0])}")
 
     ################ MAGNETIC FIELD UPDATE #######################################################################
