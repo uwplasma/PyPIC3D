@@ -153,7 +153,7 @@ if debye_length < dx:
 
 
 
-t_wind = 4e-9
+t_wind = 8e-9
 # time window for simultion
 Nt     = int( t_wind / dt )
 # Nt for resolution
@@ -190,7 +190,7 @@ alternating_ones = (-1)**jnp.array(range(0,N_electrons))
 v0=1.5*2657603.0
 ev_x = v0*alternating_ones
 
-#ev_x *= ( 1 + 0.1*jnp.sin(6*jnp.pi * electron_x / x_wind) )
+ev_x *= ( 1 + 0.1*jnp.sin(6*jnp.pi * electron_x / x_wind) )
 # add perturbation to the electron velocities
 
 iv_x = 0
