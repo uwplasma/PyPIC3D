@@ -33,32 +33,65 @@ def interpolate_field(field, grid, x, y, z):
     points = jnp.stack([x, y, z], axis=-1)
     return interpolate(points)
 
-@jit
-def boris(particles, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt):
+def particle_push(particles, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt):
     """
-    Perform the Boris algorithm to update the velocities of charged particles in an electromagnetic field.
+    Updates the velocities of particles using the Boris algorithm.
 
-    Parameters:
-    particles (Particles): An object representing the particles, which must have methods to get and set charge, mass, position, and velocity.
-    Ex (ndarray): Electric field component in the x-direction.
-    Ey (ndarray): Electric field component in the y-direction.
-    Ez (ndarray): Electric field component in the z-direction.
-    Bx (ndarray): Magnetic field component in the x-direction.
-    By (ndarray): Magnetic field component in the y-direction.
-    Bz (ndarray): Magnetic field component in the z-direction.
-    grid (Grid): The grid object for the electric field.
-    staggered_grid (Grid): The staggered grid object for the magnetic field.
-    dt (float): The time step for the update.
+    Args:
+        particles (Particles): The particles to be updated.
+        Ex (array-like): Electric field component in the x-direction.
+        Ey (array-like): Electric field component in the y-direction.
+        Ez (array-like): Electric field component in the z-direction.
+        Bx (array-like): Magnetic field component in the x-direction.
+        By (array-like): Magnetic field component in the y-direction.
+        Bz (array-like): Magnetic field component in the z-direction.
+        grid (Grid): The grid on which the fields are defined.
+        staggered_grid (Grid): The staggered grid for field interpolation.
+        dt (float): The time step for the update.
 
     Returns:
-    None
+        Particles: The particles with updated velocities.
     """
-
-
     q = particles.get_charge()
     m = particles.get_mass()
     x, y, z = particles.get_position()
     vx, vy, vz = particles.get_velocity()
+    # get the charge, mass, position, and velocity of the particles
+    newvx, newvy, newvz = boris(q, m, x, y, z, vx, vy, vz, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
+    # use the boris algorithm to update the velocities
+    particles.set_velocity(newvx, newvy, newvz)
+    # set the new velocities of the particles
+    return particles
+
+
+@jit
+def boris(q, m, x, y, z, vx, vy, vz, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt):
+    """
+    Perform the Boris algorithm to update the velocity of a charged particle in an electromagnetic field.
+
+    Parameters:
+    q (float): Charge of the particle.
+    m (float): Mass of the particle.
+    x (float): x-coordinate of the particle's position.
+    y (float): y-coordinate of the particle's position.
+    z (float): z-coordinate of the particle's position.
+    vx (float): x-component of the particle's velocity.
+    vy (float): y-component of the particle's velocity.
+    vz (float): z-component of the particle's velocity.
+    Ex (ndarray): x-component of the electric field array.
+    Ey (ndarray): y-component of the electric field array.
+    Ez (ndarray): z-component of the electric field array.
+    Bx (ndarray): x-component of the magnetic field array.
+    By (ndarray): y-component of the magnetic field array.
+    Bz (ndarray): z-component of the magnetic field array.
+    grid (ndarray): Grid for the electric field.
+    staggered_grid (ndarray): Staggered grid for the magnetic field.
+    dt (float): Time step for the update.
+
+    Returns:
+    tuple: Updated velocity components (newvx, newvy, newvz).
+    """
+
 
     efield_atx = interpolate_field(Ex, grid, x, y, z)
     efield_aty = interpolate_field(Ey, grid, x, y, z)
@@ -97,5 +130,4 @@ def boris(particles, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt):
     newvz = vzplus + q*dt/(2*m)*efield_atz
     # calculate the new velocity
 
-    particles.set_velocity(newvx, newvy, newvz)
-    return particles
+    return newvx, newvy, newvz
