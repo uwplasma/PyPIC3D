@@ -35,7 +35,7 @@ from particlepush import (
 )
 
 from utils import (
-    totalfield_energy, probe, number_density, freq, magnitude_probe
+    totalfield_energy, probe, number_density, freq, magnitude_probe, plasma_frequency, courant_condition, debye_length
 )
 
 from model import (
@@ -129,12 +129,10 @@ print(f'Dz: {dz}')
 
 ################ Courant Condition #############################################################################
 courant_number = 1
-dt = courant_number / (  C * ( (1/dx) + (1/dy) + (1/dz) )   )
-# dt = courant_number * min(dx, dy, dz) / (C)
+dt = courant_condition(courant_number, dx, dy, dz, C)
 # calculate spatial resolution using courant condition
 
-ne = N_electrons / (x_wind*y_wind*z_wind)
-theoretical_freq = jnp.sqrt(  ne * q_e**2  / (eps*me)  )
+theoretical_freq = plasma_frequency(N_electrons, x_wind, y_wind, z_wind, eps, me, q_e)
 # calculate the expected plasma frequency from analytical theory, w = sqrt( ne^2 / (eps * me) )
 
 print(f"Theoretical Plasma Frequency: {theoretical_freq} Hz")
@@ -143,14 +141,12 @@ if theoretical_freq * dt > 2.0:
     print(f"# of Electrons is Low and may introduce numerical stability")
     print(f"In order to correct this, # of Electrons needs to be at least { (2/dt)**2 * (me*eps/q_e**2) } for this spatial resolution")
 
-
-debye_length = jnp.sqrt( eps * kb * Te / (ne * q_e**2) )
+debye = debye_length(eps, T, N_electrons, x_wind, y_wind, z_wind, q_e)
 # calculate the debye length of the plasma
 print(f"Debye Length: {debye_length} m")
 
 if debye_length < dx:
     print(f"Debye Length is less than the spatial resolution, this may introduce numerical instability")
-
 
 
 t_wind = 4e-9
@@ -226,7 +222,7 @@ if not electrostatic:
         Ex, Ey, Ez, phi, rho = calculateE(N_electrons, electron_x, electron_y, electron_z, \
             N_ions, ion_x, ion_y, ion_z,                                               \
             dx, dy, dz, q_e, q_i, rho, eps, phi, 0, M, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
-    
+
 for t in range(Nt):
     print(f'Iteration {t}, Time: {t*dt} s')
 
@@ -242,7 +238,7 @@ for t in range(Nt):
         Ex, Ey, Ez, phi, rho = calculateE(N_electrons, electron_x, electron_y, electron_z, \
                 N_ions, ion_x, ion_y, ion_z,                                               \
                 dx, dy, dz, q_e, q_i, rho, eps, phi, t, M, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
-        
+
         if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(Ex)}")
         # print the maximum value of the electric field
 
