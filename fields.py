@@ -19,6 +19,7 @@ from fdtd import periodic_laplacian, neumann_laplacian, dirichlet_laplacian
 from rho import update_rho
 from cg import conjugate_grad
 from errors import compute_pe
+from charge_conservation import current_correction
 # import internal libraries
 
 def initialize_fields(Nx, Ny, Nz):
@@ -161,5 +162,6 @@ def calculateE(electrons, ions, dx, dy, dz, q_e, q_i, rho, eps, phi, M, t, Nx, N
     Ex = -1 * E_fields[0]
     Ey = -1 * E_fields[1]
     Ez = -1 * E_fields[2]
+    # calculate the electric fields
 
     return Ex, Ey, Ez, phi, rho
