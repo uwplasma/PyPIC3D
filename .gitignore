@@ -3,4 +3,10 @@ literature/
 __pycache__/
 *.gif
 *.png
+*ipynb
+*.tar.gz
+*.eqx
+*.txt
+*.sh
+*.odt
 settings.json
