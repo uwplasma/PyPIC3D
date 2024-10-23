@@ -3,3 +3,4 @@ literature/
 __pycache__/
 *.gif
 *.png
+settings.json
