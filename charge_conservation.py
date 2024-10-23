@@ -14,19 +14,50 @@ import functools
 from functools import partial
 # import external libraries
 
-def current_correction(Jx, Jy, Jz, x, y, z, dx, dy, dz):
-    ix, iy, iz = jnp.floor(x/dx).astype(int), jnp.floor(y/dy).astype(int), jnp.floor(z/dz).astype(int)
+from particle import Particle
 
-    nubar, etabar = 0, 0
+def current_correction(Jx, Jy, Jz, particles, dx, dy, dz):
+    q = particles.get_charge()
+    # get the charge of the particles
 
-    deltax = x - ix*dx
-    deltay = y - iy*dy
-    deltaz = z - iz*dz
+    zeta1, zeta2, eta1, eta2, xi1, xi2 = particles.get_zeta1(), particles.get_zeta2(), particles.get_subcell_position()
+    # get the particle positions
 
-    Nx, Ny, Nz = Jx.shape
-    staggered_Jx = jnp.zeros((Nx, Ny, Nz))
-    # build a staggered array along x ( x = x+1/2)
-    staggered_Jx = staggered_Jx.at[ix, iy, iz].set(deltax*nubar*etabar + deltax*deltay*deltaz/12)
+    deltax = zeta2 - zeta1
+    deltay = eta2 - eta1
+    deltaz = xi2 - xi1
+
+    zetabar = 0.5*(zeta1 + zeta2)
+    etabar = 0.5*(eta1 + eta2)
+    xibar = 0.5*(xi1 + xi2)
+    # compute the displacement variables from Buneman, Vilasenor 1991
+
+    Jx = Jx.at[ix, iy+1, iz+1].set( q*(deltax*zetabar*xibar + deltax*deltay*deltaz/12))
     # compute the first x correction for charge conservation along i+1/2, j, k
-    staggered_Jx = staggered_Jx.at[ix, iy, iz+1].set(deltax*(1-nubar)*etabar - deltax*deltay*deltaz/12)
+    Jx = Jx.at[ix, iy, iz+1].set( q*(deltax*(1-etabar)*xibar - deltax*deltay*deltaz/12))
     # compute the second x correction for charge conservation along i+1/2, j, k+1
+    Jx = Jx.at[ix, iy+1, iz].set( q*(deltax*etabar*(1-xibar) - deltax*deltay*deltaz/12))
+    # compute the third x correction for charge conservation along i+1/2, j+1, k
+    Jx = Jx.at[ix, iy, iz].set( q*(deltax*(1-etabar)*(1-xibar) + deltax*deltay*deltaz/12))
+    # compute the fourth x correction for charge conservation along i+1/2, j, k
+
+    Jy = Jy.at[ix+1, iy, iz+1].set( q*(deltay*zetabar*xibar + deltax*deltay*deltaz/12))
+    # compute the first y correction for charge conservation along i, j+1/2, k
+    Jy = Jy.at[ix+1, iy, iz].set( q*(deltay*(1-zetabar)*xibar - deltax*deltay*deltaz/12))
+    # compute the second y correction for charge conservation along i+1, j+1/2, k
+    Jy = Jy.at[ix, iy, iz+1].set( q*(deltay*zetabar*(1-xibar) - deltax*deltay*deltaz/12))
+    # compute the third y correction for charge conservation along i, j+1/2, k+1
+    Jy = Jy.at[ix, iy, iz].set( q*(deltay*(1-zetabar)*(1-xibar) + deltax*deltay*deltaz/12))
+    # compute the fourth y correction for charge conservation along i, j+1/2, k
+
+    Jz = Jz.at[ix+1, iy+1, iz].set( q*(deltaz*(1-zetabar)*etabar + deltax*deltay*deltaz/12))
+    # compute the first z correction for charge conservation along i+1, j+1, k+1/2
+    Jz = Jz.at[ix, iy+1, iz].set( q*(deltaz*(1-zetabar)*(1-etabar) - deltax*deltay*deltaz/12))
+    # compute the second z correction for charge conservation along i, j+1, k+1/2
+    Jz = Jz.at[ix+1, iy, iz].set( q*(deltaz*zetabar*(1-etabar) - deltax*deltay*deltaz/12))
+    # compute the third z correction for charge conservation along i+1, j, k+1/2
+    Jz = Jz.at[ix, iy, iz].set( q*(deltaz*(1-zetabar)*(1-etabar) + deltax*deltay*deltaz/12))
+    # compute the fourth z correction for charge conservation along i, j, k+1/2
+
+    return Jx, Jy, Jz
+    # return the current corrections
