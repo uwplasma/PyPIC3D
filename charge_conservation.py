@@ -15,7 +15,9 @@ from functools import partial
 # import external libraries
 
 from particle import Particle
+# import internal libraries
 
+@jit
 def current_correction(Jx, Jy, Jz, particles, dx, dy, dz):
     q = particles.get_charge()
     # get the charge of the particles
