@@ -30,6 +30,7 @@ def default_parameters():
     "plotEnergy": False,
     "plasmaFreq": False,
     "phaseSpace": True,
+    "plot_errors": False,
     "plotting_interval": 10
     }
     # dictionary for plotting/saving data

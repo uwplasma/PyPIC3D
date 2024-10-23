@@ -43,6 +43,46 @@ def spectral_poisson_solve(rho, eps, dx, dy, dz):
     # calculate the inverse Fourier transform to obtain the electric potential
     return phi
 
+@jit
+def spectral_divergence(xfield, yfield, zfield, dx, dy, dz):
+    """
+    Calculate the spectral divergence of a 3D vector field.
+
+    This function computes the divergence of a vector field in the spectral domain
+    using the Fast Fourier Transform (FFT). The input fields are assumed to be 
+    periodic in all three dimensions.
+
+    Parameters:
+    xfield (ndarray): The x-component of the vector field.
+    yfield (ndarray): The y-component of the vector field.
+    zfield (ndarray): The z-component of the vector field.
+    dx (float): The grid spacing in the x-direction.
+    dy (float): The grid spacing in the y-direction.
+    dz (float): The grid spacing in the z-direction.
+
+    Returns:
+    ndarray: The real part of the inverse FFT of the spectral divergence.
+    """
+
+
+    Nx, Ny, Nz = xfield.shape
+    kx = jnp.fft.fftfreq(Nx, dx) * 2 * jnp.pi
+    ky = jnp.fft.fftfreq(Ny, dy) * 2 * jnp.pi
+    kz = jnp.fft.fftfreq(Nz, dz) * 2 * jnp.pi
+    kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
+    # create 3D meshgrid of wavenumbers
+
+    xfft = jnp.fft.fftn(xfield)
+    yfft = jnp.fft.fftn(yfield)
+    zfft = jnp.fft.fftn(zfield)
+    # calculate the Fourier transform of the vector field
+
+    div = 1j*kx*xfft + 1j*ky*yfft + 1j*kz*zfft
+    # calculate the divergence of the vector field
+
+    return jnp.fft.ifftn(div).real
+
+
 
 @jit
 def spectral_curl(xfield, yfield, zfield, dx, dy, dz):

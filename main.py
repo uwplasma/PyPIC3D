@@ -41,6 +41,10 @@ from utils import (
     debye_length, update_parameters_from_toml, dump_parameters_to_toml
 )
 
+from errors import (
+    compute_electric_divergence_error, compute_magnetic_divergence_error
+)
+
 from defaults import (
     default_parameters
 )
@@ -87,6 +91,7 @@ plotKE = plotting_parameters["plotKE"]
 plotEnergy = plotting_parameters["plotEnergy"]
 plasmaFreq = plotting_parameters["plasmaFreq"]
 phaseSpace = plotting_parameters["phaseSpace"]
+plot_errors = plotting_parameters["plot_errors"]
 plot_freq = plotting_parameters["plotting_interval"]
 # booleans for plotting/saving data
 
@@ -223,6 +228,7 @@ if plotKE:
 if plasmaFreq: freqs = []
 if plotEnergy: total_energy = []
 if plotEnergy: total_p      = []
+if plot_errors: div_error_E, div_error_B = [], []
 
 if not electrostatic:
         Ex, Ey, Ez, phi, rho = calculateE(particles[0], particles[1], dx, dy, dz, q_e, q_i, rho, eps, phi, M, t, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
@@ -293,6 +299,11 @@ for t in range(Nt):
         if plotKE:
             KE.append(total_KE(particles))
             KE_time.append(t*dt)
+
+        if plot_errors:
+            div_error_E.append(compute_electric_divergence_error(Ex, Ey, Ez, rho, eps, dx, dy, dz, bc))
+            div_error_B.append(compute_magnetic_divergence_error(Bx, By, Bz, dx, dy, dz, bc))
+
 #     if t % plot_freq == 0:
 #     ############## PLOTTING ###################################################################
 #         if plotEnergy:
@@ -369,6 +380,9 @@ for t in range(Nt):
 #     plot_probe(total_p, "Total Momentum", "TotalMomentum")
 #     # plot the total momentum of the system
 
+if plot_errors:
+    plot_probe(div_error_E, "Divergence Error of E Field", f"div_error_E")
+    plot_probe(div_error_B, "Divergence Error of B Field", f"div_error_B")
 end = time.time()
 # end the timer
 duration = end - start
