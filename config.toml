@@ -5,3 +5,4 @@ t_wind = 5e-12
 output_dir = "/home/christopherwoolford/Documents/PyPIC3D"
 
 [plotting]
+plot_errors = true

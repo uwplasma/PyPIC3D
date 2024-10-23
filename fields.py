@@ -18,6 +18,7 @@ from spectral import spectral_poisson_solve, spectral_laplacian, spectralBsolve,
 from fdtd import periodic_laplacian, neumann_laplacian, dirichlet_laplacian
 from rho import update_rho
 from cg import conjugate_grad
+from errors import compute_pe
 # import internal libraries
 
 def initialize_fields(Nx, Ny, Nz):
@@ -85,35 +86,6 @@ def solve_poisson(rho, eps, dx, dy, dz, phi, bc='periodic', M = None):
     else:
         phi = conjugate_grad(lapl, -rho/eps, phi, tol=1e-6, maxiter=20000, M=M)
     return phi
-
-def compute_pe(phi, rho, eps, dx, dy, dz, bc='periodic'):
-    """
-    Compute the relative percentage difference of the Poisson solver.
-
-    Parameters:
-    phi (ndarray): The potential field.
-    rho (ndarray): The charge density.
-    eps (float): The permittivity.
-    dx (float): The grid spacing in the x-direction.
-    dy (float): The grid spacing in the y-direction.
-    dz (float): The grid spacing in the z-direction.
-    bc (str): The boundary condition.
-
-    Returns:
-    float: The relative percentage difference of the Poisson solver.
-    """
-    if bc == 'spectral':
-        x = spectral_laplacian(phi, dx, dy, dz)
-    elif bc == 'periodic':
-        x = periodic_laplacian(phi, dx, dy, dz)
-    elif bc == 'dirichlet':
-        x = dirichlet_laplacian(phi, dx, dy, dz)
-    elif bc == 'neumann':
-        x = neumann_laplacian(phi, dx, dy, dz)
-    poisson_error = x + rho/eps
-    index         = jnp.argmax(poisson_error)
-    return 200 * jnp.abs( jnp.ravel(poisson_error)[index]) / ( jnp.abs(jnp.ravel(rho/eps)[index])+ jnp.abs(jnp.ravel(x)[index]) )
-    # this method computes the relative percentage difference of poisson solver
 
 def calculateE(electrons, ions, dx, dy, dz, q_e, q_i, rho, eps, phi, M, t, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs):
     """
