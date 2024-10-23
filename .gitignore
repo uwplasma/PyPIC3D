@@ -1,0 +1,5 @@
+plots/
+literature/
+__pycache__/
+*.gif
+*.png
