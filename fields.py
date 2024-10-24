@@ -87,7 +87,7 @@ def solve_poisson(rho, eps, dx, dy, dz, phi, bc='periodic', M = None):
         phi = conjugate_grad(lapl, -rho/eps, phi, tol=1e-6, maxiter=20000, M=M)
     return phi
 
-def calculateE(electrons, ions, dx, dy, dz, q_e, q_i, rho, eps, phi, M, t, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs):
+def calculateE(particles, dx, dy, dz, q_e, q_i, rho, eps, phi, M, t, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs):
     """
     Calculates the electric field components (Ex, Ey, Ez), electric potential (phi), and charge density (rho) based on the given parameters.
 
@@ -119,25 +119,39 @@ def calculateE(electrons, ions, dx, dy, dz, q_e, q_i, rho, eps, phi, M, t, Nx, N
     - rho (array-like): Updated charge density.
     """
 
-    N_electrons = electrons.get_number_of_particles()
-    N_ions = ions.get_number_of_particles()
-    # get the number of particles
-    electron_x, electron_y, electron_z = electrons.get_position()
-    ion_x, ion_y, ion_z = ions.get_position()
-    # get the particle properties
+    # N_electrons = electrons.get_number_of_particles()
+    # N_ions = ions.get_number_of_particles()
+    # # get the number of particles
+    # electron_x, electron_y, electron_z = electrons.get_position()
+    # ion_x, ion_y, ion_z = ions.get_position()
+    # # get the particle properties
 
 
-    if GPUs:
-        with jax.default_device(jax.devices('gpu')[0]):
-            rho = jax.numpy.zeros(shape=(Nx, Ny, Nz))
-            rho = update_rho(N_electrons, electron_x, electron_y, electron_z, dx, dy, dz, q_e, x_wind, y_wind, z_wind, rho)
-            if N_ions > 0:
-                rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, x_wind, y_wind, z_wind, rho)
-    else:
-        rho = jax.numpy.zeros(shape=(Nx, Ny, Nz))
-        rho = update_rho(N_electrons, electron_x, electron_y, electron_z, dx, dy, dz, q_e, x_wind, y_wind, z_wind, rho)
-        if N_ions > 0:
-            rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, x_wind, y_wind, z_wind, rho)
+    # if GPUs:
+    #     with jax.default_device(jax.devices('gpu')[0]):
+    #         rho = jax.numpy.zeros(shape=(Nx, Ny, Nz))
+    #         rho = update_rho(N_electrons, electron_x, electron_y, electron_z, dx, dy, dz, q_e, x_wind, y_wind, z_wind, rho)
+    #         if N_ions > 0:
+    #             rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, x_wind, y_wind, z_wind, rho)
+    # else:
+    #     rho = jax.numpy.zeros(shape=(Nx, Ny, Nz))
+    #     rho = update_rho(N_electrons, electron_x, electron_y, electron_z, dx, dy, dz, q_e, x_wind, y_wind, z_wind, rho)
+    #     if N_ions > 0:
+    #         rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, x_wind, y_wind, z_wind, rho)
+
+
+
+    for species in particles:
+        N_particles = species.get_number_of_particles()
+        charge = species.get_charge()
+        if N_particles > 0:
+            particle_x, particle_y, particle_z = species.get_position()
+            if GPUs:
+                with jax.default_device(jax.devices('gpu')[0]):
+                    rho = update_rho(N_particles, particle_x, particle_y, particle_z, dx, dy, dz, charge, x_wind, y_wind, z_wind, rho)
+            else:
+                rho = update_rho(N_particles, particle_x, particle_y, particle_z, dx, dy, dz, charge, x_wind, y_wind, z_wind, rho)
+
 
     if verbose:
         print(f"Calculating Charge Density, Max Value: {jnp.max(rho)}")

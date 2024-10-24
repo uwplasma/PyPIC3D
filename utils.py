@@ -17,6 +17,63 @@ import os, sys
 # import external libraries
 
 from rho import update_rho
+from particle import initial_particles, particle_species
+
+def grab_particle_keys(config):
+    particle_keys = []
+    for key in config.keys():
+        if key[:8] == 'particle':
+            particle_keys.append(key)
+    return particle_keys
+
+def load_particles_from_toml(toml_file, simulation_parameters):
+    config = toml.load(toml_file)
+    
+    x_wind = simulation_parameters['x_wind']
+    y_wind = simulation_parameters['y_wind']
+    z_wind = simulation_parameters['z_wind']
+    kb = simulation_parameters['kb']
+
+    i = 0
+    particles = []
+    particle_keys = grab_particle_keys(config)
+
+    for toml_key in particle_keys:
+        key1, key2, key3 = jax.random.PRNGKey(i), jax.random.PRNGKey(i+1), jax.random.PRNGKey(i+2)
+        i += 3
+        # build the particle random number generator keys
+        particle_name = config[toml_key]['name']
+        N_particles=config[toml_key]['N_particles']
+        charge=config[toml_key]['charge']
+        mass=config[toml_key]['mass']
+        T=config[toml_key]['temperature']
+        x, y, z, vx, vy, vz = initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, key2, key3)
+        
+        update_pos = True
+        update_v   = True
+
+        if update_pos in config[toml_key]:
+            update_pos = config[toml_key]['update_pos']
+        if update_v in config[toml_key]:
+            update_v = config[toml_key]['update_v']
+
+        particle = particle_species(
+            name=particle_name,
+            N_particles=N_particles,
+            charge=charge,
+            mass=mass,
+            x=x,
+            y=y,
+            z=z,
+            vx=vx,
+            vy=vy,
+            vz=vz,
+            update_pos=update_pos,
+            update_v=update_v
+        )
+        particles.append(particle)
+    
+    return particles 
 
 def debugprint(value):
     """
