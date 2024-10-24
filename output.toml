@@ -1,0 +1,42 @@
+[simulation_stats]
+total_time = 5.938783645629883
+total_iterations = 81
+time_per_iteration = 0.0733183166127146
+
+[simulation_parameters]
+name = "Test Simulation"
+output_dir = "/home/christopherwoolford/Documents/PyPIC3D"
+bc = "spectral"
+eps = 8.854e-12
+mu = 1.2566370613e-6
+C = 300000000.0
+kb = 1.380649e-23
+me = 9.1093837e-31
+mi = 1.67e-27
+q_e = -1.602e-19
+q_i = 1.602e-19
+Te = 233000
+Ti = 233000
+N_electrons = 5000
+N_ions = 5000
+Nx = 30
+Ny = 30
+Nz = 30
+x_wind = 0.01
+y_wind = 0.01
+z_wind = 0.01
+t_wind = 3e-11
+benchmark = false
+verbose = false
+
+[plotting]
+save_data = false
+plotfields = false
+plotpositions = true
+plotvelocities = false
+plotKE = true
+plotEnergy = false
+plasmaFreq = false
+phaseSpace = true
+plot_errors = true
+plotting_interval = 10
