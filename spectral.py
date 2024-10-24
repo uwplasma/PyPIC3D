@@ -13,6 +13,8 @@ import functools
 from functools import partial
 
 from utils import interpolate_and_stagger_field
+from charge_conservation import current_correction
+from particle import particle_species
 
 @jit
 def spectral_poisson_solve(rho, eps, dx, dy, dz):
@@ -158,7 +160,7 @@ def spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
     return Bx, By, Bz
 
 @jit
-def spectralEsolve(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, dx, dy, dz, dt, C):
+def spectralEsolve(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, dx, dy, dz, dt, C, eps):
     """
     Solve the electric field equations using the spectral method and half leapfrog.
 
@@ -187,9 +189,9 @@ def spectralEsolve(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, dx, dy, dz, dt,
     curly = interpolate_and_stagger_field(curly, staggered_grid, grid)
     curlz = interpolate_and_stagger_field(curlz, staggered_grid, grid)
     # interpolate the curl of the magnetic field and get the values at the cell centers
-    Ex = Ex + C**2 * curlx * dt/2
-    Ey = Ey + C**2 * curly * dt/2
-    Ez = Ez + C**2 * curlz * dt/2
+    Ex = Ex +  ( C**2 * curlx - 1/eps * Jx) * dt/2
+    Ey = Ey +  ( C**2 * curly - 1/eps * Jy) * dt/2
+    Ez = Ez +  ( C**2 * curlz - 1/eps * Jz) * dt/2
 
     return Ex, Ey, Ez
 

@@ -49,6 +49,11 @@ from errors import (
 from defaults import (
     default_parameters
 )
+
+from charge_conservation import (
+    current_correction
+)
+
 from model import (
     PoissonPrecondition
 )
@@ -272,18 +277,20 @@ for t in range(Nt):
 
     ################ MAGNETIC FIELD UPDATE #######################################################################
     if not electrostatic:
+        Jx, Jy, Jz = current_correction(particles, Nx, Ny, Nz)
+        # calculate the corrections for charge conservation
         if bc == "spectral":
             Bx, By, Bz = spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
         else:
-            Bx, By, Bz = update_B(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
+            Bx, By, Bz = update_B(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt, bc)
         # update the magnetic field using the curl of the electric field
         if verbose: print(f"Calculating Magnetic Field, Max Value: {jnp.max(Bx)}")
         # print the maximum value of the magnetic field
 
         if bc == "spectral":
-            Ex, Ey, Ez = spectralEsolve(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, dx, dy, dz, dt, C)
+            Ex, Ey, Ez = spectralEsolve(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, dx, dy, dz, dt, C, mu)
         else:
-            Ex, Ex, Ez = update_E(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, dx, dy, dz, dt, C)
+            Ex, Ex, Ez = update_E(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, dx, dy, dz, dt, C, eps, bc)
         # update the electric field using the curl of the magnetic field
     ################## PLOTTING ########################################################################################
 
