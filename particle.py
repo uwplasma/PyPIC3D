@@ -252,11 +252,14 @@ class particle_species:
         self.x = x
         self.y = y
         self.z = z
-        self.zeta1 = x - compute_index(x, dx)*dx
+        self.dx = dx
+        self.dy = dy
+        self.dz = dz
+        self.zeta1 = x - compute_index(x, self.dx)*self.dx
         self.zeta2 = self.zeta1
-        self.eta1  = y - compute_index(y, dy)*dy
+        self.eta1  = y - compute_index(y, self.dy)*self.dy
         self.eta2  = self.eta1
-        self.xi1   = z - compute_index(z, dz)*dz
+        self.xi1   = z - compute_index(z, self.dz)*self.dz
         self.xi2   = self.xi1
         self.bc = bc
         self.update_pos = update_pos
@@ -283,6 +286,9 @@ class particle_species:
     def get_subcell_position(self):
         return self.zeta1, self.zeta2, self.eta1, self.eta2, self.xi1, self.xi2
 
+    def get_resolution(self):
+        return self.dx, self.dy, self.dz
+
     def set_velocity(self, vx, vy, vz):
         if self.update_v:
             self.vx = vx
@@ -294,13 +300,13 @@ class particle_species:
         self.y = y
         self.z = z
 
-    def update_subcell_position(self, dx, dy, dz):
+    def update_subcell_position(self):
         self.zeta1 = self.zeta2
-        self.zeta2 = self.x - compute_index(self.x, dx)*dx
+        self.zeta2 = self.x - compute_index(self.x, dx)*self.dx
         self.eta1  = self.eta2
-        self.eta2  = self.y - compute_index(self.y, dy)*dy
+        self.eta2  = self.y - compute_index(self.y, dy)*self.dy
         self.xi1   = self.xi2
-        self.xi2   = self.z - compute_index(self.z, dz)*dz
+        self.xi2   = self.z - compute_index(self.z, dz)*self.dz
 
     def set_mass(self, mass):
         self.mass = mass
@@ -319,7 +325,10 @@ class particle_species:
             self.x = euler_update(self.x, self.vx, dt)
             self.y = euler_update(self.y, self.vy, dt)
             self.z = euler_update(self.z, self.vz, dt)
-        
+            # update the position of the particles
         if self.bc == 'periodic':
             self.periodic_boundary_condition(x_wind, y_wind, z_wind)
         # apply periodic boundary conditions
+
+        self.update_subcell_position()
+        # update the subcell positions for charge conservation algorithm
