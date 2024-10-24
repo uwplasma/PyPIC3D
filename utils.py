@@ -26,7 +26,7 @@ def grab_particle_keys(config):
             particle_keys.append(key)
     return particle_keys
 
-def load_particles_from_toml(toml_file, simulation_parameters):
+def load_particles_from_toml(toml_file, simulation_parameters, dx, dy, dz):
     config = toml.load(toml_file)
     
     x_wind = simulation_parameters['x_wind']
@@ -68,6 +68,9 @@ def load_particles_from_toml(toml_file, simulation_parameters):
             vx=vx,
             vy=vy,
             vz=vz,
+            dx=dx,
+            dy=dy,
+            dz=dz,
             update_pos=update_pos,
             update_v=update_v
         )

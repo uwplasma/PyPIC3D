@@ -241,7 +241,7 @@ class particle_species:
         Updates the position of the particles based on their velocity and time step, 
         and applies periodic boundary conditions if specified.
     """
-    def __init__(self, name, N_particles, charge, mass, vx, vy, vz, x, y, z, bc='periodic', update_pos=True, update_v=True):
+    def __init__(self, name, N_particles, charge, mass, vx, vy, vz, x, y, z, dx, dy, dz, bc='periodic', update_pos=True, update_v=True):
         self.name = name
         self.N_particles = N_particles
         self.charge = charge
@@ -289,6 +289,9 @@ class particle_species:
     def get_resolution(self):
         return self.dx, self.dy, self.dz
 
+    def get_index(self):
+        return compute_index(self.x, self.dx), compute_index(self.y, self.dy), compute_index(self.z, self.dz)
+
     def set_velocity(self, vx, vy, vz):
         if self.update_v:
             self.vx = vx
@@ -302,11 +305,11 @@ class particle_species:
 
     def update_subcell_position(self):
         self.zeta1 = self.zeta2
-        self.zeta2 = self.x - compute_index(self.x, dx)*self.dx
+        self.zeta2 = self.x - compute_index(self.x, self.dx)*self.dx
         self.eta1  = self.eta2
-        self.eta2  = self.y - compute_index(self.y, dy)*self.dy
+        self.eta2  = self.y - compute_index(self.y, self.dy)*self.dy
         self.xi1   = self.xi2
-        self.xi2   = self.z - compute_index(self.z, dz)*self.dz
+        self.xi2   = self.z - compute_index(self.z, self.dz)*self.dz
 
     def set_mass(self, mass):
         self.mass = mass
