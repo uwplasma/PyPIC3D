@@ -38,7 +38,8 @@ from particlepush import (
 from utils import (
     totalfield_energy, probe, number_density, freq,
     magnitude_probe, plasma_frequency, courant_condition,
-    debye_length, update_parameters_from_toml, dump_parameters_to_toml
+    debye_length, update_parameters_from_toml, dump_parameters_to_toml,
+    load_particles_from_toml
 )
 
 from errors import (
@@ -174,38 +175,39 @@ key3 = random.key(1234)
 key4 = random.key(2345)
 key5 = random.key(3456)
 # random keys for initializing the particles
-if cold_start:
-    electron_x, electron_y, electron_z, ev_x, ev_y, ev_z = cold_start_init(0, N_electrons, x_wind, y_wind, z_wind, me, Te, kb, key1, key2, key3)
-    ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = cold_start_init(0, N_ions, x_wind, y_wind, z_wind, mi, Ti, kb, key3, key4, key5)
-else:
-    electron_x, electron_y, electron_z, ev_x, ev_y, ev_z  = initial_particles(N_electrons, x_wind, y_wind, z_wind, me, Te, kb, key1, key2, key3)
-    ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions, x_wind, y_wind, z_wind, mi, Ti, kb, key3, key4, key5)
-# initialize the positions and velocities of the electrons and ions in the plasma.
-# eventually, I need to update the initialization to use a more accurate position and velocity distribution.
+# if cold_start:
+#     electron_x, electron_y, electron_z, ev_x, ev_y, ev_z = cold_start_init(0, N_electrons, x_wind, y_wind, z_wind, me, Te, kb, key1, key2, key3)
+#     ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = cold_start_init(0, N_ions, x_wind, y_wind, z_wind, mi, Ti, kb, key3, key4, key5)
+# else:
+#     electron_x, electron_y, electron_z, ev_x, ev_y, ev_z  = initial_particles(N_electrons, x_wind, y_wind, z_wind, me, Te, kb, key1, key2, key3)
+#     ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions, x_wind, y_wind, z_wind, mi, Ti, kb, key3, key4, key5)
+# # initialize the positions and velocities of the electrons and ions in the plasma.
+# # eventually, I need to update the initialization to use a more accurate position and velocity distribution.
 
-electron_masses = jnp.ones(N_electrons) * me
-ion_masses = jnp.ones(N_ions) * mi
-electrons = particle_species("electrons", N_electrons, q_e, electron_masses, ev_x, ev_y, ev_z, electron_x, electron_y, electron_z)
-ions = particle_species("ions", N_ions, q_i, ion_masses, iv_x, iv_y, iv_z, ion_x, ion_y, ion_z)
-particles = [electrons, ions]
-# create the particle species
+# electron_masses = jnp.ones(N_electrons) * me
+# ion_masses = jnp.ones(N_ions) * mi
+# electrons = particle_species("electrons", N_electrons, q_e, electron_masses, ev_x, ev_y, ev_z, electron_x, electron_y, electron_z)
+# ions = particle_species("ions", N_ions, q_i, ion_masses, iv_x, iv_y, iv_z, ion_x, ion_y, ion_z)
+# particles = [electrons, ions]
+# # create the particle species
 
+particles = load_particles_from_toml("config.toml", simulation_parameters)
 #################################### Two Stream Instability #####################################################
-alternating_ones = (-1)**jnp.array(range(0,N_electrons))
-v0=1.5*2657603.0
-ev_x = v0*alternating_ones
+# alternating_ones = (-1)**jnp.array(range(0,N_electrons))
+# v0=1.5*2657603.0
+# ev_x = v0*alternating_ones
 
-ev_x *= ( 1 + 0.1*jnp.sin(6*jnp.pi * electron_x / x_wind) )
-# add perturbation to the electron velocities
+# ev_x *= ( 1 + 0.1*jnp.sin(6*jnp.pi * electron_x / x_wind) )
+# # add perturbation to the electron velocities
 
-iv_x = jnp.zeros(N_ions)
-iv_y = jnp.zeros(N_ions)
-iv_z = jnp.zeros(N_ions)
-# initialize the ion velocities to zero
+# iv_x = jnp.zeros(N_ions)
+# iv_y = jnp.zeros(N_ions)
+# iv_z = jnp.zeros(N_ions)
+# # initialize the ion velocities to zero
 
-particles[0].set_velocity(ev_x, ev_y, ev_z)
-particles[1].set_velocity(iv_x, iv_y, iv_z)
-# update the velocities of the particles
+# particles[0].set_velocity(ev_x, ev_y, ev_z)
+# particles[1].set_velocity(iv_x, iv_y, iv_z)
+# # update the velocities of the particles
 ##################################### Neural Network Preconditioner ################################################
 
 key = jax.random.PRNGKey(0)
@@ -231,7 +233,7 @@ if plotEnergy: total_p      = []
 if plot_errors: div_error_E, div_error_B = [], []
 
 if not electrostatic:
-        Ex, Ey, Ez, phi, rho = calculateE(particles[0], particles[1], dx, dy, dz, q_e, q_i, rho, eps, phi, M, t, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
+        Ex, Ey, Ez, phi, rho = calculateE(particles, dx, dy, dz, q_e, q_i, rho, eps, phi, M, t, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
 
 grid = jnp.arange(-x_wind/2, x_wind/2, dx), jnp.arange(-y_wind/2, y_wind/2, dy), jnp.arange(-z_wind/2, z_wind/2, dz)
 staggered_grid = jnp.arange(-x_wind/2 + dx/2, x_wind/2 + dx/2, dx), jnp.arange(-y_wind/2 + dy/2, y_wind/2 + dy/2, dy), jnp.arange(-z_wind/2 + dz/2, z_wind/2 + dz/2, dz)
@@ -251,7 +253,7 @@ for t in range(Nt):
             M = model(phi, rho)
     # solve for the preconditioner using the neural network
     if electrostatic:
-        Ex, Ey, Ez, phi, rho = calculateE(particles[0], particles[1], dx, dy, dz, q_e, q_i, rho, eps, phi, M, t, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
+        Ex, Ey, Ez, phi, rho = calculateE(particles, dx, dy, dz, q_e, q_i, rho, eps, phi, M, t, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
         if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(Ex)}")
         # print the maximum value of the electric field
 
@@ -287,9 +289,17 @@ for t in range(Nt):
 
     if t % plot_freq == 0:
         if plotpositions:
-            plotpositions(particles, t, x_wind, y_wind, z_wind)
+            plot_positions(particles, t, x_wind, y_wind, z_wind)
         if plotvelocities:
-            plotvelocities(particles, t, x_wind, y_wind, z_wind)
+            plot_velocities(particles, t, x_wind, y_wind, z_wind)
+        if phaseSpace:
+            ex, ey, ez = particles[0].get_position()
+            ix, iy, iz = particles[1].get_position()
+            evx, evy, evz = particles[0].get_velocity()
+            ivx, ivy, ivz = particles[1].get_velocity()
+            multi_phase_space(ex, ix, evx, ivx, t, "Electrons", "Ions", "x", x_wind)
+            multi_phase_space(ey, iy, evy, ivy, t, "Electrons", "Ions", "y", y_wind)
+            multi_phase_space(ez, iz, evz, ivz, t, "Electrons", "Ions", "z", z_wind)
         if plotfields:
             plot_fields(Ex, Ey, Ez, t, "E", dx, dy, dz)
             plot_fields(Bx, By, Bz, t, "B", dx, dy, dz)
@@ -297,9 +307,11 @@ for t in range(Nt):
             Eprobe.append(magnitude_probe(Ex, Ey, Ez, int(Nx/2), int(Ny/2), int(Nz/2)))
             averageE.append(  jnp.mean( jnp.sqrt( Ex**2 + Ey**2 + Ez**2 ) )   )
         if plotKE:
-            KE.append(total_KE(particles))
+            ke = 0
+            for particle in particles:
+                ke += particle.kinetic_energy()
+            KE.append(ke)
             KE_time.append(t*dt)
-
         if plot_errors:
             div_error_E.append(compute_electric_divergence_error(Ex, Ey, Ez, rho, eps, dx, dy, dz, bc))
             div_error_B.append(compute_magnetic_divergence_error(Bx, By, Bz, dx, dy, dz, bc))
@@ -364,11 +376,11 @@ for t in range(Nt):
 #     plot_probe(averageE, "Electric Field", "AvgElectricField")
 #     print(f'Electric Field Frequency: {efield_freq}')
 #     # plot the electric field probe
-# if plotKE:
-#     plot_KE(KE, KE_time)
-#     ke_freq = plot_fft(KE, dt*plot_freq, "FFT of Kinetic Energy", "KE_FFT")
-#     print(f'KE Frequency: {ke_freq}')
-#     # plot the total kinetic energy of the particles
+if plotKE:
+    plot_KE(KE, KE_time)
+    ke_freq = plot_fft(KE, dt*plot_freq, "FFT of Kinetic Energy", "KE_FFT")
+    print(f'KE Frequency: {ke_freq}')
+    # plot the total kinetic energy of the particles
 # if plasmaFreq:
 #     plot_probe(freqs, "Plasma Frequency", "PlasmaFrequency")
 #     # plot the plasma frequency

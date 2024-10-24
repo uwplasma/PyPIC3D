@@ -12,6 +12,8 @@ import math
 from pyevtk.hl import gridToVTK
 import functools
 from functools import partial
+import toml
+from particle import particle_species, initial_particles   
 # import external libraries
 
 def default_parameters():
@@ -23,13 +25,13 @@ def default_parameters():
     """
     plotting_parameters = {
     "save_data": False,
-    "plotfields": True,
+    "plotfields": False,
     "plotpositions": False,
     "plotvelocities": False,
     "plotKE": False,
     "plotEnergy": False,
     "plasmaFreq": False,
-    "phaseSpace": True,
+    "phaseSpace": False,
     "plot_errors": False,
     "plotting_interval": 10
     }
@@ -64,3 +66,4 @@ def default_parameters():
     # dictionary for simulation parameters
 
     return plotting_parameters, simulation_parameters
+   

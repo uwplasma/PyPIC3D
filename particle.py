@@ -228,7 +228,7 @@ class particle_species:
         Updates the position of the particles based on their velocity and time step, 
         and applies periodic boundary conditions if specified.
     """
-    def __init__(self, name, N_particles, charge, mass, vx, vy, vz, x, y, z, bc='periodic'):
+    def __init__(self, name, N_particles, charge, mass, vx, vy, vz, x, y, z, bc='periodic', update_pos=True, update_v=True):
         self.name = name
         self.N_particles = N_particles
         self.charge = charge
@@ -240,6 +240,8 @@ class particle_species:
         self.y = y
         self.z = z
         self.bc = bc
+        self.update_pos = update_pos
+        self.update_v   = update_v
 
     def get_name(self):
         return self.name
@@ -260,9 +262,10 @@ class particle_species:
         return self.mass
     
     def set_velocity(self, vx, vy, vz):
-        self.vx = vx
-        self.vy = vy
-        self.vz = vz
+        if self.update_v:
+            self.vx = vx
+            self.vy = vy
+            self.vz = vz
 
     def set_position(self, x, y, z):
         self.x = x
@@ -282,9 +285,10 @@ class particle_species:
         self.x, self.y, self.z = periodic_boundary_condition(x_wind, y_wind, z_wind, self.x, self.y, self.z)
 
     def update_position(self, dt, x_wind, y_wind, z_wind):
-        self.x = euler_update(self.x, self.vx, dt)
-        self.y = euler_update(self.y, self.vy, dt)
-        self.z = euler_update(self.z, self.vz, dt)
+        if self.update_pos:
+            self.x = euler_update(self.x, self.vx, dt)
+            self.y = euler_update(self.y, self.vy, dt)
+            self.z = euler_update(self.z, self.vz, dt)
         
         if self.bc == 'periodic':
             self.periodic_boundary_condition(x_wind, y_wind, z_wind)
