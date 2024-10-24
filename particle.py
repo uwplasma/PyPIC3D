@@ -96,7 +96,7 @@ def periodic_boundary_condition(x_wind, y_wind, z_wind, x, y, z):
     y = jnp.where(y < -y_wind/2,  y_wind/2, y)
     z = jnp.where(z > z_wind/2, -z_wind/2, z)
     z = jnp.where(z < -z_wind/2,  z_wind/2, z)
-    return x, y, z    
+    return x, y, z
 
 @jit
 def euler_update(s, v, dt):
@@ -172,6 +172,19 @@ def total_momentum(m, vx, vy, vz):
     """
     return m * jnp.sum( jnp.sqrt( vx**2 + vy**2 + vz**2 ) )
 
+@jit
+def compute_index(x, dx):
+    """
+    Compute the index of a position in a discretized space.
+
+    Parameters:
+    x (float or ndarray): The position(s) to compute the index for.
+    dx (float): The discretization step size.
+
+    Returns:
+    int or ndarray: The computed index/indices as integer(s).
+    """
+    return jnp.floor(x/dx).astype(int)
 
 class particle_species:
     """
@@ -239,28 +252,37 @@ class particle_species:
         self.x = x
         self.y = y
         self.z = z
+        self.zeta1 = x - compute_index(x, dx)*dx
+        self.zeta2 = self.zeta1
+        self.eta1  = y - compute_index(y, dy)*dy
+        self.eta2  = self.eta1
+        self.xi1   = z - compute_index(z, dz)*dz
+        self.xi2   = self.xi1
         self.bc = bc
         self.update_pos = update_pos
         self.update_v   = update_v
 
     def get_name(self):
         return self.name
-    
+
     def get_charge(self):
         return self.charge
-    
+
     def get_number_of_particles(self):
         return self.N_particles
-    
+
     def get_velocity(self):
         return self.vx, self.vy, self.vz
-    
+
     def get_position(self):
         return self.x, self.y, self.z
-    
+
     def get_mass(self):
         return self.mass
-    
+
+    def get_subcell_position(self):
+        return self.zeta1, self.zeta2, self.eta1, self.eta2, self.xi1, self.xi2
+
     def set_velocity(self, vx, vy, vz):
         if self.update_v:
             self.vx = vx
@@ -272,15 +294,23 @@ class particle_species:
         self.y = y
         self.z = z
 
+    def update_subcell_position(self, dx, dy, dz):
+        self.zeta1 = self.zeta2
+        self.zeta2 = self.x - compute_index(self.x, dx)*dx
+        self.eta1  = self.eta2
+        self.eta2  = self.y - compute_index(self.y, dy)*dy
+        self.xi1   = self.xi2
+        self.xi2   = self.z - compute_index(self.z, dz)*dz
+
     def set_mass(self, mass):
         self.mass = mass
 
     def kinetic_energy(self):
         return 0.5 * self.mass * jnp.sum(self.vx**2 + self.vy**2 + self.vz**2)
-    
+
     def momentum(self):
         return self.mass * jnp.sum(jnp.sqrt(self.vx**2 + self.vy**2 + self.vz**2))
-    
+
     def periodic_boundary_condition(self, x_wind, y_wind, z_wind):
         self.x, self.y, self.z = periodic_boundary_condition(x_wind, y_wind, z_wind, self.x, self.y, self.z)
 
