@@ -1,7 +1,7 @@
 [simulation_stats]
-total_time = 5.938783645629883
+total_time = 5.889214754104614
 total_iterations = 81
-time_per_iteration = 0.0733183166127146
+time_per_iteration = 0.07270635498894586
 
 [simulation_parameters]
 name = "Test Simulation"
