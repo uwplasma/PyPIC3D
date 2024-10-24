@@ -153,8 +153,10 @@ def interpolate_and_stagger_field(field, grid, staggered_grid):
 
     interpolate = jax.scipy.interpolate.RegularGridInterpolator(grid, field, fill_value=0)
     # create the interpolator
-    mesh = jnp.meshgrid(*staggered_grid, indexing='ij')
-    staggered_field = interpolate(mesh)
+    mesh = jnp.meshgrid( *staggered_grid, indexing='ij')
+    points = jnp.stack(mesh, axis=-1)
+    # get the points for the interpolation
+    staggered_field = interpolate( points)
     # interpolate the field to the staggered grid
     return staggered_field
 
