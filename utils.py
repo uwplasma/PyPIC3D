@@ -14,6 +14,7 @@ import functools
 from functools import partial
 import toml
 import os, sys
+from scipy.interpolate import RegularGridInterpolator
 # import external libraries
 
 from rho import update_rho
@@ -134,6 +135,28 @@ def dump_parameters_to_toml(simulation_stats, simulation_parameters, plotting_pa
     
     with open(output_file, 'w') as f:
         toml.dump(config, f)
+
+
+@jit
+def interpolate_and_stagger_field(field, grid, staggered_grid):
+    """
+    Interpolates a given field defined on a grid to a staggered grid.
+
+    Parameters:
+    field (array-like): The field values defined on the original grid.
+    grid (array-like): The coordinates of the original grid.
+    staggered_grid (array-like): The coordinates of the staggered grid where the field needs to be interpolated.
+
+    Returns:
+    array-like: The interpolated field values on the staggered grid.
+    """
+
+    interpolate = jax.scipy.interpolate.RegularGridInterpolator(grid, field, fill_value=0)
+    # create the interpolator
+    mesh = jnp.meshgrid(*staggered_grid, indexing='ij')
+    staggered_field = interpolate(mesh)
+    # interpolate the field to the staggered grid
+    return staggered_field
 
 def courant_condition(courant_number, dx, dy, dz, C):
     """
