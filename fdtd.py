@@ -477,7 +477,7 @@ def update_B(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt, bound
 
 
 @jit
-def update_E(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, dx, dy, dz, dt, C, boundary_condition):
+def update_E(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, dx, dy, dz, dt, C, eps, boundary_condition):
     """
     Update the electric field components Ex, Ey, and Ez based on the magnetic field components Bx, By, and Bz.
 
@@ -523,7 +523,7 @@ def update_E(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, dx, dy, dz, dt, C, bo
     curly = interpolate_and_stagger_field(curly, staggered_grid, grid)
     curlz = interpolate_and_stagger_field(curlz, staggered_grid, grid)
     # interpolate the curl of the magnetic field to the cell centers
-    Ex = Ex + C**2 * curlx * dt / 2
-    Ey = Ey + C**2 * curly * dt / 2
-    Ez = Ez + C**2 * curlz * dt / 2
+    Ex = Ex + ( C**2 * curlx - 1/eps * Jx) * dt / 2
+    Ey = Ey + ( C**2 * curly - 1/eps * Jy) * dt / 2
+    Ez = Ez + ( C**2 * curlz - 1/eps * Jz) * dt / 2
     return Ex, Ey, Ez
