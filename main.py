@@ -273,17 +273,17 @@ for t in range(Nt):
     ################ MAGNETIC FIELD UPDATE #######################################################################
     if not electrostatic:
         if bc == "spectral":
-            Bx, By, Bz = spectralBsolve(Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
+            Bx, By, Bz = spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
         else:
-            Bx, By, Bz = update_B(Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
+            Bx, By, Bz = update_B(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
         # update the magnetic field using the curl of the electric field
         if verbose: print(f"Calculating Magnetic Field, Max Value: {jnp.max(Bx)}")
         # print the maximum value of the magnetic field
 
         if bc == "spectral":
-            Ex, Ey, Ez = spectralEsolve(Ex, Ey, Ez, Bx, By, Bz, dx, dy, dz, dt, C)
+            Ex, Ey, Ez = spectralEsolve(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, dx, dy, dz, dt, C)
         else:
-            Ex, Ex, Ez = update_E(Ex, Ey, Ez, Bx, By, Bz, dx, dy, dz, dt, C)
+            Ex, Ex, Ez = update_E(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, dx, dy, dz, dt, C)
         # update the electric field using the curl of the magnetic field
     ################## PLOTTING ########################################################################################
 

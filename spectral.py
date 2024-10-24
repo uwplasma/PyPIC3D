@@ -12,6 +12,8 @@ from pyevtk.hl import gridToVTK
 import functools
 from functools import partial
 
+from utils import interpolate_and_stagger_field
+
 @jit
 def spectral_poisson_solve(rho, eps, dx, dy, dz):
     """
@@ -122,7 +124,7 @@ def spectral_curl(xfield, yfield, zfield, dx, dy, dz):
 
 
 @jit
-def spectralBsolve(Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt):
+def spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt):
     """
     Solve the magnetic field equations using the spectral method and half leapfrog.
 
@@ -144,6 +146,11 @@ def spectralBsolve(Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt):
     - Bz (ndarray): The updated z-component of the magnetic field.
     """
     curlx, curly, curlz = spectral_curl(Ex, Ey, Ez, dx, dy, dz)
+    # calculate the curl of the electric field
+    curlx = interpolate_and_stagger_field(curlx, grid, staggered_grid)
+    curly = interpolate_and_stagger_field(curly, grid, staggered_grid)
+    curlz = interpolate_and_stagger_field(curlz, grid, staggered_grid)
+    # interpolate the curl of the electric field and get the values at the cell faces
     Bx = Bx - dt/2*curlx
     By = By - dt/2*curly
     Bz = Bz - dt/2*curlz
@@ -151,7 +158,7 @@ def spectralBsolve(Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt):
     return Bx, By, Bz
 
 @jit
-def spectralEsolve(Ex, Ey, Ez, Bx, By, Bz, dx, dy, dz, dt, C):
+def spectralEsolve(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, dx, dy, dz, dt, C):
     """
     Solve the electric field equations using the spectral method and half leapfrog.
 
@@ -175,6 +182,11 @@ def spectralEsolve(Ex, Ey, Ez, Bx, By, Bz, dx, dy, dz, dt, C):
     - Ez (ndarray): The updated z-component of the electric field.
     """
     curlx, curly, curlz = spectral_curl(Bx, By, Bz, dx, dy, dz)
+    # calculate the curl of the magnetic field
+    curlx = interpolate_and_stagger_field(curlx, staggered_grid, grid)
+    curly = interpolate_and_stagger_field(curly, staggered_grid, grid)
+    curlz = interpolate_and_stagger_field(curlz, staggered_grid, grid)
+    # interpolate the curl of the magnetic field and get the values at the cell centers
     Ex = Ex + C**2 * curlx * dt/2
     Ey = Ey + C**2 * curly * dt/2
     Ez = Ez + C**2 * curlz * dt/2
