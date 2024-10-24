@@ -33,6 +33,8 @@ def current_correction(Jx, Jy, Jz, particles, dx, dy, dz):
     xibar = 0.5*(xi1 + xi2)
     # compute the displacement variables from Buneman, Vilasenor 1991
 
+    ix, iy, iz = particles.get_index()
+
     Jx = Jx.at[ix, iy+1, iz+1].set( q*(deltax*zetabar*xibar + deltax*deltay*deltaz/12))
     # compute the first x correction for charge conservation along i+1/2, j, k
     Jx = Jx.at[ix, iy, iz+1].set( q*(deltax*(1-etabar)*xibar - deltax*deltay*deltaz/12))

@@ -191,7 +191,7 @@ key5 = random.key(3456)
 # particles = [electrons, ions]
 # # create the particle species
 
-particles = load_particles_from_toml("config.toml", simulation_parameters)
+particles = load_particles_from_toml("config.toml", simulation_parameters, dx, dy, dz)
 #################################### Two Stream Instability #####################################################
 # alternating_ones = (-1)**jnp.array(range(0,N_electrons))
 # v0=1.5*2657603.0
