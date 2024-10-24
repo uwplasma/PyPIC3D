@@ -60,6 +60,7 @@ def default_parameters():
         "y_wind": 1e-2,  # size of the spatial window in y in meters
         "z_wind": 1e-2,  # size of the spatial window in z in meters
         "t_wind": 1e-12,  # size of the temporal window in seconds
+        "electrostatic": False,  # boolean for electrostatic simulation
         "benchmark": False, # boolean for using the profiler
         "verbose": False # boolean for printing verbose output
     }
