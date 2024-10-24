@@ -248,6 +248,10 @@ print(f"Theoretical Plasma Frequency: {theoretical_freq} Hz")
 print(f"Debye Length: {debye} m")
 print(f"Thermal Velocity: {jnp.sqrt(2*kb*Te/me)}\n")
 
+avg_jx = []
+avg_jy = []
+avg_jz = []
+
 for t in range(Nt):
     print(f'Iteration {t}, Time: {t*dt} s')
     ############### SOLVE E FIELD ############################################################################################
@@ -279,6 +283,10 @@ for t in range(Nt):
     if not electrostatic:
         Jx, Jy, Jz = current_correction(particles, Nx, Ny, Nz)
         # calculate the corrections for charge conservation
+        avg_jx.append(jnp.mean(Jx))
+        avg_jy.append(jnp.mean(Jy))
+        avg_jz.append(jnp.mean(Jz))
+        # calculate the average current density
         if bc == "spectral":
             Bx, By, Bz = spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
         else:
@@ -377,12 +385,12 @@ for t in range(Nt):
 #             multi_phase_space(electron_y, ion_y, ev_y, iv_y, t, "Electrons", "Ions", "y", y_wind)
 #             multi_phase_space(electron_z, ion_z, ev_z, iv_z, t, "Electrons", "Ions", "z", z_wind)
 #         # save the phase space data
-# if plotfields:
-#     plot_probe(Eprobe, "Electric Field", "ElectricField")
-#     efield_freq = plot_fft(Eprobe, dt*plot_freq, "FFT of Electric Field", "E_FFT")
-#     plot_probe(averageE, "Electric Field", "AvgElectricField")
-#     print(f'Electric Field Frequency: {efield_freq}')
-#     # plot the electric field probe
+if plotfields:
+    plot_probe(Eprobe, "Electric Field", "ElectricField")
+    efield_freq = plot_fft(Eprobe, dt*plot_freq, "FFT of Electric Field", "E_FFT")
+    plot_probe(averageE, "Electric Field", "AvgElectricField")
+    print(f'Electric Field Frequency: {efield_freq}')
+    # plot the electric field probe
 if plotKE:
     plot_KE(KE, KE_time)
     ke_freq = plot_fft(KE, dt*plot_freq, "FFT of Kinetic Energy", "KE_FFT")
@@ -398,6 +406,11 @@ if plotKE:
 #     # plot the total energy of the system
 #     plot_probe(total_p, "Total Momentum", "TotalMomentum")
 #     # plot the total momentum of the system
+
+plot_probe(avg_jx, "Average Jx", "AverageJx")
+plot_probe(avg_jy, "Average Jy", "AverageJy")
+plot_probe(avg_jz, "Average Jz", "AverageJz")
+# plot the average current density
 
 if plot_errors:
     plot_probe(div_error_E, "Divergence Error of E Field", f"div_error_E")
