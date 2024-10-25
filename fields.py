@@ -15,7 +15,7 @@ from functools import partial
 # import external libraries
 
 from spectral import spectral_poisson_solve, spectral_laplacian, spectralBsolve, spectralEsolve
-from fdtd import periodic_laplacian, neumann_laplacian, dirichlet_laplacian
+from fdtd import centered_finite_difference_laplacian
 from rho import update_rho
 from cg import conjugate_grad
 from errors import compute_pe
@@ -73,17 +73,11 @@ def solve_poisson(rho, eps, dx, dy, dz, phi, bc='periodic', M = None):
     - phi (ndarray): Solution to the Poisson equation.
     """
 
-    if bc == 'periodic':
-        lapl = functools.partial(periodic_laplacian, dx=dx, dy=dy, dz=dz)
-    elif bc == 'dirichlet':
-        lapl = functools.partial(dirichlet_laplacian, dx=dx, dy=dy, dz=dz)
-    elif bc == 'neumann':
-        lapl = functools.partial(neumann_laplacian, dx=dx, dy=dy, dz=dz)
-    #phi = conjugate_grad(lapl, rho/eps, phi, tol=1e-6, maxiter=10000, M=M)
-    #phi, exitcode = jax.scipy.sparse.linalg.cg(lapl, -rho/eps, phi, tol=1e-6, maxiter=20000, M=M)
     if bc == 'spectral':
         phi = spectral_poisson_solve(rho, eps, dx, dy, dz)
     else:
+        lapl = functools.partial(centered_finite_difference_laplacian, dx=dx, dy=dy, dz=dz, bc=bc)
+        # define the laplacian operator using finite difference method
         phi = conjugate_grad(lapl, -rho/eps, phi, tol=1e-6, maxiter=20000, M=M)
     return phi
 
