@@ -14,7 +14,7 @@ import functools
 from functools import partial
 # import external libraries
 
-@jit
+
 def current_correction(particles, Nx, Ny, Nz):
     Jx, Jy, Jz = jnp.zeros((Nx, Ny, Nz)), jnp.zeros((Nx, Ny, Nz)), jnp.zeros((Nx, Ny, Nz))
     # initialize the current arrays as 0
