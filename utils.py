@@ -20,6 +20,57 @@ from scipy.interpolate import RegularGridInterpolator
 from rho import update_rho
 from particle import initial_particles, particle_species
 
+def partial_derivative(f, axis):
+    """
+    Computes the partial derivative of a function `f` with respect to a specified axis.
+
+    Parameters:
+    f (jax.numpy.ndarray): The input function represented as a multidimensional array.
+    axis (int): The axis along which to compute the partial derivative.
+
+    Returns:
+    jax.numpy.ndarray: The partial derivative of the function `f` along the specified axis.
+    """
+    return jax.grad(lambda x: f[x])(jnp.arange(f.shape[axis]))
+
+def autodiff_curl(fx, fy, fz):
+    """
+    Compute the curl of a vector field using JAX autodiff.
+
+    Parameters:
+    - field (tuple): A tuple of three arrays representing the x, y, and z components of the vector field.
+    - grid_spacing (tuple): A tuple of three floats representing the grid spacing in the x, y, and z directions.
+
+    Returns:
+    - tuple: A tuple of three arrays representing the x, y, and z components of the curl of the vector field.
+    """
+    fx, fy, fz = field
+
+    curl_x = partial_derivative(fz, 1) - partial_derivative(fy, 2)
+    curl_y = partial_derivative(fx, 2) - partial_derivative(fz, 0)
+    curl_z = partial_derivative(fy, 0) - partial_derivative(fx, 1)
+
+    return curl_x, curl_y, curl_z
+
+def autodiff_divergence(fx, fy, fz):
+    """
+    Compute the divergence of a vector field using JAX autodiff.
+
+    Parameters:
+    - field (tuple): A tuple of three arrays representing the x, y, and z components of the vector field.
+    - grid_spacing (tuple): A tuple of three floats representing the grid spacing in the x, y, and z directions.
+
+    Returns:
+    - array: An array representing the divergence of the vector field.
+    """
+    fx, fy, fz = field
+
+    div_x = partial_derivative(fx, 0)
+    div_y = partial_derivative(fy, 1)
+    div_z = partial_derivative(fz, 2)
+
+    return div_x + div_y + div_z
+
 def grab_particle_keys(config):
     particle_keys = []
     for key in config.keys():
@@ -29,7 +80,7 @@ def grab_particle_keys(config):
 
 def load_particles_from_toml(toml_file, simulation_parameters, dx, dy, dz):
     config = toml.load(toml_file)
-    
+
     x_wind = simulation_parameters['x_wind']
     y_wind = simulation_parameters['y_wind']
     z_wind = simulation_parameters['z_wind']
