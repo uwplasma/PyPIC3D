@@ -77,6 +77,7 @@ def solve_poisson(rho, eps, dx, dy, dz, phi, bc='periodic', M = None):
         phi = spectral_poisson_solve(rho, eps, dx, dy, dz)
     else:
         lapl = functools.partial(centered_finite_difference_laplacian, dx=dx, dy=dy, dz=dz, bc=bc)
+        lapl = jit(lapl)
         # define the laplacian operator using finite difference method
         phi = conjugate_grad(lapl, -rho/eps, phi, tol=1e-6, maxiter=20000, M=M)
     return phi

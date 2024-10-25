@@ -15,8 +15,8 @@ from functools import partial
 # import external libraries
 
 from spectral import spectral_laplacian, spectral_divergence
-from fdtd import periodic_laplacian, neumann_laplacian, dirichlet_laplacian
-from fdtd import periodic_divergence, neumann_divergence, dirichlet_divergence
+from fdtd import centered_finite_difference_laplacian, centered_finite_difference_divergence
+
 
 def compute_pe(phi, rho, eps, dx, dy, dz, bc='periodic'):
     """
@@ -36,12 +36,8 @@ def compute_pe(phi, rho, eps, dx, dy, dz, bc='periodic'):
     """
     if bc == 'spectral':
         x = spectral_laplacian(phi, dx, dy, dz)
-    elif bc == 'periodic':
-        x = periodic_laplacian(phi, dx, dy, dz)
-    elif bc == 'dirichlet':
-        x = dirichlet_laplacian(phi, dx, dy, dz)
-    elif bc == 'neumann':
-        x = neumann_laplacian(phi, dx, dy, dz)
+    else:
+        x = centered_finite_difference_laplacian(phi, dx, dy, dz, bc)
     poisson_error = x + rho/eps
     index         = jnp.argmax(poisson_error)
     return 200 * jnp.abs( jnp.ravel(poisson_error)[index]) / ( jnp.abs(jnp.ravel(rho/eps)[index])+ jnp.abs(jnp.ravel(x)[index]) )
@@ -65,12 +61,8 @@ def compute_magnetic_divergence_error(Bx, By, Bz, dx, dy, dz, bc='periodic'):
     """
     if bc == 'spectral':
         divB = spectral_divergence(Bx, By, Bz, dx, dy, dz)
-    elif bc == 'periodic':
-        divB = periodic_divergence(Bx, By, Bz, dx, dy, dz)
-    elif bc == 'dirichlet':
-        divB = dirichlet_divergence(Bx, By, Bz, dx, dy, dz)
-    elif bc == 'neumann':
-        divB = neumann_divergence(Bx, By, Bz, dx, dy, dz)
+    else:
+        divB = centered_finite_difference_divergence(Bx, By, Bz, dx, dy, dz, bc)
     
     divergence_error = jnp.sum(jnp.abs(divB))
     return divergence_error
@@ -95,12 +87,8 @@ def compute_electric_divergence_error(Ex, Ey, Ez, rho, eps, dx, dy, dz, bc='peri
     """
     if bc == 'spectral':
         divE = spectral_divergence(Ex, Ey, Ez, dx, dy, dz)
-    elif bc == 'periodic':
-        divE = periodic_divergence(Ex, Ey, Ez, dx, dy, dz)
-    elif bc == 'dirichlet':
-        divE = dirichlet_divergence(Ex, Ey, Ez, dx, dy, dz)
-    elif bc == 'neumann':
-        divE = neumann_divergence(Ex, Ey, Ez, dx, dy, dz)
+    else:
+        divE = centered_finite_difference_divergence(Ex, Ey, Ez, dx, dy, dz, bc)
     
     divergence_error = jnp.sum(jnp.abs(divE - rho / eps))
     return divergence_error

@@ -43,7 +43,7 @@ def apply_supergaussian_boundary_condition(field, boundary_thickness, order, str
 
     return field
 
-
+@jit
 def apply_zero_boundary_condition(field):
     """
     Apply zero boundary conditions to the given field.
