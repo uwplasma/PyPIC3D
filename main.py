@@ -82,7 +82,6 @@ if os.path.exists(config_file):
     simulation_parameters, plotting_parameters = update_parameters_from_toml(config_file, simulation_parameters, plotting_parameters)
 
 
-electrostatic = True
 cold_start = False
 # start all the particles at the same place (rho = 0)
 
@@ -122,6 +121,7 @@ x_wind = simulation_parameters["x_wind"]
 y_wind = simulation_parameters["y_wind"]
 z_wind = simulation_parameters["z_wind"]
 t_wind = simulation_parameters["t_wind"]
+electrostatic = simulation_parameters["electrostatic"]
 benchmark = simulation_parameters["benchmark"]
 verbose = simulation_parameters["verbose"]
 # set the simulation parameters
@@ -238,7 +238,7 @@ if plotEnergy: total_p      = []
 if plot_errors: div_error_E, div_error_B = [], []
 
 if not electrostatic:
-        Ex, Ey, Ez, phi, rho = calculateE(particles, dx, dy, dz, q_e, q_i, rho, eps, phi, M, t, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
+        Ex, Ey, Ez, phi, rho = calculateE(particles, dx, dy, dz, rho, eps, phi, M, 0, x_wind, y_wind, z_wind, bc, verbose, GPUs)
 
 grid = jnp.arange(-x_wind/2, x_wind/2, dx), jnp.arange(-y_wind/2, y_wind/2, dy), jnp.arange(-z_wind/2, z_wind/2, dz)
 staggered_grid = jnp.arange(-x_wind/2 + dx/2, x_wind/2 + dx/2, dx), jnp.arange(-y_wind/2 + dy/2, y_wind/2 + dy/2, dy), jnp.arange(-z_wind/2 + dz/2, z_wind/2 + dz/2, dz)
@@ -262,7 +262,7 @@ for t in range(Nt):
             M = model(phi, rho)
     # solve for the preconditioner using the neural network
     if electrostatic:
-        Ex, Ey, Ez, phi, rho = calculateE(particles, dx, dy, dz, q_e, q_i, rho, eps, phi, M, t, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs)
+        Ex, Ey, Ez, phi, rho = calculateE(particles, dx, dy, dz, rho, eps, phi, M, t, x_wind, y_wind, z_wind, bc, verbose, GPUs)
         if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(Ex)}")
         # print the maximum value of the electric field
 
@@ -283,10 +283,6 @@ for t in range(Nt):
     if not electrostatic:
         Jx, Jy, Jz = current_correction(particles, Nx, Ny, Nz)
         # calculate the corrections for charge conservation
-        avg_jx.append(jnp.mean(Jx))
-        avg_jy.append(jnp.mean(Jy))
-        avg_jz.append(jnp.mean(Jz))
-        # calculate the average current density
         if bc == "spectral":
             Bx, By, Bz = spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
         else:
@@ -303,6 +299,10 @@ for t in range(Nt):
     ################## PLOTTING ########################################################################################
 
     if t % plot_freq == 0:
+        avg_jx.append(jnp.mean(Jx))
+        avg_jy.append(jnp.mean(Jy))
+        avg_jz.append(jnp.mean(Jz))
+        # calculate the average current density
         if plotpositions:
             plot_positions(particles, t, x_wind, y_wind, z_wind)
         if plotvelocities:
@@ -406,7 +406,6 @@ if plotKE:
 #     # plot the total energy of the system
 #     plot_probe(total_p, "Total Momentum", "TotalMomentum")
 #     # plot the total momentum of the system
-
 plot_probe(avg_jx, "Average Jx", "AverageJx")
 plot_probe(avg_jy, "Average Jy", "AverageJy")
 plot_probe(avg_jz, "Average Jz", "AverageJz")

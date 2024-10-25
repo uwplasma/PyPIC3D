@@ -87,7 +87,7 @@ def solve_poisson(rho, eps, dx, dy, dz, phi, bc='periodic', M = None):
         phi = conjugate_grad(lapl, -rho/eps, phi, tol=1e-6, maxiter=20000, M=M)
     return phi
 
-def calculateE(particles, dx, dy, dz, q_e, q_i, rho, eps, phi, M, t, Nx, Ny, Nz, x_wind, y_wind, z_wind, bc, verbose, GPUs):
+def calculateE(particles, dx, dy, dz, rho, eps, phi, M, t, x_wind, y_wind, z_wind, bc, verbose, GPUs):
     """
     Calculates the electric field components (Ex, Ey, Ez), electric potential (phi), and charge density (rho) based on the given parameters.
 
