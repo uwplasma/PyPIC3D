@@ -20,6 +20,21 @@ from scipy.interpolate import RegularGridInterpolator
 from rho import update_rho
 from particle import initial_particles, particle_species
 
+def fix_bc_and_jit_compile(func, bc_value):
+    """
+    Fixes the boundary condition argument of a function using functools.partial and then JIT compiles the new function.
+
+    Parameters:
+    func (callable): The original function that takes a boundary condition argument.
+    bc_value (any): The value to fix for the boundary condition argument.
+
+    Returns:
+    callable: The JIT compiled function with the boundary condition argument fixed.
+    """
+    fixed_bc_func = partial(func, bc=bc_value)
+    jit_compiled_func = jit(fixed_bc_func)
+    return jit_compiled_func
+
 def partial_derivative(f, axis):
     """
     Computes the partial derivative of a function `f` with respect to a specified axis.
