@@ -465,9 +465,9 @@ def update_B(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt, bound
     curly = curly_func(Ex, Ez, dx, dz)
     curlz = curlz_func(Ex, Ey, dx, dy)
     # calculate the curl of the electric field
-    curlx = interpolate_and_stagger_field(curlx, grid, staggered_grid)
-    curly = interpolate_and_stagger_field(curly, grid, staggered_grid)
-    curlz = interpolate_and_stagger_field(curlz, grid, staggered_grid)
+    # curlx = interpolate_and_stagger_field(curlx, grid, staggered_grid)
+    # curly = interpolate_and_stagger_field(curly, grid, staggered_grid)
+    # curlz = interpolate_and_stagger_field(curlz, grid, staggered_grid)
     # interpolate the curl of the electric field to the cell faces
     Bx = Bx - dt/2*curlx
     By = By - dt/2*curly
@@ -519,9 +519,9 @@ def update_E(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, dx, dy, d
     curly = curly_func(Bx, Bz, dx, dz)
     curlz = curlz_func(Bx, By, dx, dy)
     # calculate the curl of the magnetic field
-    curlx = interpolate_and_stagger_field(curlx, staggered_grid, grid)
-    curly = interpolate_and_stagger_field(curly, staggered_grid, grid)
-    curlz = interpolate_and_stagger_field(curlz, staggered_grid, grid)
+    # curlx = interpolate_and_stagger_field(curlx, staggered_grid, grid)
+    # curly = interpolate_and_stagger_field(curly, staggered_grid, grid)
+    # curlz = interpolate_and_stagger_field(curlz, staggered_grid, grid)
     # interpolate the curl of the magnetic field to the cell centers
     Ex = Ex + ( C**2 * curlx - 1/eps * Jx) * dt / 2
     Ey = Ey + ( C**2 * curly - 1/eps * Jy) * dt / 2
