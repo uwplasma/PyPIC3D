@@ -149,9 +149,9 @@ def spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
     """
     curlx, curly, curlz = spectral_curl(Ex, Ey, Ez, dx, dy, dz)
     # calculate the curl of the electric field
-    curlx = interpolate_and_stagger_field(curlx, grid, staggered_grid)
-    curly = interpolate_and_stagger_field(curly, grid, staggered_grid)
-    curlz = interpolate_and_stagger_field(curlz, grid, staggered_grid)
+    # curlx = interpolate_and_stagger_field(curlx, grid, staggered_grid)
+    # curly = interpolate_and_stagger_field(curly, grid, staggered_grid)
+    # curlz = interpolate_and_stagger_field(curlz, grid, staggered_grid)
     # interpolate the curl of the electric field and get the values at the cell faces
     Bx = Bx - dt/2*curlx
     By = By - dt/2*curly
@@ -185,9 +185,9 @@ def spectralEsolve(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, dx,
     """
     curlx, curly, curlz = spectral_curl(Bx, By, Bz, dx, dy, dz)
     # calculate the curl of the magnetic field
-    curlx = interpolate_and_stagger_field(curlx, staggered_grid, grid)
-    curly = interpolate_and_stagger_field(curly, staggered_grid, grid)
-    curlz = interpolate_and_stagger_field(curlz, staggered_grid, grid)
+    # curlx = interpolate_and_stagger_field(curlx, staggered_grid, grid)
+    # curly = interpolate_and_stagger_field(curly, staggered_grid, grid)
+    # curlz = interpolate_and_stagger_field(curlz, staggered_grid, grid)
     # interpolate the curl of the magnetic field and get the values at the cell centers
     Ex = Ex +  ( C**2 * curlx - 1/eps * Jx) * dt/2
     Ey = Ey +  ( C**2 * curly - 1/eps * Jy) * dt/2
