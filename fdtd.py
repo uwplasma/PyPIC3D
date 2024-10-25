@@ -15,11 +15,11 @@ from functools import partial
 # import external libraries
 
 from utils import interpolate_and_stagger_field
+from boundaryconditions import apply_zero_boundary_condition
 
-@jit
-def periodic_laplacian(field, dx, dy, dz):
+def centered_finite_difference_laplacian(field, dx, dy, dz, boundary_condition):
     """
-    Calculates the Laplacian of a given field using 2nd order finite difference with Periodic boundary conditions.
+    Calculates the Laplacian of a given field using centered finite difference and applies the specified boundary conditions.
 
     Parameters:
     - field: numpy.ndarray
@@ -30,87 +30,125 @@ def periodic_laplacian(field, dx, dy, dz):
         The spacing between grid points in the y-direction.
     - dz: float
         The spacing between grid points in the z-direction.
+    - boundary_condition: str
+        The type of boundary condition ('periodic', 'neumann', 'dirichlet').
 
     Returns:
     - numpy.ndarray
-        The Laplacian of the field.
-    """
-    x_comp = (jnp.roll(field, shift=1, axis=0) + jnp.roll(field, shift=-1, axis=0) - 2*field)/(dx*dx)
-    y_comp = (jnp.roll(field, shift=1, axis=1) + jnp.roll(field, shift=-1, axis=1) - 2*field)/(dy*dy)
-    z_comp = (jnp.roll(field, shift=1, axis=2) + jnp.roll(field, shift=-1, axis=2) - 2*field)/(dz*dz)
-    return x_comp + y_comp + z_comp
-
-
-@jit
-def neumann_laplacian(field, dx, dy, dz):
-    """
-    Calculates the Laplacian of a given field with Neumann boundary conditions.
-
-    Parameters:
-    - field: numpy.ndarray
-        The input field.
-    - dx: float
-        The spacing between grid points in the x-direction.
-    - dy: float
-        The spacing between grid points in the y-direction.
-    - dz: float
-        The spacing between grid points in the z-direction.
-    - bc: str
-        The boundary condition.
-
-    Returns:
-    - numpy.ndarray
-        The Laplacian of the field.
+        The Laplacian of the field with the specified boundary conditions applied.
     """
 
+    if boundary_condition == 'dirichlet':
+        field = apply_zero_boundary_condition(field)
+        # apply zero boundary condition at the edges of the field
 
-    x_comp = (jnp.roll(field, shift=1, axis=0) + jnp.roll(field, shift=-1, axis=0) - 2*field)/(dx*dx) 
-    y_comp = (jnp.roll(field, shift=1, axis=1) + jnp.roll(field, shift=-1, axis=1) - 2*field)/(dy*dy)
-    z_comp = (jnp.roll(field, shift=1, axis=2) + jnp.roll(field, shift=-1, axis=2) - 2*field)/(dz*dz)
 
-    x_comp = x_comp.at[0, :, :].set(0)
-    x_comp = x_comp.at[-1, :, :].set(0)
-    y_comp = y_comp .at[:, 0, :].set(0)
-    y_comp = y_comp.at[:, -1, :].set(0)
-    z_comp = z_comp.at[:, :, 0].set(0)
-    z_comp = z_comp.at[:, :, -1].set(0)
+    x_comp = (jnp.roll(field, shift=1, axis=0) + jnp.roll(field, shift=-1, axis=0) - 2*field) / (dx*dx)
+    y_comp = (jnp.roll(field, shift=1, axis=1) + jnp.roll(field, shift=-1, axis=1) - 2*field) / (dy*dy)
+    z_comp = (jnp.roll(field, shift=1, axis=2) + jnp.roll(field, shift=-1, axis=2) - 2*field) / (dz*dz)
+    # calculate the Laplacian of the field using centered finite difference
+    if boundary_condition == 'neumann':
+        x_comp = apply_zero_boundary_condition(x_comp)
+        y_comp = apply_zero_boundary_condition(y_comp)
+        z_comp = apply_zero_boundary_condition(z_comp)
 
     return x_comp + y_comp + z_comp
 
+# @jit
+# def periodic_laplacian(field, dx, dy, dz):
+#     """
+#     Calculates the Laplacian of a given field using 2nd order finite difference with Periodic boundary conditions.
 
-@jit
-def dirichlet_laplacian(field, dx, dy, dz):
-    """
-    Calculates the Laplacian of a given field with Dirichlet boundary conditions.
+#     Parameters:
+#     - field: numpy.ndarray
+#         The input field.
+#     - dx: float
+#         The spacing between grid points in the x-direction.
+#     - dy: float
+#         The spacing between grid points in the y-direction.
+#     - dz: float
+#         The spacing between grid points in the z-direction.
 
-    Parameters:
-    - field: numpy.ndarray
-        The input field.
-    - dx: float
-        The spacing between grid points in the x-direction.
-    - dy: float
-        The spacing between grid points in the y-direction.
-    - dz: float
-        The spacing between grid points in the z-direction.
-    - bc: str
-        The boundary condition.
+#     Returns:
+#     - numpy.ndarray
+#         The Laplacian of the field.
+#     """
+#     x_comp = (jnp.roll(field, shift=1, axis=0) + jnp.roll(field, shift=-1, axis=0) - 2*field)/(dx*dx)
+#     y_comp = (jnp.roll(field, shift=1, axis=1) + jnp.roll(field, shift=-1, axis=1) - 2*field)/(dy*dy)
+#     z_comp = (jnp.roll(field, shift=1, axis=2) + jnp.roll(field, shift=-1, axis=2) - 2*field)/(dz*dz)
+#     return x_comp + y_comp + z_comp
 
-    Returns:
-    - numpy.ndarray
-        The Laplacian of the field.
-    """
-    x_comp = (jnp.roll(field, shift=1, axis=0) + jnp.roll(field, shift=-1, axis=0) - 2*field)/(dx*dx)
-    y_comp = (jnp.roll(field, shift=1, axis=1) + jnp.roll(field, shift=-1, axis=1) - 2*field)/(dy*dy)
-    z_comp = (jnp.roll(field, shift=1, axis=2) + jnp.roll(field, shift=-1, axis=2) - 2*field)/(dz*dz)
 
-    x_comp = x_comp.at[0, :, :].set((jnp.roll(field, shift=1, axis=0) - 2*field).at[0, :, :].get()/(dx*dx))
-    x_comp = x_comp.at[-1, :, :].set((jnp.roll(field, shift=-1, axis=0) - 2*field).at[-1, :, :].get()/(dx*dx))
-    y_comp = y_comp.at[:, 0, :].set((jnp.roll(field, shift=1, axis=1) - 2*field).at[:, 0, :].get()/(dy*dy))
-    y_comp = y_comp.at[:, -1, :].set((jnp.roll(field, shift=-1, axis=1) - 2*field).at[:, -1, :].get()/(dy*dy))
-    z_comp = z_comp.at[:, :, 0].set((jnp.roll(field, shift=1, axis=2) - 2*field).at[:, :, 0].get()/(dz*dz))
-    z_comp = z_comp.at[:, :, -1].set((jnp.roll(field, shift=-1, axis=2) - 2*field).at[:, :, -1].get()/(dz*dz))
+# @jit
+# def neumann_laplacian(field, dx, dy, dz):
+#     """
+#     Calculates the Laplacian of a given field with Neumann boundary conditions.
 
-    return x_comp + y_comp + z_comp
+#     Parameters:
+#     - field: numpy.ndarray
+#         The input field.
+#     - dx: float
+#         The spacing between grid points in the x-direction.
+#     - dy: float
+#         The spacing between grid points in the y-direction.
+#     - dz: float
+#         The spacing between grid points in the z-direction.
+#     - bc: str
+#         The boundary condition.
+
+#     Returns:
+#     - numpy.ndarray
+#         The Laplacian of the field.
+#     """
+
+
+#     x_comp = (jnp.roll(field, shift=1, axis=0) + jnp.roll(field, shift=-1, axis=0) - 2*field)/(dx*dx) 
+#     y_comp = (jnp.roll(field, shift=1, axis=1) + jnp.roll(field, shift=-1, axis=1) - 2*field)/(dy*dy)
+#     z_comp = (jnp.roll(field, shift=1, axis=2) + jnp.roll(field, shift=-1, axis=2) - 2*field)/(dz*dz)
+
+#     x_comp = x_comp.at[0, :, :].set(0)
+#     x_comp = x_comp.at[-1, :, :].set(0)
+#     y_comp = y_comp .at[:, 0, :].set(0)
+#     y_comp = y_comp.at[:, -1, :].set(0)
+#     z_comp = z_comp.at[:, :, 0].set(0)
+#     z_comp = z_comp.at[:, :, -1].set(0)
+
+#     return x_comp + y_comp + z_comp
+
+
+# @jit
+# def dirichlet_laplacian(field, dx, dy, dz):
+#     """
+#     Calculates the Laplacian of a given field with Dirichlet boundary conditions.
+
+#     Parameters:
+#     - field: numpy.ndarray
+#         The input field.
+#     - dx: float
+#         The spacing between grid points in the x-direction.
+#     - dy: float
+#         The spacing between grid points in the y-direction.
+#     - dz: float
+#         The spacing between grid points in the z-direction.
+#     - bc: str
+#         The boundary condition.
+
+#     Returns:
+#     - numpy.ndarray
+#         The Laplacian of the field.
+#     """
+#     x_comp = (jnp.roll(field, shift=1, axis=0) + jnp.roll(field, shift=-1, axis=0) - 2*field)/(dx*dx)
+#     y_comp = (jnp.roll(field, shift=1, axis=1) + jnp.roll(field, shift=-1, axis=1) - 2*field)/(dy*dy)
+#     z_comp = (jnp.roll(field, shift=1, axis=2) + jnp.roll(field, shift=-1, axis=2) - 2*field)/(dz*dz)
+
+#     x_comp = x_comp.at[0, :, :].set((jnp.roll(field, shift=1, axis=0) - 2*field).at[0, :, :].get()/(dx*dx))
+#     x_comp = x_comp.at[-1, :, :].set((jnp.roll(field, shift=-1, axis=0) - 2*field).at[-1, :, :].get()/(dx*dx))
+#     y_comp = y_comp.at[:, 0, :].set((jnp.roll(field, shift=1, axis=1) - 2*field).at[:, 0, :].get()/(dy*dy))
+#     y_comp = y_comp.at[:, -1, :].set((jnp.roll(field, shift=-1, axis=1) - 2*field).at[:, -1, :].get()/(dy*dy))
+#     z_comp = z_comp.at[:, :, 0].set((jnp.roll(field, shift=1, axis=2) - 2*field).at[:, :, 0].get()/(dz*dz))
+#     z_comp = z_comp.at[:, :, -1].set((jnp.roll(field, shift=-1, axis=2) - 2*field).at[:, :, -1].get()/(dz*dz))
+
+#     return x_comp + y_comp + z_comp
 
 @jit
 def periodic_divergence(field_x, field_y, field_z, dx, dy, dz):

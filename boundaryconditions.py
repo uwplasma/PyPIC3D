@@ -42,3 +42,23 @@ def apply_supergaussian_boundary_condition(field, boundary_thickness, order, str
         field[:, :, nz - 1 - i] *= factor
 
     return field
+
+
+def apply_zero_boundary_condition(field):
+    """
+    Apply zero boundary conditions to the given field.
+
+    Parameters:
+    field (ndarray): The field to which the zero boundary condition is applied.
+
+    Returns:
+    ndarray: The field with zero boundary conditions applied.
+    """
+    field = field.at[0, :, :].set(0)
+    field = field.at[-1, :, :].set(0)
+    field = field.at[:, 0, :].set(0)
+    field = field.at[:, -1, :].set(0)
+    field = field.at[:, :, 0].set(0)
+    field = field.at[:, :, -1].set(0)
+
+    return field
