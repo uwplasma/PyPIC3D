@@ -1,6 +1,6 @@
 import unittest
 import numpy as np
-from rho import index_particles, particle_weighting, update_rho
+from src.rho import index_particles, particle_weighting, update_rho
 
 import jax.numpy as jnp
 
