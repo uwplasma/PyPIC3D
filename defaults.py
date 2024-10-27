@@ -40,7 +40,8 @@ def default_parameters():
     simulation_parameters = {
         "name": "Default Simulation",
         "output_dir": ".",
-        "bc": "spectral",  # boundary conditions: periodic, dirichlet, neumann, spectral
+        "solver": "spectral",  # solver: spectral, fdtd, autodiff
+        "bc": "spectral",  # boundary conditions: periodic, dirichlet, neumann
         "eps": 8.854e-12,  # permitivity of freespace
         "mu" : 1.2566370613e-6, # permeability of free space
         "C": 3e8,  # Speed of light in m/s

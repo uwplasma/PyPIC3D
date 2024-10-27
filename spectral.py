@@ -12,9 +12,37 @@ from pyevtk.hl import gridToVTK
 import functools
 from functools import partial
 
-from utils import interpolate_and_stagger_field
+from utils import interpolate_and_stagger_field, interpolate_field, use_gpu_if_set
 from charge_conservation import current_correction
 from particle import particle_species
+
+def detect_gibbs_phenomenon(field, dx, dy, dz, threshold=0.1):
+    """
+    Detect the Gibbs phenomenon in a given field by checking for oscillations near discontinuities.
+
+    Parameters:
+    - field (ndarray): The input field to check for Gibbs phenomenon.
+    - threshold (float): The threshold value for detecting significant oscillations.
+
+    Returns:
+    - bool: True if Gibbs phenomenon is detected, False otherwise.
+    """
+    # Compute the gradient of the field
+    grad = jnp.gradient(field)
+
+    # Compute the second derivative (Laplacian) of the field
+    laplacian = spectral_laplacian(field, dx, dy, dz)
+
+    # Detect regions where the gradient is high (indicating a discontinuity)
+    discontinuities = jnp.abs(grad) > threshold
+
+    # Check for oscillations near the discontinuities
+    oscillations = jnp.abs(laplacian) > threshold
+
+    # If oscillations are detected near discontinuities, Gibbs phenomenon is present
+    gibbs_detected = jnp.any(discontinuities & oscillations)
+
+    return gibbs_detected
 
 @jit
 def spectral_poisson_solve(rho, eps, dx, dy, dz):
@@ -124,6 +152,37 @@ def spectral_curl(xfield, yfield, zfield, dx, dy, dz):
 
     return jnp.fft.ifftn(curlx).real, jnp.fft.ifftn(curly).real, jnp.fft.ifftn(curlz).real
 
+@jit
+def spectral_gradient(field, dx, dy, dz):
+    """
+    Compute the gradient of a 3D scalar field using spectral methods.
+
+    Parameters:
+    field (ndarray): The input scalar field.
+    dx (float): The grid spacing in the x-direction.
+    dy (float): The grid spacing in the y-direction.
+    dz (float): The grid spacing in the z-direction.
+
+    Returns:
+    tuple: A tuple containing the x, y, and z components of the gradient of the field.
+    """
+    Nx, Ny, Nz = field.shape
+    kx = jnp.fft.fftfreq(Nx, dx) * 2 * jnp.pi
+    ky = jnp.fft.fftfreq(Ny, dy) * 2 * jnp.pi
+    kz = jnp.fft.fftfreq(Nz, dz) * 2 * jnp.pi
+    kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
+    # create 3D meshgrid of wavenumbers
+
+    field_fft = jnp.fft.fftn(field)
+    # calculate the Fourier transform of the field
+
+    gradx = 1j * kx * field_fft
+    grady = 1j * ky * field_fft
+    gradz = 1j * kz * field_fft
+    # calculate the gradient in Fourier space
+
+    return jnp.fft.ifftn(gradx).real, jnp.fft.ifftn(grady).real, jnp.fft.ifftn(gradz).real
+
 
 @jit
 def spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt):
@@ -149,10 +208,6 @@ def spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
     """
     curlx, curly, curlz = spectral_curl(Ex, Ey, Ez, dx, dy, dz)
     # calculate the curl of the electric field
-    # curlx = interpolate_and_stagger_field(curlx, grid, staggered_grid)
-    # curly = interpolate_and_stagger_field(curly, grid, staggered_grid)
-    # curlz = interpolate_and_stagger_field(curlz, grid, staggered_grid)
-    # interpolate the curl of the electric field and get the values at the cell faces
     Bx = Bx - dt/2*curlx
     By = By - dt/2*curly
     Bz = Bz - dt/2*curlz
@@ -185,10 +240,6 @@ def spectralEsolve(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, dx,
     """
     curlx, curly, curlz = spectral_curl(Bx, By, Bz, dx, dy, dz)
     # calculate the curl of the magnetic field
-    # curlx = interpolate_and_stagger_field(curlx, staggered_grid, grid)
-    # curly = interpolate_and_stagger_field(curly, staggered_grid, grid)
-    # curlz = interpolate_and_stagger_field(curlz, staggered_grid, grid)
-    # interpolate the curl of the magnetic field and get the values at the cell centers
     Ex = Ex +  ( C**2 * curlx - 1/eps * Jx) * dt/2
     Ey = Ey +  ( C**2 * curly - 1/eps * Jy) * dt/2
     Ez = Ez +  ( C**2 * curlz - 1/eps * Jz) * dt/2
@@ -281,3 +332,102 @@ def psatd(Ex, Ey, Ez, Bx, By, Bz, q, m, dx, dy, dz, dt, x, y, z, vx, vy, vz):
     Bz_hat = jnp.fft.fftn(Bz)
 
     return
+
+@use_gpu_if_set
+def particle_push(particles, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt, GPUs):
+    """
+    Updates the velocities of particles using the Boris algorithm.
+
+    Args:
+        particles (Particles): The particles to be updated.
+        Ex (array-like): Electric field component in the x-direction.
+        Ey (array-like): Electric field component in the y-direction.
+        Ez (array-like): Electric field component in the z-direction.
+        Bx (array-like): Magnetic field component in the x-direction.
+        By (array-like): Magnetic field component in the y-direction.
+        Bz (array-like): Magnetic field component in the z-direction.
+        grid (Grid): The grid on which the fields are defined.
+        staggered_grid (Grid): The staggered grid for field interpolation.
+        dt (float): The time step for the update.
+
+    Returns:
+        Particles: The particles with updated velocities.
+    """
+    q = particles.get_charge()
+    m = particles.get_mass()
+    x, y, z = particles.get_position()
+    vx, vy, vz = particles.get_velocity()
+    # get the charge, mass, position, and velocity of the particles
+    newvx, newvy, newvz = boris(q, m, x, y, z, vx, vy, vz, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
+    # use the boris algorithm to update the velocities
+    particles.set_velocity(newvx, newvy, newvz)
+    # set the new velocities of the particles
+    return particles
+
+
+@jit
+def boris(q, m, x, y, z, vx, vy, vz, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt):
+    """
+    Perform the Boris algorithm to update the velocity of a charged particle in an electromagnetic field.
+
+    Parameters:
+    q (float): Charge of the particle.
+    m (float): Mass of the particle.
+    x (float): x-coordinate of the particle's position.
+    y (float): y-coordinate of the particle's position.
+    z (float): z-coordinate of the particle's position.
+    vx (float): x-component of the particle's velocity.
+    vy (float): y-component of the particle's velocity.
+    vz (float): z-component of the particle's velocity.
+    Ex (ndarray): x-component of the electric field array.
+    Ey (ndarray): y-component of the electric field array.
+    Ez (ndarray): z-component of the electric field array.
+    Bx (ndarray): x-component of the magnetic field array.
+    By (ndarray): y-component of the magnetic field array.
+    Bz (ndarray): z-component of the magnetic field array.
+    grid (ndarray): Grid for the electric field.
+    staggered_grid (ndarray): Staggered grid for the magnetic field.
+    dt (float): Time step for the update.
+
+    Returns:
+    tuple: Updated velocity components (newvx, newvy, newvz).
+    """
+    
+    efield_atx = interpolate_field(Ex, grid, x, y, z)
+    efield_aty = interpolate_field(Ey, grid, x, y, z)
+    efield_atz = interpolate_field(Ez, grid, x, y, z)
+    # interpolate the electric field component arrays and calculate the e field at the particle positions
+    bfield_atx = interpolate_field(Bx, staggered_grid, x, y, z)
+    bfield_aty = interpolate_field(By, staggered_grid, x, y, z)
+    bfield_atz = interpolate_field(Bz, staggered_grid, x, y, z)
+    # interpolate the magnetic field component arrays and calculate the b field at the particle positions
+
+    vxminus = vx + q*dt/(2*m)*efield_atx
+    vyminus = vy + q*dt/(2*m)*efield_aty
+    vzminus = vz + q*dt/(2*m)*efield_atz
+    # calculate the v minus vector used in the boris push algorithm
+    tx = q*dt/(2*m)*bfield_atx
+    ty = q*dt/(2*m)*bfield_aty
+    tz = q*dt/(2*m)*bfield_atz
+
+    vprimex = vxminus + (vyminus*tz - vzminus*ty)
+    vprimey = vyminus + (vzminus*tx - vxminus*tz)
+    vprimez = vzminus + (vxminus*ty - vyminus*tx)
+    # vprime = vminus + vminus cross t
+
+    smag = 2 / (1 + tx*tx + ty*ty + tz*tz)
+    sx = smag * tx
+    sy = smag * ty
+    sz = smag * tz
+    # calculate the scaled rotation vector
+
+    vxplus = vxminus + (vprimey*sz - vprimez*sy)
+    vyplus = vyminus + (vprimez*sx - vprimex*sz)
+    vzplus = vzminus + (vprimex*sy - vprimey*sx)
+
+    newvx = vxplus + q*dt/(2*m)*efield_atx
+    newvy = vyplus + q*dt/(2*m)*efield_aty
+    newvz = vzplus + q*dt/(2*m)*efield_atz
+    # calculate the new velocity
+
+    return newvx, newvy, newvz

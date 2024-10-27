@@ -17,9 +17,52 @@ import os, sys
 from scipy.interpolate import RegularGridInterpolator
 # import external libraries
 
-from rho import update_rho
 from particle import initial_particles, particle_species
 
+def build_grid(x_wind, y_wind, z_wind, dx, dy, dz):
+    grid = jnp.arange(-x_wind/2, x_wind/2, dx), jnp.arange(-y_wind/2, y_wind/2, dy), jnp.arange(-z_wind/2, z_wind/2, dz)
+    staggered_grid = jnp.arange(-x_wind/2 + dx/2, x_wind/2 + dx/2, dx), jnp.arange(-y_wind/2 + dy/2, y_wind/2 + dy/2, dy), jnp.arange(-z_wind/2 + dz/2, z_wind/2 + dz/2, dz)
+    # create the grid space
+    return grid, staggered_grid
+
+def precondition(NN, phi, rho, model=None):
+    """
+    Precondition the Poisson equation using a neural network model.
+
+    Parameters:
+    NN (callable): The neural network model to be used for preconditioning.
+    phi (ndarray): The potential field.
+    rho (ndarray): The charge density.
+    model (callable): The neural network model to be used for preconditioning.
+
+    Returns:
+    ndarray: The preconditioned potential field.
+    """
+    if model is None:
+        return None
+    else:
+        return model(phi, rho)
+
+def use_gpu_if_set(func):
+    """
+    Decorator to run a function on GPU using JAX if the `GPUs` flag is set to True.
+
+    Parameters:
+    func (callable): The function to be decorated.
+
+    Returns:
+    callable: The decorated function that runs on GPU if `GPUs` is True.
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        use_gpu = kwargs.pop('GPUs', False)
+        if use_gpu:
+            with jax.default_device(jax.devices('gpu')[0]):
+                return func(*args, **kwargs)
+        else:
+            return func(*args, **kwargs)
+    return wrapper
+    
 def fix_bc_and_jit_compile(func, bc_value):
     """
     Fixes the boundary condition argument of a function using functools.partial and then JIT compiles the new function.
@@ -34,57 +77,6 @@ def fix_bc_and_jit_compile(func, bc_value):
     fixed_bc_func = partial(func, bc=bc_value)
     jit_compiled_func = jit(fixed_bc_func)
     return jit_compiled_func
-
-def partial_derivative(f, axis):
-    """
-    Computes the partial derivative of a function `f` with respect to a specified axis.
-
-    Parameters:
-    f (jax.numpy.ndarray): The input function represented as a multidimensional array.
-    axis (int): The axis along which to compute the partial derivative.
-
-    Returns:
-    jax.numpy.ndarray: The partial derivative of the function `f` along the specified axis.
-    """
-    return jax.grad(lambda x: f[x])(jnp.arange(f.shape[axis]))
-
-def autodiff_curl(fx, fy, fz):
-    """
-    Compute the curl of a vector field using JAX autodiff.
-
-    Parameters:
-    - field (tuple): A tuple of three arrays representing the x, y, and z components of the vector field.
-    - grid_spacing (tuple): A tuple of three floats representing the grid spacing in the x, y, and z directions.
-
-    Returns:
-    - tuple: A tuple of three arrays representing the x, y, and z components of the curl of the vector field.
-    """
-    fx, fy, fz = field
-
-    curl_x = partial_derivative(fz, 1) - partial_derivative(fy, 2)
-    curl_y = partial_derivative(fx, 2) - partial_derivative(fz, 0)
-    curl_z = partial_derivative(fy, 0) - partial_derivative(fx, 1)
-
-    return curl_x, curl_y, curl_z
-
-def autodiff_divergence(fx, fy, fz):
-    """
-    Compute the divergence of a vector field using JAX autodiff.
-
-    Parameters:
-    - field (tuple): A tuple of three arrays representing the x, y, and z components of the vector field.
-    - grid_spacing (tuple): A tuple of three floats representing the grid spacing in the x, y, and z directions.
-
-    Returns:
-    - array: An array representing the divergence of the vector field.
-    """
-    fx, fy, fz = field
-
-    div_x = partial_derivative(fx, 0)
-    div_y = partial_derivative(fy, 1)
-    div_z = partial_derivative(fz, 2)
-
-    return div_x + div_y + div_z
 
 def grab_particle_keys(config):
     particle_keys = []
@@ -204,6 +196,25 @@ def dump_parameters_to_toml(simulation_stats, simulation_parameters, plotting_pa
 
 
 @jit
+def interpolate_field(field, grid, x, y, z):
+    """
+    Interpolates the given field at the specified (x, y, z) coordinates using a regular grid interpolator.
+    Args:
+        field (array-like): The field values to be interpolated.
+        grid (tuple of array-like): The grid points for each dimension (x, y, z).
+        x (array-like): The x-coordinates where interpolation is desired.
+        y (array-like): The y-coordinates where interpolation is desired.
+        z (array-like): The z-coordinates where interpolation is desired.
+    Returns:
+        array-like: Interpolated values at the specified (x, y, z) coordinates.
+    """
+
+    interpolate = jax.scipy.interpolate.RegularGridInterpolator(grid, field, fill_value=0)
+    # create the interpolator
+    points = jnp.stack([x, y, z], axis=-1)
+    return interpolate(points)
+
+@jit
 def interpolate_and_stagger_field(field, grid, staggered_grid):
     """
     Interpolates a given field defined on a grid to a staggered grid.
@@ -281,155 +292,3 @@ def debye_length(eps, Te, N_electrons, x_wind, y_wind, z_wind, q_e, kb):
 
     ne = N_electrons / (x_wind*y_wind*z_wind)
     return jnp.sqrt( eps * kb * Te / (ne * q_e**2) )
-
-def probe(fieldx, fieldy, fieldz, x, y, z):
-    """
-    Probe the value of a vector field at a given point.
-
-    Parameters:
-    - fieldx (ndarray): The x-component of the vector field.
-    - fieldy (ndarray): The y-component of the vector field.
-    - fieldz (ndarray): The z-component of the vector field.
-    - x (float): The x-coordinate of the point.
-    - y (float): The y-coordinate of the point.
-    - z (float): The z-coordinate of the point.
-
-    Returns:
-    - tuple: The value of the vector field at the given point.
-    """
-    return fieldx.at[x, y, z].get(), fieldy.at[x, y, z].get(), fieldz.at[x, y, z].get()
-
-
-def magnitude_probe(fieldx, fieldy, fieldz, x, y, z):
-    """
-    Probe the magnitude of a vector field at a given point.
-
-    Parameters:
-    - fieldx (ndarray): The x-component of the vector field.
-    - fieldy (ndarray): The y-component of the vector field.
-    - fieldz (ndarray): The z-component of the vector field.
-    - x (float): The x-coordinate of the point.
-    - y (float): The y-coordinate of the point.
-    - z (float): The z-coordinate of the point.
-
-    Returns:
-    - float: The magnitude of the vector field at the given point.
-    """
-    return jnp.sqrt(fieldx.at[x, y, z].get()**2 + fieldy.at[x, y, z].get()**2 + fieldz.at[x, y, z].get()**2)
-@jit
-def number_density(n, Nparticles, particlex, particley, particlez, dx, dy, dz, Nx, Ny, Nz):
-    """
-    Calculate the number density of particles at each grid point.
-
-    Parameters:
-    - n (array-like): The initial number density array.
-    - Nparticles (int): The number of particles.
-    - particlex (array-like): The x-coordinates of the particles.
-    - particley (array-like): The y-coordinates of the particles.
-    - particlez (array-like): The z-coordinates of the particles.
-    - dx (float): The grid spacing in the x-direction.
-    - dy (float): The grid spacing in the y-direction.
-    - dz (float): The grid spacing in the z-direction.
-
-    Returns:
-    - ndarray: The number density of particles at each grid point.
-    """
-    x_wind = (Nx * dx).astype(int)
-    y_wind = (Ny * dy).astype(int)
-    z_wind = (Nz * dz).astype(int)
-    n = update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, 1, x_wind, y_wind, z_wind, n)
-
-    return n
-
-def freq(n, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
-    """
-    Calculate the plasma frequency based on the given parameters.
-    Parameters:
-    n (array-like): Input array representing the electron distribution.
-    Nelectrons (int): Total number of electrons.
-    ex (float): Electric field component in the x-direction.
-    ey (float): Electric field component in the y-direction.
-    ez (float): Electric field component in the z-direction.
-    Nx (int): Number of grid points in the x-direction.
-    Ny (int): Number of grid points in the y-direction.
-    Nz (int): Number of grid points in the z-direction.
-    dx (float): Grid spacing in the x-direction.
-    dy (float): Grid spacing in the y-direction.
-    dz (float): Grid spacing in the z-direction.
-    Returns:
-    float: The calculated plasma frequency.
-    """
-
-    ne = jnp.ravel(number_density(n, Nelectrons, ex, ey, ez, dx, dy, dz, Nx, Ny, Nz))
-    # compute the number density of the electrons
-    eps = 8.854e-12
-    # permitivity of freespace
-    q_e = -1.602e-19
-    # charge of electron
-    me = 9.1093837e-31 # Kg
-    # mass of the electron
-    c1 = q_e**2 / (eps*me)
-
-    mask = jnp.where(  ne  > 0  )[0]
-    # Calculate mean using the mask
-    electron_density = jnp.mean(ne[mask])
-    freq = jnp.sqrt( c1 * electron_density )
-    return freq
-# computes the average plasma frequency over the middle 75% of the world volume
-
-def freq_probe(n, x, y, z, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
-    """
-    Calculate the plasma frequency at a given point in a 3D grid.
-    Parameters:
-    n (ndarray): The electron density array.
-    x (float): The x-coordinate of the probe point.
-    y (float): The y-coordinate of the probe point.
-    z (float): The z-coordinate of the probe point.
-    Nelectrons (int): The total number of electrons.
-    ex (float): The extent of the grid in the x-direction.
-    ey (float): The extent of the grid in the y-direction.
-    ez (float): The extent of the grid in the z-direction.
-    Nx (int): The number of grid points in the x-direction.
-    Ny (int): The number of grid points in the y-direction.
-    Nz (int): The number of grid points in the z-direction.
-    dx (float): The grid spacing in the x-direction.
-    dy (float): The grid spacing in the y-direction.
-    dz (float): The grid spacing in the z-direction.
-    Returns:
-    float: The plasma frequency at the specified point.
-    """
-
-    ne = number_density(n, Nelectrons, ex, ey, ez, dx, dy, dz, Nx, Ny, Nz)
-    # compute the number density of the electrons
-    eps = 8.854e-12
-    # permitivity of freespace
-    q_e = -1.602e-19
-    # charge of electron
-    me = 9.1093837e-31 # Kg
-    # mass of the electron
-    xi, yi, zi = int(x/dx + Nx/2), int(y/dy + Ny/2), int(z/dz + Nz/2)
-    # get the array spacings for x, y, and z
-    c1 = q_e**2 / (eps*me)
-    freq = jnp.sqrt( c1 * ne.at[xi,yi,zi].get() )    # calculate the plasma frequency at the array point: x, y, z
-    return freq
-
-
-def totalfield_energy(Ex, Ey, Ez, Bx, By, Bz, mu, eps):
-    """
-    Calculate the total field energy of the electric and magnetic fields.
-
-    Parameters:
-    - Ex (ndarray): The x-component of the electric field.
-    - Ey (ndarray): The y-component of the electric field.
-    - Ez (ndarray): The z-component of the electric field.
-    - Bx (ndarray): The x-component of the magnetic field.
-    - By (ndarray): The y-component of the magnetic field.
-    - Bz (ndarray): The z-component of the magnetic field.
-
-    Returns:
-    - float: The total field energy.
-    """
-
-    total_magnetic_energy = (0.5/mu)*jnp.sum(Bx**2 + By**2 + Bz**2)
-    total_electric_energy = (0.5*eps)*jnp.sum(Ex**2 + Ey**2 + Ez**2)
-    return total_magnetic_energy + total_electric_energy

@@ -14,11 +14,13 @@ import functools
 from functools import partial
 # import external libraries
 
-from spectral import spectral_poisson_solve, spectral_laplacian, spectralBsolve, spectralEsolve
-from fdtd import centered_finite_difference_laplacian
+from spectral import spectral_poisson_solve, spectral_laplacian, spectralBsolve, spectralEsolve, spectral_gradient
+from fdtd import centered_finite_difference_laplacian, centered_finite_difference_gradient
+from autodiff import autodiff_electric_field
 from rho import update_rho
 from cg import conjugate_grad
 from errors import compute_pe
+from utils import use_gpu_if_set
 # import internal libraries
 
 def initialize_fields(Nx, Ny, Nz):
@@ -55,7 +57,8 @@ def initialize_fields(Nx, Ny, Nz):
 
     return Ex, Ey, Ez, Bx, By, Bz, phi, rho
 
-def solve_poisson(rho, eps, dx, dy, dz, phi, bc='periodic', M = None):
+@use_gpu_if_set
+def solve_poisson(rho, eps, dx, dy, dz, phi, solver, bc='periodic', M = None, GPUs = False):
     """
     Solve the Poisson equation for electrostatic potential.
 
@@ -73,16 +76,16 @@ def solve_poisson(rho, eps, dx, dy, dz, phi, bc='periodic', M = None):
     - phi (ndarray): Solution to the Poisson equation.
     """
 
-    if bc == 'spectral':
+    if solver == 'spectral':
         phi = spectral_poisson_solve(rho, eps, dx, dy, dz)
-    else:
+    elif solver == 'fdtd':
         lapl = functools.partial(centered_finite_difference_laplacian, dx=dx, dy=dy, dz=dz, bc=bc)
         lapl = jit(lapl)
         # define the laplacian operator using finite difference method
         phi = conjugate_grad(lapl, -rho/eps, phi, tol=1e-6, maxiter=20000, M=M)
     return phi
 
-def calculateE(particles, dx, dy, dz, rho, eps, phi, M, t, x_wind, y_wind, z_wind, bc, verbose, GPUs):
+def calculateE(particles, dx, dy, dz, rho, eps, phi, M, t, x_wind, y_wind, z_wind, solver, bc, verbose, GPUs):
     """
     Calculates the electric field components (Ex, Ey, Ez), electric potential (phi), and charge density (rho) based on the given parameters.
 
@@ -114,61 +117,37 @@ def calculateE(particles, dx, dy, dz, rho, eps, phi, M, t, x_wind, y_wind, z_win
     - rho (array-like): Updated charge density.
     """
 
-    # N_electrons = electrons.get_number_of_particles()
-    # N_ions = ions.get_number_of_particles()
-    # # get the number of particles
-    # electron_x, electron_y, electron_z = electrons.get_position()
-    # ion_x, ion_y, ion_z = ions.get_position()
-    # # get the particle properties
-
-
-    # if GPUs:
-    #     with jax.default_device(jax.devices('gpu')[0]):
-    #         rho = jax.numpy.zeros(shape=(Nx, Ny, Nz))
-    #         rho = update_rho(N_electrons, electron_x, electron_y, electron_z, dx, dy, dz, q_e, x_wind, y_wind, z_wind, rho)
-    #         if N_ions > 0:
-    #             rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, x_wind, y_wind, z_wind, rho)
-    # else:
-    #     rho = jax.numpy.zeros(shape=(Nx, Ny, Nz))
-    #     rho = update_rho(N_electrons, electron_x, electron_y, electron_z, dx, dy, dz, q_e, x_wind, y_wind, z_wind, rho)
-    #     if N_ions > 0:
-    #         rho = update_rho(N_ions, ion_x, ion_y, ion_z, dx, dy, dz, q_i, x_wind, y_wind, z_wind, rho)
-
-
-
-    for species in particles:
-        N_particles = species.get_number_of_particles()
-        charge = species.get_charge()
-        if N_particles > 0:
-            particle_x, particle_y, particle_z = species.get_position()
-            if GPUs:
-                with jax.default_device(jax.devices('gpu')[0]):
-                    rho = update_rho(N_particles, particle_x, particle_y, particle_z, dx, dy, dz, charge, x_wind, y_wind, z_wind, rho)
-            else:
-                rho = update_rho(N_particles, particle_x, particle_y, particle_z, dx, dy, dz, charge, x_wind, y_wind, z_wind, rho)
+    if solver == 'spectral' or solver == 'fdtd':
+        for species in particles:
+            N_particles = species.get_number_of_particles()
+            charge = species.get_charge()
+            if N_particles > 0:
+                particle_x, particle_y, particle_z = species.get_position()
+                rho = update_rho(N_particles, particle_x, particle_y, particle_z, dx, dy, dz, charge, x_wind, y_wind, z_wind, rho, GPUs)
 
 
     if verbose:
         print(f"Calculating Charge Density, Max Value: {jnp.max(rho)}")
 
-    if GPUs:
-        with jax.default_device(jax.devices('gpu')[0]):
-            if t == 0:
-                phi = solve_poisson(rho, eps, dx, dy, dz, phi=rho, bc=bc, M=None)
-            else:
-                phi = solve_poisson(rho, eps, dx, dy, dz, phi=phi, bc=bc, M=M)
-    else:
+    if solver == 'spectral' or solver == 'fdtd':
         if t == 0:
-            phi = solve_poisson(rho, eps, dx, dy, dz, phi=rho, bc=bc, M=None)
+            phi = solve_poisson(rho, eps, dx, dy, dz, phi=rho, solver=solver, bc=bc, M=None, GPUs=GPUs)
         else:
-            phi = solve_poisson(rho, eps, dx, dy, dz, phi=phi, bc=bc, M=M)
+            phi = solve_poisson(rho, eps, dx, dy, dz, phi=phi, solver=solver, bc=bc, M=M, GPUs=GPUs)
 
     if verbose:
         print(f"Calculating Electric Potential, Max Value: {jnp.max(phi)}")
 
-    E_fields = jnp.gradient(phi)
-    Ex = -1 * E_fields[0]
-    Ey = -1 * E_fields[1]
-    Ez = -1 * E_fields[2]
-
+    if solver == 'spectral':
+        Ex, Ey, Ez = spectral_gradient(phi, dx, dy, dz)
+        Ex = -Ex
+        Ey = -Ey
+        Ez = -Ez
+    elif solver == 'fdtd':
+        Ex, Ey, Ez = centered_finite_difference_gradient(phi, dx, dy, dz, bc)
+        Ex = -Ex
+        Ey = -Ey
+        Ez = -Ez
+    elif solver == 'autodiff':
+        Ex, Ey, Ez = autodiff_electric_field(particles, 1/(4*jnp.pi*eps) )
     return Ex, Ey, Ez, phi, rho
