@@ -9,6 +9,7 @@ import math
 from pyevtk.hl import gridToVTK
 import scipy
 import os
+from rho import update_rho
 
 def plot_rho(rho, t, name, dx, dy, dz):
     """
@@ -299,6 +300,71 @@ def plot_fft(signal, dt, name, savename):
     return xf[ np.argmax(np.abs(yf)[1:]) ]
     # plot the fft of a signal
 
+
+def particles_phase_space(particles, t, name):
+    """
+    Plot the phase space of the particles.
+
+    Parameters:
+    - particles (Particles): The particles to be plotted.
+    - t (ndarray): The time values.
+    - name (str): The name of the plot.
+
+    Returns:
+    None
+    """
+
+    total_x, total_vx = [], []
+    total_y, total_vy = [], []
+    total_z, total_vz = [], []
+
+    for species in particles:
+        x, y, z = species.get_position()
+        vx, vy, vz = species.get_velocity()
+
+        total_x.append(x)
+        total_vx.append(vx)
+        total_y.append(y)
+        total_vy.append(vy)
+        total_z.append(z)
+        total_vz.append(vz)
+
+    if not os.path.exists(f"plots/phase_space/x/{name}"):
+        os.makedirs(f"plots/phase_space/x/{name}")
+    if not os.path.exists(f"plots/phase_space/y/{name}"):
+        os.makedirs(f"plots/phase_space/y/{name}")
+    if not os.path.exists(f"plots/phase_space/z/{name}"):
+        os.makedirs(f"plots/phase_space/z/{name}")
+
+    x = jnp.concatenate(total_x)
+    vx = jnp.concatenate(total_vx)
+    plt.scatter(x, vx)
+    plt.xlabel("Position")
+    plt.ylabel("Velocity")
+    plt.title(f"{name} Phase Space")
+    plt.savefig(f"plots/phase_space/x/{name}_phase_space.{t:09}.png", dpi=300)
+    plt.close()
+
+    y = jnp.concatenate(total_y)
+    vy = jnp.concatenate(total_vy)
+    plt.scatter(y, vy)
+    plt.xlabel("Position")
+    plt.ylabel("Velocity")
+    plt.title(f"{name} Phase Space")
+    plt.savefig(f"plots/phase_space/y/{name}_phase_space.{t:09}.png", dpi=300)
+    plt.close()
+
+    z = jnp.concatenate(total_z)
+    vz = jnp.concatenate(total_vz)
+    plt.scatter(z, vz)
+    plt.xlabel("Position")
+    plt.ylabel("Velocity")
+    plt.title(f"{name} Phase Space")
+    plt.savefig(f"plots/phase_space/z/{name}_phase_space.{t:09}.png", dpi=300)
+    plt.close()
+
+
+
 def phase_space(x, vx, t, name):
     """
     Plot the phase space of the particles.
@@ -355,3 +421,157 @@ def multi_phase_space(x1, x2, vx1, vx2, t, species1, species2, name, x_wind):
         
     plt.savefig(f"plots/phase_space/{name}/{name}_phase_space.{t:09}.png", dpi=300)
     plt.close()
+
+@jit
+def number_density(n, Nparticles, particlex, particley, particlez, dx, dy, dz, Nx, Ny, Nz):
+    """
+    Calculate the number density of particles at each grid point.
+
+    Parameters:
+    - n (array-like): The initial number density array.
+    - Nparticles (int): The number of particles.
+    - particlex (array-like): The x-coordinates of the particles.
+    - particley (array-like): The y-coordinates of the particles.
+    - particlez (array-like): The z-coordinates of the particles.
+    - dx (float): The grid spacing in the x-direction.
+    - dy (float): The grid spacing in the y-direction.
+    - dz (float): The grid spacing in the z-direction.
+
+    Returns:
+    - ndarray: The number density of particles at each grid point.
+    """
+    x_wind = (Nx * dx).astype(int)
+    y_wind = (Ny * dy).astype(int)
+    z_wind = (Nz * dz).astype(int)
+    n = update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, 1, x_wind, y_wind, z_wind, n)
+
+    return n
+
+def probe(fieldx, fieldy, fieldz, x, y, z):
+    """
+    Probe the value of a vector field at a given point.
+
+    Parameters:
+    - fieldx (ndarray): The x-component of the vector field.
+    - fieldy (ndarray): The y-component of the vector field.
+    - fieldz (ndarray): The z-component of the vector field.
+    - x (float): The x-coordinate of the point.
+    - y (float): The y-coordinate of the point.
+    - z (float): The z-coordinate of the point.
+
+    Returns:
+    - tuple: The value of the vector field at the given point.
+    """
+    return fieldx.at[x, y, z].get(), fieldy.at[x, y, z].get(), fieldz.at[x, y, z].get()
+
+
+def magnitude_probe(fieldx, fieldy, fieldz, x, y, z):
+    """
+    Probe the magnitude of a vector field at a given point.
+
+    Parameters:
+    - fieldx (ndarray): The x-component of the vector field.
+    - fieldy (ndarray): The y-component of the vector field.
+    - fieldz (ndarray): The z-component of the vector field.
+    - x (float): The x-coordinate of the point.
+    - y (float): The y-coordinate of the point.
+    - z (float): The z-coordinate of the point.
+
+    Returns:
+    - float: The magnitude of the vector field at the given point.
+    """
+    return jnp.sqrt(fieldx.at[x, y, z].get()**2 + fieldy.at[x, y, z].get()**2 + fieldz.at[x, y, z].get()**2)
+
+
+def freq(n, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
+    """
+    Calculate the plasma frequency based on the given parameters.
+    Parameters:
+    n (array-like): Input array representing the electron distribution.
+    Nelectrons (int): Total number of electrons.
+    ex (float): Electric field component in the x-direction.
+    ey (float): Electric field component in the y-direction.
+    ez (float): Electric field component in the z-direction.
+    Nx (int): Number of grid points in the x-direction.
+    Ny (int): Number of grid points in the y-direction.
+    Nz (int): Number of grid points in the z-direction.
+    dx (float): Grid spacing in the x-direction.
+    dy (float): Grid spacing in the y-direction.
+    dz (float): Grid spacing in the z-direction.
+    Returns:
+    float: The calculated plasma frequency.
+    """
+
+    ne = jnp.ravel(number_density(n, Nelectrons, ex, ey, ez, dx, dy, dz, Nx, Ny, Nz))
+    # compute the number density of the electrons
+    eps = 8.854e-12
+    # permitivity of freespace
+    q_e = -1.602e-19
+    # charge of electron
+    me = 9.1093837e-31 # Kg
+    # mass of the electron
+    c1 = q_e**2 / (eps*me)
+
+    mask = jnp.where(  ne  > 0  )[0]
+    # Calculate mean using the mask
+    electron_density = jnp.mean(ne[mask])
+    freq = jnp.sqrt( c1 * electron_density )
+    return freq
+# computes the average plasma frequency over the middle 75% of the world volume
+
+def freq_probe(n, x, y, z, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
+    """
+    Calculate the plasma frequency at a given point in a 3D grid.
+    Parameters:
+    n (ndarray): The electron density array.
+    x (float): The x-coordinate of the probe point.
+    y (float): The y-coordinate of the probe point.
+    z (float): The z-coordinate of the probe point.
+    Nelectrons (int): The total number of electrons.
+    ex (float): The extent of the grid in the x-direction.
+    ey (float): The extent of the grid in the y-direction.
+    ez (float): The extent of the grid in the z-direction.
+    Nx (int): The number of grid points in the x-direction.
+    Ny (int): The number of grid points in the y-direction.
+    Nz (int): The number of grid points in the z-direction.
+    dx (float): The grid spacing in the x-direction.
+    dy (float): The grid spacing in the y-direction.
+    dz (float): The grid spacing in the z-direction.
+    Returns:
+    float: The plasma frequency at the specified point.
+    """
+
+    ne = number_density(n, Nelectrons, ex, ey, ez, dx, dy, dz, Nx, Ny, Nz)
+    # compute the number density of the electrons
+    eps = 8.854e-12
+    # permitivity of freespace
+    q_e = -1.602e-19
+    # charge of electron
+    me = 9.1093837e-31 # Kg
+    # mass of the electron
+    xi, yi, zi = int(x/dx + Nx/2), int(y/dy + Ny/2), int(z/dz + Nz/2)
+    # get the array spacings for x, y, and z
+    c1 = q_e**2 / (eps*me)
+    freq = jnp.sqrt( c1 * ne.at[xi,yi,zi].get() )    # calculate the plasma frequency at the array point: x, y, z
+    return freq
+
+
+def totalfield_energy(Ex, Ey, Ez, Bx, By, Bz, mu, eps):
+    """
+    Calculate the total field energy of the electric and magnetic fields.
+
+    Parameters:
+    - Ex (ndarray): The x-component of the electric field.
+    - Ey (ndarray): The y-component of the electric field.
+    - Ez (ndarray): The z-component of the electric field.
+    - Bx (ndarray): The x-component of the magnetic field.
+    - By (ndarray): The y-component of the magnetic field.
+    - Bz (ndarray): The z-component of the magnetic field.
+
+    Returns:
+    - float: The total field energy.
+    """
+
+    total_magnetic_energy = (0.5/mu)*jnp.sum(Bx**2 + By**2 + Bz**2)
+    total_electric_energy = (0.5*eps)*jnp.sum(Ex**2 + Ey**2 + Ez**2)
+    return total_magnetic_energy + total_electric_energy

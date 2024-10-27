@@ -12,7 +12,10 @@ import math
 from pyevtk.hl import gridToVTK
 import functools
 from functools import partial
+from utils import use_gpu_if_set
 # import external libraries
+
+
 @jit
 def index_particles(particle, positions, ds):
     """
@@ -76,8 +79,9 @@ def particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
 
     return rho
 
+@use_gpu_if_set
 @jit
-def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_wind, y_wind, z_wind, rho):
+def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_wind, y_wind, z_wind, rho, GPUs=False):
     """
     Update the charge density (rho) based on the positions of particles.
     Parameters:

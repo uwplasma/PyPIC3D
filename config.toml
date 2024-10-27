@@ -4,6 +4,7 @@ name = "Test Simulation"
 t_wind = 30e-12
 output_dir = "/home/christopherwoolford/Documents/PyPIC3D"
 bc = 'periodic'
+solver = 'spectral'
 
 [plotting]
 plot_errors = true
