@@ -1,7 +1,7 @@
 # This is a configuration file for PyPIC3D
 [simulation_parameters]
 name = "Test Simulation"
-t_wind = 10e-12
+t_wind = 100e-12
 output_dir = "/home/christopherwoolford/Documents/PyPIC3D"
 bc = 'periodic'
 solver = 'spectral'
@@ -21,6 +21,7 @@ N_particles = 1000
 charge = 1.602e-19
 mass   = 9.1093837e-31
 temperature = 100
+
 
 [particle2]
 name = "ions"
