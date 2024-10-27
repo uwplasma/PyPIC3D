@@ -14,8 +14,8 @@ import functools
 from functools import partial
 # import external libraries
 
-from utils import interpolate_and_stagger_field, interpolate_field, use_gpu_if_set
-from boundaryconditions import apply_zero_boundary_condition
+from src.utils import interpolate_and_stagger_field, interpolate_field, use_gpu_if_set
+from src.boundaryconditions import apply_zero_boundary_condition
 
 
 def centered_finite_difference_laplacian(field, dx, dy, dz, bc):

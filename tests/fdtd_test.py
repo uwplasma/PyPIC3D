@@ -1,6 +1,6 @@
 import unittest
 import numpy as np
-from fdtd import periodic_laplacian, neumann_laplacian, dirichlet_laplacian, curlx, curly, curlz, update_B, update_E
+from src.fdtd import periodic_laplacian, neumann_laplacian, dirichlet_laplacian, curlx, curly, curlz, update_B, update_E
 
 import jax.numpy as jnp
 

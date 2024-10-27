@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
 from jax import numpy as jnp
-from spectral import spectral_poisson_solve, spectral_curl, spectralBsolve, spectralEsolve, spectral_laplacian
+from src.spectral import spectral_poisson_solve, spectral_curl, spectralBsolve, spectralEsolve, spectral_laplacian
 
 class TestSpectralMethods(unittest.TestCase):
 

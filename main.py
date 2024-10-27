@@ -11,53 +11,53 @@ import equinox as eqx
 import os, sys
 # Importing relevant libraries
 
-from plotting import (
+from src.plotting import (
     plot_fields, plot_positions, plot_rho, plot_velocities,
     plot_velocity_histogram, plot_KE, plot_probe, plot_fft,
     phase_space, multi_phase_space, particles_phase_space,
     number_density, totalfield_energy, probe, freq,
     magnitude_probe, 
 )
-from particle import (
+from src.particle import (
     initial_particles, update_position, total_KE, total_momentum,
     cold_start_init, particle_species
 )
-from fields import (
+from src.fields import (
     calculateE
 )
 
-from spectral import (
+from src.spectral import (
     spectralBsolve, spectralEsolve
 )
 
-from fdtd import (
+from src.fdtd import (
     update_B, update_E
 )
 
-from autodiff import (
+from src.autodiff import (
     autodiff_update_B, autodiff_update_E
 )
 
 
-from utils import (
+from src.utils import (
     plasma_frequency, courant_condition,
     debye_length, update_parameters_from_toml, dump_parameters_to_toml,
     load_particles_from_toml, use_gpu_if_set, precondition, build_grid
 )
 
-from errors import (
+from src.errors import (
     compute_electric_divergence_error, compute_magnetic_divergence_error
 )
 
-from defaults import (
+from src.defaults import (
     default_parameters
 )
 
-from charge_conservation import (
+from src.charge_conservation import (
     current_correction
 )
 
-from model import (
+from src.model import (
     PoissonPrecondition
 )
 # Importing functions from other files
@@ -133,13 +133,13 @@ if benchmark: jax.profiler.start_trace("/home/christopherwoolford/Documents/PyPI
 # start the profiler using tensorboard
 
 if solver == 'spectral':
-    from spectral import particle_push
-    from fields import initialize_fields
+    from src.spectral import particle_push
+    from src.fields import initialize_fields
 elif solver == 'fdtd':
-    from fdtd import particle_push
-    from fields import initialize_fields
+    from src.fdtd import particle_push
+    from src.fields import initialize_fields
 elif solver == 'autodiff':
-    from autodiff import particle_push, initialize_fields
+    from src.autodiff import particle_push, initialize_fields
 # set the particle push method
 
 print(f"Initializing Simulation: {name}\n")

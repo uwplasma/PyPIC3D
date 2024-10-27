@@ -12,9 +12,9 @@ from pyevtk.hl import gridToVTK
 import functools
 from functools import partial
 
-from utils import interpolate_and_stagger_field, interpolate_field, use_gpu_if_set
-from charge_conservation import current_correction
-from particle import particle_species
+from src.utils import interpolate_and_stagger_field, interpolate_field, use_gpu_if_set
+from src.charge_conservation import current_correction
+from src.particle import particle_species
 
 def detect_gibbs_phenomenon(field, dx, dy, dz, threshold=0.1):
     """

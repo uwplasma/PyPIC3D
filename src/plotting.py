@@ -9,7 +9,7 @@ import math
 from pyevtk.hl import gridToVTK
 import scipy
 import os
-from rho import update_rho
+from src.rho import update_rho
 
 def plot_rho(rho, t, name, dx, dy, dz):
     """

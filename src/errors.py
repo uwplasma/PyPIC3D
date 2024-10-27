@@ -14,8 +14,8 @@ import functools
 from functools import partial
 # import external libraries
 
-from spectral import spectral_laplacian, spectral_divergence
-from fdtd import centered_finite_difference_laplacian, centered_finite_difference_divergence
+from src.spectral import spectral_laplacian, spectral_divergence
+from src.fdtd import centered_finite_difference_laplacian, centered_finite_difference_divergence
 
 
 def compute_pe(phi, rho, eps, dx, dy, dz, solver, bc='periodic'):
