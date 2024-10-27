@@ -17,7 +17,7 @@ import os, sys
 from scipy.interpolate import RegularGridInterpolator
 # import external libraries
 
-from particle import initial_particles, particle_species
+from src.particle import initial_particles, particle_species
 
 def build_grid(x_wind, y_wind, z_wind, dx, dy, dz):
     grid = jnp.arange(-x_wind/2, x_wind/2, dx), jnp.arange(-y_wind/2, y_wind/2, dy), jnp.arange(-z_wind/2, z_wind/2, dz)

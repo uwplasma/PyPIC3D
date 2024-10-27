@@ -12,7 +12,7 @@ import math
 from pyevtk.hl import gridToVTK
 import functools
 from functools import partial
-from utils import use_gpu_if_set
+from src.utils import use_gpu_if_set
 # import external libraries
 
 

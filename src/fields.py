@@ -14,13 +14,13 @@ import functools
 from functools import partial
 # import external libraries
 
-from spectral import spectral_poisson_solve, spectral_laplacian, spectralBsolve, spectralEsolve, spectral_gradient
-from fdtd import centered_finite_difference_laplacian, centered_finite_difference_gradient
-from autodiff import autodiff_electric_field
-from rho import update_rho
-from cg import conjugate_grad
-from errors import compute_pe
-from utils import use_gpu_if_set
+from src.spectral import spectral_poisson_solve, spectral_laplacian, spectralBsolve, spectralEsolve, spectral_gradient
+from src.fdtd import centered_finite_difference_laplacian, centered_finite_difference_gradient
+from src.autodiff import autodiff_electric_field
+from src.rho import update_rho
+from src.cg import conjugate_grad
+from src.errors import compute_pe
+from src.utils import use_gpu_if_set
 # import internal libraries
 
 def initialize_fields(Nx, Ny, Nz):
