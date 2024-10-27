@@ -392,14 +392,17 @@ def boris(q, m, x, y, z, vx, vy, vz, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_gri
     Returns:
     tuple: Updated velocity components (newvx, newvy, newvz).
     """
-    
+
     efield_atx = interpolate_field(Ex, grid, x, y, z)
     efield_aty = interpolate_field(Ey, grid, x, y, z)
     efield_atz = interpolate_field(Ez, grid, x, y, z)
     # interpolate the electric field component arrays and calculate the e field at the particle positions
-    bfield_atx = interpolate_field(Bx, staggered_grid, x, y, z)
-    bfield_aty = interpolate_field(By, staggered_grid, x, y, z)
-    bfield_atz = interpolate_field(Bz, staggered_grid, x, y, z)
+    ygrid, xgrid, zgrid = grid
+    ystagger, xstagger, zstagger = staggered_grid
+
+    bfield_atx = interpolate_field(Bx, (xstagger, ygrid, zgrid), x, y, z)
+    bfield_aty = interpolate_field(By, (xgrid, ystagger, zgrid), x, y, z)
+    bfield_atz = interpolate_field(Bz, (xgrid, ygrid, zstagger), x, y, z)
     # interpolate the magnetic field component arrays and calculate the b field at the particle positions
 
     vxminus = vx + q*dt/(2*m)*efield_atx
