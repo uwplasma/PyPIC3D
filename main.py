@@ -14,14 +14,16 @@ import os, sys
 from plotting import (
     plot_fields, plot_positions, plot_rho, plot_velocities,
     plot_velocity_histogram, plot_KE, plot_probe, plot_fft,
-    phase_space, multi_phase_space
+    phase_space, multi_phase_space, particles_phase_space,
+    number_density, totalfield_energy, probe, freq,
+    magnitude_probe, 
 )
 from particle import (
     initial_particles, update_position, total_KE, total_momentum,
     cold_start_init, particle_species
 )
 from fields import (
-    calculateE, initialize_fields
+    calculateE
 )
 
 from spectral import (
@@ -31,15 +33,16 @@ from spectral import (
 from fdtd import (
     update_B, update_E
 )
-from particlepush import (
-    particle_push
+
+from autodiff import (
+    autodiff_update_B, autodiff_update_E
 )
 
+
 from utils import (
-    totalfield_energy, probe, number_density, freq,
-    magnitude_probe, plasma_frequency, courant_condition,
+    plasma_frequency, courant_condition,
     debye_length, update_parameters_from_toml, dump_parameters_to_toml,
-    load_particles_from_toml
+    load_particles_from_toml, use_gpu_if_set, precondition, build_grid
 )
 
 from errors import (
@@ -87,7 +90,6 @@ cold_start = False
 
 ############################# SIMULATION PARAMETERS ########################################################
 
-
 save_data = plotting_parameters["save_data"]
 plotfields = plotting_parameters["plotfields"]
 plotpositions = plotting_parameters["plotpositions"]
@@ -101,6 +103,7 @@ plot_freq = plotting_parameters["plotting_interval"]
 # booleans for plotting/saving data
 
 name = simulation_parameters["name"]
+solver = simulation_parameters["solver"]
 bc = simulation_parameters["bc"]
 eps = simulation_parameters["eps"]
 mu = simulation_parameters["mu"]
@@ -128,6 +131,16 @@ verbose = simulation_parameters["verbose"]
 
 if benchmark: jax.profiler.start_trace("/home/christopherwoolford/Documents/PyPIC3D/tensorboard")
 # start the profiler using tensorboard
+
+if solver == 'spectral':
+    from spectral import particle_push
+    from fields import initialize_fields
+elif solver == 'fdtd':
+    from fdtd import particle_push
+    from fields import initialize_fields
+elif solver == 'autodiff':
+    from autodiff import particle_push, initialize_fields
+# set the particle push method
 
 print(f"Initializing Simulation: {name}\n")
 start = time.time()
@@ -171,7 +184,16 @@ print(f'dt:          {dt}')
 print(f'Nt:          {Nt}\n')
 
 ################################### INITIALIZE PARTICLES ########################################################
-Ex, Ey, Ez, Bx, By, Bz, phi, rho = initialize_fields(Nx, Ny, Nz)
+
+particles = load_particles_from_toml("config.toml", simulation_parameters, dx, dy, dz)
+
+if solver == 'autodiff':
+    Ex, Ey, Ez, Bx, By, Bz = initialize_fields(particles, (1/(4*jnp.pi*eps)))
+    rho = jnp.zeros((Nx, Ny, Nz))
+    phi = jnp.zeros((Nx, Ny, Nz))
+# initialize the electric and magnetic fields
+else:
+    Ex, Ey, Ez, Bx, By, Bz, phi, rho = initialize_fields(Nx, Ny, Nz)
 # initialize the electric and magnetic fields
 
 key1 = random.key(4353)
@@ -196,7 +218,6 @@ key5 = random.key(3456)
 # particles = [electrons, ions]
 # # create the particle species
 
-particles = load_particles_from_toml("config.toml", simulation_parameters, dx, dy, dz)
 #################################### Two Stream Instability #####################################################
 # alternating_ones = (-1)**jnp.array(range(0,N_electrons))
 # v0=1.5*2657603.0
@@ -217,15 +238,15 @@ particles = load_particles_from_toml("config.toml", simulation_parameters, dx, d
 
 key = jax.random.PRNGKey(0)
 # define the random key
+M = None
 if NN:
     model = PoissonPrecondition( Nx=Nx, Ny=Ny, Nz=Nz, hidden_dim=3000, key=key)
     # define the model
     model = eqx.tree_deserialise_leaves(model_name, model)
     # load the model from file
+else: model = None
 
 #################################### MAIN LOOP ####################################################################
-M = None
-# set poisson solver precondition to None for now
 
 if plotfields: Eprobe = []
 if plotfields: averageE = []
@@ -238,83 +259,73 @@ if plotEnergy: total_p      = []
 if plot_errors: div_error_E, div_error_B = [], []
 
 if not electrostatic:
-        Ex, Ey, Ez, phi, rho = calculateE(particles, dx, dy, dz, rho, eps, phi, M, 0, x_wind, y_wind, z_wind, bc, verbose, GPUs)
+        Ex, Ey, Ez, phi, rho = calculateE(particles, dx, dy, dz, rho, eps, phi, M, 0, x_wind, y_wind, z_wind, solver, bc, verbose, GPUs)
 
-grid = jnp.arange(-x_wind/2, x_wind/2, dx), jnp.arange(-y_wind/2, y_wind/2, dy), jnp.arange(-z_wind/2, z_wind/2, dz)
-staggered_grid = jnp.arange(-x_wind/2 + dx/2, x_wind/2 + dx/2, dx), jnp.arange(-y_wind/2 + dy/2, y_wind/2 + dy/2, dy), jnp.arange(-z_wind/2 + dz/2, z_wind/2 + dz/2, dz)
-# create the grid space
+grid, staggered_grid = build_grid(x_wind, y_wind, z_wind, dx, dy, dz)
+# build the grid for the fields
 
 print(f"Theoretical Plasma Frequency: {theoretical_freq} Hz")
 print(f"Debye Length: {debye} m")
 print(f"Thermal Velocity: {jnp.sqrt(2*kb*Te/me)}\n")
 
-avg_jx = []
-avg_jy = []
-avg_jz = []
+# avg_jx = []
+# avg_jy = []
+# avg_jz = []
 
 for t in range(Nt):
     print(f'Iteration {t}, Time: {t*dt} s')
     ############### SOLVE E FIELD ############################################################################################
-    if NN:
-        if t == 0:
-            M = None
-        else:
-            M = model(phi, rho)
+    M = precondition(NN, phi, rho, model)
     # solve for the preconditioner using the neural network
     if electrostatic:
-        Ex, Ey, Ez, phi, rho = calculateE(particles, dx, dy, dz, rho, eps, phi, M, t, x_wind, y_wind, z_wind, bc, verbose, GPUs)
+        Ex, Ey, Ez, phi, rho = calculateE(particles, dx, dy, dz, rho, eps, phi, M, t, x_wind, y_wind, z_wind, solver, bc, verbose, GPUs)
         if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(Ex)}")
         # print the maximum value of the electric field
 
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
         if verbose: print(f'Updating {particles[i].get_name()}')
-        if GPUs:
-            with jax.default_device(jax.devices('gpu')[0]):
-                particles[i] = particle_push(particles[i], Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
-        else:
-            particles[i] = particle_push(particles[i], Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
+        particles[i] = particle_push(particles[i], Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt, GPUs)
         # use boris push for particle velocities
         if verbose: print(f"Calculating {particles[i].get_name()} Velocities, Max Value: {jnp.max(particles[i].get_velocity()[0])}")
         particles[i].update_position(dt, x_wind, y_wind, z_wind)
         if verbose: print(f"Calculating {particles[i].get_name()} Positions, Max Value: {jnp.max(particles[i].get_position()[0])}")
 
-    ################ MAGNETIC FIELD UPDATE #######################################################################
+    ################ FIELD UPDATE #######################################################################
     if not electrostatic:
-        Jx, Jy, Jz = current_correction(particles, Nx, Ny, Nz)
+        if solver == "spectral" or solver == "fdtd":
+            Jx, Jy, Jz = current_correction(particles, Nx, Ny, Nz)
         # calculate the corrections for charge conservation
-        if bc == "spectral":
+        if solver == "spectral":
             Bx, By, Bz = spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
-        else:
+        elif solver == "fdtd":
             Bx, By, Bz = update_B(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt, bc)
+        elif solver == "autodiff":
+            Bx, By, Bz = autodiff_update_B(Bx, By, Bz, Ex, Ey, Ez, dt)
         # update the magnetic field using the curl of the electric field
         if verbose: print(f"Calculating Magnetic Field, Max Value: {jnp.max(Bx)}")
         # print the maximum value of the magnetic field
 
-        if bc == "spectral":
+        if solver == "spectral":
             Ex, Ey, Ez = spectralEsolve(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, dx, dy, dz, dt, C, mu)
-        else:
+        elif solver == "fdtd":
             Ex, Ex, Ez = update_E(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, dx, dy, dz, dt, C, eps, bc)
+        elif solver == 'autodiff':
+            Ex, Ey, Ez = autodiff_update_E(Ex, Ey, Ez, Bx, By, Bz, dt, C)
         # update the electric field using the curl of the magnetic field
     ################## PLOTTING ########################################################################################
 
     if t % plot_freq == 0:
-        avg_jx.append(jnp.mean(Jx))
-        avg_jy.append(jnp.mean(Jy))
-        avg_jz.append(jnp.mean(Jz))
+        # avg_jx.append(jnp.mean(Jx))
+        # avg_jy.append(jnp.mean(Jy))
+        # avg_jz.append(jnp.mean(Jz))
         # calculate the average current density
         if plotpositions:
             plot_positions(particles, t, x_wind, y_wind, z_wind)
         if plotvelocities:
             plot_velocities(particles, t, x_wind, y_wind, z_wind)
         if phaseSpace:
-            ex, ey, ez = particles[0].get_position()
-            ix, iy, iz = particles[1].get_position()
-            evx, evy, evz = particles[0].get_velocity()
-            ivx, ivy, ivz = particles[1].get_velocity()
-            multi_phase_space(ex, ix, evx, ivx, t, "Electrons", "Ions", "x", x_wind)
-            multi_phase_space(ey, iy, evy, ivy, t, "Electrons", "Ions", "y", y_wind)
-            multi_phase_space(ez, iz, evz, ivz, t, "Electrons", "Ions", "z", z_wind)
+            particles_phase_space(particles, t, "Particles")
         if plotfields:
             plot_fields(Ex, Ey, Ez, t, "E", dx, dy, dz)
             plot_fields(Bx, By, Bz, t, "B", dx, dy, dz)
@@ -328,8 +339,8 @@ for t in range(Nt):
             KE.append(ke)
             KE_time.append(t*dt)
         if plot_errors:
-            div_error_E.append(compute_electric_divergence_error(Ex, Ey, Ez, rho, eps, dx, dy, dz, bc))
-            div_error_B.append(compute_magnetic_divergence_error(Bx, By, Bz, dx, dy, dz, bc))
+            div_error_E.append(compute_electric_divergence_error(Ex, Ey, Ez, rho, eps, dx, dy, dz, solver, bc))
+            div_error_B.append(compute_magnetic_divergence_error(Bx, By, Bz, dx, dy, dz, solver, bc))
 
 #     if t % plot_freq == 0:
 #     ############## PLOTTING ###################################################################
@@ -406,9 +417,9 @@ if plotKE:
 #     # plot the total energy of the system
 #     plot_probe(total_p, "Total Momentum", "TotalMomentum")
 #     # plot the total momentum of the system
-plot_probe(avg_jx, "Average Jx", "AverageJx")
-plot_probe(avg_jy, "Average Jy", "AverageJy")
-plot_probe(avg_jz, "Average Jz", "AverageJz")
+# plot_probe(avg_jx, "Average Jx", "AverageJx")
+# plot_probe(avg_jy, "Average Jy", "AverageJy")
+# plot_probe(avg_jz, "Average Jz", "AverageJz")
 # plot the average current density
 
 if plot_errors:
