@@ -94,6 +94,6 @@ def compute_electric_divergence_error(Ex, Ey, Ez, rho, eps, dx, dy, dz, solver, 
         divE = centered_finite_difference_divergence(Ex, Ey, Ez, dx, dy, dz, bc)
     elif solver == 'autodiff':
         return 0
-    
+
     divergence_error = jnp.sum(jnp.abs(divE - rho / eps))
     return divergence_error
