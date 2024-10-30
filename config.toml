@@ -1,22 +1,23 @@
 # This is a configuration file for PyPIC3D
 [simulation_parameters]
 name = "Test Simulation"
-t_wind = 50e-12
+t_wind = 500e-12
 output_dir = "/home/christopherwoolford/Documents/PyPIC3D"
 bc = 'periodic'
 solver = 'spectral'
-Nx = 100
+Nx = 300
 Ny = 1
 Nz = 1
-x_wind = 1e-1
+x_wind = 1e-2
 y_wind = 1
 z_wind = 1
 
 [plotting]
 plot_errors = true
-phaseSpace  = false
+phaseSpace  = true
 plotpositions = false
 plotKE = false
+plotting_interval = 100
 
 [particle1]
 name = "electrons"
@@ -32,3 +33,5 @@ N_particles = 1000
 charge = -1.602e-19
 mass = 1.67e-27
 temperature = 100
+update_pos = false
+update_v   = false

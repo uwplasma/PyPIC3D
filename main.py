@@ -219,11 +219,16 @@ key5 = random.key(3456)
 # # create the particle species
 
 #################################### Two Stream Instability #####################################################
-# alternating_ones = (-1)**jnp.array(range(0,N_electrons))
-# v0=1.5*2657603.0
-# ev_x = v0*alternating_ones
+N_particles = particles[0].get_number_of_particles()
+electron_x, electron_y, electron_z = particles[0].get_position()
+alternating_ones = (-1)**jnp.array(range(0,N_particles))
+v0=1.5*2657603.0
+ev_x = v0*alternating_ones
+ev_x *= ( 1 + 0.1*jnp.sin(6*jnp.pi * electron_x / x_wind) )
+ev_y = jnp.zeros(N_particles)
+ev_z = jnp.zeros(N_particles)
+particles[0].set_velocity(ev_x, ev_y, ev_z)
 
-# ev_x *= ( 1 + 0.1*jnp.sin(6*jnp.pi * electron_x / x_wind) )
 # # add perturbation to the electron velocities
 
 # iv_x = jnp.zeros(N_ions)
