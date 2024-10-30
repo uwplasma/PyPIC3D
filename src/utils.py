@@ -19,6 +19,7 @@ from scipy.interpolate import RegularGridInterpolator
 
 from src.particle import initial_particles, particle_species
 
+
 def build_grid(x_wind, y_wind, z_wind, dx, dy, dz):
     grid = jnp.arange(-x_wind/2, x_wind/2, dx), jnp.arange(-y_wind/2, y_wind/2, dy), jnp.arange(-z_wind/2, z_wind/2, dz)
     staggered_grid = jnp.arange(-x_wind/2 + dx/2, x_wind/2 + dx/2, dx), jnp.arange(-y_wind/2 + dy/2, y_wind/2 + dy/2, dy), jnp.arange(-z_wind/2 + dz/2, z_wind/2 + dz/2, dz)
@@ -121,12 +122,12 @@ def load_particles_from_toml(toml_file, simulation_parameters, dx, dy, dz):
             N_particles=N_particles,
             charge=charge,
             mass=mass,
-            x=x,
-            y=y,
-            z=z,
-            vx=vx,
-            vy=vy,
-            vz=vz,
+            x1=x,
+            x2=y,
+            x3=z,
+            v1=vx,
+            v2=vy,
+            v3=vz,
             dx=dx,
             dy=dy,
             dz=dz,
