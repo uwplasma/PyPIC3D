@@ -9,6 +9,30 @@ import math
 from pyevtk.hl import gridToVTK
 
 
+def create_transformation_matrix(dx1, dx2, dx3):
+    """
+    Creates a transformation matrix for scaling coordinates.
+
+    This function generates a 3x3 matrix used to scale coordinates by the
+    given factors along each axis. The resulting matrix can be used to
+    transform coordinates in a 3D space.
+
+    Parameters:
+    dx1 (float): Scaling factor for the x-axis.
+    dx2 (float): Scaling factor for the y-axis.
+    dx3 (float): Scaling factor for the z-axis.
+
+    Returns:
+    jnp.ndarray: A 3x3 transformation matrix with scaling factors applied.
+    """
+
+    return jnp.array([
+            [1 / dx1, 0, 0],
+            [0, 1 / dx2, 0],
+            [0, 0, 1 / dx3]
+        ])
+
+
 def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, key2, key3):
     """
     Initializes the velocities and positions of the particles.
@@ -44,6 +68,27 @@ def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, ke
     # initialize the particles with a maxwell boltzmann distribution.
     return x, y, z, v_x, v_y, v_z
 
+def initialize_particles(N, coord_system, params, key):
+    """
+    Initialize particle positions and velocities based on the coordinate system.
+
+    Args:
+        N (int): Number of particles.
+        coord_system (str): The coordinate system ('cartesian', 'cylindrical', 'spherical').
+        params (dict): Parameters required for the initialization.
+        key (jax.random.PRNGKey): Random key for initialization.
+
+    Returns:
+        tuple: Initialized positions and velocities.
+    """
+    T = create_transformation_matrix(coord_system, params)
+    positions = jax.random.uniform(key, (N, 3))
+    velocities = jax.random.uniform(key, (N, 3))
+
+    transformed_positions = jnp.dot(positions, T.T)
+    transformed_velocities = jnp.dot(velocities, T.T)
+
+    return transformed_positions, transformed_velocities
 
 def cold_start_init(start, N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, key2, key3):
     """
@@ -189,6 +234,7 @@ def compute_index(x, dx):
 class particle_species:
     """
     A class to represent a species of particles in a simulation.
+
     Attributes:
     -----------
     name : str
@@ -196,74 +242,88 @@ class particle_species:
     N_particles : int
         The number of particles in the species.
     charge : float
-        The charge of the particles.
+        The charge of each particle.
     mass : float
-        The mass of the particles.
-    vx : array-like
-        The velocity of the particles in the x-direction.
-    vy : array-like
-        The velocity of the particles in the y-direction.
-    vz : array-like
-        The velocity of the particles in the z-direction.
-    x : array-like
-        The position of the particles in the x-direction.
-    y : array-like
-        The position of the particles in the y-direction.
-    z : array-like
-        The position of the particles in the z-direction.
+        The mass of each particle.
+    v1, v2, v3 : array-like
+        The velocity components of the particles.
+    x1, x2, x3 : array-like
+        The position components of the particles.
+    dx, dy, dz : float
+        The resolution of the grid in each dimension.
+    zeta1, zeta2, eta1, eta2, xi1, xi2 : array-like
+        The subcell positions for charge conservation.
     bc : str, optional
         The boundary condition type (default is 'periodic').
+    update_pos : bool, optional
+        Flag to determine if positions should be updated (default is True).
+    update_v : bool, optional
+        Flag to determine if velocities should be updated (default is True).
+    T : array-like
+        The transformation matrix for the grid.
+
     Methods:
     --------
+    get_name():
+        Returns the name of the particle species.
     get_charge():
         Returns the charge of the particles.
     get_number_of_particles():
         Returns the number of particles.
     get_velocity():
-        Returns the velocity of the particles as a tuple (vx, vy, vz).
+        Returns the velocity components of the particles.
     get_position():
-        Returns the position of the particles as a tuple (x, y, z).
+        Returns the position components of the particles.
     get_mass():
         Returns the mass of the particles.
-    set_velocity(vx, vy, vz):
-        Sets the velocity of the particles.
-    set_position(x, y, z):
-        Sets the position of the particles.
+    get_subcell_position():
+        Returns the subcell positions for charge conservation.
+    get_resolution():
+        Returns the grid resolution in each dimension.
+    get_index():
+        Returns the grid indices of the particle positions.
+    set_velocity(v1, v2, v3):
+        Sets the velocity components of the particles.
+    set_position(x1, x2, x3):
+        Sets the position components of the particles.
+    update_subcell_position():
+        Updates the subcell positions for charge conservation.
     set_mass(mass):
         Sets the mass of the particles.
     kinetic_energy():
-        Calculates and returns the kinetic energy of the particles.
+        Returns the kinetic energy of the particles.
     momentum():
-        Calculates and returns the momentum of the particles.
+        Returns the momentum of the particles.
     periodic_boundary_condition(x_wind, y_wind, z_wind):
-        Applies periodic boundary conditions to the particles' positions.
+        Applies periodic boundary conditions to the particle positions.
     update_position(dt, x_wind, y_wind, z_wind):
-        Updates the position of the particles based on their velocity and time step, 
-        and applies periodic boundary conditions if specified.
+        Updates the positions of the particles using Euler's method and applies boundary conditions.
     """
-    def __init__(self, name, N_particles, charge, mass, vx, vy, vz, x, y, z, dx, dy, dz, bc='periodic', update_pos=True, update_v=True):
+
+    def __init__(self, name, N_particles, charge, mass, v1, v2, v3, x1, x2, x3, dx, dy, dz, bc='periodic', update_pos=True, update_v=True):
         self.name = name
         self.N_particles = N_particles
         self.charge = charge
         self.mass = mass
-        self.vx = vx
-        self.vy = vy
-        self.vz = vz
-        self.x = x
-        self.y = y
-        self.z = z
+        self.v1 = v1
+        self.v2 = v2
+        self.v3 = v3
+        self.x1 = x1
+        self.x2 = x2
+        self.x3 = x3
         self.dx = dx
         self.dy = dy
         self.dz = dz
-        self.zeta1 = x - compute_index(x, self.dx)*self.dx
+        self.zeta1 = self.x1 - compute_index(self.x1, self.dx)*self.dx
         self.zeta2 = self.zeta1
-        self.eta1  = y - compute_index(y, self.dy)*self.dy
+        self.eta1  = self.x2 - compute_index(self.x2, self.dy)*self.dy
         self.eta2  = self.eta1
-        self.xi1   = z - compute_index(z, self.dz)*self.dz
+        self.xi1   = self.x3 - compute_index(self.x3, self.dz)*self.dz
         self.xi2   = self.xi1
         self.bc = bc
         self.update_pos = update_pos
         self.update_v   = update_v
+        self.T = jnp.identity(3)
 
     def get_name(self):
         return self.name
@@ -275,10 +335,10 @@ class particle_species:
         return self.N_particles
 
     def get_velocity(self):
-        return self.vx, self.vy, self.vz
+        return self.v1, self.v2, self.v3
 
     def get_position(self):
-        return self.x, self.y, self.z
+        return self.x1, self.x2, self.x3
 
     def get_mass(self):
         return self.mass
@@ -290,44 +350,46 @@ class particle_species:
         return self.dx, self.dy, self.dz
 
     def get_index(self):
-        return compute_index(self.x, self.dx), compute_index(self.y, self.dy), compute_index(self.z, self.dz)
+        return compute_index(self.x1, self.dx), compute_index(self.x2, self.dy), compute_index(self.x3, self.dz)
 
     def set_velocity(self, vx, vy, vz):
         if self.update_v:
-            self.vx = vx
-            self.vy = vy
-            self.vz = vz
+            transformed_velocities = jnp.dot(jnp.stack([vx, vy, vz], axis=1), self.T.T)
+            self.v1 = transformed_velocities[:, 0]
+            self.v2 = transformed_velocities[:, 1]
+            self.v3 = transformed_velocities[:, 2]
 
     def set_position(self, x, y, z):
-        self.x = x
-        self.y = y
-        self.z = z
+        transformed_positions = jnp.dot(jnp.stack([x, y, z], axis=1), self.T.T)
+        self.x1 = transformed_positions[:, 0]
+        self.x2 = transformed_positions[:, 1]
+        self.x3 = transformed_positions[:, 2]
 
     def update_subcell_position(self):
         self.zeta1 = self.zeta2
-        self.zeta2 = self.x - compute_index(self.x, self.dx)*self.dx
+        self.zeta2 = self.x1 - compute_index(self.x1, self.dx)*self.dx
         self.eta1  = self.eta2
-        self.eta2  = self.y - compute_index(self.y, self.dy)*self.dy
+        self.eta2  = self.x2 - compute_index(self.x2, self.dy)*self.dy
         self.xi1   = self.xi2
-        self.xi2   = self.z - compute_index(self.z, self.dz)*self.dz
+        self.xi2   = self.x3 - compute_index(self.x3, self.dz)*self.dz
 
     def set_mass(self, mass):
         self.mass = mass
 
     def kinetic_energy(self):
-        return 0.5 * self.mass * jnp.sum(self.vx**2 + self.vy**2 + self.vz**2)
+        return 0.5 * self.mass * jnp.sum(self.v1**2 + self.v2**2 + self.v3**2)
 
     def momentum(self):
-        return self.mass * jnp.sum(jnp.sqrt(self.vx**2 + self.vy**2 + self.vz**2))
+        return self.mass * jnp.sum(jnp.sqrt(self.v1**2 + self.v2**2 + self.v3**2))
 
     def periodic_boundary_condition(self, x_wind, y_wind, z_wind):
-        self.x, self.y, self.z = periodic_boundary_condition(x_wind, y_wind, z_wind, self.x, self.y, self.z)
+        self.x1, self.x2, self.x3 = periodic_boundary_condition(x_wind, y_wind, z_wind, self.x1, self.x2, self.x3)
 
     def update_position(self, dt, x_wind, y_wind, z_wind):
         if self.update_pos:
-            self.x = euler_update(self.x, self.vx, dt)
-            self.y = euler_update(self.y, self.vy, dt)
-            self.z = euler_update(self.z, self.vz, dt)
+            self.x1 = euler_update(self.x1, self.v1, dt)
+            self.x2 = euler_update(self.x2, self.v2, dt)
+            self.x3 = euler_update(self.x3, self.v3, dt)
             # update the position of the particles
         if self.bc == 'periodic':
             self.periodic_boundary_condition(x_wind, y_wind, z_wind)
