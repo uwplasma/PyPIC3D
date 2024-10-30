@@ -1,13 +1,16 @@
 # This is a configuration file for PyPIC3D
 [simulation_parameters]
 name = "Test Simulation"
-t_wind = 100e-12
+t_wind = 50e-12
 output_dir = "/home/christopherwoolford/Documents/PyPIC3D"
 bc = 'periodic'
 solver = 'spectral'
 Nx = 100
-Ny = 100
-Nz = 100
+Ny = 1
+Nz = 1
+x_wind = 1e-1
+y_wind = 1
+z_wind = 1
 
 [plotting]
 plot_errors = true
