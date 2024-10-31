@@ -9,30 +9,6 @@ import math
 from pyevtk.hl import gridToVTK
 
 
-def create_transformation_matrix(dx1, dx2, dx3):
-    """
-    Creates a transformation matrix for scaling coordinates.
-
-    This function generates a 3x3 matrix used to scale coordinates by the
-    given factors along each axis. The resulting matrix can be used to
-    transform coordinates in a 3D space.
-
-    Parameters:
-    dx1 (float): Scaling factor for the x-axis.
-    dx2 (float): Scaling factor for the y-axis.
-    dx3 (float): Scaling factor for the z-axis.
-
-    Returns:
-    jnp.ndarray: A 3x3 transformation matrix with scaling factors applied.
-    """
-
-    return jnp.array([
-            [1 / dx1, 0, 0],
-            [0, 1 / dx2, 0],
-            [0, 0, 1 / dx3]
-        ])
-
-
 def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, key2, key3):
     """
     Initializes the velocities and positions of the particles.
@@ -68,27 +44,6 @@ def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, ke
     # initialize the particles with a maxwell boltzmann distribution.
     return x, y, z, v_x, v_y, v_z
 
-def initialize_particles(N, coord_system, params, key):
-    """
-    Initialize particle positions and velocities based on the coordinate system.
-
-    Args:
-        N (int): Number of particles.
-        coord_system (str): The coordinate system ('cartesian', 'cylindrical', 'spherical').
-        params (dict): Parameters required for the initialization.
-        key (jax.random.PRNGKey): Random key for initialization.
-
-    Returns:
-        tuple: Initialized positions and velocities.
-    """
-    T = create_transformation_matrix(coord_system, params)
-    positions = jax.random.uniform(key, (N, 3))
-    velocities = jax.random.uniform(key, (N, 3))
-
-    transformed_positions = jnp.dot(positions, T.T)
-    transformed_velocities = jnp.dot(velocities, T.T)
-
-    return transformed_positions, transformed_velocities
 
 def cold_start_init(start, N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, key2, key3):
     """
@@ -259,8 +214,6 @@ class particle_species:
         Flag to determine if positions should be updated (default is True).
     update_v : bool, optional
         Flag to determine if velocities should be updated (default is True).
-    T : array-like
-        The transformation matrix for the grid.
 
     Methods:
     --------
@@ -323,7 +276,6 @@ class particle_species:
         self.bc = bc
         self.update_pos = update_pos
         self.update_v   = update_v
-        self.T = jnp.identity(3)
 
     def get_name(self):
         return self.name
@@ -352,18 +304,16 @@ class particle_species:
     def get_index(self):
         return compute_index(self.x1, self.dx), compute_index(self.x2, self.dy), compute_index(self.x3, self.dz)
 
-    def set_velocity(self, vx, vy, vz):
+    def set_velocity(self, v1, v2, v3):
         if self.update_v:
-            transformed_velocities = jnp.dot(jnp.stack([vx, vy, vz], axis=1), self.T.T)
-            self.v1 = transformed_velocities[:, 0]
-            self.v2 = transformed_velocities[:, 1]
-            self.v3 = transformed_velocities[:, 2]
+            self.v1 = v1
+            self.v2 = v2
+            self.v3 = v3
 
-    def set_position(self, x, y, z):
-        transformed_positions = jnp.dot(jnp.stack([x, y, z], axis=1), self.T.T)
-        self.x1 = transformed_positions[:, 0]
-        self.x2 = transformed_positions[:, 1]
-        self.x3 = transformed_positions[:, 2]
+    def set_position(self, x1, x2, x3):
+        self.x1 = x1
+        self.x2 = x2
+        self.x3 = x3
 
     def update_subcell_position(self):
         self.zeta1 = self.zeta2
