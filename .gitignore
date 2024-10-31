@@ -1,6 +1,7 @@
 plots/
 literature/
 __pycache__/
+tensorboard/
 *.gif
 *.png
 *ipynb
