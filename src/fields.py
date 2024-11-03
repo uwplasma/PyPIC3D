@@ -23,7 +23,7 @@ from src.errors import compute_pe
 from src.utils import use_gpu_if_set
 # import internal libraries
 
-def initialize_fields(Nx, Ny, Nz):
+def initialize_fields(world):
     """
     Initializes the electric and magnetic field arrays, as well as the electric potential and charge density arrays.
 
@@ -42,6 +42,10 @@ def initialize_fields(Nx, Ny, Nz):
     - phi (ndarray): Electric potential array.
     - rho (ndarray): Charge density array.
     """
+    Nx = world['Nx']
+    Ny = world['Ny']
+    Nz = world['Nz']
+    
     Ex = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
     Ey = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
     Ez = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
@@ -85,7 +89,7 @@ def solve_poisson(rho, eps, dx, dy, dz, phi, solver, bc='periodic', M = None, GP
         phi = conjugate_grad(lapl, -rho/eps, phi, tol=1e-6, maxiter=20000, M=M)
     return phi
 
-def calculateE(particles, dx, dy, dz, rho, eps, phi, M, t, x_wind, y_wind, z_wind, solver, bc, verbose, GPUs):
+def calculateE(world, particles, rho, eps, phi, M, t, solver, bc, verbose, GPUs):
     """
     Calculates the electric field components (Ex, Ey, Ez), electric potential (phi), and charge density (rho) based on the given parameters.
 
@@ -116,6 +120,13 @@ def calculateE(particles, dx, dy, dz, rho, eps, phi, M, t, x_wind, y_wind, z_win
     - phi (array-like): Updated electric potential.
     - rho (array-like): Updated charge density.
     """
+
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    x_wind = world['x_wind']
+    y_wind = world['y_wind']
+    z_wind = world['z_wind']
 
     if solver == 'spectral' or solver == 'fdtd':
         for species in particles:

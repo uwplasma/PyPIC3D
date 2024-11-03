@@ -38,6 +38,9 @@ def current_correction(particles, Nx, Ny, Nz):
 
         ix, iy, iz = species.get_index()
 
+        if jnp.any(iy+1 > Ny) or jnp.any(ix+1 > Nx) or jnp.any(iz+1 > Nz):
+            print("AHHHHHHHHHHHHHHHHHHHHHH")
+
         Jx = Jx.at[ix, iy+1, iz+1].add( q*(deltax*zetabar*xibar + deltax*deltay*deltaz/12))
         # compute the first x correction for charge conservation along i+1/2, j, k
         Jx = Jx.at[ix, iy, iz+1].add( q*(deltax*(1-etabar)*xibar - deltax*deltay*deltaz/12))
