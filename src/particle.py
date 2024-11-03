@@ -213,8 +213,6 @@ class particle_species:
         Flag to determine if positions should be updated (default is True).
     update_v : bool, optional
         Flag to determine if velocities should be updated (default is True).
-    T : array-like
-        The transformation matrix for the grid.
 
     Methods:
     --------
@@ -277,7 +275,6 @@ class particle_species:
         self.bc = bc
         self.update_pos = update_pos
         self.update_v   = update_v
-        self.T = jnp.identity(3)
 
     def get_name(self):
         return self.name
@@ -306,18 +303,16 @@ class particle_species:
     def get_index(self):
         return compute_index(self.x1, self.dx), compute_index(self.x2, self.dy), compute_index(self.x3, self.dz)
 
-    def set_velocity(self, vx, vy, vz):
+    def set_velocity(self, v1, v2, v3):
         if self.update_v:
-            transformed_velocities = jnp.dot(jnp.stack([vx, vy, vz], axis=1), self.T.T)
-            self.v1 = transformed_velocities[:, 0]
-            self.v2 = transformed_velocities[:, 1]
-            self.v3 = transformed_velocities[:, 2]
+            self.v1 = v1
+            self.v2 = v2
+            self.v3 = v3
 
-    def set_position(self, x, y, z):
-        transformed_positions = jnp.dot(jnp.stack([x, y, z], axis=1), self.T.T)
-        self.x1 = transformed_positions[:, 0]
-        self.x2 = transformed_positions[:, 1]
-        self.x3 = transformed_positions[:, 2]
+    def set_position(self, x1, x2, x3):
+        self.x1 = x1
+        self.x2 = x2
+        self.x3 = x3
 
     def update_subcell_position(self):
         self.zeta1 = self.zeta2
