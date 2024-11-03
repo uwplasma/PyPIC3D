@@ -185,7 +185,7 @@ def spectral_gradient(field, dx, dy, dz):
 
 
 @jit
-def spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt):
+def spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, world, dt):
     """
     Solve the magnetic field equations using the spectral method and half leapfrog.
 
@@ -206,6 +206,10 @@ def spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
     - By (ndarray): The updated y-component of the magnetic field.
     - Bz (ndarray): The updated z-component of the magnetic field.
     """
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+
     curlx, curly, curlz = spectral_curl(Ex, Ey, Ez, dx, dy, dz)
     # calculate the curl of the electric field
     Bx = Bx - dt/2*curlx
@@ -215,7 +219,7 @@ def spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
     return Bx, By, Bz
 
 @jit
-def spectralEsolve(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, dx, dy, dz, dt, C, eps):
+def spectralEsolve(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, world, dt, C, eps):
     """
     Solve the electric field equations using the spectral method and half leapfrog.
 
@@ -238,6 +242,11 @@ def spectralEsolve(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, dx,
     - Ey (ndarray): The updated y-component of the electric field.
     - Ez (ndarray): The updated z-component of the electric field.
     """
+
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    
     curlx, curly, curlz = spectral_curl(Bx, By, Bz, dx, dy, dz)
     # calculate the curl of the magnetic field
     Ex = Ex +  ( C**2 * curlx - 1/eps * Jx) * dt/2

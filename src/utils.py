@@ -19,8 +19,98 @@ from scipy.interpolate import RegularGridInterpolator
 
 from src.particle import initial_particles, particle_species
 
+def cylindrical_to_cartesian_matrix(r, theta, z):
+    """
+    Create a transformation matrix to convert cylindrical coordinates (r, theta, z) to Cartesian coordinates (x, y, z).
 
-def build_grid(x_wind, y_wind, z_wind, dx, dy, dz):
+    Parameters:
+    r (float): Radial distance in cylindrical coordinates.
+    theta (float): Angle in radians in cylindrical coordinates.
+    z (float): Height in cylindrical coordinates.
+
+    Returns:
+    ndarray: A 3x3 transformation matrix.
+    """
+    cos_theta = jnp.cos(theta)
+    sin_theta = jnp.sin(theta)
+
+    transformation_matrix = jnp.array([
+        [cos_theta, -r * sin_theta, 0],
+        [sin_theta, r * cos_theta, 0],
+        [0, 0, 1]
+    ])
+
+    return transformation_matrix
+
+def cartesian_to_cylindrical_vector_field(vector_field, x, y, z):
+    """
+    Transform a vector field from Cartesian coordinates (x, y, z) to cylindrical coordinates (r, theta, z).
+
+    Parameters:
+    vector_field (ndarray): The vector field in Cartesian coordinates.
+    x (ndarray): The x-coordinates.
+    y (ndarray): The y-coordinates.
+    z (ndarray): The z-coordinates.
+
+    Returns:
+    ndarray: The vector field in cylindrical coordinates.
+    """
+    r = jnp.sqrt(x**2 + y**2)
+    theta = jnp.arctan2(y, x)
+
+    cos_theta = jnp.cos(theta)
+    sin_theta = jnp.sin(theta)
+
+    # Transformation matrix from Cartesian to cylindrical coordinates
+    transformation_matrix = jnp.array([
+        [cos_theta, sin_theta, 0],
+        [-sin_theta, cos_theta, 0],
+        [0, 0, 1]
+    ])
+
+    # Apply the transformation to the vector field
+    cylindrical_vector_field = jnp.einsum('ij,j...->i...', transformation_matrix, vector_field)
+
+    return cylindrical_vector_field
+
+def convert_spatial_resolution(dx1, dx2, dx3, from_system, to_system):
+    """
+    Convert the spatial resolution parameters from one coordinate system to another.
+
+    Parameters:
+    dx (float): Grid spacing in the x-direction.
+    dy (float): Grid spacing in the y-direction.
+    dz (float): Grid spacing in the z-direction.
+    from_system (str): The original coordinate system ('cartesian' or 'cylindrical').
+    to_system (str): The target coordinate system ('cartesian' or 'cylindrical').
+
+    Returns:
+    tuple: Converted spatial resolution parameters (dx, dy, dz) in the target coordinate system.
+    """
+    if from_system == to_system:
+        return dx1, dx2, dx3
+
+    if from_system == 'cartesian' and to_system == 'cylindrical':
+        dr = jnp.sqrt(dx1**2 + dx2**2)
+        dtheta = jnp.arctan2(dx2, dx1)
+        return dr, dtheta, dx3
+
+    if from_system == 'cylindrical' and to_system == 'cartesian':
+        dx = dx1 * jnp.cos(dx2)
+        dy = dx2 * jnp.sin(dx2)
+        dz = dx3
+        return dx, dy, dz
+
+    raise ValueError("Invalid coordinate system conversion")
+
+def build_grid(world):
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    x_wind = world['x_wind']
+    y_wind = world['y_wind']
+    z_wind = world['z_wind']
+    # get the grid parameters
     grid = jnp.arange(-x_wind/2, x_wind/2, dx), jnp.arange(-y_wind/2, y_wind/2, dy), jnp.arange(-z_wind/2, z_wind/2, dz)
     staggered_grid = jnp.arange(-x_wind/2 + dx/2, x_wind/2 + dx/2, dx), jnp.arange(-y_wind/2 + dy/2, y_wind/2 + dy/2, dy), jnp.arange(-z_wind/2 + dz/2, z_wind/2 + dz/2, dz)
     # create the grid space
@@ -238,7 +328,7 @@ def interpolate_and_stagger_field(field, grid, staggered_grid):
     # interpolate the field to the staggered grid
     return staggered_field
 
-def courant_condition(courant_number, dx, dy, dz, C):
+def courant_condition(courant_number, world, simulation_parameters):
     """
     Calculate the Courant condition for a given grid spacing and wave speed.
 
@@ -254,10 +344,14 @@ def courant_condition(courant_number, dx, dy, dz, C):
     Returns:
     float: The maximum allowable time step for stability.
     """
-    return 1 / (C * ( (1/dx) + (1/dy) + (1/dz) ) )
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    C = simulation_parameters['C']
+    return courant_number / (C * ( (1/dx) + (1/dy) + (1/dz) ) )
 # calculate the courant condition
 
-def plasma_frequency(N_electrons, x_wind, y_wind, z_wind, eps, me, q_e):
+def plasma_frequency(N_electrons, world, eps, me, q_e):
     """
     Calculate the theoretical frequency of a system based on the given parameters.
 
@@ -273,11 +367,15 @@ def plasma_frequency(N_electrons, x_wind, y_wind, z_wind, eps, me, q_e):
     Returns:
     float: Theoretical frequency of the system.
     """
+
+    x_wind = world['x_wind']
+    y_wind = world['y_wind']
+    z_wind = world['z_wind']
     ne = N_electrons / (x_wind*y_wind*z_wind)
     return jnp.sqrt(  ne * q_e**2  / (eps*me)  )
 # calculate the expected plasma frequency from analytical theory
 
-def debye_length(eps, Te, N_electrons, x_wind, y_wind, z_wind, q_e, kb):
+def debye_length(eps, Te, N_electrons, world, q_e, kb):
     """
     Calculate the Debye length of a system based on the given parameters.
 
@@ -291,5 +389,8 @@ def debye_length(eps, Te, N_electrons, x_wind, y_wind, z_wind, q_e, kb):
     float: Debye length of the system.
     """
 
+    x_wind = world['x_wind']
+    y_wind = world['y_wind']
+    z_wind = world['z_wind']
     ne = N_electrons / (x_wind*y_wind*z_wind)
     return jnp.sqrt( eps * kb * Te / (ne * q_e**2) )
