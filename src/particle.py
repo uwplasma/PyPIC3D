@@ -9,30 +9,6 @@ import math
 from pyevtk.hl import gridToVTK
 
 
-def create_transformation_matrix(dx1, dx2, dx3):
-    """
-    Creates a transformation matrix for scaling coordinates.
-
-    This function generates a 3x3 matrix used to scale coordinates by the
-    given factors along each axis. The resulting matrix can be used to
-    transform coordinates in a 3D space.
-
-    Parameters:
-    dx1 (float): Scaling factor for the x-axis.
-    dx2 (float): Scaling factor for the y-axis.
-    dx3 (float): Scaling factor for the z-axis.
-
-    Returns:
-    jnp.ndarray: A 3x3 transformation matrix with scaling factors applied.
-    """
-
-    return jnp.array([
-            [1 / dx1, 0, 0],
-            [0, 1 / dx2, 0],
-            [0, 0, 1 / dx3]
-        ])
-
-
 def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, key2, key3):
     """
     Initializes the velocities and positions of the particles.
@@ -67,28 +43,6 @@ def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, ke
     v_z = np.random.normal(0, std, N_particles)
     # initialize the particles with a maxwell boltzmann distribution.
     return x, y, z, v_x, v_y, v_z
-
-def initialize_particles(N, coord_system, params, key):
-    """
-    Initialize particle positions and velocities based on the coordinate system.
-
-    Args:
-        N (int): Number of particles.
-        coord_system (str): The coordinate system ('cartesian', 'cylindrical', 'spherical').
-        params (dict): Parameters required for the initialization.
-        key (jax.random.PRNGKey): Random key for initialization.
-
-    Returns:
-        tuple: Initialized positions and velocities.
-    """
-    T = create_transformation_matrix(coord_system, params)
-    positions = jax.random.uniform(key, (N, 3))
-    velocities = jax.random.uniform(key, (N, 3))
-
-    transformed_positions = jnp.dot(positions, T.T)
-    transformed_velocities = jnp.dot(velocities, T.T)
-
-    return transformed_positions, transformed_velocities
 
 def cold_start_init(start, N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, key2, key3):
     """

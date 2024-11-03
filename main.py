@@ -149,19 +149,21 @@ start = time.time()
 dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
 # compute the spatial resolution
 
+world = {'dx': dx, 'dy': dy, 'dz': dz, 'Nx': Nx, 'Ny': Ny, 'Nz': Nz, 'x_wind': x_wind, 'y_wind': y_wind, 'z_wind': z_wind}
+
 ################ Courant Condition #############################################################################
 courant_number = 1
-dt = courant_condition(courant_number, dx, dy, dz, C)
+dt = courant_condition(courant_number, world, simulation_parameters)
 # calculate spatial resolution using courant condition
 
-theoretical_freq = plasma_frequency(N_electrons, x_wind, y_wind, z_wind, eps, me, q_e)
+theoretical_freq = plasma_frequency(N_electrons, world, eps, me, q_e)
 # calculate the expected plasma frequency from analytical theory, w = sqrt( ne^2 / (eps * me) )
 
 if theoretical_freq * dt > 2.0:
     print(f"# of Electrons is Low and may introduce numerical stability")
     print(f"In order to correct this, # of Electrons needs to be at least { (2/dt)**2 * (me*eps/q_e**2) } for this spatial resolution")
 
-debye = debye_length(eps, Te, N_electrons, x_wind, y_wind, z_wind, q_e, kb)
+debye = debye_length(eps, Te, N_electrons, world, q_e, kb)
 # calculate the debye length of the plasma
 
 
@@ -193,7 +195,7 @@ if solver == 'autodiff':
     phi = jnp.zeros((Nx, Ny, Nz))
 # initialize the electric and magnetic fields
 else:
-    Ex, Ey, Ez, Bx, By, Bz, phi, rho = initialize_fields(Nx, Ny, Nz)
+    Ex, Ey, Ez, Bx, By, Bz, phi, rho = initialize_fields(world)
 # initialize the electric and magnetic fields
 
 key1 = random.key(4353)
@@ -264,9 +266,9 @@ if plotEnergy: total_p      = []
 if plot_errors: div_error_E, div_error_B = [], []
 
 if not electrostatic:
-        Ex, Ey, Ez, phi, rho = calculateE(particles, dx, dy, dz, rho, eps, phi, M, 0, x_wind, y_wind, z_wind, solver, bc, verbose, GPUs)
+        Ex, Ey, Ez, phi, rho = calculateE(world, particles, rho, eps, phi, M, 0, solver, bc, verbose, GPUs)
 
-grid, staggered_grid = build_grid(x_wind, y_wind, z_wind, dx, dy, dz)
+grid, staggered_grid = build_grid(world)
 # build the grid for the fields
 
 print(f"Theoretical Plasma Frequency: {theoretical_freq} Hz")
@@ -283,7 +285,7 @@ for t in range(Nt):
     M = precondition(NN, phi, rho, model)
     # solve for the preconditioner using the neural network
     if electrostatic:
-        Ex, Ey, Ez, phi, rho = calculateE(particles, dx, dy, dz, rho, eps, phi, M, t, x_wind, y_wind, z_wind, solver, bc, verbose, GPUs)
+        Ex, Ey, Ez, phi, rho = calculateE(world, particles, rho, eps, phi, M, t, solver, bc, verbose, GPUs)
         if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(Ex)}")
         # print the maximum value of the electric field
 
@@ -302,7 +304,7 @@ for t in range(Nt):
             Jx, Jy, Jz = current_correction(particles, Nx, Ny, Nz)
         # calculate the corrections for charge conservation
         if solver == "spectral":
-            Bx, By, Bz = spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
+            Bx, By, Bz = spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, world, dt)
         elif solver == "fdtd":
             Bx, By, Bz = update_B(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt, bc)
         elif solver == "autodiff":
@@ -312,7 +314,7 @@ for t in range(Nt):
         # print the maximum value of the magnetic field
 
         if solver == "spectral":
-            Ex, Ey, Ez = spectralEsolve(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, dx, dy, dz, dt, C, mu)
+            Ex, Ey, Ez = spectralEsolve(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, world, dt, C, mu)
         elif solver == "fdtd":
             Ex, Ex, Ez = update_E(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, dx, dy, dz, dt, C, eps, bc)
         elif solver == 'autodiff':
