@@ -218,6 +218,29 @@ def spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, world, dt):
 
     return Bx, By, Bz
 
+def marder_correction(Ex, Ey, Ez, rho, world, eps):
+    """
+    Apply Marder's correction to the electric field components.
+
+    Parameters:
+    Ex (ndarray): Electric field component in the x-direction.
+    Ey (ndarray): Electric field component in the y-direction.
+    Ez (ndarray): Electric field component in the z-direction.
+    rho (ndarray): Charge density.
+    world (dict): Dictionary containing the grid spacing with keys 'dx', 'dy', and 'dz'.
+    eps (float): Permittivity of the medium.
+
+    Returns:
+    tuple: A tuple containing the correction components (Ex, Ey, Ez).
+    """
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    div_E = spectral_divergence(Ex, Ey, Ez, dx, dy, dz)
+    F = div_E + rho/eps
+    return spectral_gradient(F, dx, dy, dz)
+
+
 @jit
 def spectralEsolve(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, world, dt, C, eps):
     """
@@ -246,7 +269,7 @@ def spectralEsolve(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, wor
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
-    
+
     curlx, curly, curlz = spectral_curl(Bx, By, Bz, dx, dy, dz)
     # calculate the curl of the magnetic field
     Ex = Ex +  ( C**2 * curlx - 1/eps * Jx) * dt/2

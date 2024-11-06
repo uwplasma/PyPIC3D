@@ -117,3 +117,19 @@ def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_win
         return rho
     
     return jax.lax.fori_loop(0, Nparticles, addto_rho, rho )
+
+@use_gpu_if_set
+def compute_rho(particles, rho, world, GPUs):
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    x_wind = world['x_wind']
+    y_wind = world['y_wind']
+    z_wind = world['z_wind']
+
+    for species in particles:
+        N_particles = species.get_number_of_particles()
+        charge = species.get_charge()
+        if N_particles > 0:
+            particle_x, particle_y, particle_z = species.get_position()
+            rho = update_rho(N_particles, particle_x, particle_y, particle_z, dx, dy, dz, charge, x_wind, y_wind, z_wind, rho, GPUs)

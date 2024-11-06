@@ -221,15 +221,15 @@ key5 = random.key(3456)
 # # create the particle species
 
 #################################### Two Stream Instability #####################################################
-N_particles = particles[0].get_number_of_particles()
-electron_x, electron_y, electron_z = particles[0].get_position()
-alternating_ones = (-1)**jnp.array(range(0,N_particles))
-v0=1.5*2657603.0
-ev_x = v0*alternating_ones
-ev_x *= ( 1 + 0.1*jnp.sin(6*jnp.pi * electron_x / x_wind) )
-ev_y = jnp.zeros(N_particles)
-ev_z = jnp.zeros(N_particles)
-particles[0].set_velocity(ev_x, ev_y, ev_z)
+# N_particles = particles[0].get_number_of_particles()
+# electron_x, electron_y, electron_z = particles[0].get_position()
+# alternating_ones = (-1)**jnp.array(range(0,N_particles))
+# v0=1.5*2657603.0
+# ev_x = v0*alternating_ones
+# ev_x *= ( 1 + 0.1*jnp.sin(6*jnp.pi * electron_x / x_wind) )
+# ev_y = jnp.zeros(N_particles)
+# ev_z = jnp.zeros(N_particles)
+# particles[0].set_velocity(ev_x, ev_y, ev_z)
 
 # # add perturbation to the electron velocities
 
@@ -279,8 +279,20 @@ print(f"Thermal Velocity: {jnp.sqrt(2*kb*Te/me)}\n")
 # avg_jy = []
 # avg_jz = []
 
+perturbation_period = 20*dt # starting with 5 dt's for now
+velocity_perturbation = 1e9 # m/s
+# perturbation velocity
+def perturb_function(t, dt, perturbation_period, velocity_perturbation):
+    perturbation = velocity_perturbation * jnp.sin(2 * jnp.pi * t * dt / perturbation_period)
+    return perturbation
+# function to calculate the perturbation
+
+
 for t in range(Nt):
     print(f'Iteration {t}, Time: {t*dt} s')
+    vx, vy, vz = particles[0].get_velocity()
+    vx += perturb_function(t, dt, perturbation_period, velocity_perturbation)
+    particles[0].set_velocity(vx, vy, vz)
     ############### SOLVE E FIELD ############################################################################################
     M = precondition(NN, phi, rho, model)
     # solve for the preconditioner using the neural network
