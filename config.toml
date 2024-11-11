@@ -5,23 +5,23 @@ t_wind = 1000e-12
 output_dir = "/home/christopherwoolford/Documents/PyPIC3D"
 bc = 'periodic'
 solver = 'spectral'
-Nx = 30
-Ny = 30
-Nz = 30
+Nx = 200
+Ny = 200
+Nz = 200
 x_wind = 1e-2
 y_wind = 1e-2
 z_wind = 1e-2
 N_electrons = 100
-verbose = true
+verbose = false
 electrostatic = false
 
 [plotting]
-plot_errors = true
+plot_errors = false
 phaseSpace  = true
 plotpositions = false
 plotKE = false
 plotfields = false
-plotting_interval = 50
+plotting_interval = 100
 
 [particle1]
 name = "electrons"

@@ -16,7 +16,7 @@ from src.plotting import (
     plot_velocity_histogram, plot_KE, plot_probe, plot_fft,
     phase_space, multi_phase_space, particles_phase_space,
     number_density, totalfield_energy, probe, freq,
-    magnitude_probe, 
+    magnitude_probe, write_probe
 )
 from src.particle import (
     initial_particles, update_position, total_KE, total_momentum,
@@ -354,6 +354,7 @@ for t in range(Nt):
     ################## PLOTTING ########################################################################################
 
     if t % plot_freq == 0:
+        write_probe(jnp.mean(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)), t*dt, "avg_E.txt")
         #avg_z.append(particles[0].get_position()[2])
         p0 = 0
         for particle in particles:
