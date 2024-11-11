@@ -586,3 +586,56 @@ def totalfield_energy(Ex, Ey, Ez, Bx, By, Bz, mu, eps):
     total_magnetic_energy = (0.5/mu)*jnp.sum(Bx**2 + By**2 + Bz**2)
     total_electric_energy = (0.5*eps)*jnp.sum(Ex**2 + Ey**2 + Ez**2)
     return total_magnetic_energy + total_electric_energy
+
+
+def dispersion_relation(field, direction, dx, dy, dz):
+    """
+    Calculate the dispersion relation of a field along a specified direction.
+
+    Parameters:
+    - field (ndarray): The field to analyze.
+    - direction (str): The direction along which to calculate the dispersion relation ('x', 'y', or 'z').
+    - dx (float): The grid spacing in the x-direction.
+    - dy (float): The grid spacing in the y-direction.
+    - dz (float): The grid spacing in the z-direction.
+
+    Returns:
+    - k (ndarray): The wave numbers.
+    - omega (ndarray): The angular frequencies.
+    """
+    if direction == 'x':
+        axis = 0
+        spacing = dx
+    elif direction == 'y':
+        axis = 1
+        spacing = dy
+    elif direction == 'z':
+        axis = 2
+        spacing = dz
+    else:
+        raise ValueError("Invalid direction. Choose from 'x', 'y', or 'z'.")
+
+    # Perform FFT along the specified direction
+    field_fft = np.fft.fftshift(np.fft.fftn(field, axes=[axis]))
+    N = field.shape[axis]
+    k = np.fft.fftshift(np.fft.fftfreq(N, spacing)) * 2 * np.pi
+
+    # Calculate the angular frequencies
+    omega = np.abs(field_fft)
+
+    return k, omega
+
+def write_probe(probe_data, t, filename):
+    """
+    Writes probe data and timestep to a file.
+
+    Parameters:
+    probe_data (any): The data collected by the probe to be written to the file.
+    t (int or float): The timestep at which the probe data was collected.
+    filename (str): The name of the file where the probe data will be written.
+
+    Returns:
+    None
+    """
+    with open(filename, 'a+') as file:
+        file.write(f"{t}\t{probe_data}\n")
