@@ -95,5 +95,5 @@ def compute_electric_divergence_error(Ex, Ey, Ez, rho, eps, dx, dy, dz, solver, 
     elif solver == 'autodiff':
         return 0
 
-    divergence_error = jnp.sum(jnp.abs(divE - rho / eps))
+    divergence_error = jnp.mean(jnp.abs(divE - rho / eps))
     return divergence_error

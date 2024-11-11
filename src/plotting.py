@@ -335,6 +335,17 @@ def particles_phase_space(particles, t, name):
         os.makedirs(f"plots/phase_space/y/{name}")
     if not os.path.exists(f"plots/phase_space/z/{name}"):
         os.makedirs(f"plots/phase_space/z/{name}")
+    if not os.path.exists(f"plots/phase_space/magnitude/{name}"):
+        os.makedirs(f"plots/phase_space/magnitude/{name}")
+
+    v_magnitude = jnp.sqrt(jnp.square(jnp.concatenate(total_vx)) + jnp.square(jnp.concatenate(total_vy)) + jnp.square(jnp.concatenate(total_vz)))
+
+    plt.scatter(jnp.concatenate(total_x), v_magnitude)
+    plt.xlabel("Position")
+    plt.ylabel("Velocity Magnitude")
+    plt.title(f"{name} Phase Space (Magnitude)")
+    plt.savefig(f"plots/phase_space/magnitude/{name}_phase_space.{t:09}.png", dpi=300)
+    plt.close()
 
     x = jnp.concatenate(total_x)
     vx = jnp.concatenate(total_vx)

@@ -14,6 +14,46 @@ import functools
 from functools import partial
 # import external libraries
 
+from src.spectral import spectral_divergence, spectral_gradient
+from src.fdtd import centered_finite_difference_divergence, centered_finite_difference_gradient
+
+def marder_correction(Ex, Ey, Ez, rho, world, eps, dt, solver='spectral'):
+    """
+    Apply Marder's correction to the electric field components using different solvers.
+
+    Parameters:
+    Ex (ndarray): Electric field component in the x-direction.
+    Ey (ndarray): Electric field component in the y-direction.
+    Ez (ndarray): Electric field component in the z-direction.
+    rho (ndarray): Charge density.
+    world (dict): Dictionary containing the grid spacing with keys 'dx', 'dy', and 'dz'.
+    eps (float): Permittivity of the medium.
+    solver (str): The solver to use for computing the divergence and gradient ('spectral' or 'finite_difference').
+
+    Returns:
+    tuple: A tuple containing the correction components (Ex, Ey, Ez).
+    """
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+
+    if solver == 'spectral':
+        div_E = spectral_divergence(Ex, Ey, Ez, dx, dy, dz)
+        F = div_E - rho/eps
+        dF = spectral_gradient(F, dx, dy, dz)
+    elif solver == 'fdtd':
+        div_E = centered_finite_difference_divergence(Ex, Ey, Ez, dx, dy, dz)
+        F = div_E - rho/eps
+        dF = centered_finite_difference_gradient(F, dx, dy, dz)
+    else:
+        raise ValueError(f"Unknown solver: {solver}")
+
+    Ex = Ex - dF[0]*dt/2
+    Ey = Ey - dF[1]*dt/2
+    Ez = Ez - dF[2]*dt/2
+
+    return Ex, Ey, Ez
+
 
 def current_correction(particles, Nx, Ny, Nz):
     Jx, Jy, Jz = jnp.zeros((Nx, Ny, Nz)), jnp.zeros((Nx, Ny, Nz)), jnp.zeros((Nx, Ny, Nz))

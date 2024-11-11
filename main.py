@@ -54,7 +54,7 @@ from src.defaults import (
 )
 
 from src.charge_conservation import (
-    current_correction
+    current_correction, marder_correction
 )
 
 from src.model import (
@@ -221,15 +221,15 @@ key5 = random.key(3456)
 # # create the particle species
 
 #################################### Two Stream Instability #####################################################
-# N_particles = particles[0].get_number_of_particles()
-# electron_x, electron_y, electron_z = particles[0].get_position()
-# alternating_ones = (-1)**jnp.array(range(0,N_particles))
-# v0=1.5*2657603.0
-# ev_x = v0*alternating_ones
-# ev_x *= ( 1 + 0.1*jnp.sin(6*jnp.pi * electron_x / x_wind) )
-# ev_y = jnp.zeros(N_particles)
-# ev_z = jnp.zeros(N_particles)
-# particles[0].set_velocity(ev_x, ev_y, ev_z)
+N_particles = particles[0].get_number_of_particles()
+electron_x, electron_y, electron_z = particles[0].get_position()
+alternating_ones = (-1)**jnp.array(range(0,N_particles))
+v0=1.5*2657603.0
+ev_x = v0*alternating_ones
+ev_x *= ( 1 + 0.1*jnp.sin(6*jnp.pi * electron_x / x_wind) )
+ev_y = jnp.zeros(N_particles)
+ev_z = jnp.zeros(N_particles)
+particles[0].set_velocity(ev_x, ev_y, ev_z)
 
 # # add perturbation to the electron velocities
 
@@ -280,25 +280,43 @@ print(f"Thermal Velocity: {jnp.sqrt(2*kb*Te/me)}\n")
 # avg_jz = []
 
 perturbation_period = 20*dt # starting with 5 dt's for now
-velocity_perturbation = 1e9 # m/s
+velocity_perturbation = 0e9 # m/s
 # perturbation velocity
 def perturb_function(t, dt, perturbation_period, velocity_perturbation):
     perturbation = velocity_perturbation * jnp.sin(2 * jnp.pi * t * dt / perturbation_period)
     return perturbation
 # function to calculate the perturbation
 
+Jx = jnp.zeros((Nx, Ny, Nz))
+Jy = jnp.zeros((Nx, Ny, Nz))
+Jz = jnp.zeros((Nx, Ny, Nz))
+
+
+
+#avg_z = []
+p = []
+
+# By = jnp.ones((Nx, Ny, Nz)) * 1
+# vx, vy, vz = particles[0].get_velocity()
+# #vx += perturb_function(t, dt, perturbation_period, velocity_perturbation)
+# vy = jnp.zeros((N_electrons))
+# vz = jnp.zeros((N_electrons))
+# vx = jnp.ones((N_electrons)) * 0.75e6
+# particles[0].set_velocity(vx, vy, vz)
 
 for t in range(Nt):
     print(f'Iteration {t}, Time: {t*dt} s')
-    vx, vy, vz = particles[0].get_velocity()
-    vx += perturb_function(t, dt, perturbation_period, velocity_perturbation)
-    particles[0].set_velocity(vx, vy, vz)
+
+    # vx, vy, vz = particles[0].get_velocity()
+    # vx += perturb_function(t, dt, perturbation_period, velocity_perturbation)
+    # particles[0].set_velocity(vx, vy, vz)
+
     ############### SOLVE E FIELD ############################################################################################
     M = precondition(NN, phi, rho, model)
     # solve for the preconditioner using the neural network
     if electrostatic:
         Ex, Ey, Ez, phi, rho = calculateE(world, particles, rho, eps, phi, M, t, solver, bc, verbose, GPUs)
-        if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(Ex)}")
+        if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(jnp.sqrt(Ex**2 + Ey**2 + Ez**2))}")
         # print the maximum value of the electric field
 
     ################ PARTICLE PUSH ########################################################################################
@@ -306,15 +324,15 @@ for t in range(Nt):
         if verbose: print(f'Updating {particles[i].get_name()}')
         particles[i] = particle_push(particles[i], Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt, GPUs)
         # use boris push for particle velocities
-        if verbose: print(f"Calculating {particles[i].get_name()} Velocities, Max Value: {jnp.max(particles[i].get_velocity()[0])}")
+        if verbose: print(f"Calculating {particles[i].get_name()} Velocities, Mean Value: {jnp.mean(jnp.abs(particles[i].get_velocity()[0]))}")
         particles[i].update_position(dt, x_wind, y_wind, z_wind)
-        if verbose: print(f"Calculating {particles[i].get_name()} Positions, Max Value: {jnp.max(particles[i].get_position()[0])}")
+        if verbose: print(f"Calculating {particles[i].get_name()} Positions, Mean Value: {jnp.mean(jnp.abs(particles[i].get_position()[0]))}")
 
     ################ FIELD UPDATE #######################################################################
     if not electrostatic:
         if solver == "spectral" or solver == "fdtd":
             Jx, Jy, Jz = current_correction(particles, Nx, Ny, Nz)
-        # calculate the corrections for charge conservation
+        # calculate the corrections for charge conservation using villasenor buneamn 1991
         if solver == "spectral":
             Bx, By, Bz = spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, world, dt)
         elif solver == "fdtd":
@@ -322,7 +340,7 @@ for t in range(Nt):
         elif solver == "autodiff":
             Bx, By, Bz = autodiff_update_B(Bx, By, Bz, Ex, Ey, Ez, dt)
         # update the magnetic field using the curl of the electric field
-        if verbose: print(f"Calculating Magnetic Field, Max Value: {jnp.max(Bx)}")
+        if verbose: print(f"Calculating Magnetic Field, Max Value: {jnp.max(jnp.sqrt(Bx**2 + By**2 + Bz**2))}")
         # print the maximum value of the magnetic field
 
         if solver == "spectral":
@@ -332,9 +350,15 @@ for t in range(Nt):
         elif solver == 'autodiff':
             Ex, Ey, Ez = autodiff_update_E(Ex, Ey, Ez, Bx, By, Bz, dt, C)
         # update the electric field using the curl of the magnetic field
+
     ################## PLOTTING ########################################################################################
 
     if t % plot_freq == 0:
+        #avg_z.append(particles[0].get_position()[2])
+        p0 = 0
+        for particle in particles:
+            p0 += particle.momentum()
+        p.append(p0)
         # avg_jx.append(jnp.mean(Jx))
         # avg_jy.append(jnp.mean(Jy))
         # avg_jz.append(jnp.mean(Jz))
@@ -441,6 +465,9 @@ if plotKE:
 # plot_probe(avg_jz, "Average Jz", "AverageJz")
 # plot the average current density
 
+#plot_probe(avg_z, "Average Z Position", "AverageZ")
+plot_probe(p, "Total Momentum", "TotalMomentum")
+
 if plot_errors:
     plot_probe(div_error_E, "Divergence Error of E Field", f"div_error_E")
     plot_probe(div_error_B, "Divergence Error of B Field", f"div_error_B")
@@ -449,7 +476,9 @@ end = time.time()
 duration = end - start
 # calculate the total simulation time
 
-simulation_stats = {"total_time": duration, "total_iterations": Nt, "time_per_iteration": duration/Nt}
+simulation_stats = {"total_time": duration, "total_iterations": Nt, "time_per_iteration": duration/Nt, "debye_length": debye.item(), \
+    "plasma_frequency": theoretical_freq.item(), 'thermal_velocity': jnp.sqrt(2*kb*Te/me).item()}
+
 dump_parameters_to_toml(simulation_stats, simulation_parameters, plotting_parameters)
 # save the parameters to an output file
 
