@@ -86,7 +86,7 @@ def solve_poisson(rho, eps, dx, dy, dz, phi, solver, bc='periodic', M = None, GP
         lapl = functools.partial(centered_finite_difference_laplacian, dx=dx, dy=dy, dz=dz, bc=bc)
         lapl = jit(lapl)
         # define the laplacian operator using finite difference method
-        phi = conjugate_grad(lapl, -rho/eps, phi, tol=1e-6, maxiter=20000, M=M)
+        phi = conjugate_grad(lapl, -rho/eps, phi, tol=1e-6, maxiter=40000, M=M)
     return phi
 
 def calculateE(world, particles, rho, eps, phi, M, t, solver, bc, verbose, GPUs):

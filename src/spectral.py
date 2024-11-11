@@ -13,7 +13,6 @@ import functools
 from functools import partial
 
 from src.utils import interpolate_and_stagger_field, interpolate_field, use_gpu_if_set
-from src.charge_conservation import current_correction
 from src.particle import particle_species
 
 def detect_gibbs_phenomenon(field, dx, dy, dz, threshold=0.1):
@@ -69,7 +68,7 @@ def spectral_poisson_solve(rho, eps, dx, dy, dz):
     # calculate the squared wavenumber
     k2 = jnp.where(k2 == 0, 1e-6, k2)
     # avoid division by zero
-    phi = -jnp.fft.fftn(rho) / (eps*k2)
+    phi = jnp.fft.fftn(rho) / (eps*k2)
     # calculate the Fourier transform of the charge density and divide by the permittivity and squared wavenumber
     phi = jnp.fft.ifftn(phi).real
     # calculate the inverse Fourier transform to obtain the electric potential
@@ -109,7 +108,7 @@ def spectral_divergence(xfield, yfield, zfield, dx, dy, dz):
     zfft = jnp.fft.fftn(zfield)
     # calculate the Fourier transform of the vector field
 
-    div = 1j*kx*xfft + 1j*ky*yfft + 1j*kz*zfft
+    div = (-1j)*kx*xfft + (-1j)*ky*yfft + (-1j)*kz*zfft
     # calculate the divergence of the vector field
 
     return jnp.fft.ifftn(div).real
@@ -145,9 +144,9 @@ def spectral_curl(xfield, yfield, zfield, dx, dy, dz):
     zfft = jnp.fft.fftn(zfield)
     # calculate the Fourier transform of the vector field
 
-    curlx = 1j*kz*yfft - 1j*ky*zfft
-    curly = 1j*kx*zfft - 1j*kz*xfft
-    curlz = 1j*ky*xfft - 1j*kx*yfft
+    curlx = (-1j)*kz*yfft - (-1j)*ky*zfft
+    curly = (-1j)*kx*zfft - (-1j)*kz*xfft
+    curlz = (-1j)*ky*xfft - (-1j)*kx*yfft
     # calculate the curl of the vector field
 
     return jnp.fft.ifftn(curlx).real, jnp.fft.ifftn(curly).real, jnp.fft.ifftn(curlz).real
@@ -176,9 +175,9 @@ def spectral_gradient(field, dx, dy, dz):
     field_fft = jnp.fft.fftn(field)
     # calculate the Fourier transform of the field
 
-    gradx = 1j * kx * field_fft
-    grady = 1j * ky * field_fft
-    gradz = 1j * kz * field_fft
+    gradx = -1j * kx * field_fft
+    grady = -1j * ky * field_fft
+    gradz = -1j * kz * field_fft
     # calculate the gradient in Fourier space
 
     return jnp.fft.ifftn(gradx).real, jnp.fft.ifftn(grady).real, jnp.fft.ifftn(gradz).real
@@ -217,28 +216,6 @@ def spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, world, dt):
     Bz = Bz - dt/2*curlz
 
     return Bx, By, Bz
-
-def marder_correction(Ex, Ey, Ez, rho, world, eps):
-    """
-    Apply Marder's correction to the electric field components.
-
-    Parameters:
-    Ex (ndarray): Electric field component in the x-direction.
-    Ey (ndarray): Electric field component in the y-direction.
-    Ez (ndarray): Electric field component in the z-direction.
-    rho (ndarray): Charge density.
-    world (dict): Dictionary containing the grid spacing with keys 'dx', 'dy', and 'dz'.
-    eps (float): Permittivity of the medium.
-
-    Returns:
-    tuple: A tuple containing the correction components (Ex, Ey, Ez).
-    """
-    dx = world['dx']
-    dy = world['dy']
-    dz = world['dz']
-    div_E = spectral_divergence(Ex, Ey, Ez, dx, dy, dz)
-    F = div_E + rho/eps
-    return spectral_gradient(F, dx, dy, dz)
 
 
 @jit
