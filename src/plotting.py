@@ -236,7 +236,7 @@ def plot_KE(KE, t):
     plt.close()
 
 
-def plot_probe(probe, name, savename):
+def plot_probe(probe, t, name, savename):
     """
     Plots a probe.
 
@@ -246,7 +246,7 @@ def plot_probe(probe, name, savename):
     Returns:
     None
     """
-    plt.plot(probe)
+    plt.plot(t, probe)
     plt.xlabel("Time")
     plt.ylabel(f"{name}")
     plt.title(f"{name}")
@@ -694,6 +694,97 @@ def dispersion_relation(field, direction, dx, dy, dz):
 
     return k, omega
 
+def plot_dispersion_relation(k, omega, name):
+    """
+    Plots the dispersion relation between wave number (k) and angular frequency (omega).
+
+    Parameters:
+    k (array-like): Array of wave numbers.
+    omega (array-like): Array of angular frequencies corresponding to the wave numbers.
+    name (str): Name of the dispersion relation, used for the plot title and saved file name.
+
+    Saves the plot as a PNG file in the 'plots' directory with the filename format '{name}_dispersion_relation.png'.
+    """
+
+    plt.plot(k, omega)
+    plt.xlabel("Wave Number")
+    plt.ylabel("Angular Frequency")
+    plt.title(f"{name} Dispersion Relation")
+
+    if not os.path.exists("plots"):
+        os.makedirs("plots")
+
+    plt.savefig(f"plots/{name}_dispersion_relation.png", dpi=300)
+    plt.close()
+
+
+def dominant_modes(field, direction, dx, dy, dz, num_modes=5):
+    """
+    Calculate the dominant wavenumber modes of a field along a specified direction.
+
+    Parameters:
+    - field (ndarray): The field to analyze.
+    - direction (str): The direction along which to calculate the wavenumber modes ('x', 'y', or 'z').
+    - dx (float): The grid spacing in the x-direction.
+    - dy (float): The grid spacing in the y-direction.
+    - dz (float): The grid spacing in the z-direction.
+    - num_modes (int): The number of dominant modes to return.
+
+    Returns:
+    - dominant_modes (ndarray): The dominant wavenumber modes.
+    """
+    if direction == 'x':
+        axis = 0
+        spacing = dx
+    elif direction == 'y':
+        axis = 1
+        spacing = dy
+    elif direction == 'z':
+        axis = 2
+        spacing = dz
+    else:
+        raise ValueError("Invalid direction. Choose from 'x', 'y', or 'z'.")
+
+    # Perform FFT along the specified direction
+    field_fft = np.fft.fftshift(np.fft.fftn(field, axes=[axis]))
+    N = field.shape[axis]
+    k = np.fft.fftshift(np.fft.fftfreq(N, spacing)) * 2 * np.pi
+
+    # Calculate the power spectrum
+    power_spectrum = np.abs(field_fft)**2
+
+    # Find the indices of the dominant modes
+    dominant_indices = np.argsort(power_spectrum, axis=axis)[-num_modes:]
+
+    # Extract the dominant wavenumber modes
+    dominant_modes = k[dominant_indices]
+
+    # Extract the dominant wavenumber modes
+    dominant_modes = np.sum(dominant_modes, axis=(1, 2))
+
+    return dominant_modes
+
+def plot_dominant_modes(dominant_modes, t, name, savename):
+    """
+    Plots the dominant wavenumber modes of a field.
+
+    Parameters:
+    - dominant_modes (ndarray): The dominant wavenumber modes to plot.
+    - t (int): The time value.
+    - name (str): The name of the field.
+
+    Saves the plot as a PNG file in the 'plots' directory with the filename format '{name}_dominant_modes.png'.
+    """
+    plt.plot(t, dominant_modes)
+    plt.xlabel("Time")
+    plt.ylabel("K")
+    plt.title(f"{name}")
+
+    if not os.path.exists("plots"):
+        os.makedirs("plots")
+
+    plt.savefig(f"plots/{savename}_dominant_modes.png", dpi=300)
+    plt.close()
 def write_probe(probe_data, t, filename):
     """
     Writes probe data and timestep to a file.

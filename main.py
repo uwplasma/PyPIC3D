@@ -16,7 +16,8 @@ from src.plotting import (
     plot_velocity_histogram, plot_KE, plot_probe, plot_fft,
     phase_space, multi_phase_space, particles_phase_space,
     number_density, totalfield_energy, probe, freq,
-    magnitude_probe, write_probe
+    magnitude_probe, write_probe, dispersion_relation, plot_dispersion_relation,
+    dominant_modes, plot_dominant_modes
 )
 from src.particle import (
     initial_particles, update_position, total_KE, total_momentum,
@@ -99,6 +100,7 @@ plotEnergy = plotting_parameters["plotEnergy"]
 plasmaFreq = plotting_parameters["plasmaFreq"]
 phaseSpace = plotting_parameters["phaseSpace"]
 plot_errors = plotting_parameters["plot_errors"]
+plot_dispersion = plotting_parameters["plot_dispersion"]
 plot_freq = plotting_parameters["plotting_interval"]
 # booleans for plotting/saving data
 
@@ -249,7 +251,7 @@ if NN:
 else: model = None
 
 #################################### MAIN LOOP ####################################################################
-
+plot_t = []
 if plotfields: Eprobe = []
 if plotfields: averageE = []
 if plotKE:
@@ -259,7 +261,7 @@ if plasmaFreq: freqs = []
 if plotEnergy: total_energy = []
 if plotEnergy: total_p      = []
 if plot_errors: div_error_E, div_error_B = [], []
-
+if plot_dispersion: kx, kx_t = [], []
 if not electrostatic:
         Ex, Ey, Ez, phi, rho = calculateE(world, particles, constants, rho, phi, M, 0, solver, bc, verbose, GPUs)
 
@@ -349,6 +351,11 @@ for t in range(Nt):
     ################## PLOTTING ########################################################################################
 
     if t % plot_freq == 0:
+        plot_t.append(t*dt)
+        if plot_dispersion:
+            kx.append(dominant_modes(Ex, 'x', dx, dy, dz, num_modes=2))
+        # calculate the dispersion relation
+
         write_probe(jnp.mean(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)), t*dt, "avg_E.txt")
         #avg_z.append(particles[0].get_position()[2])
         p0 = 0
@@ -436,9 +443,9 @@ for t in range(Nt):
 #             multi_phase_space(electron_z, ion_z, ev_z, iv_z, t, "Electrons", "Ions", "z", z_wind)
 #         # save the phase space data
 if plotfields:
-    plot_probe(Eprobe, "Electric Field", "ElectricField")
+    plot_probe(Eprobe, plot_t, "Electric Field", "ElectricField")
     efield_freq = plot_fft(Eprobe, dt*plot_freq, "FFT of Electric Field", "E_FFT")
-    plot_probe(averageE, "Electric Field", "AvgElectricField")
+    plot_probe(averageE, plot_t, "Electric Field", "AvgElectricField")
     print(f'Electric Field Frequency: {efield_freq}')
     # plot the electric field probe
 if plotKE:
@@ -446,6 +453,10 @@ if plotKE:
     ke_freq = plot_fft(KE, dt*plot_freq, "FFT of Kinetic Energy", "KE_FFT")
     print(f'KE Frequency: {ke_freq}')
     # plot the total kinetic energy of the particles
+
+if plot_dispersion:
+    plot_dominant_modes(kx, plot_t, "Dominant Modes over Time", "Modes")
+    # plot the dispersion relation
 # if plasmaFreq:
 #     plot_probe(freqs, "Plasma Frequency", "PlasmaFrequency")
 #     # plot the plasma frequency
@@ -462,11 +473,11 @@ if plotKE:
 # plot the average current density
 
 #plot_probe(avg_z, "Average Z Position", "AverageZ")
-plot_probe(p, "Total Momentum", "TotalMomentum")
+plot_probe(p, plot_t, "Total Momentum", "TotalMomentum")
 
 if plot_errors:
-    plot_probe(div_error_E, "Divergence Error of E Field", f"div_error_E")
-    plot_probe(div_error_B, "Divergence Error of B Field", f"div_error_B")
+    plot_probe(div_error_E, plot_t, "Divergence Error of E Field", f"div_error_E")
+    plot_probe(div_error_B, plot_t, "Divergence Error of B Field", f"div_error_B")
 end = time.time()
 # end the timer
 duration = end - start
