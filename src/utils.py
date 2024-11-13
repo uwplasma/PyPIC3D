@@ -15,9 +15,30 @@ from functools import partial
 import toml
 import os, sys
 from scipy.interpolate import RegularGridInterpolator
+import pandas as pd
 # import external libraries
 
 from src.particle import initial_particles, particle_species
+
+# Define the function to read the TOML file and convert it to a DataFrame
+def read_toml_to_dataframe(toml_file):
+    """
+    Reads a TOML file and converts it to a pandas DataFrame.
+
+    Parameters:
+    - toml_file (str): Path to the TOML file.
+
+    Returns:
+    - pd.DataFrame: DataFrame containing the TOML data.
+    """
+    # Read the TOML file
+    data = toml.load(toml_file)
+    
+    # Convert the TOML data to a pandas DataFrame
+    df = pd.json_normalize(data, sep='_')
+    # Transpose the DataFrame to swap rows and columns
+    df = df.transpose()
+    return df
 
 def cylindrical_to_cartesian_matrix(r, theta, z):
     """
