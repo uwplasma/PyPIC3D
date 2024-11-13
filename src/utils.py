@@ -197,13 +197,16 @@ def grab_particle_keys(config):
             particle_keys.append(key)
     return particle_keys
 
-def load_particles_from_toml(toml_file, simulation_parameters, dx, dy, dz):
+def load_particles_from_toml(toml_file, simulation_parameters, world, constants):
     config = toml.load(toml_file)
 
-    x_wind = simulation_parameters['x_wind']
-    y_wind = simulation_parameters['y_wind']
-    z_wind = simulation_parameters['z_wind']
-    kb = simulation_parameters['kb']
+    x_wind = world['x_wind']
+    y_wind = world['y_wind']
+    z_wind = world['z_wind']
+    kb = constants['kb']
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
 
     i = 0
     particles = []
@@ -233,6 +236,7 @@ def load_particles_from_toml(toml_file, simulation_parameters, dx, dy, dz):
             N_particles=N_particles,
             charge=charge,
             mass=mass,
+            T=T,
             x1=x,
             x2=y,
             x3=z,
@@ -258,7 +262,7 @@ def debugprint(value):
     """
     jax.debug.print('{x}', x=value)
 
-def update_parameters_from_toml(config_file, simulation_parameters, plotting_parameters):
+def update_parameters_from_toml(config_file, simulation_parameters, plotting_parameters, constants):
     """
     Update the simulation parameters with values from a TOML config file.
 
@@ -272,7 +276,7 @@ def update_parameters_from_toml(config_file, simulation_parameters, plotting_par
     """
     # Load the TOML config file
     config = toml.load(config_file)
-    
+
     # Update the simulation parameters with values from the config file
     for key, value in config["simulation_parameters"].items():
         if key in simulation_parameters:
@@ -281,10 +285,15 @@ def update_parameters_from_toml(config_file, simulation_parameters, plotting_par
     for key, value in config["plotting"].items():
         if key in plotting_parameters:
             plotting_parameters[key] = value
-    
-    return simulation_parameters, plotting_parameters
 
-def dump_parameters_to_toml(simulation_stats, simulation_parameters, plotting_parameters):
+    if "constants" in config:
+        for key, value in config["constants"].items():
+            if key in constants:
+                constants[key] = value
+
+    return simulation_parameters, plotting_parameters, constants
+
+def dump_parameters_to_toml(simulation_stats, simulation_parameters, plotting_parameters, constants):
     """
     Dump the simulation and plotting parameters into an output TOML file.
 
@@ -300,7 +309,8 @@ def dump_parameters_to_toml(simulation_stats, simulation_parameters, plotting_pa
     config = {
         "simulation_stats": simulation_stats,
         "simulation_parameters": simulation_parameters,
-        "plotting": plotting_parameters
+        "plotting": plotting_parameters,
+        "constants": constants
     }
     
     with open(output_file, 'w') as f:
@@ -349,7 +359,7 @@ def interpolate_and_stagger_field(field, grid, staggered_grid):
     # interpolate the field to the staggered grid
     return staggered_field
 
-def courant_condition(courant_number, world, simulation_parameters):
+def courant_condition(courant_number, world, simulation_parameters, constants):
     """
     Calculate the Courant condition for a given grid spacing and wave speed.
 
@@ -368,11 +378,11 @@ def courant_condition(courant_number, world, simulation_parameters):
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
-    C = simulation_parameters['C']
+    C = constants['C']
     return courant_number / (C * ( (1/dx) + (1/dy) + (1/dz) ) )
 # calculate the courant condition
 
-def plasma_frequency(N_electrons, world, eps, me, q_e):
+def plasma_frequency(electrons, world, constants):
     """
     Calculate the theoretical frequency of a system based on the given parameters.
 
@@ -392,11 +402,15 @@ def plasma_frequency(N_electrons, world, eps, me, q_e):
     x_wind = world['x_wind']
     y_wind = world['y_wind']
     z_wind = world['z_wind']
+    q_e = electrons.get_charge()
+    N_electrons = electrons.get_number_of_particles()
+    me = electrons.get_mass()
+    eps = constants['eps']
     ne = N_electrons / (x_wind*y_wind*z_wind)
     return jnp.sqrt(  ne * q_e**2  / (eps*me)  )
 # calculate the expected plasma frequency from analytical theory
 
-def debye_length(eps, Te, N_electrons, world, q_e, kb):
+def debye_length(electrons, world, constants):
     """
     Calculate the Debye length of a system based on the given parameters.
 
@@ -410,6 +424,11 @@ def debye_length(eps, Te, N_electrons, world, q_e, kb):
     float: Debye length of the system.
     """
 
+    q_e = electrons.get_charge()
+    N_electrons = electrons.get_number_of_particles()
+    Te = electrons.get_temperature()
+    eps = constants['eps']
+    kb = constants['kb']
     x_wind = world['x_wind']
     y_wind = world['y_wind']
     z_wind = world['z_wind']
