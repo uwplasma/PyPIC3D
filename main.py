@@ -223,10 +223,12 @@ key5 = random.key(3456)
 #################################### Two Stream Instability #####################################################
 N_particles = particles[0].get_number_of_particles()
 electron_x, electron_y, electron_z = particles[0].get_position()
+ev_x, ev_y, ev_z = particles[0].get_velocity()
 alternating_ones = (-1)**jnp.array(range(0,N_particles))
-v0=1.5*2657603.0
-ev_x = v0*alternating_ones
-ev_x *= ( 1 + 0.1*jnp.sin(6*jnp.pi * electron_x / x_wind) )
+relative_drift_velocity = 0.5*jnp.sqrt(3*kb*Te/me)
+perturbation = relative_drift_velocity*alternating_ones
+perturbation *= (1 + 0.1*jnp.sin(2*jnp.pi*electron_x/x_wind))
+ev_x += perturbation
 ev_y = jnp.zeros(N_particles)
 ev_z = jnp.zeros(N_particles)
 particles[0].set_velocity(ev_x, ev_y, ev_z)
@@ -273,7 +275,7 @@ grid, staggered_grid = build_grid(world)
 
 print(f"Theoretical Plasma Frequency: {theoretical_freq} Hz")
 print(f"Debye Length: {debye} m")
-print(f"Thermal Velocity: {jnp.sqrt(2*kb*Te/me)}\n")
+print(f"Thermal Velocity: {jnp.sqrt(3*kb*Te/me)}\n")
 
 # avg_jx = []
 # avg_jy = []
@@ -369,7 +371,7 @@ for t in range(Nt):
         if plotvelocities:
             plot_velocities(particles, t, x_wind, y_wind, z_wind)
         if phaseSpace:
-            particles_phase_space(particles, t, "Particles")
+            particles_phase_space([particles[0]], t, "Particles")
         if plotfields:
             plot_fields(Ex, Ey, Ez, t, "E", dx, dy, dz)
             plot_fields(Bx, By, Bz, t, "B", dx, dy, dz)

@@ -301,6 +301,82 @@ def plot_fft(signal, dt, name, savename):
     # plot the fft of a signal
 
 
+# def particles_phase_space(particles, t, name):
+#     """
+#     Plot the phase space of the particles.
+
+#     Parameters:
+#     - particles (Particles): The particles to be plotted.
+#     - t (ndarray): The time values.
+#     - name (str): The name of the plot.
+
+#     Returns:
+#     None
+#     """
+
+#     total_x, total_vx = [], []
+#     total_y, total_vy = [], []
+#     total_z, total_vz = [], []
+
+#     colors = ['r', 'b', 'g', 'c', 'm', 'y', 'k']
+#     idx = 0
+#     for species in particles:
+#         x, y, z = species.get_position()
+#         vx, vy, vz = species.get_velocity()
+
+#         total_x.append(x)
+#         total_vx.append(vx)
+#         total_y.append(y)
+#         total_vy.append(vy)
+#         total_z.append(z)
+#         total_vz.append(vz)
+
+#     if not os.path.exists(f"plots/phase_space/x/{name}"):
+#         os.makedirs(f"plots/phase_space/x/{name}")
+#     if not os.path.exists(f"plots/phase_space/y/{name}"):
+#         os.makedirs(f"plots/phase_space/y/{name}")
+#     if not os.path.exists(f"plots/phase_space/z/{name}"):
+#         os.makedirs(f"plots/phase_space/z/{name}")
+#     if not os.path.exists(f"plots/phase_space/magnitude/{name}"):
+#         os.makedirs(f"plots/phase_space/magnitude/{name}")
+
+#     v_magnitude = jnp.sqrt(jnp.square(jnp.concatenate(total_vx)) + jnp.square(jnp.concatenate(total_vy)) + jnp.square(jnp.concatenate(total_vz)))
+
+#     plt.scatter(jnp.concatenate(total_x), v_magnitude)
+#     plt.xlabel("Position")
+#     plt.ylabel("Velocity Magnitude")
+#     plt.title(f"{name} Phase Space (Magnitude)")
+#     plt.savefig(f"plots/phase_space/magnitude/{name}_phase_space.{t:09}.png", dpi=300)
+#     plt.close()
+
+#     x = jnp.concatenate(total_x)
+#     vx = jnp.concatenate(total_vx)
+#     plt.scatter(x, vx)
+#     plt.xlabel("Position")
+#     plt.ylabel("Velocity")
+#     plt.title(f"{name} Phase Space")
+#     plt.savefig(f"plots/phase_space/x/{name}_phase_space.{t:09}.png", dpi=300)
+#     plt.close()
+
+#     y = jnp.concatenate(total_y)
+#     vy = jnp.concatenate(total_vy)
+#     plt.scatter(y, vy)
+#     plt.xlabel("Position")
+#     plt.ylabel("Velocity")
+#     plt.title(f"{name} Phase Space")
+#     plt.savefig(f"plots/phase_space/y/{name}_phase_space.{t:09}.png", dpi=300)
+#     plt.close()
+
+#     z = jnp.concatenate(total_z)
+#     vz = jnp.concatenate(total_vz)
+#     plt.scatter(z, vz)
+#     plt.xlabel("Position")
+#     plt.ylabel("Velocity")
+#     plt.title(f"{name} Phase Space")
+#     plt.savefig(f"plots/phase_space/z/{name}_phase_space.{t:09}.png", dpi=300)
+#     plt.close()
+
+
 def particles_phase_space(particles, t, name):
     """
     Plot the phase space of the particles.
@@ -314,64 +390,57 @@ def particles_phase_space(particles, t, name):
     None
     """
 
-    total_x, total_vx = [], []
-    total_y, total_vy = [], []
-    total_z, total_vz = [], []
-
+    colors = ['r', 'b', 'g', 'c', 'm', 'y', 'k']
+    idx = 0
+    order = 10
     for species in particles:
         x, y, z = species.get_position()
         vx, vy, vz = species.get_velocity()
-
-        total_x.append(x)
-        total_vx.append(vx)
-        total_y.append(y)
-        total_vy.append(vy)
-        total_z.append(z)
-        total_vz.append(vz)
-
-    if not os.path.exists(f"plots/phase_space/x/{name}"):
-        os.makedirs(f"plots/phase_space/x/{name}")
-    if not os.path.exists(f"plots/phase_space/y/{name}"):
-        os.makedirs(f"plots/phase_space/y/{name}")
-    if not os.path.exists(f"plots/phase_space/z/{name}"):
-        os.makedirs(f"plots/phase_space/z/{name}")
-    if not os.path.exists(f"plots/phase_space/magnitude/{name}"):
-        os.makedirs(f"plots/phase_space/magnitude/{name}")
-
-    v_magnitude = jnp.sqrt(jnp.square(jnp.concatenate(total_vx)) + jnp.square(jnp.concatenate(total_vy)) + jnp.square(jnp.concatenate(total_vz)))
-
-    plt.scatter(jnp.concatenate(total_x), v_magnitude)
-    plt.xlabel("Position")
-    plt.ylabel("Velocity Magnitude")
-    plt.title(f"{name} Phase Space (Magnitude)")
-    plt.savefig(f"plots/phase_space/magnitude/{name}_phase_space.{t:09}.png", dpi=300)
-    plt.close()
-
-    x = jnp.concatenate(total_x)
-    vx = jnp.concatenate(total_vx)
-    plt.scatter(x, vx)
+        plt.scatter(x, vx, c=colors[idx], zorder=order)
+        idx += 1
+        order -= 1
     plt.xlabel("Position")
     plt.ylabel("Velocity")
+    #plt.ylim(-1e10, 1e10)
     plt.title(f"{name} Phase Space")
     plt.savefig(f"plots/phase_space/x/{name}_phase_space.{t:09}.png", dpi=300)
     plt.close()
 
-    y = jnp.concatenate(total_y)
-    vy = jnp.concatenate(total_vy)
-    plt.scatter(y, vy)
+    idx = 0
+    for species in particles:
+        x, y, z = species.get_position()
+        vx, vy, vz = species.get_velocity()
+        plt.scatter(y, vy, c=colors[idx])
+        idx += 1
     plt.xlabel("Position")
     plt.ylabel("Velocity")
     plt.title(f"{name} Phase Space")
     plt.savefig(f"plots/phase_space/y/{name}_phase_space.{t:09}.png", dpi=300)
     plt.close()
 
-    z = jnp.concatenate(total_z)
-    vz = jnp.concatenate(total_vz)
-    plt.scatter(z, vz)
+    idx = 0
+    for species in particles:
+        x, y, z = species.get_position()
+        vx, vy, vz = species.get_velocity()
+        plt.scatter(z, vz, c=colors[idx])
+        idx += 1
     plt.xlabel("Position")
     plt.ylabel("Velocity")
     plt.title(f"{name} Phase Space")
     plt.savefig(f"plots/phase_space/z/{name}_phase_space.{t:09}.png", dpi=300)
+    plt.close()
+
+    idx = 0
+    for species in particles:
+        x, y, z = species.get_position()
+        vx, vy, vz = species.get_velocity()
+        v_magnitude = jnp.sqrt(jnp.square(vx) + jnp.square(vy) + jnp.square(vz))
+        plt.scatter(x, v_magnitude, c=colors[idx])
+        idx += 1
+    plt.xlabel("Position")
+    plt.ylabel("Velocity Magnitude")
+    plt.title(f"{name} Phase Space (Magnitude)")
+    plt.savefig(f"plots/phase_space/magnitude/{name}_phase_space.{t:09}.png", dpi=300)
     plt.close()
 
 
