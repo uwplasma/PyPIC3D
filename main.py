@@ -473,7 +473,7 @@ duration = end - start
 # calculate the total simulation time
 
 simulation_stats = {"total_time": duration, "total_iterations": Nt, "time_per_iteration": duration/Nt, "debye_length": debye.item(), \
-    "plasma_frequency": theoretical_freq.item(), 'thermal_velocity': jnp.sqrt(2*kb*Te/me).item()}
+    "plasma_frequency": theoretical_freq.item(), 'thermal_velocity': jnp.sqrt(2*constants['kb']*Te/me).item()}
 
 dump_parameters_to_toml(simulation_stats, simulation_parameters, plotting_parameters, constants)
 # save the parameters to an output file
