@@ -42,18 +42,6 @@ def default_parameters():
         "output_dir": ".",
         "solver": "spectral",  # solver: spectral, fdtd, autodiff
         "bc": "spectral",  # boundary conditions: periodic, dirichlet, neumann
-        "eps": 8.854e-12,  # permitivity of freespace
-        "mu" : 1.2566370613e-6, # permeability of free space
-        "C": 3e8,  # Speed of light in m/s
-        "kb": 1.380649e-23,  # Boltzmann's constant in J/K
-        "me": 9.1093837e-31,  # mass of the electron in Kg
-        "mi": 1.67e-27,  # mass of the ion in Kg
-        "q_e": -1.602e-19,  # charge of electron
-        "q_i": 1.602e-19,  # charge of ion
-        "Te": 233000,  # electron temperature in K
-        "Ti": 233000,  # ion temperature in K
-        "N_electrons": 5000,  # number of electrons
-        "N_ions": 5000,  # number of ions
         "Nx": 30,  # number of array spacings in x
         "Ny": 30,  # number of array spacings in y
         "Nz": 30,  # number of array spacings in z
@@ -67,5 +55,13 @@ def default_parameters():
     }
     # dictionary for simulation parameters
 
-    return plotting_parameters, simulation_parameters
-   
+    constants = {
+        "eps": 8.854e-12,  # permitivity of freespace
+        "mu" : 1.2566370613e-6, # permeability of free space
+        "C": 3e8,  # Speed of light in m/s
+        "kb": 1.380649e-23,  # Boltzmann's constant in J/K
+
+    }
+
+    return plotting_parameters, simulation_parameters, constants
+    # return the dictionaries

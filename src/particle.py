@@ -252,11 +252,12 @@ class particle_species:
         Updates the positions of the particles using Euler's method and applies boundary conditions.
     """
 
-    def __init__(self, name, N_particles, charge, mass, v1, v2, v3, x1, x2, x3, dx, dy, dz, bc='periodic', update_pos=True, update_v=True):
+    def __init__(self, name, N_particles, charge, mass, T, v1, v2, v3, x1, x2, x3, dx, dy, dz, bc='periodic', update_pos=True, update_v=True):
         self.name = name
         self.N_particles = N_particles
         self.charge = charge
         self.mass = mass
+        self.T = T
         self.v1 = v1
         self.v2 = v2
         self.v3 = v3
@@ -284,6 +285,9 @@ class particle_species:
 
     def get_number_of_particles(self):
         return self.N_particles
+
+    def get_temperature(self):
+        return self.T
 
     def get_velocity(self):
         return self.v1, self.v2, self.v3

@@ -78,11 +78,11 @@ model_name = "Preconditioner.eqx"
 config_file = "config.toml"
 # path to the configuration file
 
-plotting_parameters, simulation_parameters = default_parameters()
+plotting_parameters, simulation_parameters, constants = default_parameters()
 # load the default parameters
 
 if os.path.exists(config_file):
-    simulation_parameters, plotting_parameters = update_parameters_from_toml(config_file, simulation_parameters, plotting_parameters)
+    simulation_parameters, plotting_parameters, constants = update_parameters_from_toml(config_file, simulation_parameters, plotting_parameters, constants)
 
 
 cold_start = False
@@ -105,18 +105,6 @@ plot_freq = plotting_parameters["plotting_interval"]
 name = simulation_parameters["name"]
 solver = simulation_parameters["solver"]
 bc = simulation_parameters["bc"]
-eps = simulation_parameters["eps"]
-mu = simulation_parameters["mu"]
-C = simulation_parameters["C"]
-kb = simulation_parameters["kb"]
-me = simulation_parameters["me"]
-mi = simulation_parameters["mi"]
-q_e = simulation_parameters["q_e"]
-q_i = simulation_parameters["q_i"]
-Te = simulation_parameters["Te"]
-Ti = simulation_parameters["Ti"]
-N_electrons = simulation_parameters["N_electrons"]
-N_ions = simulation_parameters["N_ions"]
 Nx = simulation_parameters["Nx"]
 Ny = simulation_parameters["Ny"]
 Nz = simulation_parameters["Nz"]
@@ -153,22 +141,8 @@ world = {'dx': dx, 'dy': dy, 'dz': dz, 'Nx': Nx, 'Ny': Ny, 'Nz': Nz, 'x_wind': x
 
 ################ Courant Condition #############################################################################
 courant_number = 1
-dt = courant_condition(courant_number, world, simulation_parameters)
+dt = courant_condition(courant_number, world, simulation_parameters, constants)
 # calculate spatial resolution using courant condition
-
-theoretical_freq = plasma_frequency(N_electrons, world, eps, me, q_e)
-# calculate the expected plasma frequency from analytical theory, w = sqrt( ne^2 / (eps * me) )
-
-if theoretical_freq * dt > 2.0:
-    print(f"# of Electrons is Low and may introduce numerical stability")
-    print(f"In order to correct this, # of Electrons needs to be at least { (2/dt)**2 * (me*eps/q_e**2) } for this spatial resolution")
-
-debye = debye_length(eps, Te, N_electrons, world, q_e, kb)
-# calculate the debye length of the plasma
-
-
-if debye < dx:
-    print(f"Debye Length is less than the spatial resolution, this may introduce numerical instability")
 
 Nt     = int( t_wind / dt )
 # Nt for resolution
@@ -187,7 +161,24 @@ print(f'Nt:          {Nt}\n')
 
 ################################### INITIALIZE PARTICLES ########################################################
 
-particles = load_particles_from_toml("config.toml", simulation_parameters, dx, dy, dz)
+particles = load_particles_from_toml("config.toml", simulation_parameters, world, constants)
+
+
+theoretical_freq = plasma_frequency(particles[0], world, constants)
+# calculate the expected plasma frequency from analytical theory, w = sqrt( ne^2 / (eps * me) )
+
+if theoretical_freq * dt > 2.0:
+    print(f"# of Electrons is Low and may introduce numerical stability")
+    print(f"In order to correct this, # of Electrons needs to be at least { (2/dt)**2 * (me*eps/q_e**2) } for this spatial resolution")
+
+debye = debye_length(particles[0], world, constants)
+# calculate the debye length of the plasma
+
+
+if debye < dx:
+    print(f"Debye Length is less than the spatial resolution, this may introduce numerical instability")
+
+
 
 if solver == 'autodiff':
     Ex, Ey, Ez, Bx, By, Bz = initialize_fields(particles, (1/(4*jnp.pi*eps)))
@@ -222,10 +213,12 @@ key5 = random.key(3456)
 
 #################################### Two Stream Instability #####################################################
 N_particles = particles[0].get_number_of_particles()
+Te = particles[0].get_temperature()
+me = particles[0].get_mass()
 electron_x, electron_y, electron_z = particles[0].get_position()
 ev_x, ev_y, ev_z = particles[0].get_velocity()
 alternating_ones = (-1)**jnp.array(range(0,N_particles))
-relative_drift_velocity = 0.5*jnp.sqrt(3*kb*Te/me)
+relative_drift_velocity = 0.5*jnp.sqrt(3*constants['kb']*Te/me)
 perturbation = relative_drift_velocity*alternating_ones
 perturbation *= (1 + 0.1*jnp.sin(2*jnp.pi*electron_x/x_wind))
 ev_x += perturbation
@@ -268,14 +261,14 @@ if plotEnergy: total_p      = []
 if plot_errors: div_error_E, div_error_B = [], []
 
 if not electrostatic:
-        Ex, Ey, Ez, phi, rho = calculateE(world, particles, rho, eps, phi, M, 0, solver, bc, verbose, GPUs)
+        Ex, Ey, Ez, phi, rho = calculateE(world, particles, constants, rho, phi, M, 0, solver, bc, verbose, GPUs)
 
 grid, staggered_grid = build_grid(world)
 # build the grid for the fields
 
 print(f"Theoretical Plasma Frequency: {theoretical_freq} Hz")
 print(f"Debye Length: {debye} m")
-print(f"Thermal Velocity: {jnp.sqrt(3*kb*Te/me)}\n")
+print(f"Thermal Velocity: {jnp.sqrt(3*constants['kb']*Te/me)}\n")
 
 # avg_jx = []
 # avg_jy = []
@@ -317,7 +310,7 @@ for t in range(Nt):
     M = precondition(NN, phi, rho, model)
     # solve for the preconditioner using the neural network
     if electrostatic:
-        Ex, Ey, Ez, phi, rho = calculateE(world, particles, rho, eps, phi, M, t, solver, bc, verbose, GPUs)
+        Ex, Ey, Ez, phi, rho = calculateE(world, particles, constants, rho, phi, M, t, solver, bc, verbose, GPUs)
         if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(jnp.sqrt(Ex**2 + Ey**2 + Ez**2))}")
         # print the maximum value of the electric field
 
@@ -482,7 +475,7 @@ duration = end - start
 simulation_stats = {"total_time": duration, "total_iterations": Nt, "time_per_iteration": duration/Nt, "debye_length": debye.item(), \
     "plasma_frequency": theoretical_freq.item(), 'thermal_velocity': jnp.sqrt(2*kb*Te/me).item()}
 
-dump_parameters_to_toml(simulation_stats, simulation_parameters, plotting_parameters)
+dump_parameters_to_toml(simulation_stats, simulation_parameters, plotting_parameters, constants)
 # save the parameters to an output file
 
 print(f"\nSimulation Complete")
