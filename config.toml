@@ -1,7 +1,7 @@
 # This is a configuration file for PyPIC3D
 [simulation_parameters]
 name = "Test Simulation"
-t_wind = 2000e-12
+t_wind = 30000e-12
 output_dir = "/home/christopherwoolford/Documents/PyPIC3D"
 bc = 'periodic'
 solver = 'spectral'
@@ -24,6 +24,7 @@ phaseSpace  = false
 plotpositions = false
 plotKE = false
 plotfields = true
+plot_dispersion = true
 plotting_interval = 100
 
 [particle1]
