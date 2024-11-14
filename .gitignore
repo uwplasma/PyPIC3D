@@ -3,8 +3,6 @@ literature/
 __pycache__/
 tensorboard/
 *.gif
-*.png
-*ipynb
 *.tar.gz
 *.eqx
 *.txt
