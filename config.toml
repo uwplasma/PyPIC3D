@@ -21,7 +21,7 @@ electrostatic = true
 [plotting]
 plot_errors = false
 phaseSpace  = true
-plotpositions = false
+plotpositions = true
 plotKE = false
 plotfields = true
 plot_dispersion = false
