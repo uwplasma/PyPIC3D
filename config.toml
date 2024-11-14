@@ -1,10 +1,10 @@
 # This is a configuration file for PyPIC3D
 [simulation_parameters]
-name = "Test Simulation"
+name = "TS Instability using FDTD"
 t_wind = 10000e-12
 output_dir = "/home/christopherwoolford/Documents/PyPIC3D"
 bc = 'periodic'
-solver = 'spectral'
+solver = 'fdtd'
 Nx = 30
 Ny = 30
 Nz = 30
@@ -21,7 +21,7 @@ electrostatic = true
 [plotting]
 plot_errors = false
 phaseSpace  = true
-plotpositions = true
+plotpositions = false
 plotKE = false
 plotfields = true
 plot_dispersion = false
