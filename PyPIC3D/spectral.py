@@ -12,8 +12,8 @@ from pyevtk.hl import gridToVTK
 import functools
 from functools import partial
 
-from src.utils import interpolate_and_stagger_field, interpolate_field, use_gpu_if_set
-from src.particle import particle_species
+from PyPIC3D.utils import interpolate_and_stagger_field, interpolate_field, use_gpu_if_set
+from PyPIC3D.particle import particle_species
 
 def detect_gibbs_phenomenon(field, dx, dy, dz, threshold=0.1):
     """

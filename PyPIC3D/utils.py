@@ -18,7 +18,7 @@ from scipy.interpolate import RegularGridInterpolator
 import pandas as pd
 # import external libraries
 
-from src.particle import initial_particles, particle_species
+from PyPIC3D.particle import initial_particles, particle_species
 
 # Define the function to read the TOML file and convert it to a DataFrame
 def read_toml_to_dataframe(toml_file):

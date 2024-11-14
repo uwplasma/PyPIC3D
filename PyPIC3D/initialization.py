@@ -1,8 +1,8 @@
 import jax
 import jax.numpy as jnp
 from jax import random
-from src.utils import debye_length, load_particles_from_toml
-from src.fields import initialize_fields
+from PyPIC3D.utils import debye_length, load_particles_from_toml
+from PyPIC3D.fields import initialize_fields
 
 def setup_simulation(simulation_parameters, dx, dy, dz, Nx, Ny, Nz, solver, cold_start=False):
     theoretical_freq = simulation_parameters["theoretical_freq"]

@@ -14,8 +14,8 @@ import functools
 from functools import partial
 # import external libraries
 
-from src.spectral import spectral_divergence, spectral_gradient
-from src.fdtd import centered_finite_difference_divergence, centered_finite_difference_gradient
+from PyPIC3D.spectral import spectral_divergence, spectral_gradient
+from PyPIC3D.fdtd import centered_finite_difference_divergence, centered_finite_difference_gradient
 
 def marder_correction(Ex, Ey, Ez, rho, world, eps, dt, solver='spectral'):
     """

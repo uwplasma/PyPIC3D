@@ -14,13 +14,13 @@ import functools
 from functools import partial
 # import external libraries
 
-from src.spectral import spectral_poisson_solve, spectral_laplacian, spectralBsolve, spectralEsolve, spectral_gradient
-from src.fdtd import centered_finite_difference_laplacian, centered_finite_difference_gradient
-from src.autodiff import autodiff_electric_field
-from src.rho import update_rho
-from src.cg import conjugate_grad
-from src.errors import compute_pe
-from src.utils import use_gpu_if_set
+from PyPIC3D.spectral import spectral_poisson_solve, spectral_laplacian, spectralBsolve, spectralEsolve, spectral_gradient
+from PyPIC3D.fdtd import centered_finite_difference_laplacian, centered_finite_difference_gradient
+from PyPIC3D.autodiff import autodiff_electric_field
+from PyPIC3D.rho import update_rho
+from PyPIC3D.cg import conjugate_grad
+from PyPIC3D.errors import compute_pe
+from PyPIC3D.utils import use_gpu_if_set
 # import internal libraries
 
 def initialize_fields(world):

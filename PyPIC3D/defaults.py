@@ -13,7 +13,7 @@ from pyevtk.hl import gridToVTK
 import functools
 from functools import partial
 import toml
-from src.particle import particle_species, initial_particles   
+from PyPIC3D.particle import particle_species, initial_particles   
 # import external libraries
 
 def default_parameters():
