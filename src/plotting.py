@@ -657,67 +657,6 @@ def totalfield_energy(Ex, Ey, Ez, Bx, By, Bz, mu, eps):
     return total_magnetic_energy + total_electric_energy
 
 
-def dispersion_relation(field, direction, dx, dy, dz):
-    """
-    Calculate the dispersion relation of a field along a specified direction.
-
-    Parameters:
-    - field (ndarray): The field to analyze.
-    - direction (str): The direction along which to calculate the dispersion relation ('x', 'y', or 'z').
-    - dx (float): The grid spacing in the x-direction.
-    - dy (float): The grid spacing in the y-direction.
-    - dz (float): The grid spacing in the z-direction.
-
-    Returns:
-    - k (ndarray): The wave numbers.
-    - omega (ndarray): The angular frequencies.
-    """
-    if direction == 'x':
-        axis = 0
-        spacing = dx
-    elif direction == 'y':
-        axis = 1
-        spacing = dy
-    elif direction == 'z':
-        axis = 2
-        spacing = dz
-    else:
-        raise ValueError("Invalid direction. Choose from 'x', 'y', or 'z'.")
-
-    # Perform FFT along the specified direction
-    field_fft = np.fft.fftshift(np.fft.fftn(field, axes=[axis]))
-    N = field.shape[axis]
-    k = np.fft.fftshift(np.fft.fftfreq(N, spacing)) * 2 * np.pi
-
-    # Calculate the angular frequencies
-    omega = np.abs(field_fft)
-
-    return k, omega
-
-def plot_dispersion_relation(k, omega, name):
-    """
-    Plots the dispersion relation between wave number (k) and angular frequency (omega).
-
-    Parameters:
-    k (array-like): Array of wave numbers.
-    omega (array-like): Array of angular frequencies corresponding to the wave numbers.
-    name (str): Name of the dispersion relation, used for the plot title and saved file name.
-
-    Saves the plot as a PNG file in the 'plots' directory with the filename format '{name}_dispersion_relation.png'.
-    """
-
-    plt.plot(k, omega)
-    plt.xlabel("Wave Number")
-    plt.ylabel("Angular Frequency")
-    plt.title(f"{name} Dispersion Relation")
-
-    if not os.path.exists("plots"):
-        os.makedirs("plots")
-
-    plt.savefig(f"plots/{name}_dispersion_relation.png", dpi=300)
-    plt.close()
-
-
 def dominant_modes(field, direction, dx, dy, dz, num_modes=5):
     """
     Calculate the dominant wavenumber modes of a field along a specified direction.
@@ -750,19 +689,12 @@ def dominant_modes(field, direction, dx, dy, dz, num_modes=5):
     N = field.shape[axis]
     k = np.fft.fftshift(np.fft.fftfreq(N, spacing)) * 2 * np.pi
 
-    # Calculate the power spectrum
-    power_spectrum = np.abs(field_fft)**2
+    max_amp = np.argsort(field_fft, axis=None)[-num_modes:]
+    max_amp = np.unravel_index(max_amp, field_fft.shape)
+    max_k   = k[max_amp[axis]]
+    # get the k values of the dominant modes
 
-    # Find the indices of the dominant modes
-    dominant_indices = np.argsort(power_spectrum, axis=axis)[-num_modes:]
-
-    # Extract the dominant wavenumber modes
-    dominant_modes = k[dominant_indices]
-
-    # Extract the dominant wavenumber modes
-    dominant_modes = np.sum(dominant_modes, axis=(1, 2))
-
-    return dominant_modes
+    return max_k
 
 def plot_dominant_modes(dominant_modes, t, name, savename):
     """
@@ -775,10 +707,13 @@ def plot_dominant_modes(dominant_modes, t, name, savename):
 
     Saves the plot as a PNG file in the 'plots' directory with the filename format '{name}_dominant_modes.png'.
     """
-    plt.plot(t, dominant_modes)
+    for mode in range(dominant_modes.shape[1]):
+        plt.plot(t, dominant_modes[:, mode], label=f"Mode {mode + 1}")
+    #plt.plot(t, dominant_modes)
     plt.xlabel("Time")
     plt.ylabel("K")
     plt.title(f"{name}")
+    plt.legend()
 
     if not os.path.exists("plots"):
         os.makedirs("plots")
