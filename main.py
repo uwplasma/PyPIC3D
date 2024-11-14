@@ -12,7 +12,8 @@ import os, sys
 import matplotlib.pyplot as plt
 # Importing relevant libraries
 
-from src.plotting import (
+
+from PyPIC3D.plotting import (
     plot_fields, plot_positions, plot_rho, plot_velocities,
     plot_velocity_histogram, plot_KE, plot_probe, plot_fft,
     phase_space, multi_phase_space, particles_phase_space,
@@ -20,46 +21,46 @@ from src.plotting import (
     magnitude_probe, write_probe,
     dominant_modes, plot_dominant_modes
 )
-from src.particle import (
+from PyPIC3D.particle import (
     initial_particles, update_position, total_KE, total_momentum,
     cold_start_init, particle_species
 )
-from src.fields import (
+from PyPIC3D.fields import (
     calculateE
 )
 
-from src.spectral import (
+from PyPIC3D.spectral import (
     spectralBsolve, spectralEsolve
 )
 
-from src.fdtd import (
+from PyPIC3D.fdtd import (
     update_B, update_E
 )
 
-from src.autodiff import (
+from PyPIC3D.autodiff import (
     autodiff_update_B, autodiff_update_E
 )
 
 
-from src.utils import (
+from PyPIC3D.utils import (
     plasma_frequency, courant_condition,
     debye_length, update_parameters_from_toml, dump_parameters_to_toml,
     load_particles_from_toml, use_gpu_if_set, precondition, build_grid
 )
 
-from src.errors import (
+from PyPIC3D.errors import (
     compute_electric_divergence_error, compute_magnetic_divergence_error
 )
 
-from src.defaults import (
+from PyPIC3D.defaults import (
     default_parameters
 )
 
-from src.charge_conservation import (
+from PyPIC3D.charge_conservation import (
     current_correction, marder_correction
 )
 
-from src.model import (
+from PyPIC3D.model import (
     PoissonPrecondition
 )
 # Importing functions from other files
@@ -124,13 +125,13 @@ if benchmark: jax.profiler.start_trace("/home/christopherwoolford/Documents/PyPI
 # start the profiler using tensorboard
 
 if solver == 'spectral':
-    from src.spectral import particle_push
-    from src.fields import initialize_fields
+    from PyPIC3D.spectral import particle_push
+    from PyPIC3D.fields import initialize_fields
 elif solver == 'fdtd':
-    from src.fdtd import particle_push
-    from src.fields import initialize_fields
+    from PyPIC3D.fdtd import particle_push
+    from PyPIC3D.fields import initialize_fields
 elif solver == 'autodiff':
-    from src.autodiff import particle_push, initialize_fields
+    from PyPIC3D.autodiff import particle_push, initialize_fields
 # set the particle push method
 
 print(f"Initializing Simulation: {name}\n")
@@ -267,7 +268,7 @@ if plasmaFreq: freqs = []
 if plotEnergy: total_energy = []
 if plotEnergy: total_p      = []
 if plot_errors: div_error_E, div_error_B = [], []
-if plot_dispersion: kx, kx_t = [], []
+if plot_dispersion: kz = []
 if not electrostatic:
         Ex, Ey, Ez, phi, rho = calculateE(world, particles, constants, rho, phi, M, 0, solver, bc, verbose, GPUs)
 
@@ -369,7 +370,7 @@ for t in range(Nt):
         # plot the electric potential
 
         if plot_dispersion:
-            kx.append(dominant_modes(Ex, 'x', dx, dy, dz, num_modes=6))
+            kz.append(dominant_modes(Ez, 'z', dx, dy, dz, num_modes=2))
         # calculate the dispersion relation
 
         write_probe(jnp.mean(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)), t*dt, "avg_E.txt")
@@ -471,7 +472,7 @@ if plotKE:
     # plot the total kinetic energy of the particles
 
 if plot_dispersion:
-    plot_dominant_modes(jnp.asarray(kx), plot_t, "Dominant Modes over Time", "Modes")
+    plot_dominant_modes(jnp.asarray(kz), plot_t, "Dominant Modes over Time", "Modes")
     # plot the dispersion relation
 
 # if plasmaFreq:
