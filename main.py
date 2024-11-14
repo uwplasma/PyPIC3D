@@ -9,6 +9,7 @@ from jax import random
 import jax.numpy as jnp
 import equinox as eqx
 import os, sys
+import matplotlib.pyplot as plt
 # Importing relevant libraries
 
 from src.plotting import (
@@ -16,7 +17,7 @@ from src.plotting import (
     plot_velocity_histogram, plot_KE, plot_probe, plot_fft,
     phase_space, multi_phase_space, particles_phase_space,
     number_density, totalfield_energy, probe, freq,
-    magnitude_probe, write_probe, dispersion_relation, plot_dispersion_relation,
+    magnitude_probe, write_probe,
     dominant_modes, plot_dominant_modes
 )
 from src.particle import (
@@ -228,6 +229,10 @@ ev_y = jnp.zeros(N_particles)
 ev_z = jnp.zeros(N_particles)
 particles[0].set_velocity(ev_x, ev_y, ev_z)
 
+electron_y = jnp.ones(N_particles) * y_wind/4*alternating_ones
+particles[0].set_position(electron_x, electron_y, electron_z)
+# put electrons with opposite velocities in the same position along y
+
 # # add perturbation to the electron velocities
 
 # iv_x = jnp.zeros(N_ions)
@@ -252,6 +257,7 @@ else: model = None
 
 #################################### MAIN LOOP ####################################################################
 plot_t = []
+min_v = []
 if plotfields: Eprobe = []
 if plotfields: averageE = []
 if plotKE:
@@ -352,8 +358,18 @@ for t in range(Nt):
 
     if t % plot_freq == 0:
         plot_t.append(t*dt)
+
+        # plt.contourf(jnp.abs(phi[:, :, int(Nz/2)].T), levels=50, cmap='viridis')
+        # plt.colorbar()  # Add a colorbar
+        # plt.title('Electric Potential Contours')
+        # plt.xlabel('X')
+        # plt.ylabel('Y')
+        # plt.savefig(f'plots/phi/phi_{t:09}.png')
+        # plt.close()
+        # plot the electric potential
+
         if plot_dispersion:
-            kx.append(dominant_modes(Ex, 'x', dx, dy, dz, num_modes=2))
+            kx.append(dominant_modes(Ex, 'x', dx, dy, dz, num_modes=6))
         # calculate the dispersion relation
 
         write_probe(jnp.mean(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)), t*dt, "avg_E.txt")
@@ -444,9 +460,9 @@ for t in range(Nt):
 #         # save the phase space data
 if plotfields:
     plot_probe(Eprobe, plot_t, "Electric Field", "ElectricField")
-    efield_freq = plot_fft(Eprobe, dt*plot_freq, "FFT of Electric Field", "E_FFT")
+    #efield_freq = plot_fft(Eprobe, dt*plot_freq, "FFT of Electric Field", "E_FFT")
     plot_probe(averageE, plot_t, "Electric Field", "AvgElectricField")
-    print(f'Electric Field Frequency: {efield_freq}')
+    #print(f'Electric Field Frequency: {efield_freq}')
     # plot the electric field probe
 if plotKE:
     plot_KE(KE, KE_time)
@@ -455,8 +471,9 @@ if plotKE:
     # plot the total kinetic energy of the particles
 
 if plot_dispersion:
-    plot_dominant_modes(kx, plot_t, "Dominant Modes over Time", "Modes")
+    plot_dominant_modes(jnp.asarray(kx), plot_t, "Dominant Modes over Time", "Modes")
     # plot the dispersion relation
+
 # if plasmaFreq:
 #     plot_probe(freqs, "Plasma Frequency", "PlasmaFrequency")
 #     # plot the plasma frequency

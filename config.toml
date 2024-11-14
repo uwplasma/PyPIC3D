@@ -1,7 +1,7 @@
 # This is a configuration file for PyPIC3D
 [simulation_parameters]
 name = "Test Simulation"
-t_wind = 30000e-12
+t_wind = 10000e-12
 output_dir = "/home/christopherwoolford/Documents/PyPIC3D"
 bc = 'periodic'
 solver = 'spectral'
@@ -20,7 +20,7 @@ electrostatic = true
 
 [plotting]
 plot_errors = false
-phaseSpace  = false
+phaseSpace  = true
 plotpositions = false
 plotKE = false
 plotfields = true
