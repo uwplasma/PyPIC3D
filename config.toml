@@ -24,7 +24,7 @@ phaseSpace  = true
 plotpositions = false
 plotKE = false
 plotfields = true
-plot_dispersion = true
+plot_dispersion = false
 plotting_interval = 100
 
 [particle1]

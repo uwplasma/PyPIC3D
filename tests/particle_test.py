@@ -1,7 +1,7 @@
 import unittest
 import jax
 import numpy as np
-from src.particle import initial_particles, cold_start_init, periodic_boundary_condition, euler_update, update_position, total_KE, total_momentum, particle_species
+from PyPIC3D.particle import initial_particles, cold_start_init, periodic_boundary_condition, euler_update, update_position, total_KE, total_momentum, particle_species
 
 import jax.numpy as jnp
 
