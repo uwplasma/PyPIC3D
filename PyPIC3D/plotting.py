@@ -9,6 +9,7 @@ import math
 from pyevtk.hl import gridToVTK
 import scipy
 import os
+import plotly.graph_objects as go
 from PyPIC3D.rho import update_rho
 
 def plot_rho(rho, t, name, dx, dy, dz):
@@ -99,9 +100,10 @@ def plot_1dposition(x, name, particle):
     plt.savefig(f"plots/{name}/{particle}_position.png", dpi=300)
     plt.close()
 
+
 def plot_positions(particles, t, x_wind, y_wind, z_wind):
     """
-    Makes a 3D plot of the positions of the particles.
+    Makes an interactive 3D plot of the positions of the particles using Plotly.
 
     Parameters:
     particles (list): A list of ParticleSpecies objects containing positions.
@@ -122,22 +124,67 @@ def plot_positions(particles, t, x_wind, y_wind, z_wind):
     y = jnp.concatenate(y)
     z = jnp.concatenate(z)
 
-    fig = plt.figure()
-    ax = fig.add_subplot(projection='3d')
-    ax.set_xlim( -(2/3)*x_wind, (2/3)*x_wind )
-    ax.set_ylim( -(2/3)*y_wind, (2/3)*y_wind )
-    ax.set_zlim( -(2/3)*z_wind, (2/3)*z_wind )
-    ax.scatter(x, y, z)
-    ax.set_xlabel('X (m)')
-    ax.set_ylabel('Y (m)')
-    ax.set_zlabel('Z (m)')
-    plt.title("Particle Positions")
+    fig = go.Figure(data=[go.Scatter3d(
+        x=x, y=y, z=z, mode='markers',
+        marker=dict(size=2)
+    )])
+
+    fig.update_layout(
+        scene=dict(
+            xaxis=dict(range=[-(2/3)*x_wind, (2/3)*x_wind]),
+            yaxis=dict(range=[-(2/3)*y_wind, (2/3)*y_wind]),
+            zaxis=dict(range=[-(2/3)*z_wind, (2/3)*z_wind]),
+            xaxis_title='X (m)',
+            yaxis_title='Y (m)',
+            zaxis_title='Z (m)'
+        ),
+        title="Particle Positions"
+    )
 
     if not os.path.exists("plots/positions"):
         os.makedirs("plots/positions")
 
-    plt.savefig(f"plots/positions/particles.{t:09}.png", dpi=300)
-    plt.close()
+    fig.write_html(f"plots/positions/particles.{t:09}.html")
+
+# def plot_positions(particles, t, x_wind, y_wind, z_wind):
+#     """
+#     Makes a 3D plot of the positions of the particles.
+
+#     Parameters:
+#     particles (list): A list of ParticleSpecies objects containing positions.
+#     t (float): The time value.
+#     x_wind (float): The x-axis wind limit.
+#     y_wind (float): The y-axis wind limit.
+#     z_wind (float): The z-axis wind limit.
+
+#     Returns:
+#     None
+#     """
+#     x, y, z = [], [], []
+#     for species in particles:
+#         x.append(species.get_position()[0])
+#         y.append(species.get_position()[1])
+#         z.append(species.get_position()[2])
+#     x = jnp.concatenate(x)
+#     y = jnp.concatenate(y)
+#     z = jnp.concatenate(z)
+
+#     fig = plt.figure()
+#     ax = fig.add_subplot(projection='3d')
+#     ax.set_xlim( -(2/3)*x_wind, (2/3)*x_wind )
+#     ax.set_ylim( -(2/3)*y_wind, (2/3)*y_wind )
+#     ax.set_zlim( -(2/3)*z_wind, (2/3)*z_wind )
+#     ax.scatter(x, y, z)
+#     ax.set_xlabel('X (m)')
+#     ax.set_ylabel('Y (m)')
+#     ax.set_zlabel('Z (m)')
+#     plt.title("Particle Positions")
+
+#     if not os.path.exists("plots/positions"):
+#         os.makedirs("plots/positions")
+
+#     plt.savefig(f"plots/positions/particles.{t:09}.png", dpi=300)
+#     plt.close()
 
 def plot_velocity_histogram(vx, vy, vz, t, nbins=50):
     """
@@ -167,51 +214,6 @@ def plot_velocity_histogram(vx, vy, vz, t, nbins=50):
     plt.savefig(f"plots/velocity_histograms/velocities.{t:09}.png", dpi=300)
     plt.close()
 
-def plot_velocities(particles, t, x_wind, y_wind, z_wind):
-    """
-    Makes a 3D plot of the velocities of the particles.
-
-    Parameters:
-    particles (list): A list of ParticleSpecies objects containing positions and velocities.
-    t (float): The time value.
-    x_wind (float): The x-axis wind limit.
-    y_wind (float): The y-axis wind limit.
-    z_wind (float): The z-axis wind limit.
-
-    Returns:
-    None
-    """
-    x, y, z, vx, vy, vz = [], [], [], [], [], []
-    for species in particles:
-        pos = species.get_position()
-        vel = species.get_velocity()
-        x.append(pos[0])
-        y.append(pos[1])
-        z.append(pos[2])
-        vx.append(vel[0])
-        vy.append(vel[1])
-        vz.append(vel[2])
-    
-    x = jnp.concatenate(x)
-    y = jnp.concatenate(y)
-    z = jnp.concatenate(z)
-    vx = jnp.concatenate(vx)
-    vy = jnp.concatenate(vy)
-    vz = jnp.concatenate(vz)
-
-    fig = plt.figure()
-    ax = fig.add_subplot(projection='3d')
-    ax.quiver(x, y, z, vx, vy, vz, length=x_wind/1000)
-    ax.set_xlabel('X (m)')
-    ax.set_ylabel('Y (m)')
-    ax.set_zlabel('Z (m)')
-    plt.title("Particle Velocities")
-
-    if not os.path.exists("plots/velocities"):
-        os.makedirs("plots/velocities")
-
-    plt.savefig(f"plots/velocities/velocities.{t:09}.png", dpi=300)
-    plt.close()
 
 def plot_KE(KE, t):
     """
@@ -301,82 +303,6 @@ def plot_fft(signal, dt, name, savename):
     # plot the fft of a signal
 
 
-# def particles_phase_space(particles, t, name):
-#     """
-#     Plot the phase space of the particles.
-
-#     Parameters:
-#     - particles (Particles): The particles to be plotted.
-#     - t (ndarray): The time values.
-#     - name (str): The name of the plot.
-
-#     Returns:
-#     None
-#     """
-
-#     total_x, total_vx = [], []
-#     total_y, total_vy = [], []
-#     total_z, total_vz = [], []
-
-#     colors = ['r', 'b', 'g', 'c', 'm', 'y', 'k']
-#     idx = 0
-#     for species in particles:
-#         x, y, z = species.get_position()
-#         vx, vy, vz = species.get_velocity()
-
-#         total_x.append(x)
-#         total_vx.append(vx)
-#         total_y.append(y)
-#         total_vy.append(vy)
-#         total_z.append(z)
-#         total_vz.append(vz)
-
-#     if not os.path.exists(f"plots/phase_space/x/{name}"):
-#         os.makedirs(f"plots/phase_space/x/{name}")
-#     if not os.path.exists(f"plots/phase_space/y/{name}"):
-#         os.makedirs(f"plots/phase_space/y/{name}")
-#     if not os.path.exists(f"plots/phase_space/z/{name}"):
-#         os.makedirs(f"plots/phase_space/z/{name}")
-#     if not os.path.exists(f"plots/phase_space/magnitude/{name}"):
-#         os.makedirs(f"plots/phase_space/magnitude/{name}")
-
-#     v_magnitude = jnp.sqrt(jnp.square(jnp.concatenate(total_vx)) + jnp.square(jnp.concatenate(total_vy)) + jnp.square(jnp.concatenate(total_vz)))
-
-#     plt.scatter(jnp.concatenate(total_x), v_magnitude)
-#     plt.xlabel("Position")
-#     plt.ylabel("Velocity Magnitude")
-#     plt.title(f"{name} Phase Space (Magnitude)")
-#     plt.savefig(f"plots/phase_space/magnitude/{name}_phase_space.{t:09}.png", dpi=300)
-#     plt.close()
-
-#     x = jnp.concatenate(total_x)
-#     vx = jnp.concatenate(total_vx)
-#     plt.scatter(x, vx)
-#     plt.xlabel("Position")
-#     plt.ylabel("Velocity")
-#     plt.title(f"{name} Phase Space")
-#     plt.savefig(f"plots/phase_space/x/{name}_phase_space.{t:09}.png", dpi=300)
-#     plt.close()
-
-#     y = jnp.concatenate(total_y)
-#     vy = jnp.concatenate(total_vy)
-#     plt.scatter(y, vy)
-#     plt.xlabel("Position")
-#     plt.ylabel("Velocity")
-#     plt.title(f"{name} Phase Space")
-#     plt.savefig(f"plots/phase_space/y/{name}_phase_space.{t:09}.png", dpi=300)
-#     plt.close()
-
-#     z = jnp.concatenate(total_z)
-#     vz = jnp.concatenate(total_vz)
-#     plt.scatter(z, vz)
-#     plt.xlabel("Position")
-#     plt.ylabel("Velocity")
-#     plt.title(f"{name} Phase Space")
-#     plt.savefig(f"plots/phase_space/z/{name}_phase_space.{t:09}.png", dpi=300)
-#     plt.close()
-
-
 def particles_phase_space(particles, t, name):
     """
     Plot the phase space of the particles.
@@ -444,63 +370,62 @@ def particles_phase_space(particles, t, name):
     plt.close()
 
 
+# def phase_space(x, vx, t, name):
+#     """
+#     Plot the phase space of the particles.
 
-def phase_space(x, vx, t, name):
-    """
-    Plot the phase space of the particles.
+#     Parameters:
+#     - x (ndarray): The x-coordinates of the particles.
+#     - vx (ndarray): The x-component of the velocities of the particles.
+#     - t (ndarray): The time values.
+#     - name (str): The name of the plot.
 
-    Parameters:
-    - x (ndarray): The x-coordinates of the particles.
-    - vx (ndarray): The x-component of the velocities of the particles.
-    - t (ndarray): The time values.
-    - name (str): The name of the plot.
+#     Returns:
+#     None
+#     """
+#     plt.scatter(x, vx)
+#     plt.xlabel("Position")
+#     plt.ylabel("Velocity")
+#     plt.title(f"{name} Phase Space")
 
-    Returns:
-    None
-    """
-    plt.scatter(x, vx)
-    plt.xlabel("Position")
-    plt.ylabel("Velocity")
-    plt.title(f"{name} Phase Space")
+#     if not os.path.exists(f"plots/phase_space/{name}"):
+#         os.makedirs(f"plots/phase_space/{name}")
 
-    if not os.path.exists(f"plots/phase_space/{name}"):
-        os.makedirs(f"plots/phase_space/{name}")
-
-    plt.savefig(f"plots/phase_space/{name}/{name}_phase_space.{t:09}.png", dpi=300)
-    plt.close()
-
-
-def multi_phase_space(x1, x2, vx1, vx2, t, species1, species2, name, x_wind):
-    """
-    Plot the phase space of the particles.
-
-    Parameters:
-    - x1 (ndarray): The x-coordinates of the particles in the first species.
-    - x2 (ndarray): The x-coordinates of the particles in the second species.
-    - vx1 (ndarray): The x-component of the velocities of the particles in the first species.
-    - vx2 (ndarray): The x-component of the velocities of the particles in the second species.
-    - t (ndarray): The time values.
-    - name (str): The name of the plot.
-
-    Returns:
-    None
-    """
+#     plt.savefig(f"plots/phase_space/{name}/{name}_phase_space.{t:09}.png", dpi=300)
+#     plt.close()
 
 
-    ax = plt.figure().add_subplot()
-    ax.set_xlim( -(2/3)*x_wind, (2/3)*x_wind )
-    ax.scatter(x1, vx1, c='r', label=f'{species1}')
-    ax.scatter(x2, vx2, c='b', label=f'{species2}')
-    ax.set_xlabel("Position")
-    ax.set_ylabel("Velocity")
-    ax.set_title(f"{name} Phase Space")
-    ax.legend(loc='upper right')
+# def multi_phase_space(x1, x2, vx1, vx2, t, species1, species2, name, x_wind):
+#     """
+#     Plot the phase space of the particles.
 
-    if not os.path.exists(f"plots/phase_space/{name}"):
-        os.makedirs(f"plots/phase_space/{name}")
+#     Parameters:
+#     - x1 (ndarray): The x-coordinates of the particles in the first species.
+#     - x2 (ndarray): The x-coordinates of the particles in the second species.
+#     - vx1 (ndarray): The x-component of the velocities of the particles in the first species.
+#     - vx2 (ndarray): The x-component of the velocities of the particles in the second species.
+#     - t (ndarray): The time values.
+#     - name (str): The name of the plot.
+
+#     Returns:
+#     None
+#     """
+
+
+#     ax = plt.figure().add_subplot()
+#     ax.set_xlim( -(2/3)*x_wind, (2/3)*x_wind )
+#     ax.scatter(x1, vx1, c='r', label=f'{species1}')
+#     ax.scatter(x2, vx2, c='b', label=f'{species2}')
+#     ax.set_xlabel("Position")
+#     ax.set_ylabel("Velocity")
+#     ax.set_title(f"{name} Phase Space")
+#     ax.legend(loc='upper right')
+
+#     if not os.path.exists(f"plots/phase_space/{name}"):
+#         os.makedirs(f"plots/phase_space/{name}")
         
-    plt.savefig(f"plots/phase_space/{name}/{name}_phase_space.{t:09}.png", dpi=300)
-    plt.close()
+#     plt.savefig(f"plots/phase_space/{name}/{name}_phase_space.{t:09}.png", dpi=300)
+#     plt.close()
 
 @jit
 def number_density(n, Nparticles, particlex, particley, particlez, dx, dy, dz, Nx, Ny, Nz):

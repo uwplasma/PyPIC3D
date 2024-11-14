@@ -14,12 +14,10 @@ import matplotlib.pyplot as plt
 
 
 from PyPIC3D.plotting import (
-    plot_fields, plot_positions, plot_rho, plot_velocities,
-    plot_velocity_histogram, plot_KE, plot_probe, plot_fft,
-    phase_space, multi_phase_space, particles_phase_space,
-    number_density, totalfield_energy, probe, freq,
-    magnitude_probe, write_probe,
-    dominant_modes, plot_dominant_modes
+    plot_fields, plot_positions, plot_rho,
+    plot_KE, plot_probe, plot_fft,
+    particles_phase_space, write_probe,
+    dominant_modes, plot_dominant_modes, magnitude_probe
 )
 from PyPIC3D.particle import (
     initial_particles, update_position, total_KE, total_momentum,
