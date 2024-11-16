@@ -66,10 +66,13 @@ def spectral_poisson_solve(rho, eps, dx, dy, dz):
     # create 3D meshgrid of wavenumbers
     k2 = kx**2 + ky**2 + kz**2
     # calculate the squared wavenumber
-    k2 = jnp.where(k2 == 0, 1e-6, k2)
+    k2 = k2.at[0, 0, 0].set(1.0)
+    #k2 = jnp.where(k2 == 0, 1e-12, k2)
     # avoid division by zero
     phi = jnp.fft.fftn(rho) / (eps*k2)
     # calculate the Fourier transform of the charge density and divide by the permittivity and squared wavenumber
+    phi = phi.at[0, 0, 0].set(0)
+    # set the DC component to zero
     phi = jnp.fft.ifftn(phi).real
     # calculate the inverse Fourier transform to obtain the electric potential
     return phi
