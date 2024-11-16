@@ -11,6 +11,8 @@ import scipy
 import os
 import plotly.graph_objects as go
 from PyPIC3D.rho import update_rho
+import vtk
+import vtk.util.numpy_support as vtknp
 
 def plot_rho(rho, t, name, dx, dy, dz):
     """
@@ -41,8 +43,34 @@ def plot_rho(rho, t, name, dx, dy, dz):
 
 
     gridToVTK(f"./plots/rho/{name}_{t:09}", x, y, z,   \
-            cellData = {f"{name}" : np.asarray(rho)}) 
+            cellData = {f"{name}" : np.asarray(rho)})
 # plot the charge density in the vtk file format
+
+def save_vector_field_as_vtk(fieldx, fieldy, fieldz, grid, file_path):
+    # Create a new vtkRectilinearGrid
+    rectilinear_grid = vtk.vtkRectilinearGrid()
+    rectilinear_grid.SetDimensions(grid[0].size, grid[1].size, grid[2].size)
+
+    # Set the coordinates for the grid
+    rectilinear_grid.SetXCoordinates(vtknp.numpy_to_vtk(grid[0]))
+    rectilinear_grid.SetYCoordinates(vtknp.numpy_to_vtk(grid[1]))
+    rectilinear_grid.SetZCoordinates(vtknp.numpy_to_vtk(grid[2]))
+
+    # Combine the components into a single vector field
+    vector_field = np.stack((fieldx, fieldy, fieldz), axis=-1)
+
+    # Convert the numpy vector field to vtk format
+    vtk_vector_field = vtknp.numpy_to_vtk(vector_field.reshape(-1, 3), deep=True)
+    vtk_vector_field.SetName("VectorField")
+
+    # Add the vector field to the grid
+    rectilinear_grid.GetPointData().SetVectors(vtk_vector_field)
+
+    # Write the grid to a file
+    writer = vtk.vtkRectilinearGridWriter()
+    writer.SetFileName(file_path)
+    writer.SetInputData(rectilinear_grid)
+    writer.Write()
 
 def plot_fields(fieldx, fieldy, fieldz, t, name, dx, dy, dz):
     """
@@ -341,7 +369,7 @@ def particles_phase_space(particles, t, name):
     plt.xlabel("Position")
     plt.ylabel("Velocity")
     plt.title(f"{name} Phase Space")
-    plt.savefig(f"plots/phase_space/y/{name}_phase_space.{t:09}.png", dpi=300)
+    plt.savefig(f"plots/phase_space/y/{name}_phase_space.{t:09}.png", dpi=150)
     plt.close()
 
     idx = 0
@@ -353,7 +381,7 @@ def particles_phase_space(particles, t, name):
     plt.xlabel("Position")
     plt.ylabel("Velocity")
     plt.title(f"{name} Phase Space")
-    plt.savefig(f"plots/phase_space/z/{name}_phase_space.{t:09}.png", dpi=300)
+    plt.savefig(f"plots/phase_space/z/{name}_phase_space.{t:09}.png", dpi=150)
     plt.close()
 
     idx = 0
@@ -366,7 +394,7 @@ def particles_phase_space(particles, t, name):
     plt.xlabel("Position")
     plt.ylabel("Velocity Magnitude")
     plt.title(f"{name} Phase Space (Magnitude)")
-    plt.savefig(f"plots/phase_space/magnitude/{name}_phase_space.{t:09}.png", dpi=300)
+    plt.savefig(f"plots/phase_space/magnitude/{name}_phase_space.{t:09}.png", dpi=150)
     plt.close()
 
 

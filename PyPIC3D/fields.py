@@ -150,6 +150,7 @@ def calculateE(world, particles, constants, rho, phi, M, t, solver, bc, verbose,
 
     if verbose:
         print(f"Calculating Electric Potential, Max Value: {jnp.max(phi)}")
+        print(f"Potential Error: {compute_pe(phi, rho, eps, dx, dy, dz, solver, bc='periodic')}%")
 
     if solver == 'spectral':
         Ex, Ey, Ez = spectral_gradient(phi, dx, dy, dz)

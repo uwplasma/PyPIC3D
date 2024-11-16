@@ -1,20 +1,16 @@
 # This is a configuration file for PyPIC3D
 [simulation_parameters]
-name = "TS Instability using FDTD"
-t_wind = 10000e-12
+name = "TS Instability using Spectral methods"
+t_wind = 300e-9
 output_dir = "/home/christopherwoolford/Documents/PyPIC3D"
 bc = 'periodic'
-solver = 'fdtd'
-Nx = 30
-Ny = 30
-Nz = 30
+solver = 'spectral'
+Nx = 100
+Ny = 10
+Nz = 10
 x_wind = 1e-2
 y_wind = 1e-2
 z_wind = 1e-2
-N_electrons = 5000
-N_ions = 5000
-Te = 100
-Ti = 100
 verbose = false
 electrostatic = true
 
@@ -25,22 +21,22 @@ plotpositions = false
 plotKE = false
 plotfields = true
 plot_dispersion = false
-plotting_interval = 100
+plotting_interval = 25
 
 [particle1]
 name = "electrons"
 N_particles = 5000
 charge = -1.602e-19
 mass   = 9.1093837e-31
-temperature = 100
+temperature = 1
 update_pos = true
 update_v = true
 
 
 [particle2]
 name = "ions"
-N_particles = 5000
-charge = 1.602e-19
+N_particles = 5
+charge = 0
 mass = 1.67e-27
 temperature = 100
 update_pos = false

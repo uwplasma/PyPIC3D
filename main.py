@@ -17,7 +17,8 @@ from PyPIC3D.plotting import (
     plot_fields, plot_positions, plot_rho,
     plot_KE, plot_probe, plot_fft,
     particles_phase_space, write_probe,
-    dominant_modes, plot_dominant_modes, magnitude_probe
+    dominant_modes, plot_dominant_modes, magnitude_probe,
+    save_vector_field_as_vtk
 )
 from PyPIC3D.particle import (
     initial_particles, update_position, total_KE, total_momentum,
@@ -142,10 +143,10 @@ dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
 world = {'dx': dx, 'dy': dy, 'dz': dz, 'Nx': Nx, 'Ny': Ny, 'Nz': Nz, 'x_wind': x_wind, 'y_wind': y_wind, 'z_wind': z_wind}
 
 ################ Courant Condition #############################################################################
-courant_number = 1
+courant_number = 1 #/100
 dt = courant_condition(courant_number, world, simulation_parameters, constants)
 # calculate spatial resolution using courant condition
-
+dt = dt*200
 Nt     = int( t_wind / dt )
 # Nt for resolution
 
@@ -222,13 +223,14 @@ ev_x, ev_y, ev_z = particles[0].get_velocity()
 alternating_ones = (-1)**jnp.array(range(0,N_particles))
 relative_drift_velocity = 0.5*jnp.sqrt(3*constants['kb']*Te/me)
 perturbation = relative_drift_velocity*alternating_ones
-perturbation *= (1 + 0.1*jnp.sin(2*jnp.pi*electron_x/x_wind))
-ev_x += perturbation
+#perturbation *= (1 + 0.1*jnp.sin(2*jnp.pi*electron_x/x_wind))
+ev_x = perturbation
 ev_y = jnp.zeros(N_particles)
 ev_z = jnp.zeros(N_particles)
 particles[0].set_velocity(ev_x, ev_y, ev_z)
 
-electron_y = jnp.ones(N_particles) * y_wind/4*alternating_ones
+electron_y = jnp.zeros(N_particles)# jnp.ones(N_particles) * y_wind/4*alternating_ones
+electron_z = jnp.zeros(N_particles)
 particles[0].set_position(electron_x, electron_y, electron_z)
 # put electrons with opposite velocities in the same position along y
 
@@ -309,6 +311,68 @@ p = []
 for t in range(Nt):
     print(f'Iteration {t}, Time: {t*dt} s')
 
+    ################## PLOTTING ########################################################################################
+
+    if t % plot_freq == 0:
+        vx, vy, vz = particles[0].get_velocity()
+        jnp.save(f'data/vx/vx_{t:09}', vx)
+        jnp.save(f'data/vy/vy_{t:09}', vy)
+        jnp.save(f'data/vz/vz_{t:09}', vz)
+        # save the velocity data
+        plot_t.append(t*dt)
+
+        # plt.contourf(jnp.abs(phi[:, :, int(Nz/2)].T), levels=50, cmap='viridis')
+        # plt.colorbar()  # Add a colorbar
+        # plt.title('Electric Potential Contours')
+        # plt.xlabel('X')
+        # plt.ylabel('Y')
+        # plt.savefig(f'plots/phi/phi_{t:09}.png')
+        # plt.close()
+        # plot the electric potential
+
+        if plot_dispersion:
+            kz.append(dominant_modes(Ez, 'z', dx, dy, dz, num_modes=2))
+        # calculate the dispersion relation
+
+        gridx, gridy, gridz = grid
+        Ex_integral = jnp.sum(jnp.einsum('ijk,i->jk', Ex**2, gridx))
+        Ey_integral = jnp.sum(jnp.einsum('ijk,j->ik', Ey**2, gridy))
+        Ez_integral = jnp.sum(jnp.einsum('ijk,k->ij', Ez**2, gridz))
+
+        write_probe(Ex_integral + Ey_integral + Ez_integral, t*dt, "avg_E.txt")
+        #avg_z.append(particles[0].get_position()[2])
+        p0 = 0
+        for particle in particles:
+            p0 += particle.momentum()
+        p.append(p0)
+        # avg_jx.append(jnp.mean(Jx))
+        # avg_jy.append(jnp.mean(Jy))
+        # avg_jz.append(jnp.mean(Jz))
+        # calculate the average current density
+        if plotpositions:
+            plot_positions(particles, t, x_wind, y_wind, z_wind)
+        if plotvelocities:
+            plot_velocities(particles, t, x_wind, y_wind, z_wind)
+        if phaseSpace:
+            particles_phase_space([particles[0]], t, "Particles")
+        if plotfields:
+            save_vector_field_as_vtk(Ex, Ey, Ez, grid, f"plots/fields/E_{t:09}.vtr")
+            save_vector_field_as_vtk(Bx, By, Bz, staggered_grid, f"plots/fields/B_{t:09}.vtr")
+            # plot_fields(Ex, Ey, Ez, t, "E", dx, dy, dz)
+            # plot_fields(Bx, By, Bz, t, "B", dx, dy, dz)
+            plot_rho(rho, t, "rho", dx, dy, dz)
+            Eprobe.append(magnitude_probe(Ex, Ey, Ez, int(Nx/2), int(Ny/2), int(Nz/2)))
+            averageE.append(  jnp.mean( jnp.sqrt( Ex**2 + Ey**2 + Ez**2 ) )   )
+        if plotKE:
+            ke = 0
+            for particle in particles:
+                ke += particle.kinetic_energy()
+            KE.append(ke)
+            KE_time.append(t*dt)
+        if plot_errors:
+            div_error_E.append(compute_electric_divergence_error(Ex, Ey, Ez, rho, eps, dx, dy, dz, solver, bc))
+            div_error_B.append(compute_magnetic_divergence_error(Bx, By, Bz, dx, dy, dz, solver, bc))
+
     # vx, vy, vz = particles[0].get_velocity()
     # vx += perturb_function(t, dt, perturbation_period, velocity_perturbation)
     # particles[0].set_velocity(vx, vy, vz)
@@ -353,55 +417,7 @@ for t in range(Nt):
             Ex, Ey, Ez = autodiff_update_E(Ex, Ey, Ez, Bx, By, Bz, dt, C)
         # update the electric field using the curl of the magnetic field
 
-    ################## PLOTTING ########################################################################################
 
-    if t % plot_freq == 0:
-        plot_t.append(t*dt)
-
-        # plt.contourf(jnp.abs(phi[:, :, int(Nz/2)].T), levels=50, cmap='viridis')
-        # plt.colorbar()  # Add a colorbar
-        # plt.title('Electric Potential Contours')
-        # plt.xlabel('X')
-        # plt.ylabel('Y')
-        # plt.savefig(f'plots/phi/phi_{t:09}.png')
-        # plt.close()
-        # plot the electric potential
-
-        if plot_dispersion:
-            kz.append(dominant_modes(Ez, 'z', dx, dy, dz, num_modes=2))
-        # calculate the dispersion relation
-
-        write_probe(jnp.mean(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)), t*dt, "avg_E.txt")
-        #avg_z.append(particles[0].get_position()[2])
-        p0 = 0
-        for particle in particles:
-            p0 += particle.momentum()
-        p.append(p0)
-        # avg_jx.append(jnp.mean(Jx))
-        # avg_jy.append(jnp.mean(Jy))
-        # avg_jz.append(jnp.mean(Jz))
-        # calculate the average current density
-        if plotpositions:
-            plot_positions(particles, t, x_wind, y_wind, z_wind)
-        if plotvelocities:
-            plot_velocities(particles, t, x_wind, y_wind, z_wind)
-        if phaseSpace:
-            particles_phase_space([particles[0]], t, "Particles")
-        if plotfields:
-            plot_fields(Ex, Ey, Ez, t, "E", dx, dy, dz)
-            plot_fields(Bx, By, Bz, t, "B", dx, dy, dz)
-            plot_rho(rho, t, "rho", dx, dy, dz)
-            Eprobe.append(magnitude_probe(Ex, Ey, Ez, int(Nx/2), int(Ny/2), int(Nz/2)))
-            averageE.append(  jnp.mean( jnp.sqrt( Ex**2 + Ey**2 + Ez**2 ) )   )
-        if plotKE:
-            ke = 0
-            for particle in particles:
-                ke += particle.kinetic_energy()
-            KE.append(ke)
-            KE_time.append(t*dt)
-        if plot_errors:
-            div_error_E.append(compute_electric_divergence_error(Ex, Ey, Ez, rho, eps, dx, dy, dz, solver, bc))
-            div_error_B.append(compute_magnetic_divergence_error(Bx, By, Bz, dx, dy, dz, solver, bc))
 
 #     if t % plot_freq == 0:
 #     ############## PLOTTING ###################################################################
@@ -502,7 +518,7 @@ duration = end - start
 simulation_stats = {"total_time": duration, "total_iterations": Nt, "time_per_iteration": duration/Nt, "debye_length": debye.item(), \
     "plasma_frequency": theoretical_freq.item(), 'thermal_velocity': jnp.sqrt(2*constants['kb']*Te/me).item()}
 
-dump_parameters_to_toml(simulation_stats, simulation_parameters, plotting_parameters, constants)
+dump_parameters_to_toml(simulation_stats, simulation_parameters, plotting_parameters, constants, particles)
 # save the parameters to an output file
 
 print(f"\nSimulation Complete")

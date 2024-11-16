@@ -16,9 +16,25 @@ import toml
 import os, sys
 from scipy.interpolate import RegularGridInterpolator
 import pandas as pd
+import vtk
+import vtkmodules.util.numpy_support as vtknp
 # import external libraries
 
 from PyPIC3D.particle import initial_particles, particle_species
+
+def load_rectilinear_grid(file_path):
+    reader = vtk.vtkRectilinearGridReader()
+    reader.SetFileName(file_path)
+    reader.Update()
+    rectilinear_grid = reader.GetOutput()
+    x = vtknp.vtk_to_numpy(rectilinear_grid.GetXCoordinates())
+    y = vtknp.vtk_to_numpy(rectilinear_grid.GetYCoordinates())
+    z = vtknp.vtk_to_numpy(rectilinear_grid.GetZCoordinates())
+    data = vtknp.vtk_to_numpy(rectilinear_grid.GetPointData().GetVectors())
+    field_x = data[:, 0].reshape(len(x), len(y), len(z))
+    field_y = data[:, 1].reshape(len(x), len(y), len(z))
+    field_z = data[:, 2].reshape(len(x), len(y), len(z))
+    return field_x, field_y, field_z
 
 # Define the function to read the TOML file and convert it to a DataFrame
 def read_toml_to_dataframe(toml_file):
@@ -293,14 +309,16 @@ def update_parameters_from_toml(config_file, simulation_parameters, plotting_par
 
     return simulation_parameters, plotting_parameters, constants
 
-def dump_parameters_to_toml(simulation_stats, simulation_parameters, plotting_parameters, constants):
+def dump_parameters_to_toml(simulation_stats, simulation_parameters, plotting_parameters, constants, particles):
     """
-    Dump the simulation and plotting parameters into an output TOML file.
+    Dump the simulation, plotting parameters, and particle species into an output TOML file.
 
     Parameters:
-    - output_file (str): Path to the output TOML file.
+    - simulation_stats (dict): Dictionary of simulation statistics.
     - simulation_parameters (dict): Dictionary of simulation parameters.
     - plotting_parameters (dict): Dictionary of plotting parameters.
+    - constants (dict): Dictionary of constants.
+    - particles (list): List of particle species.
     """
 
     output_path = simulation_parameters["output_dir"]
@@ -310,9 +328,22 @@ def dump_parameters_to_toml(simulation_stats, simulation_parameters, plotting_pa
         "simulation_stats": simulation_stats,
         "simulation_parameters": simulation_parameters,
         "plotting": plotting_parameters,
-        "constants": constants
+        "constants": constants,
+        "particles": []
     }
-    
+
+    for particle in particles:
+        particle_dict = {
+            "name": particle.name,
+            "N_particles": particle.N_particles,
+            "charge": particle.charge,
+            "mass": particle.mass,
+            "temperature": particle.T,
+            "update_pos": particle.update_pos,
+            "update_v": particle.update_v
+        }
+        config["particles"].append(particle_dict)
+
     with open(output_file, 'w') as f:
         toml.dump(config, f)
 
