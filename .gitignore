@@ -8,5 +8,7 @@ tensorboard/
 *.txt
 *.sh
 *.odt
+*.npy
+*.vtr
 settings.json
 output.toml
