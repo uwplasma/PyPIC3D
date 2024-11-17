@@ -222,7 +222,7 @@ def spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, world, dt):
 
 
 @jit
-def spectralEsolve(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, world, dt, C, eps):
+def spectralEsolve(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, world, dt, constants):
     """
     Solve the electric field equations using the spectral method and half leapfrog.
 
@@ -249,6 +249,8 @@ def spectralEsolve(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, wor
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
+    C = constants['C']
+    eps = constants['eps']
 
     curlx, curly, curlz = spectral_curl(Bx, By, Bz, dx, dy, dz)
     # calculate the curl of the magnetic field
