@@ -29,11 +29,11 @@ from PyPIC3D.fields import (
 )
 
 from PyPIC3D.spectral import (
-    spectralBsolve, spectralEsolve
+    spectralBsolve, spectralEsolve, spectral_divergence_correction
 )
 
 from PyPIC3D.fdtd import (
-    update_B, update_E
+    update_B, update_E, fdtd_current_correction
 )
 
 from PyPIC3D.autodiff import (
@@ -55,9 +55,6 @@ from PyPIC3D.defaults import (
     default_parameters
 )
 
-from PyPIC3D.charge_conservation import (
-    current_correction, marder_correction
-)
 
 from PyPIC3D.model import (
     PoissonPrecondition
@@ -198,21 +195,7 @@ key3 = random.key(1234)
 key4 = random.key(2345)
 key5 = random.key(3456)
 # random keys for initializing the particles
-# if cold_start:
-#     electron_x, electron_y, electron_z, ev_x, ev_y, ev_z = cold_start_init(0, N_electrons, x_wind, y_wind, z_wind, me, Te, kb, key1, key2, key3)
-#     ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = cold_start_init(0, N_ions, x_wind, y_wind, z_wind, mi, Ti, kb, key3, key4, key5)
-# else:
-#     electron_x, electron_y, electron_z, ev_x, ev_y, ev_z  = initial_particles(N_electrons, x_wind, y_wind, z_wind, me, Te, kb, key1, key2, key3)
-#     ion_x, ion_y, ion_z, iv_x, iv_y, iv_z                 = initial_particles(N_ions, x_wind, y_wind, z_wind, mi, Ti, kb, key3, key4, key5)
-# # initialize the positions and velocities of the electrons and ions in the plasma.
-# # eventually, I need to update the initialization to use a more accurate position and velocity distribution.
 
-# electron_masses = jnp.ones(N_electrons) * me
-# ion_masses = jnp.ones(N_ions) * mi
-# electrons = particle_species("electrons", N_electrons, q_e, electron_masses, ev_x, ev_y, ev_z, electron_x, electron_y, electron_z)
-# ions = particle_species("ions", N_ions, q_i, ion_masses, iv_x, iv_y, iv_z, ion_x, ion_y, ion_z)
-# particles = [electrons, ions]
-# # create the particle species
 
 #################################### Two Stream Instability #####################################################
 N_particles = particles[0].get_number_of_particles()
@@ -234,16 +217,6 @@ electron_z = jnp.zeros(N_particles)
 particles[0].set_position(electron_x, electron_y, electron_z)
 # put electrons with opposite velocities in the same position along y
 
-# # add perturbation to the electron velocities
-
-# iv_x = jnp.zeros(N_ions)
-# iv_y = jnp.zeros(N_ions)
-# iv_z = jnp.zeros(N_ions)
-# # initialize the ion velocities to zero
-
-# particles[0].set_velocity(ev_x, ev_y, ev_z)
-# particles[1].set_velocity(iv_x, iv_y, iv_z)
-# # update the velocities of the particles
 ##################################### Neural Network Preconditioner ################################################
 
 key = jax.random.PRNGKey(0)
@@ -279,17 +252,6 @@ print(f"Theoretical Plasma Frequency: {theoretical_freq} Hz")
 print(f"Debye Length: {debye} m")
 print(f"Thermal Velocity: {jnp.sqrt(3*constants['kb']*Te/me)}\n")
 
-# avg_jx = []
-# avg_jy = []
-# avg_jz = []
-
-perturbation_period = 20*dt # starting with 5 dt's for now
-velocity_perturbation = 0e9 # m/s
-# perturbation velocity
-def perturb_function(t, dt, perturbation_period, velocity_perturbation):
-    perturbation = velocity_perturbation * jnp.sin(2 * jnp.pi * t * dt / perturbation_period)
-    return perturbation
-# function to calculate the perturbation
 
 Jx = jnp.zeros((Nx, Ny, Nz))
 Jy = jnp.zeros((Nx, Ny, Nz))
@@ -297,16 +259,7 @@ Jz = jnp.zeros((Nx, Ny, Nz))
 
 
 
-#avg_z = []
 p = []
-
-# By = jnp.ones((Nx, Ny, Nz)) * 1
-# vx, vy, vz = particles[0].get_velocity()
-# #vx += perturb_function(t, dt, perturbation_period, velocity_perturbation)
-# vy = jnp.zeros((N_electrons))
-# vz = jnp.zeros((N_electrons))
-# vx = jnp.ones((N_electrons)) * 0.75e6
-# particles[0].set_velocity(vx, vy, vz)
 
 for t in range(Nt):
     print(f'Iteration {t}, Time: {t*dt} s')
@@ -321,34 +274,11 @@ for t in range(Nt):
         # save the velocity data
         plot_t.append(t*dt)
 
-        # plt.contourf(jnp.abs(phi[:, :, int(Nz/2)].T), levels=50, cmap='viridis')
-        # plt.colorbar()  # Add a colorbar
-        # plt.title('Electric Potential Contours')
-        # plt.xlabel('X')
-        # plt.ylabel('Y')
-        # plt.savefig(f'plots/phi/phi_{t:09}.png')
-        # plt.close()
-        # plot the electric potential
-
-        if plot_dispersion:
-            kz.append(dominant_modes(Ez, 'z', dx, dy, dz, num_modes=2))
-        # calculate the dispersion relation
-
-        gridx, gridy, gridz = grid
-        Ex_integral = jnp.sum(jnp.einsum('ijk,i->jk', Ex**2, gridx))
-        Ey_integral = jnp.sum(jnp.einsum('ijk,j->ik', Ey**2, gridy))
-        Ez_integral = jnp.sum(jnp.einsum('ijk,k->ij', Ez**2, gridz))
-
-        write_probe(Ex_integral + Ey_integral + Ez_integral, t*dt, "avg_E.txt")
-        #avg_z.append(particles[0].get_position()[2])
         p0 = 0
         for particle in particles:
             p0 += particle.momentum()
         p.append(p0)
-        # avg_jx.append(jnp.mean(Jx))
-        # avg_jy.append(jnp.mean(Jy))
-        # avg_jz.append(jnp.mean(Jz))
-        # calculate the average current density
+
         if plotpositions:
             plot_positions(particles, t, x_wind, y_wind, z_wind)
         if plotvelocities:
@@ -358,8 +288,6 @@ for t in range(Nt):
         if plotfields:
             save_vector_field_as_vtk(Ex, Ey, Ez, grid, f"plots/fields/E_{t:09}.vtr")
             save_vector_field_as_vtk(Bx, By, Bz, staggered_grid, f"plots/fields/B_{t:09}.vtr")
-            # plot_fields(Ex, Ey, Ez, t, "E", dx, dy, dz)
-            # plot_fields(Bx, By, Bz, t, "B", dx, dy, dz)
             plot_rho(rho, t, "rho", dx, dy, dz)
             Eprobe.append(magnitude_probe(Ex, Ey, Ez, int(Nx/2), int(Ny/2), int(Nz/2)))
             averageE.append(  jnp.mean( jnp.sqrt( Ex**2 + Ey**2 + Ez**2 ) )   )
@@ -373,9 +301,6 @@ for t in range(Nt):
             div_error_E.append(compute_electric_divergence_error(Ex, Ey, Ez, rho, eps, dx, dy, dz, solver, bc))
             div_error_B.append(compute_magnetic_divergence_error(Bx, By, Bz, dx, dy, dz, solver, bc))
 
-    # vx, vy, vz = particles[0].get_velocity()
-    # vx += perturb_function(t, dt, perturbation_period, velocity_perturbation)
-    # particles[0].set_velocity(vx, vy, vz)
 
     ############### SOLVE E FIELD ############################################################################################
     M = precondition(NN, phi, rho, model)
@@ -396,8 +321,8 @@ for t in range(Nt):
 
     ################ FIELD UPDATE #######################################################################
     if not electrostatic:
-        if solver == "spectral" or solver == "fdtd":
-            Jx, Jy, Jz = current_correction(particles, Nx, Ny, Nz)
+        if solver == "fdtd":
+            Jx, Jy, Jz = fdtd_current_correction(particles, Nx, Ny, Nz)
         # calculate the corrections for charge conservation using villasenor buneamn 1991
         if solver == "spectral":
             Bx, By, Bz = spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, world, dt)
@@ -410,6 +335,7 @@ for t in range(Nt):
         # print the maximum value of the magnetic field
 
         if solver == "spectral":
+            Ex, Ey, Ez = spectral_divergence_correction(Ex, Ey, Ez, rho, dx, dy, dz, dt, constants)
             Ex, Ey, Ez = spectralEsolve(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, world, dt, constants)
         elif solver == "fdtd":
             Ex, Ex, Ez = update_E(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, dx, dy, dz, dt, C, eps, bc)
@@ -417,67 +343,9 @@ for t in range(Nt):
             Ex, Ey, Ez = autodiff_update_E(Ex, Ey, Ez, Bx, By, Bz, dt, C)
         # update the electric field using the curl of the magnetic field
 
-
-
-#     if t % plot_freq == 0:
-#     ############## PLOTTING ###################################################################
-#         if plotEnergy:
-#             mu = 1.2566370613e-6
-#             # permeability of free space
-#             total_energy.append(  \
-#                 totalfield_energy(Ex, Ey, Ez, Bx, By, Bz, mu, eps) + \
-#                 total_KE(me, ev_x, ev_y, ev_z) + total_KE(mi, iv_x, iv_y, iv_z) )
-#             total_p.append( total_momentum(me, ev_x, ev_y, ev_z) + total_momentum(mi, iv_x, iv_y, iv_z) )
-#         if plotpositions:
-#             particlesx = jnp.concatenate([electron_x, ion_x])
-#             particlesy = jnp.concatenate([electron_y, ion_y])
-#             particlesz = jnp.concatenate([electron_z, ion_z])
-#             plot_positions( particlesx, particlesy, particlesz, t, x_wind, y_wind, z_wind)
-#         if plotvelocities:
-#             if not plotpositions:
-#                 particlesx = jnp.concatenate([electron_x, ion_x])
-#                 particlesy = jnp.concatenate([electron_y, ion_y])
-#                 particlesz = jnp.concatenate([electron_z, ion_z])
-#                 # get the particle positions if they haven't been computed
-#             velocitiesx = jnp.concatenate([ev_x, iv_x])
-#             velocitiesy = jnp.concatenate([ev_y, iv_y])
-#             velocitiesz = jnp.concatenate([ev_z, iv_z])
-#             plot_velocities( particlesx, particlesy, particlesz, velocitiesx, velocitiesy, velocitiesz, t, x_wind, y_wind, z_wind)
-#             plot_velocity_histogram(velocitiesx, velocitiesy, velocitiesz, t, nbins=100)
-#         if plotfields:
-#             plot_fields(Ex, Ey, Ez, t, "E", dx, dy, dz)
-#             plot_fields(Bx, By, Bz, t, "B", dx, dy, dz)
-#             plot_rho(rho, t, "rho", dx, dy, dz)
-#             Eprobe.append(magnitude_probe(Ex, Ey, Ez, int(Nx/2), int(Ny/2), int(Nz/2)))
-#             averageE.append(  jnp.mean( jnp.sqrt( Ex**2 + Ey**2 + Ez**2 ) )   )
-#         # plot the particles and save as png file
-#         if plotKE:
-#             KE.append(total_KE(me, ev_x, ev_y, ev_z) + total_KE(mi, iv_x, iv_y, iv_z))
-#             KE_time.append(t*dt)
-#         # calculate the total kinetic energy of the particles
-#         if plasmaFreq:
-#             n = jnp.zeros((Nx, Ny, Nz))
-#             current_freq = freq( n, N_electrons, electron_x, electron_y, electron_z, Nx, Ny, Nz, dx, dy, dz) 
-#             # calculate the current plasma frequency at time t
-#             freqs.append( current_freq )
-#             if verbose: print(f"Plasma Frequency: {current_freq} Hz")
-#         # calculate the plasma frequency
-#         if save_data:
-#             jnp.save(f'data/rho/rho_{t:09}', rho)
-#             jnp.save(f'data/phi/phi_{t:09}', phi)
-#         # save the data for the charge density and potential
-#         if phaseSpace:
-#             phase_space(electron_x, ev_x, t, "Electronx")
-#             phase_space(ion_x, iv_x, t, "Ionx")
-#             multi_phase_space(electron_x, ion_x, ev_x, iv_x, t, "Electrons", "Ions", "x", x_wind)
-#             multi_phase_space(electron_y, ion_y, ev_y, iv_y, t, "Electrons", "Ions", "y", y_wind)
-#             multi_phase_space(electron_z, ion_z, ev_z, iv_z, t, "Electrons", "Ions", "z", z_wind)
-#         # save the phase space data
 if plotfields:
     plot_probe(Eprobe, plot_t, "Electric Field", "ElectricField")
-    #efield_freq = plot_fft(Eprobe, dt*plot_freq, "FFT of Electric Field", "E_FFT")
     plot_probe(averageE, plot_t, "Electric Field", "AvgElectricField")
-    #print(f'Electric Field Frequency: {efield_freq}')
     # plot the electric field probe
 if plotKE:
     plot_KE(KE, KE_time)
@@ -489,22 +357,6 @@ if plot_dispersion:
     plot_dominant_modes(jnp.asarray(kz), plot_t, "Dominant Modes over Time", "Modes")
     # plot the dispersion relation
 
-# if plasmaFreq:
-#     plot_probe(freqs, "Plasma Frequency", "PlasmaFrequency")
-#     # plot the plasma frequency
-#     average_freq = jnp.mean( jnp.asarray(freqs[ int(len(freqs)/4):int(3*len(freqs)/4)  ] ) )
-#     print(f'Average Plasma Frequency: {average_freq}')
-# if plotEnergy:
-#     plot_probe(total_energy, "Total Energy", "TotalEnergy")
-#     # plot the total energy of the system
-#     plot_probe(total_p, "Total Momentum", "TotalMomentum")
-#     # plot the total momentum of the system
-# plot_probe(avg_jx, "Average Jx", "AverageJx")
-# plot_probe(avg_jy, "Average Jy", "AverageJy")
-# plot_probe(avg_jz, "Average Jz", "AverageJz")
-# plot the average current density
-
-#plot_probe(avg_z, "Average Z Position", "AverageZ")
 plot_probe(p, plot_t, "Total Momentum", "TotalMomentum")
 
 if plot_errors:

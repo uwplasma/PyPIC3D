@@ -44,6 +44,64 @@ def detect_gibbs_phenomenon(field, dx, dy, dz, threshold=0.1):
     return gibbs_detected
 
 @jit
+def spectral_divergence_correction(Ex, Ey, Ez, rho, dx, dy, dz, dt, constants):
+    """
+    Corrects the divergence of the electric field in Fourier space.
+
+    Parameters:
+    Ex (ndarray): Electric field component in the x-direction.
+    Ey (ndarray): Electric field component in the y-direction.
+    Ez (ndarray): Electric field component in the z-direction.
+    rho (ndarray): Charge density.
+    dx (float): Grid spacing in the x-direction.
+    dy (float): Grid spacing in the y-direction.
+    dz (float): Grid spacing in the z-direction.
+    dt (float): Time step.
+    constants (dict): Dictionary containing physical constants, including 'eps' (permittivity).
+
+    Returns:
+    tuple: Corrected electric field components (Ex, Ey, Ez).
+    """
+
+    Nx, Ny, Nz = Ex.shape
+    kx = jnp.fft.fftfreq(Nx, dx) * 2 * jnp.pi
+    ky = jnp.fft.fftfreq(Ny, dy) * 2 * jnp.pi
+    kz = jnp.fft.fftfreq(Nz, dz) * 2 * jnp.pi
+    kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
+    # create 3D meshgrid of wavenumbers
+
+    rho_fft = jnp.fft.fftn(rho)
+    # calculate the Fourier transform of the charge density
+
+    correction_mag = kx*Ex + ky*Ey + kz*Ez + 1j*rho_fft/constants['eps']
+    # calculate the magnitude of the correction term
+    kmag = jnp.sqrt(kx**2 + ky**2 + kz**2)
+    kmag = kmag.at[0, 0, 0].set(1.0)
+    # avoid division by zero
+
+    x_correction = correction_mag * kx / kmag
+    x_correction = x_correction.at[0, 0, 0].set(0)
+
+    y_correction = correction_mag * ky / kmag
+    y_correction = y_correction.at[0, 0, 0].set(0)
+
+    z_correction = correction_mag * kz / kmag
+    z_correction = z_correction.at[0, 0, 0].set(0)
+    # calculate the correction term in Fourier space
+
+    Ex_fft = jnp.fft.fftn(Ex)
+    Ey_fft = jnp.fft.fftn(Ey)
+    Ez_fft = jnp.fft.fftn(Ez)
+    # calculate the Fourier transform of the electric field
+
+    Ex = jnp.fft.ifftn(Ex_fft - x_correction).real
+    Ey = jnp.fft.ifftn(Ey_fft - y_correction).real
+    Ez = jnp.fft.ifftn(Ez_fft - z_correction).real
+    # apply the correction to the electric field
+
+    return Ex, Ey, Ez
+
+@jit
 def spectral_poisson_solve(rho, eps, dx, dy, dz):
     """
     Solve the Poisson equation for electrostatic potential using spectral method.
