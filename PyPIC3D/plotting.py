@@ -350,7 +350,7 @@ def particles_phase_space(particles, t, name):
     for species in particles:
         x, y, z = species.get_position()
         vx, vy, vz = species.get_velocity()
-        plt.scatter(x, vx, c=colors[idx], zorder=order)
+        plt.scatter(x, vx, c=colors[idx], zorder=order, s=1)
         idx += 1
         order -= 1
     plt.xlabel("Position")
