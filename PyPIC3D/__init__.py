@@ -18,3 +18,4 @@ from . import plotting
 from . import utils
 from . import spectral
 from . import fdtd
+from . import sor
