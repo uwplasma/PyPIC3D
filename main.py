@@ -212,6 +212,7 @@ ev_y = jnp.zeros(N_particles)
 ev_z = jnp.zeros(N_particles)
 particles[0].set_velocity(ev_x, ev_y, ev_z)
 
+#electron_x = jnp.zeros(N_particles)
 electron_y = jnp.zeros(N_particles)# jnp.ones(N_particles) * y_wind/4*alternating_ones
 electron_z = jnp.zeros(N_particles)
 particles[0].set_position(electron_x, electron_y, electron_z)
@@ -267,11 +268,11 @@ for t in range(Nt):
     ################## PLOTTING ########################################################################################
 
     if t % plot_freq == 0:
-        vx, vy, vz = particles[0].get_velocity()
-        jnp.save(f'data/vx/vx_{t:09}', vx)
-        jnp.save(f'data/vy/vy_{t:09}', vy)
-        jnp.save(f'data/vz/vz_{t:09}', vz)
-        # save the velocity data
+        # vx, vy, vz = particles[0].get_velocity()
+        # jnp.save(f'data/vx/vx_{t:09}', vx)
+        # jnp.save(f'data/vy/vy_{t:09}', vy)
+        # jnp.save(f'data/vz/vz_{t:09}', vz)
+        # # save the velocity data
         plot_t.append(t*dt)
 
         p0 = 0
@@ -300,6 +301,15 @@ for t in range(Nt):
         if plot_errors:
             div_error_E.append(compute_electric_divergence_error(Ex, Ey, Ez, rho, eps, dx, dy, dz, solver, bc))
             div_error_B.append(compute_magnetic_divergence_error(Bx, By, Bz, dx, dy, dz, solver, bc))
+
+        # if plotfields:
+        #     plt.title(f'E at t={t*dt:.2e}s')
+        #     Emag = jnp.sqrt(Ex**2 + Ey**2 + Ez**2)
+        #     plt.imshow(Emag[:, :, int(Nz/2)], origin='lower', extent=[0, x_wind, 0, y_wind])
+        #     plt.colorbar(label='E')
+        #     plt.tight_layout()
+        #     plt.savefig(f'plots/E_slice/E_slice_{t:09}.png')
+        #     plt.close()
 
 
     ############### SOLVE E FIELD ############################################################################################

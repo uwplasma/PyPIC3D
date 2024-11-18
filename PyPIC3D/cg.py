@@ -53,7 +53,7 @@ def conjugate_grad(A, b, x0, tol=1e-6, atol=0.0, maxiter=10000, M=None):
     This function implements the preconditioned Conjugate Gradient method.
     If no preconditioner is provided, the identity preconditioner is used.
     """
-    
+
     if M is None:
         noM = True
         M = lambda x: x

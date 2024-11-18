@@ -19,6 +19,7 @@ from PyPIC3D.fdtd import centered_finite_difference_laplacian, centered_finite_d
 from PyPIC3D.autodiff import autodiff_electric_field
 from PyPIC3D.rho import update_rho
 from PyPIC3D.cg import conjugate_grad
+from PyPIC3D.sor import solve_poisson_sor
 from PyPIC3D.errors import compute_pe
 from PyPIC3D.utils import use_gpu_if_set
 # import internal libraries
@@ -86,7 +87,8 @@ def solve_poisson(rho, eps, dx, dy, dz, phi, solver, bc='periodic', M = None, GP
         lapl = functools.partial(centered_finite_difference_laplacian, dx=dx, dy=dy, dz=dz, bc=bc)
         lapl = jit(lapl)
         # define the laplacian operator using finite difference method
-        phi = conjugate_grad(lapl, -rho/eps, phi, tol=1e-6, maxiter=40000, M=M)
+        phi = conjugate_grad(lapl, -rho/eps, phi, tol=1e-8, maxiter=100000, M=M)
+        #phi = solve_poisson_sor(phi, rho, dx, dy, dz, eps, omega=0.25, tol=1e-6, max_iter=100000)
     return phi
 
 def calculateE(world, particles, constants, rho, phi, M, t, solver, bc, verbose, GPUs):
@@ -129,7 +131,7 @@ def calculateE(world, particles, constants, rho, phi, M, t, solver, bc, verbose,
     z_wind = world['z_wind']
 
     eps = constants['eps']
-    
+
     if solver == 'spectral' or solver == 'fdtd':
         for species in particles:
             N_particles = species.get_number_of_particles()
@@ -147,6 +149,7 @@ def calculateE(world, particles, constants, rho, phi, M, t, solver, bc, verbose,
             phi = solve_poisson(rho, eps, dx, dy, dz, phi=rho, solver=solver, bc=bc, M=None, GPUs=GPUs)
         else:
             phi = solve_poisson(rho, eps, dx, dy, dz, phi=phi, solver=solver, bc=bc, M=M, GPUs=GPUs)
+
 
     if verbose:
         print(f"Calculating Electric Potential, Max Value: {jnp.max(phi)}")
