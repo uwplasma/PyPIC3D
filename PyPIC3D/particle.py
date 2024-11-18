@@ -344,9 +344,9 @@ class particle_species:
             self.x2 = euler_update(self.x2, self.v2, dt)
             self.x3 = euler_update(self.x3, self.v3, dt)
             # update the position of the particles
-        if self.bc == 'periodic':
-            self.periodic_boundary_condition(x_wind, y_wind, z_wind)
-        # apply periodic boundary conditions
+            if self.bc == 'periodic':
+                self.periodic_boundary_condition(x_wind, y_wind, z_wind)
+            # apply periodic boundary conditions
 
-        self.update_subcell_position()
-        # update the subcell positions for charge conservation algorithm
+            self.update_subcell_position()
+            # update the subcell positions for charge conservation algorithm
