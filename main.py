@@ -282,8 +282,8 @@ for t in range(Nt):
 
         if plotpositions:
             plot_positions(particles, t, x_wind, y_wind, z_wind)
-        if plotvelocities:
-            plot_velocities(particles, t, x_wind, y_wind, z_wind)
+        # if plotvelocities:
+        #     plot_velocities(particles, t, x_wind, y_wind, z_wind)
         if phaseSpace:
             particles_phase_space([particles[0]], t, "Particles")
         if plotfields:
@@ -302,14 +302,14 @@ for t in range(Nt):
             div_error_E.append(compute_electric_divergence_error(Ex, Ey, Ez, rho, eps, dx, dy, dz, solver, bc))
             div_error_B.append(compute_magnetic_divergence_error(Bx, By, Bz, dx, dy, dz, solver, bc))
 
-        # if plotfields:
-        #     plt.title(f'E at t={t*dt:.2e}s')
-        #     Emag = jnp.sqrt(Ex**2 + Ey**2 + Ez**2)
-        #     plt.imshow(Emag[:, :, int(Nz/2)], origin='lower', extent=[0, x_wind, 0, y_wind])
-        #     plt.colorbar(label='E')
-        #     plt.tight_layout()
-        #     plt.savefig(f'plots/E_slice/E_slice_{t:09}.png')
-        #     plt.close()
+        if plotfields:
+            plt.title(f'E at t={t*dt:.2e}s')
+            Emag = jnp.sqrt(Ex**2 + Ey**2 + Ez**2)
+            plt.imshow(Emag[:, :, int(Nz/2)], origin='lower', extent=[0, x_wind, 0, y_wind])
+            plt.colorbar(label='E')
+            plt.tight_layout()
+            plt.savefig(f'plots/E_slice/E_slice_{t:09}.png')
+            plt.close()
 
 
     ############### SOLVE E FIELD ############################################################################################
@@ -335,6 +335,7 @@ for t in range(Nt):
             Jx, Jy, Jz = fdtd_current_correction(particles, Nx, Ny, Nz)
         # calculate the corrections for charge conservation using villasenor buneamn 1991
         if solver == "spectral":
+            print("Spectral B Solve")
             Bx, By, Bz = spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, world, dt)
         elif solver == "fdtd":
             Bx, By, Bz = update_B(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt, bc)
