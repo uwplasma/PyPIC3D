@@ -29,7 +29,8 @@ from PyPIC3D.fields import (
 )
 
 from PyPIC3D.spectral import (
-    spectralBsolve, spectralEsolve, spectral_divergence_correction
+    spectralBsolve, spectralEsolve, spectral_divergence_correction,
+    initialize_magnetic_field
 )
 
 from PyPIC3D.fdtd import (
@@ -258,6 +259,8 @@ Jx = jnp.zeros((Nx, Ny, Nz))
 Jy = jnp.zeros((Nx, Ny, Nz))
 Jz = jnp.zeros((Nx, Ny, Nz))
 
+if solver == "spectral" and not electrostatic:
+    Bx, By, Bz = initialize_magnetic_field(particles, grid, staggered_grid, world, constants, GPUs)
 
 
 p = []
