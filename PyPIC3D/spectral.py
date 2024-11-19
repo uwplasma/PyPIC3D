@@ -545,20 +545,20 @@ def index_particles(particle, positions, ds):
     return (positions.at[particle].get() / ds).astype(int)
 
 @use_gpu_if_set
-def compute_current_density(particles, J, world, GPUs):
+def compute_current_density(particles, Jx, Jy, Jz, world, GPUs):
     """
     Computes the current density for a given set of particles in a simulation world.
 
     Parameters:
     particles (list): A list of particle species, each containing methods to get the number of particles, 
                       their positions, velocities, and charge.
-    J (numpy.ndarray): The current density array to be updated.
+    Jx, Jy, Jz (numpy.ndarray): The current density arrays to be updated.
     world (dict): A dictionary containing the simulation world parameters such as grid spacing (dx, dy, dz) 
                   and window dimensions (x_wind, y_wind, z_wind).
     GPUs (bool): A flag indicating whether to use GPU acceleration for the computation.
 
     Returns:
-    numpy.ndarray: The updated current density array.
+    tuple: The updated current density arrays (Jx, Jy, Jz).
     """
     dx = world['dx']
     dy = world['dy']
@@ -573,24 +573,26 @@ def compute_current_density(particles, J, world, GPUs):
         if N_particles > 0:
             particle_x, particle_y, particle_z = species.get_position()
             particle_vx, particle_vy, particle_vz = species.get_velocity()
-            J = update_current_density(N_particles, particle_x, particle_y, particle_z, particle_vx, particle_vy, particle_vz, dx, dy, dz, charge, x_wind, y_wind, z_wind, J, GPUs)
-    return J
+            Jx, Jy, Jz = update_current_density(N_particles, particle_x, particle_y, particle_z, particle_vx, particle_vy, particle_vz, dx, dy, dz, charge, x_wind, y_wind, z_wind, Jx, Jy, Jz, GPUs)
+    return Jx, Jy, Jz
 
 @use_gpu_if_set
 @jit
-def update_current_density(Nparticles, particlex, particley, particlez, particlevx, particlevy, particlevz, dx, dy, dz, q, x_wind, y_wind, z_wind, J, GPUs=False):
+def update_current_density(Nparticles, particlex, particley, particlez, particlevx, particlevy, particlevz, dx, dy, dz, q, x_wind, y_wind, z_wind, Jx, Jy, Jz, GPUs=False):
     def addto_J(particle, J):
+        Jx, Jy, Jz = J
         x = index_particles(particle, particlex, dx)
         y = index_particles(particle, particley, dy)
         z = index_particles(particle, particlez, dz)
         vx = particlevx.at[particle].get()
         vy = particlevy.at[particle].get()
         vz = particlevz.at[particle].get()
-        current_density = jnp.sqrt(vx**2 + vy**2 + vz**2)
-        J = J.at[x, y, z].add(q * current_density / (dx * dy * dz))
-        return J
+        Jx = Jx.at[x, y, z].add(q * vx / (dx * dy * dz))
+        Jy = Jy.at[x, y, z].add(q * vy / (dx * dy * dz))
+        Jz = Jz.at[x, y, z].add(q * vz / (dx * dy * dz))
+        return Jx, Jy, Jz
 
-    return jax.lax.fori_loop(0, Nparticles, addto_J, J)
+    return jax.lax.fori_loop(0, Nparticles, addto_J, (Jx, Jy, Jz))
 
 @jit
 def solve_magnetic_vector_potential(Jx, Jy, Jz, dx, dy, dz, mu0):
@@ -641,3 +643,44 @@ def solve_magnetic_vector_potential(Jx, Jy, Jz, dx, dy, dz, mu0):
     # calculate the inverse Fourier transform to obtain the magnetic vector potential
 
     return Ax, Ay, Az
+
+
+def initialize_magnetic_field(particles, grid, staggered_grid, world, constants, GPUs):
+    """
+    Initialize the magnetic field using the current density from the list of particles.
+
+    Parameters:
+    - particles (list): List of particle species.
+    - grid (Grid): The grid on which the fields are defined.
+    - staggered_grid (Grid): The staggered grid for field interpolation.
+    - world (dict): Dictionary containing the simulation world parameters.
+    - constants (dict): Dictionary containing physical constants, including 'mu0' (permeability).
+
+    Returns:
+    - Bx (ndarray): The x-component of the magnetic field.
+    - By (ndarray): The y-component of the magnetic field.
+    - Bz (ndarray): The z-component of the magnetic field.
+    """
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    mu0 = constants['mu']
+
+    # Initialize current density arrays
+    Nx = grid[0].shape[0]
+    Ny = grid[1].shape[0]
+    Nz = grid[2].shape[0]
+    Jx = jnp.zeros((Nx, Ny, Nz))
+    Jy = jnp.zeros((Nx, Ny, Nz))
+    Jz = jnp.zeros((Nx, Ny, Nz))
+
+    # Compute the current density from the particles
+    Jx, Jy, Jz = compute_current_density(particles, Jx, Jy, Jz, world, GPUs)
+
+    # Solve for the magnetic vector potential
+    Ax, Ay, Az = solve_magnetic_vector_potential(Jx, Jy, Jz, dx, dy, dz, mu0)
+
+    # Compute the magnetic field from the vector potential
+    Bx, By, Bz = spectral_curl(Ax, Ay, Az, dx, dy, dz)
+
+    return Bx, By, Bz
