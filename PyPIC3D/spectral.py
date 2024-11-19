@@ -205,12 +205,21 @@ def spectral_curl(xfield, yfield, zfield, dx, dy, dz):
     zfft = jnp.fft.fftn(zfield)
     # calculate the Fourier transform of the vector field
 
-    curlx = (-1j)*kz*yfft - (-1j)*ky*zfft
-    curly = (-1j)*kx*zfft - (-1j)*kz*xfft
-    curlz = (-1j)*ky*xfft - (-1j)*kx*yfft
+    dfx_dy = jnp.fft.ifftn(-1j*ky*xfft).real
+    dfx_dz = jnp.fft.ifftn(-1j*kz*xfft).real
+
+    dfy_dx = jnp.fft.ifftn(-1j*kx*yfft).real
+    dfy_dz = jnp.fft.ifftn(-1j*kz*yfft).real
+
+    dfz_dx = jnp.fft.ifftn(-1j*kx*zfft).real
+    dfz_dy = jnp.fft.ifftn(-1j*ky*zfft).real
+
+    curlx = dfz_dy - dfy_dz
+    curly = dfx_dz - dfz_dx
+    curlz = dfy_dx - dfx_dy
     # calculate the curl of the vector field
 
-    return jnp.fft.ifftn(curlx).real, jnp.fft.ifftn(curly).real, jnp.fft.ifftn(curlz).real
+    return curlx, curly, curlz
 
 @jit
 def spectral_gradient(field, dx, dy, dz):
@@ -272,6 +281,15 @@ def spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, world, dt):
 
     curlx, curly, curlz = spectral_curl(Ex, Ey, Ez, dx, dy, dz)
     # calculate the curl of the electric field
+
+    jax.debug.print('curlx magnitude: {}', jnp.linalg.norm(curlx))
+    jax.debug.print('curly magnitude: {}', jnp.linalg.norm(curly))
+    jax.debug.print('curlz magnitude: {}', jnp.linalg.norm(curlz))
+
+    jax.debug.print('Bx magnitude: {}', jnp.linalg.norm(Bx))
+    jax.debug.print('By magnitude: {}', jnp.linalg.norm(By))
+    jax.debug.print('Bz magnitude: {}', jnp.linalg.norm(Bz))
+    jax.debug.print('Time step (dt): {}', dt)
     Bx = Bx - dt/2*curlx
     By = By - dt/2*curly
     Bz = Bz - dt/2*curlz
@@ -506,3 +524,120 @@ def boris(q, m, x, y, z, vx, vy, vz, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_gri
     # calculate the new velocity
 
     return newvx, newvy, newvz
+
+
+@jit
+def index_particles(particle, positions, ds):
+    """
+    Calculate the index of a particle in a given position array.
+
+    Parameters:
+    - particle: int
+        The index of the particle.
+    - positions (array-like): The position array containing the particle positions.
+    - ds: float
+        The grid spacing.
+
+    Returns:
+    - index: int
+        The index of the particle in the position array, rounded down to the nearest integer.
+    """
+    return (positions.at[particle].get() / ds).astype(int)
+
+@use_gpu_if_set
+def compute_current_density(particles, J, world, GPUs):
+    """
+    Computes the current density for a given set of particles in a simulation world.
+
+    Parameters:
+    particles (list): A list of particle species, each containing methods to get the number of particles, 
+                      their positions, velocities, and charge.
+    J (numpy.ndarray): The current density array to be updated.
+    world (dict): A dictionary containing the simulation world parameters such as grid spacing (dx, dy, dz) 
+                  and window dimensions (x_wind, y_wind, z_wind).
+    GPUs (bool): A flag indicating whether to use GPU acceleration for the computation.
+
+    Returns:
+    numpy.ndarray: The updated current density array.
+    """
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    x_wind = world['x_wind']
+    y_wind = world['y_wind']
+    z_wind = world['z_wind']
+
+    for species in particles:
+        N_particles = species.get_number_of_particles()
+        charge = species.get_charge()
+        if N_particles > 0:
+            particle_x, particle_y, particle_z = species.get_position()
+            particle_vx, particle_vy, particle_vz = species.get_velocity()
+            J = update_current_density(N_particles, particle_x, particle_y, particle_z, particle_vx, particle_vy, particle_vz, dx, dy, dz, charge, x_wind, y_wind, z_wind, J, GPUs)
+    return J
+
+@use_gpu_if_set
+@jit
+def update_current_density(Nparticles, particlex, particley, particlez, particlevx, particlevy, particlevz, dx, dy, dz, q, x_wind, y_wind, z_wind, J, GPUs=False):
+    def addto_J(particle, J):
+        x = index_particles(particle, particlex, dx)
+        y = index_particles(particle, particley, dy)
+        z = index_particles(particle, particlez, dz)
+        vx = particlevx.at[particle].get()
+        vy = particlevy.at[particle].get()
+        vz = particlevz.at[particle].get()
+        current_density = jnp.sqrt(vx**2 + vy**2 + vz**2)
+        J = J.at[x, y, z].add(q * current_density / (dx * dy * dz))
+        return J
+
+    return jax.lax.fori_loop(0, Nparticles, addto_J, J)
+
+@jit
+def solve_magnetic_vector_potential(Jx, Jy, Jz, dx, dy, dz, mu0):
+    """
+    Solve for the magnetic vector potential using the magnetostatic Laplacian equation in the Coulomb gauge.
+
+    Parameters:
+    - Jx (ndarray): The x-component of the current density.
+    - Jy (ndarray): The y-component of the current density.
+    - Jz (ndarray): The z-component of the current density.
+    - dx (float): The grid spacing in the x-direction.
+    - dy (float): The grid spacing in the y-direction.
+    - dz (float): The grid spacing in the z-direction.
+    - mu0 (float): The permeability of free space.
+
+    Returns:
+    - Ax (ndarray): The x-component of the magnetic vector potential.
+    - Ay (ndarray): The y-component of the magnetic vector potential.
+    - Az (ndarray): The z-component of the magnetic vector potential.
+    """
+    Nx, Ny, Nz = Jx.shape
+    kx = jnp.fft.fftfreq(Nx, dx) * 2 * jnp.pi
+    ky = jnp.fft.fftfreq(Ny, dy) * 2 * jnp.pi
+    kz = jnp.fft.fftfreq(Nz, dz) * 2 * jnp.pi
+    kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
+    k2 = kx**2 + ky**2 + kz**2
+    k2 = k2.at[0, 0, 0].set(1.0)
+    # avoid division by zero
+
+    Jx_fft = jnp.fft.fftn(Jx)
+    Jy_fft = jnp.fft.fftn(Jy)
+    Jz_fft = jnp.fft.fftn(Jz)
+    # calculate the Fourier transform of the current density
+
+    Ax_fft = mu0 * Jx_fft / k2
+    Ay_fft = mu0 * Jy_fft / k2
+    Az_fft = mu0 * Jz_fft / k2
+    # solve for the magnetic vector potential in Fourier space
+
+    Ax_fft = Ax_fft.at[0, 0, 0].set(0)
+    Ay_fft = Ay_fft.at[0, 0, 0].set(0)
+    Az_fft = Az_fft.at[0, 0, 0].set(0)
+    # set the DC component to zero
+
+    Ax = jnp.fft.ifftn(Ax_fft).real
+    Ay = jnp.fft.ifftn(Ay_fft).real
+    Az = jnp.fft.ifftn(Az_fft).real
+    # calculate the inverse Fourier transform to obtain the magnetic vector potential
+
+    return Ax, Ay, Az

@@ -397,64 +397,6 @@ def particles_phase_space(particles, t, name):
     plt.savefig(f"plots/phase_space/magnitude/{name}_phase_space.{t:09}.png", dpi=150)
     plt.close()
 
-
-# def phase_space(x, vx, t, name):
-#     """
-#     Plot the phase space of the particles.
-
-#     Parameters:
-#     - x (ndarray): The x-coordinates of the particles.
-#     - vx (ndarray): The x-component of the velocities of the particles.
-#     - t (ndarray): The time values.
-#     - name (str): The name of the plot.
-
-#     Returns:
-#     None
-#     """
-#     plt.scatter(x, vx)
-#     plt.xlabel("Position")
-#     plt.ylabel("Velocity")
-#     plt.title(f"{name} Phase Space")
-
-#     if not os.path.exists(f"plots/phase_space/{name}"):
-#         os.makedirs(f"plots/phase_space/{name}")
-
-#     plt.savefig(f"plots/phase_space/{name}/{name}_phase_space.{t:09}.png", dpi=300)
-#     plt.close()
-
-
-# def multi_phase_space(x1, x2, vx1, vx2, t, species1, species2, name, x_wind):
-#     """
-#     Plot the phase space of the particles.
-
-#     Parameters:
-#     - x1 (ndarray): The x-coordinates of the particles in the first species.
-#     - x2 (ndarray): The x-coordinates of the particles in the second species.
-#     - vx1 (ndarray): The x-component of the velocities of the particles in the first species.
-#     - vx2 (ndarray): The x-component of the velocities of the particles in the second species.
-#     - t (ndarray): The time values.
-#     - name (str): The name of the plot.
-
-#     Returns:
-#     None
-#     """
-
-
-#     ax = plt.figure().add_subplot()
-#     ax.set_xlim( -(2/3)*x_wind, (2/3)*x_wind )
-#     ax.scatter(x1, vx1, c='r', label=f'{species1}')
-#     ax.scatter(x2, vx2, c='b', label=f'{species2}')
-#     ax.set_xlabel("Position")
-#     ax.set_ylabel("Velocity")
-#     ax.set_title(f"{name} Phase Space")
-#     ax.legend(loc='upper right')
-
-#     if not os.path.exists(f"plots/phase_space/{name}"):
-#         os.makedirs(f"plots/phase_space/{name}")
-        
-#     plt.savefig(f"plots/phase_space/{name}/{name}_phase_space.{t:09}.png", dpi=300)
-#     plt.close()
-
 @jit
 def number_density(n, Nparticles, particlex, particley, particlez, dx, dy, dz, Nx, Ny, Nz):
     """

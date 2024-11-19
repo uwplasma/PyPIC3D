@@ -143,3 +143,5 @@ def compute_rho(particles, rho, world, GPUs):
         if N_particles > 0:
             particle_x, particle_y, particle_z = species.get_position()
             rho = update_rho(N_particles, particle_x, particle_y, particle_z, dx, dy, dz, charge, x_wind, y_wind, z_wind, rho, GPUs)
+
+
