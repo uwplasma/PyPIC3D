@@ -139,7 +139,7 @@ world = {'dx': dx, 'dy': dy, 'dz': dz, 'Nx': Nx, 'Ny': Ny, 'Nz': Nz, 'x_wind': x
 courant_number = 1
 dt = courant_condition(courant_number, world, simulation_parameters, constants)
 # calculate spatial resolution using courant condition
-dt = dt
+dt = 100*dt
 Nt     = int( t_wind / dt )
 # Nt for resolution
 
