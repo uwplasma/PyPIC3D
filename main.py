@@ -37,10 +37,6 @@ from PyPIC3D.fdtd import (
     update_B, update_E, fdtd_current_correction
 )
 
-from PyPIC3D.autodiff import (
-    autodiff_update_B, autodiff_update_E
-)
-
 
 from PyPIC3D.utils import (
     plasma_frequency, courant_condition,
@@ -140,7 +136,7 @@ dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
 world = {'dx': dx, 'dy': dy, 'dz': dz, 'Nx': Nx, 'Ny': Ny, 'Nz': Nz, 'x_wind': x_wind, 'y_wind': y_wind, 'z_wind': z_wind}
 
 ################ Courant Condition #############################################################################
-courant_number = 1 #/100
+courant_number = 1
 dt = courant_condition(courant_number, world, simulation_parameters, constants)
 # calculate spatial resolution using courant condition
 Nt     = 2000 #int( t_wind / dt )
@@ -285,7 +281,7 @@ p = []
 
 for t in range(Nt):
     print(f'Iteration {t}, Time: {t*dt} s')
-    
+
     print(f"Mean E magnitude: {jnp.mean(jnp.sqrt(Ex**2 + Ey**2 + Ez**2))}")
     print(f"Mean B magnitude: {jnp.mean(jnp.sqrt(Bx**2 + By**2 + Bz**2))}")
     ################## PLOTTING ########################################################################################
