@@ -28,9 +28,9 @@ from PyPIC3D.fields import (
     calculateE
 )
 
-from PyPIC3D.spectral import (
+from PyPIC3D.pstd import (
     spectralBsolve, spectralEsolve, spectral_divergence_correction,
-    initialize_magnetic_field
+    initialize_magnetic_field, spectral_marder_correction
 )
 
 from PyPIC3D.fdtd import (
@@ -45,7 +45,8 @@ from PyPIC3D.autodiff import (
 from PyPIC3D.utils import (
     plasma_frequency, courant_condition,
     debye_length, update_parameters_from_toml, dump_parameters_to_toml,
-    load_particles_from_toml, use_gpu_if_set, precondition, build_grid
+    load_particles_from_toml, use_gpu_if_set, precondition, build_coallocated_grid,
+    build_yee_grid
 )
 
 from PyPIC3D.errors import (
@@ -122,13 +123,11 @@ if benchmark: jax.profiler.start_trace("/home/christopherwoolford/Documents/PyPI
 # start the profiler using tensorboard
 
 if solver == 'spectral':
-    from PyPIC3D.spectral import particle_push
+    from PyPIC3D.pstd import particle_push
     from PyPIC3D.fields import initialize_fields
 elif solver == 'fdtd':
     from PyPIC3D.fdtd import particle_push
     from PyPIC3D.fields import initialize_fields
-elif solver == 'autodiff':
-    from PyPIC3D.autodiff import particle_push, initialize_fields
 # set the particle push method
 
 print(f"Initializing Simulation: {name}\n")
@@ -144,8 +143,7 @@ world = {'dx': dx, 'dy': dy, 'dz': dz, 'Nx': Nx, 'Ny': Ny, 'Nz': Nz, 'x_wind': x
 courant_number = 1 #/100
 dt = courant_condition(courant_number, world, simulation_parameters, constants)
 # calculate spatial resolution using courant condition
-dt = dt*200
-Nt     = int( t_wind / dt )
+Nt     = 2000 #int( t_wind / dt )
 # Nt for resolution
 
 
@@ -179,15 +177,7 @@ debye = debye_length(particles[0], world, constants)
 if debye < dx:
     print(f"Debye Length is less than the spatial resolution, this may introduce numerical instability")
 
-
-
-if solver == 'autodiff':
-    Ex, Ey, Ez, Bx, By, Bz = initialize_fields(particles, (1/(4*jnp.pi*eps)))
-    rho = jnp.zeros((Nx, Ny, Nz))
-    phi = jnp.zeros((Nx, Ny, Nz))
-# initialize the electric and magnetic fields
-else:
-    Ex, Ey, Ez, Bx, By, Bz, phi, rho = initialize_fields(world)
+Ex, Ey, Ez, Bx, By, Bz, phi, rho = initialize_fields(world)
 # initialize the electric and magnetic fields
 
 key1 = random.key(4353)
@@ -236,6 +226,7 @@ plot_t = []
 min_v = []
 if plotfields: Eprobe = []
 if plotfields: averageE = []
+if plotfields: averageB = []
 if plotKE:
     KE = []
     KE_time = []
@@ -244,10 +235,11 @@ if plotEnergy: total_energy = []
 if plotEnergy: total_p      = []
 if plot_errors: div_error_E, div_error_B = [], []
 if plot_dispersion: kz = []
+
 if not electrostatic:
         Ex, Ey, Ez, phi, rho = calculateE(world, particles, constants, rho, phi, M, 0, solver, bc, verbose, GPUs)
 
-grid, staggered_grid = build_grid(world)
+E_grid, B_grid = build_yee_grid(world)
 # build the grid for the fields
 
 print(f"Theoretical Plasma Frequency: {theoretical_freq} Hz")
@@ -260,17 +252,60 @@ Jy = jnp.zeros((Nx, Ny, Nz))
 Jz = jnp.zeros((Nx, Ny, Nz))
 
 if solver == "spectral" and not electrostatic:
-    Bx, By, Bz = initialize_magnetic_field(particles, grid, staggered_grid, world, constants, GPUs)
+    Bx, By, Bz = initialize_magnetic_field(particles, E_grid, B_grid, world, constants, GPUs)
 
 
 p = []
 
+# E_magnitudes = []
+# B_magnitudes = []
+# E_magnitudes_C = []
+# times = []
+
+# # Define the radius of the charged sphere
+# sphere_radius = 0.25*world['x_wind']  # Adjust the radius as needed
+
+# # Define the center of the sphere
+# center_x, center_y, center_z = Nx // 2, Ny // 2, Nz // 2
+
+# # Get the charge of the ion
+# ion_charge = particles[1].get_charge()
+
+# # Create a meshgrid for the coordinates
+# x = jnp.arange(Nx)
+# y = jnp.arange(Ny)
+# z = jnp.arange(Nz)
+# X, Y, Z = jnp.meshgrid(x, y, z, indexing='ij')
+
+# # Calculate the distance from the center of the sphere
+# distance = jnp.sqrt((X - center_x)**2 + (Y - center_y)**2 + (Z - center_z)**2)
+
+# # Set the charge density within the sphere
+# rho = rho.at[distance <= sphere_radius].set(10 * ion_charge)
+
 for t in range(Nt):
     print(f'Iteration {t}, Time: {t*dt} s')
-
+    
+    print(f"Mean E magnitude: {jnp.mean(jnp.sqrt(Ex**2 + Ey**2 + Ez**2))}")
+    print(f"Mean B magnitude: {jnp.mean(jnp.sqrt(Bx**2 + By**2 + Bz**2))}")
     ################## PLOTTING ########################################################################################
 
     if t % plot_freq == 0:
+        # plt.title(f'rho at t={t*dt:.2e}s')
+        # plt.imshow(rho[:, :, int(Nz/2)], origin='lower', extent=[0, x_wind, 0, y_wind])
+        # plt.colorbar(label='rho')
+        # plt.tight_layout()
+        # plt.savefig(f'plots/rho_slice/rho_slice_{t:09}.png')
+        # plt.close()
+        # if verbose:
+            # E_magnitude = jnp.mean(jnp.sqrt(Ex**2 + Ey**2 + Ez**2))
+            # B_magnitude = jnp.mean(jnp.sqrt(Bx**2 + By**2 + Bz**2))
+            # E_magnitude_C = E_magnitude / constants["C"]
+            # Append the values to lists for plotting
+            # E_magnitudes.append(E_magnitude)
+            # B_magnitudes.append(B_magnitude)
+            # E_magnitudes_C.append(E_magnitude_C)
+            # times.append(t * dt)
         # vx, vy, vz = particles[0].get_velocity()
         # jnp.save(f'data/vx/vx_{t:09}', vx)
         # jnp.save(f'data/vy/vy_{t:09}', vy)
@@ -290,11 +325,12 @@ for t in range(Nt):
         if phaseSpace:
             particles_phase_space([particles[0]], t, "Particles")
         if plotfields:
-            save_vector_field_as_vtk(Ex, Ey, Ez, grid, f"plots/fields/E_{t:09}.vtr")
-            save_vector_field_as_vtk(Bx, By, Bz, staggered_grid, f"plots/fields/B_{t:09}.vtr")
+            save_vector_field_as_vtk(Ex, Ey, Ez, E_grid, f"plots/fields/E_{t:09}.vtr")
+            save_vector_field_as_vtk(Bx, By, Bz, B_grid, f"plots/fields/B_{t:09}.vtr")
             plot_rho(rho, t, "rho", dx, dy, dz)
             Eprobe.append(magnitude_probe(Ex, Ey, Ez, int(Nx/2), int(Ny/2), int(Nz/2)))
             averageE.append(  jnp.mean( jnp.sqrt( Ex**2 + Ey**2 + Ez**2 ) )   )
+            averageB.append(  jnp.mean( jnp.sqrt( Bx**2 + By**2 + Bz**2 ) )   )
         if plotKE:
             ke = 0
             for particle in particles:
@@ -302,8 +338,8 @@ for t in range(Nt):
             KE.append(ke)
             KE_time.append(t*dt)
         if plot_errors:
-            div_error_E.append(compute_electric_divergence_error(Ex, Ey, Ez, rho, eps, dx, dy, dz, solver, bc))
-            div_error_B.append(compute_magnetic_divergence_error(Bx, By, Bz, dx, dy, dz, solver, bc))
+            div_error_E.append(compute_electric_divergence_error(Ex, Ey, Ez, rho, constants, world, solver, bc))
+            div_error_B.append(compute_magnetic_divergence_error(Bx, By, Bz, world, solver, bc))
 
         if plotfields:
             plt.title(f'E at t={t*dt:.2e}s')
@@ -326,7 +362,7 @@ for t in range(Nt):
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
         if verbose: print(f'Updating {particles[i].get_name()}')
-        particles[i] = particle_push(particles[i], Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt, GPUs)
+        particles[i] = particle_push(particles[i], Ex, Ey, Ez, Bx, By, Bz, E_grid, B_grid, dt, GPUs)
         # use boris push for particle velocities
         if verbose: print(f"Calculating {particles[i].get_name()} Velocities, Mean Value: {jnp.mean(jnp.abs(particles[i].get_velocity()[0]))}")
         particles[i].update_position(dt, x_wind, y_wind, z_wind)
@@ -336,30 +372,41 @@ for t in range(Nt):
     if not electrostatic:
         if solver == "fdtd":
             Jx, Jy, Jz = fdtd_current_correction(particles, Nx, Ny, Nz)
+        #elif solver == "spectral":
+            #Ex, Ey, Ez = spectral_marder_correction(Ex, Ey, Ez, rho, world, constants, 1e-12)
         # calculate the corrections for charge conservation using villasenor buneamn 1991
         if solver == "spectral":
-            print("Spectral B Solve")
-            Bx, By, Bz = spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, world, dt)
+            Bx, By, Bz = spectralBsolve(E_grid, B_grid, Bx, By, Bz, Ex, Ey, Ez, world, dt)
         elif solver == "fdtd":
-            Bx, By, Bz = update_B(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt, bc)
-        elif solver == "autodiff":
-            Bx, By, Bz = autodiff_update_B(Bx, By, Bz, Ex, Ey, Ez, dt)
+            Bx, By, Bz = update_B(E_grid, B_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt, bc)
         # update the magnetic field using the curl of the electric field
         if verbose: print(f"Calculating Magnetic Field, Max Value: {jnp.max(jnp.sqrt(Bx**2 + By**2 + Bz**2))}")
         # print the maximum value of the magnetic field
 
         if solver == "spectral":
-            Ex, Ey, Ez = spectral_divergence_correction(Ex, Ey, Ez, rho, dx, dy, dz, dt, constants)
-            Ex, Ey, Ez = spectralEsolve(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, world, dt, constants)
+            #Ex, Ey, Ez = spectral_divergence_correction(Ex, Ey, Ez, rho, dx, dy, dz, dt, constants)
+            Ex, Ey, Ez = spectralEsolve(E_grid, B_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, world, dt, constants)
         elif solver == "fdtd":
-            Ex, Ex, Ez = update_E(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, dx, dy, dz, dt, C, eps, bc)
-        elif solver == 'autodiff':
-            Ex, Ey, Ez = autodiff_update_E(Ex, Ey, Ez, Bx, By, Bz, dt, C)
+            Ex, Ex, Ez = update_E(E_grid, B_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, world, dt, constants, bc)
         # update the electric field using the curl of the magnetic field
+
+
+# plt.plot(times, E_magnitudes, label='E magnitude')
+# plt.plot(times, E_magnitudes_C, label='E magnitude / C')
+# plt.plot(times, B_magnitudes, label='B magnitude')
+# plt.xlabel('Time (s)')
+# plt.ylabel('Magnitude')
+# plt.title('E, E/C, and B Magnitudes Over Time')
+# plt.legend()
+# plt.grid(True)
+# plt.tight_layout()
+# plt.savefig('plots/magnitudes_over_time.png')
+# plt.close()
 
 if plotfields:
     plot_probe(Eprobe, plot_t, "Electric Field", "ElectricField")
     plot_probe(averageE, plot_t, "Electric Field", "AvgElectricField")
+    plot_probe(averageB, plot_t, "Magnetic Field", "AvgMagneticField")
     # plot the electric field probe
 if plotKE:
     plot_KE(KE, KE_time)

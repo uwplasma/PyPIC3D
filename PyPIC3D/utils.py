@@ -140,7 +140,19 @@ def convert_spatial_resolution(dx1, dx2, dx3, from_system, to_system):
 
     raise ValueError("Invalid coordinate system conversion")
 
-def build_grid(world):
+def build_coallocated_grid(world):
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    x_wind = world['x_wind']
+    y_wind = world['y_wind']
+    z_wind = world['z_wind']
+    # get the grid parameters
+    grid = jnp.arange(-x_wind/2, x_wind/2, dx), jnp.arange(-y_wind/2, y_wind/2, dy), jnp.arange(-z_wind/2, z_wind/2, dz)
+    # create the grid space
+    return grid, grid
+
+def build_yee_grid(world):
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']

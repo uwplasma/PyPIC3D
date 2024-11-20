@@ -112,21 +112,21 @@ def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_win
     """
 
 
-    # def addto_rho(particle, rho):
-    #     x = particlex.at[particle].get()
-    #     y = particley.at[particle].get()
-    #     z = particlez.at[particle].get()
-    #     rho = particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind)
-    #     return rho
-
     def addto_rho(particle, rho):
-        x = index_particles(particle, particlex, dx)
-        y = index_particles(particle, particley, dy)
-        z = index_particles(particle, particlez, dz)
-        rho = rho.at[x, y, z].add( q / (dx*dy*dz) )
+        x = particlex.at[particle].get()
+        y = particley.at[particle].get()
+        z = particlez.at[particle].get()
+        rho = particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind)
         return rho
 
-    return jax.lax.fori_loop(0, Nparticles, addto_rho, rho )
+    # def addto_rho(particle, rho):
+    #     x = index_particles(particle, particlex, dx)
+    #     y = index_particles(particle, particley, dy)
+    #     z = index_particles(particle, particlez, dz)
+    #     rho = rho.at[x, y, z].add( q / (dx*dy*dz) )
+    #     return rho
+
+    return jax.lax.fori_loop(0, Nparticles-1, addto_rho, rho )
 
 @use_gpu_if_set
 def compute_rho(particles, rho, world, GPUs):
