@@ -16,7 +16,6 @@ from functools import partial
 
 from PyPIC3D.pstd import spectral_poisson_solve, spectral_laplacian, spectralBsolve, spectralEsolve, spectral_gradient
 from PyPIC3D.fdtd import centered_finite_difference_laplacian, centered_finite_difference_gradient
-from PyPIC3D.autodiff import autodiff_electric_field
 from PyPIC3D.rho import update_rho
 from PyPIC3D.cg import conjugate_grad
 from PyPIC3D.sor import solve_poisson_sor

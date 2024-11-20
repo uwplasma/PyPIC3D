@@ -28,7 +28,7 @@ def detect_gibbs_phenomenon(field, dx, dy, dz, threshold=0.1):
     - bool: True if Gibbs phenomenon is detected, False otherwise.
     """
     # Compute the gradient of the field
-    grad = jnp.gradient(field)
+    grad = spectral_gradient(field, dx, dy, dz)
 
     # Compute the second derivative (Laplacian) of the field
     laplacian = spectral_laplacian(field, dx, dy, dz)
