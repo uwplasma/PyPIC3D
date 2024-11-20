@@ -139,7 +139,8 @@ world = {'dx': dx, 'dy': dy, 'dz': dz, 'Nx': Nx, 'Ny': Ny, 'Nz': Nz, 'x_wind': x
 courant_number = 1
 dt = courant_condition(courant_number, world, simulation_parameters, constants)
 # calculate spatial resolution using courant condition
-Nt     = 2000 #int( t_wind / dt )
+dt = dt
+Nt     = int( t_wind / dt )
 # Nt for resolution
 
 
@@ -281,12 +282,11 @@ p = []
 
 for t in range(Nt):
     print(f'Iteration {t}, Time: {t*dt} s')
-
-    print(f"Mean E magnitude: {jnp.mean(jnp.sqrt(Ex**2 + Ey**2 + Ez**2))}")
-    print(f"Mean B magnitude: {jnp.mean(jnp.sqrt(Bx**2 + By**2 + Bz**2))}")
     ################## PLOTTING ########################################################################################
 
     if t % plot_freq == 0:
+        print(f"Mean E magnitude: {jnp.mean(jnp.sqrt(Ex**2 + Ey**2 + Ez**2))}")
+        print(f"Mean B magnitude: {jnp.mean(jnp.sqrt(Bx**2 + By**2 + Bz**2))}")
         # plt.title(f'rho at t={t*dt:.2e}s')
         # plt.imshow(rho[:, :, int(Nz/2)], origin='lower', extent=[0, x_wind, 0, y_wind])
         # plt.colorbar(label='rho')
@@ -357,12 +357,13 @@ for t in range(Nt):
 
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
-        if verbose: print(f'Updating {particles[i].get_name()}')
-        particles[i] = particle_push(particles[i], Ex, Ey, Ez, Bx, By, Bz, E_grid, B_grid, dt, GPUs)
-        # use boris push for particle velocities
-        if verbose: print(f"Calculating {particles[i].get_name()} Velocities, Mean Value: {jnp.mean(jnp.abs(particles[i].get_velocity()[0]))}")
-        particles[i].update_position(dt, x_wind, y_wind, z_wind)
-        if verbose: print(f"Calculating {particles[i].get_name()} Positions, Mean Value: {jnp.mean(jnp.abs(particles[i].get_position()[0]))}")
+        if particles[i].get_number_of_particles() > 0:
+            if verbose: print(f'Updating {particles[i].get_name()}')
+            particles[i] = particle_push(particles[i], Ex, Ey, Ez, Bx, By, Bz, E_grid, B_grid, dt, GPUs)
+            # use boris push for particle velocities
+            if verbose: print(f"Calculating {particles[i].get_name()} Velocities, Mean Value: {jnp.mean(jnp.abs(particles[i].get_velocity()[0]))}")
+            particles[i].update_position(dt, x_wind, y_wind, z_wind)
+            if verbose: print(f"Calculating {particles[i].get_name()} Positions, Mean Value: {jnp.mean(jnp.abs(particles[i].get_position()[0]))}")
 
     ################ FIELD UPDATE #######################################################################
     if not electrostatic:
