@@ -11,21 +11,21 @@ Nz = 100
 x_wind = 1e-2
 y_wind = 1e-2
 z_wind = 1e-2
-verbose = true
-electrostatic = false
+verbose = false
+electrostatic = true
 
 [plotting]
 plot_errors = true
-phaseSpace  = false
-plotpositions = true
+phaseSpace  = true
+plotpositions = false
 plotKE = false
 plotfields = true
 plot_dispersion = false
-plotting_interval = 10
+plotting_interval = 50
 
 [particle1]
 name = "electrons"
-N_particles = 1000
+N_particles = 5000
 charge = -1.602e-19
 mass   = 9.1093837e-31
 temperature = 1
@@ -35,7 +35,7 @@ update_v = true
 
 [particle2]
 name = "ions"
-N_particles = 1000
+N_particles = 0
 charge = 1.602e-19
 mass = 1.67e-27
 temperature = 1
