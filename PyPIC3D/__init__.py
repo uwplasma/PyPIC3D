@@ -16,6 +16,6 @@ from . import initialization
 from . import particle
 from . import plotting
 from . import utils
-from . import spectral
+from . import pstd
 from . import fdtd
 from . import sor

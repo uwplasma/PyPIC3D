@@ -14,7 +14,7 @@ import functools
 from functools import partial
 # import external libraries
 
-from PyPIC3D.spectral import spectral_poisson_solve, spectral_laplacian, spectralBsolve, spectralEsolve, spectral_gradient
+from PyPIC3D.pstd import spectral_poisson_solve, spectral_laplacian, spectralBsolve, spectralEsolve, spectral_gradient
 from PyPIC3D.fdtd import centered_finite_difference_laplacian, centered_finite_difference_gradient
 from PyPIC3D.autodiff import autodiff_electric_field
 from PyPIC3D.rho import update_rho
@@ -153,7 +153,7 @@ def calculateE(world, particles, constants, rho, phi, M, t, solver, bc, verbose,
 
     if verbose:
         print(f"Calculating Electric Potential, Max Value: {jnp.max(phi)}")
-        print(f"Potential Error: {compute_pe(phi, rho, eps, dx, dy, dz, solver, bc='periodic')}%")
+        print(f"Potential Error: {compute_pe(phi, rho, constants, world, solver, bc='periodic')}%")
 
     if solver == 'spectral':
         Ex, Ey, Ez = spectral_gradient(phi, dx, dy, dz)
@@ -165,6 +165,5 @@ def calculateE(world, particles, constants, rho, phi, M, t, solver, bc, verbose,
         Ex = -Ex
         Ey = -Ey
         Ez = -Ez
-    elif solver == 'autodiff':
-        Ex, Ey, Ez = autodiff_electric_field(particles, 1/(4*jnp.pi*eps) )
+
     return Ex, Ey, Ez, phi, rho
