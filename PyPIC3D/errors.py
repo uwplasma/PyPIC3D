@@ -14,11 +14,11 @@ import functools
 from functools import partial
 # import external libraries
 
-from PyPIC3D.spectral import spectral_laplacian, spectral_divergence
+from PyPIC3D.pstd import spectral_laplacian, spectral_divergence
 from PyPIC3D.fdtd import centered_finite_difference_laplacian, centered_finite_difference_divergence
 
 
-def compute_pe(phi, rho, eps, dx, dy, dz, solver, bc='periodic'):
+def compute_pe(phi, rho, constants, world, solver, bc='periodic'):
     """
     Compute the relative percentage difference of the Poisson solver.
 
@@ -34,6 +34,10 @@ def compute_pe(phi, rho, eps, dx, dy, dz, solver, bc='periodic'):
     Returns:
     float: The relative percentage difference of the Poisson solver.
     """
+    eps = constants['eps']
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
     if solver == 'spectral':
         x = spectral_laplacian(phi, dx, dy, dz)
     elif solver == 'fdtd':
@@ -45,7 +49,7 @@ def compute_pe(phi, rho, eps, dx, dy, dz, solver, bc='periodic'):
     return 200 * jnp.abs( jnp.ravel(poisson_error)[index]) / ( jnp.abs(jnp.ravel(rho/eps)[index])+ jnp.abs(jnp.ravel(x)[index]) )
     # this method computes the relative percentage difference of poisson solver
 
-def compute_magnetic_divergence_error(Bx, By, Bz, dx, dy, dz, solver, bc='periodic'):
+def compute_magnetic_divergence_error(Bx, By, Bz, world, solver, bc='periodic'):
     """
     Compute the error in the divergence of the magnetic field for different solvers.
 
@@ -61,6 +65,10 @@ def compute_magnetic_divergence_error(Bx, By, Bz, dx, dy, dz, solver, bc='period
     Returns:
     float: The error in the divergence of the magnetic field.
     """
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+
     if solver == 'spectral':
         divB = spectral_divergence(Bx, By, Bz, dx, dy, dz)
     elif solver == 'fdtd':
@@ -70,7 +78,7 @@ def compute_magnetic_divergence_error(Bx, By, Bz, dx, dy, dz, solver, bc='period
     divergence_error = jnp.sum(jnp.abs(divB))
     return divergence_error
 
-def compute_electric_divergence_error(Ex, Ey, Ez, rho, eps, dx, dy, dz, solver, bc='periodic'):
+def compute_electric_divergence_error(Ex, Ey, Ez, rho, constants, world, solver, bc='periodic'):
     """
     Compute the error in the divergence of the electric field using the charge density and the components of the electric field.
 
@@ -88,6 +96,11 @@ def compute_electric_divergence_error(Ex, Ey, Ez, rho, eps, dx, dy, dz, solver, 
     Returns:
     float: The error in the divergence of the electric field.
     """
+    eps = constants['eps']
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    
     if solver == 'spectral':
         divE = spectral_divergence(Ex, Ey, Ez, dx, dy, dz)
     elif solver == 'fdtd':

@@ -14,6 +14,7 @@ from functools import partial
 
 from PyPIC3D.utils import interpolate_and_stagger_field, interpolate_field, use_gpu_if_set
 from PyPIC3D.particle import particle_species
+from PyPIC3D.J import compute_current_density
 
 def detect_gibbs_phenomenon(field, dx, dy, dz, threshold=0.1):
     """
@@ -282,14 +283,14 @@ def spectralBsolve(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, world, dt):
     curlx, curly, curlz = spectral_curl(Ex, Ey, Ez, dx, dy, dz)
     # calculate the curl of the electric field
 
-    jax.debug.print('curlx magnitude: {}', jnp.linalg.norm(curlx))
-    jax.debug.print('curly magnitude: {}', jnp.linalg.norm(curly))
-    jax.debug.print('curlz magnitude: {}', jnp.linalg.norm(curlz))
+    # jax.debug.print('curlx magnitude: {}', jnp.linalg.norm(curlx))
+    # jax.debug.print('curly magnitude: {}', jnp.linalg.norm(curly))
+    # jax.debug.print('curlz magnitude: {}', jnp.linalg.norm(curlz))
 
-    jax.debug.print('Bx magnitude: {}', jnp.linalg.norm(Bx))
-    jax.debug.print('By magnitude: {}', jnp.linalg.norm(By))
-    jax.debug.print('Bz magnitude: {}', jnp.linalg.norm(Bz))
-    jax.debug.print('Time step (dt): {}', dt)
+    # jax.debug.print('Bx magnitude: {}', jnp.linalg.norm(Bx))
+    # jax.debug.print('By magnitude: {}', jnp.linalg.norm(By))
+    # jax.debug.print('Bz magnitude: {}', jnp.linalg.norm(Bz))
+    # jax.debug.print('Time step (dt): {}', dt)
     Bx = Bx - dt/2*curlx
     By = By - dt/2*curly
     Bz = Bz - dt/2*curlz
@@ -365,63 +366,6 @@ def spectral_laplacian(field, dx, dy, dz):
     # calculate the laplacian in Fourier space
     return jnp.fft.ifftn(lapl).real
 
-def psatd(Ex, Ey, Ez, Bx, By, Bz, q, m, dx, dy, dz, dt, x, y, z, vx, vy, vz):
-    """
-    Perform the PSATD algorithm to update the electric and magnetic fields.
-
-    Parameters:
-    - Ex (ndarray): The x-component of the electric field.
-    - Ey (ndarray): The y-component of the electric field.
-    - Ez (ndarray): The z-component of the electric field.
-    - Bx (ndarray): The x-component of the magnetic field.
-    - By (ndarray): The y-component of the magnetic field.
-    - Bz (ndarray): The z-component of the magnetic field.
-    - q (float): The charge of the particle.
-    - m (float): The mass of the particle.
-    - dx (float): The grid spacing in the x-direction.
-    - dy (float): The grid spacing in the y-direction.
-    - dz (float): The grid spacing in the z-direction.
-    - dt (float): The time step.
-    - x (ndarray): The x-coordinates of the particles.
-    - y (ndarray): The y-coordinates of the particles.
-    - z (ndarray): The z-coordinates of the particles.
-    - vx (ndarray): The x-component of the velocity of the particles.
-    - vy (ndarray): The y-component of the velocity of the particles.
-    - vz (ndarray): The z-component of the velocity of the particles.
-
-    Returns:
-    - Ex (ndarray): The updated x-component of the electric field.
-    - Ey (ndarray): The updated y-component of the electric field.
-    - Ez (ndarray): The updated z-component of the electric field.
-    - Bx (ndarray): The updated x-component of the magnetic field.
-    - By (ndarray): The updated y-component of the magnetic field.
-    - Bz (ndarray): The updated z-component of the magnetic field.
-    """
-    # C = 1.0
-    # # speed of light
-    # Ex, Ey, Ez = spectralEsolve(Ex, Ey, Ez, Bx, By, Bz, dx, dy, dz, dt, C)
-    # # update the electric field
-    # Bx, By, Bz = spectralBsolve(Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt)
-    # # update the magnetic field
-    # return Ex, Ey, Ez, Bx, By, Bz
-
-    # Build Fourier Mesh
-    Nx, Ny, Nz = Ex.shape
-    kx = jnp.fft.fftfreq(Nx, dx) * 2 * jnp.pi
-    ky = jnp.fft.fftfreq(Ny, dy) * 2 * jnp.pi
-    kz = jnp.fft.fftfreq(Nz, dz) * 2 * jnp.pi
-    kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
-    # create 3D meshgrid of wavenumbers
-    
-    # FFT of the fields
-    Ex_hat = jnp.fft.fftn(Ex)
-    Ey_hat = jnp.fft.fftn(Ey)
-    Ez_hat = jnp.fft.fftn(Ez)
-    Bx_hat = jnp.fft.fftn(Bx)
-    By_hat = jnp.fft.fftn(By)
-    Bz_hat = jnp.fft.fftn(Bz)
-
-    return
 
 @use_gpu_if_set
 def particle_push(particles, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt, GPUs):
@@ -527,74 +471,6 @@ def boris(q, m, x, y, z, vx, vy, vz, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_gri
 
 
 @jit
-def index_particles(particle, positions, ds):
-    """
-    Calculate the index of a particle in a given position array.
-
-    Parameters:
-    - particle: int
-        The index of the particle.
-    - positions (array-like): The position array containing the particle positions.
-    - ds: float
-        The grid spacing.
-
-    Returns:
-    - index: int
-        The index of the particle in the position array, rounded down to the nearest integer.
-    """
-    return (positions.at[particle].get() / ds).astype(int)
-
-@use_gpu_if_set
-def compute_current_density(particles, Jx, Jy, Jz, world, GPUs):
-    """
-    Computes the current density for a given set of particles in a simulation world.
-
-    Parameters:
-    particles (list): A list of particle species, each containing methods to get the number of particles, 
-                      their positions, velocities, and charge.
-    Jx, Jy, Jz (numpy.ndarray): The current density arrays to be updated.
-    world (dict): A dictionary containing the simulation world parameters such as grid spacing (dx, dy, dz) 
-                  and window dimensions (x_wind, y_wind, z_wind).
-    GPUs (bool): A flag indicating whether to use GPU acceleration for the computation.
-
-    Returns:
-    tuple: The updated current density arrays (Jx, Jy, Jz).
-    """
-    dx = world['dx']
-    dy = world['dy']
-    dz = world['dz']
-    x_wind = world['x_wind']
-    y_wind = world['y_wind']
-    z_wind = world['z_wind']
-
-    for species in particles:
-        N_particles = species.get_number_of_particles()
-        charge = species.get_charge()
-        if N_particles > 0:
-            particle_x, particle_y, particle_z = species.get_position()
-            particle_vx, particle_vy, particle_vz = species.get_velocity()
-            Jx, Jy, Jz = update_current_density(N_particles, particle_x, particle_y, particle_z, particle_vx, particle_vy, particle_vz, dx, dy, dz, charge, x_wind, y_wind, z_wind, Jx, Jy, Jz, GPUs)
-    return Jx, Jy, Jz
-
-@use_gpu_if_set
-@jit
-def update_current_density(Nparticles, particlex, particley, particlez, particlevx, particlevy, particlevz, dx, dy, dz, q, x_wind, y_wind, z_wind, Jx, Jy, Jz, GPUs=False):
-    def addto_J(particle, J):
-        Jx, Jy, Jz = J
-        x = index_particles(particle, particlex, dx)
-        y = index_particles(particle, particley, dy)
-        z = index_particles(particle, particlez, dz)
-        vx = particlevx.at[particle].get()
-        vy = particlevy.at[particle].get()
-        vz = particlevz.at[particle].get()
-        Jx = Jx.at[x, y, z].add(q * vx / (dx * dy * dz))
-        Jy = Jy.at[x, y, z].add(q * vy / (dx * dy * dz))
-        Jz = Jz.at[x, y, z].add(q * vz / (dx * dy * dz))
-        return Jx, Jy, Jz
-
-    return jax.lax.fori_loop(0, Nparticles, addto_J, (Jx, Jy, Jz))
-
-@jit
 def solve_magnetic_vector_potential(Jx, Jy, Jz, dx, dy, dz, mu0):
     """
     Solve for the magnetic vector potential using the magnetostatic Laplacian equation in the Coulomb gauge.
@@ -684,3 +560,35 @@ def initialize_magnetic_field(particles, grid, staggered_grid, world, constants,
     Bx, By, Bz = spectral_curl(Ax, Ay, Az, dx, dy, dz)
 
     return Bx, By, Bz
+
+
+def spectral_marder_correction(Ex, Ey, Ez, rho, world, constants, d):
+    """
+    Apply the Marder correction to the electric field to suppress numerical instabilities.
+
+    Parameters:
+    - E (ndarray): The electric field.
+    - rho (ndarray): The charge density.
+    - world (dict): Dictionary containing the simulation world parameters.
+    - constants (dict): Dictionary containing physical constants, including 'eps' (permittivity).
+    - d (float): The Marder damping parameter.
+
+    Returns:
+    - E_corrected (ndarray): The corrected electric field.
+    """
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    eps = constants['eps']
+
+    # Compute the spectral divergence of the electric field
+    divE = spectral_divergence(Ex, Ey, Ez, dx, dy, dz)
+
+    # Compute the correction term
+    gradx, grady, gradz = spectral_gradient(divE - rho/eps, dx, dy, dz)
+    Ex_corrected = Ex - d*gradx
+    Ey_corrected = Ey - d*grady
+    Ez_corrected = Ez - d*gradz
+    # Apply the correction to the electric field
+
+    return Ex_corrected, Ey_corrected, Ez_corrected

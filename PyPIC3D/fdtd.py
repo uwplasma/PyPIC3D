@@ -172,7 +172,7 @@ def centered_finite_difference_divergence(field_x, field_y, field_z, dx, dy, dz,
 
     return div_x + div_y + div_z
 
-def update_B(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt, boundary_condition):
+def update_B(Bx, By, Bz, Ex, Ey, Ez, world, dt, boundary_condition):
     """
     Update the magnetic field components Bx, By, and Bz based on the electric field components Ex, Ey, and Ez.
 
@@ -194,6 +194,9 @@ def update_B(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt, bound
     - By (float): The updated y-component of the magnetic field.
     - Bz (float): The updated z-component of the magnetic field.
     """
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
 
     curlx, curly, curlz = centered_finite_difference_curl(Ex, Ey, Ez, dx, dy, dz, boundary_condition)
     Bx = Bx - dt/2*curlx
@@ -202,7 +205,7 @@ def update_B(grid, staggered_grid, Bx, By, Bz, Ex, Ey, Ez, dx, dy, dz, dt, bound
     # update the magnetic field
     return Bx, By, Bz
 
-def update_E(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, dx, dy, dz, dt, C, eps, boundary_condition):
+def update_E(Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, world, dt, constants, boundary_condition):
     """
     Update the electric field components Ex, Ey, and Ez based on the magnetic field components Bx, By, and Bz.
 
@@ -225,6 +228,11 @@ def update_E(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, dx, dy, d
     - Ey (float): The updated y-component of the electric field.
     - Ez (float): The updated z-component of the electric field.
     """
+    eps = constants['eps']
+    C = constants['C']
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
 
     curlx, curly, curlz = centered_finite_difference_curl(Bx, By, Bz, dx, dy, dz, boundary_condition)
     Ex = Ex + ( C**2 * curlx - 1/eps * Jx) * dt / 2
@@ -234,7 +242,7 @@ def update_E(grid, staggered_grid, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, dx, dy, d
     return Ex, Ey, Ez
 
 @use_gpu_if_set
-def particle_push(particles, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt, GPUs = False):
+def particle_push(particles, Ex, Ey, Ez, Bx, By, Bz, E_grid, B_grid, dt, GPUs = False):
     """
     Updates the velocities of particles using the Boris algorithm.
 
@@ -258,7 +266,7 @@ def particle_push(particles, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt, G
     x, y, z = particles.get_position()
     vx, vy, vz = particles.get_velocity()
     # get the charge, mass, position, and velocity of the particles
-    newvx, newvy, newvz = boris(q, m, x, y, z, vx, vy, vz, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
+    newvx, newvy, newvz = boris(q, m, x, y, z, vx, vy, vz, Ex, Ey, Ez, Bx, By, Bz, E_grid, B_grid, dt)
     # use the boris algorithm to update the velocities
     particles.set_velocity(newvx, newvy, newvz)
     # set the new velocities of the particles

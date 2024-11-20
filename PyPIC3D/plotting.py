@@ -143,19 +143,16 @@ def plot_positions(particles, t, x_wind, y_wind, z_wind):
     Returns:
     None
     """
-    x, y, z = [], [], []
-    for species in particles:
-        x.append(species.get_position()[0])
-        y.append(species.get_position()[1])
-        z.append(species.get_position()[2])
-    x = jnp.concatenate(x)
-    y = jnp.concatenate(y)
-    z = jnp.concatenate(z)
+    fig = go.Figure()
 
-    fig = go.Figure(data=[go.Scatter3d(
-        x=x, y=y, z=z, mode='markers',
-        marker=dict(size=2)
-    )])
+    colors = ['red', 'blue', 'green', 'purple', 'orange', 'yellow', 'cyan']
+    for idx, species in enumerate(particles):
+        x, y, z = species.get_position()
+        fig.add_trace(go.Scatter3d(
+            x=x, y=y, z=z, mode='markers',
+            marker=dict(size=2, color=colors[idx % len(colors)]),
+            name=f'Species {idx + 1}'
+        ))
 
     fig.update_layout(
         scene=dict(

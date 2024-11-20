@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
 from jax import numpy as jnp
-from PyPIC3D.spectral import spectral_poisson_solve, spectral_curl, spectralBsolve, spectralEsolve, spectral_laplacian
+from PyPIC3D.pstd import spectral_poisson_solve, spectral_curl, spectralBsolve, spectralEsolve, spectral_laplacian
 
 class TestSpectralMethods(unittest.TestCase):
 
