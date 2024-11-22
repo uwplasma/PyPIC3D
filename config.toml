@@ -6,13 +6,13 @@ output_dir = "/home/christopherwoolford/Documents/PyPIC3D"
 bc = 'periodic'
 solver = 'spectral'
 Nx = 100
-Ny = 10
-Nz = 10
+Ny = 100
+Nz = 100
 x_wind = 1e-2
 y_wind = 1e-2
 z_wind = 1e-2
-verbose = false
-electrostatic = true
+verbose = true
+electrostatic = false
 
 [plotting]
 plot_errors = true
@@ -21,11 +21,11 @@ plotpositions = false
 plotKE = false
 plotfields = true
 plot_dispersion = false
-plotting_interval = 50
+plotting_interval = 1
 
 [particle1]
 name = "electrons"
-N_particles = 5000
+N_particles = 1000
 charge = -1.602e-19
 mass   = 9.1093837e-31
 temperature = 1

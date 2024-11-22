@@ -59,6 +59,9 @@ from PyPIC3D.model import (
 )
 # Importing functions from other files
 
+jax.config.update("jax_debug_nans", True)
+# debugging for nans
+
 jax.config.update('jax_platform_name', 'cpu')
 # set Jax to use CPUs
 
@@ -139,7 +142,7 @@ world = {'dx': dx, 'dy': dy, 'dz': dz, 'Nx': Nx, 'Ny': Ny, 'Nz': Nz, 'x_wind': x
 courant_number = 1
 dt = courant_condition(courant_number, world, simulation_parameters, constants)
 # calculate spatial resolution using courant condition
-dt = 100*dt
+#dt = 100*dt
 Nt     = int( t_wind / dt )
 # Nt for resolution
 
@@ -189,22 +192,22 @@ key5 = random.key(3456)
 N_particles = particles[0].get_number_of_particles()
 Te = particles[0].get_temperature()
 me = particles[0].get_mass()
-electron_x, electron_y, electron_z = particles[0].get_position()
-ev_x, ev_y, ev_z = particles[0].get_velocity()
-alternating_ones = (-1)**jnp.array(range(0,N_particles))
-relative_drift_velocity = 0.5*jnp.sqrt(3*constants['kb']*Te/me)
-perturbation = relative_drift_velocity*alternating_ones
-#perturbation *= (1 + 0.1*jnp.sin(2*jnp.pi*electron_x/x_wind))
-ev_x = perturbation
-ev_y = jnp.zeros(N_particles)
-ev_z = jnp.zeros(N_particles)
-particles[0].set_velocity(ev_x, ev_y, ev_z)
+# electron_x, electron_y, electron_z = particles[0].get_position()
+# ev_x, ev_y, ev_z = particles[0].get_velocity()
+# alternating_ones = (-1)**jnp.array(range(0,N_particles))
+# relative_drift_velocity = 0.5*jnp.sqrt(3*constants['kb']*Te/me)
+# perturbation = relative_drift_velocity*alternating_ones
+# #perturbation *= (1 + 0.1*jnp.sin(2*jnp.pi*electron_x/x_wind))
+# ev_x = perturbation
+# ev_y = jnp.zeros(N_particles)
+# ev_z = jnp.zeros(N_particles)
+# particles[0].set_velocity(ev_x, ev_y, ev_z)
 
-#electron_x = jnp.zeros(N_particles)
-electron_y = jnp.zeros(N_particles)# jnp.ones(N_particles) * y_wind/4*alternating_ones
-electron_z = jnp.zeros(N_particles)
-particles[0].set_position(electron_x, electron_y, electron_z)
-# put electrons with opposite velocities in the same position along y
+# #electron_x = jnp.zeros(N_particles)
+# electron_y = jnp.zeros(N_particles)# jnp.ones(N_particles) * y_wind/4*alternating_ones
+# electron_z = jnp.zeros(N_particles)
+# particles[0].set_position(electron_x, electron_y, electron_z)
+# # put electrons with opposite velocities in the same position along y
 
 ##################################### Neural Network Preconditioner ################################################
 
