@@ -69,14 +69,23 @@ def particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
     y1 = y0 + 1
     z1 = z0 + 1
 
-    # Calculate the weights for the surrounding grid points
-    wx = deltax / (x + x_wind/2)
-    wy = deltay / (y + y_wind/2)
-    wz = deltaz / (z + z_wind/2)
+    # # Debug print all these variables
+    # jax.debug.print("x0: {x0}, y0: {y0}, z0: {z0}", x0=x0, y0=y0, z0=z0)
+    # jax.debug.print("deltax: {deltax}, deltay: {deltay}, deltaz: {deltaz}", deltax=deltax, deltay=deltay, deltaz=deltaz)
+    # jax.debug.print("x1: {x1}, y1: {y1}, z1: {z1}", x1=x1, y1=y1, z1=z1)
 
+    # Print if any of these variables is NaN
+
+    # Calculate the weights for the surrounding grid points
+    wx = deltax / dx #(x + x_wind / 2)
+    wy = deltay / dy #(y + y_wind / 2)
+    wz = deltaz / dz #(z + z_wind / 2)
+
+    #jax.debug.print("wx: {wx}, wy: {wy}, wz: {wz}", wx=wx, wy=wy, wz=wz)
     # Calculate the volume of each grid point
     dv = dx * dy * dz
 
+    #jax.debug.print("dv: {dv}", dv=dv)
     # Distribute the charge of the particle to the surrounding grid points
     rho = rho.at[x0, y0, z0].add((q / dv) * (1 - wx) * (1 - wy) * (1 - wz), mode='drop')
     rho = rho.at[x1, y0, z0].add((q / dv) * wx * (1 - wy) * (1 - wz), mode='drop')
@@ -90,7 +99,6 @@ def particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
     return rho
 
 @use_gpu_if_set
-@jit
 def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_wind, y_wind, z_wind, rho, GPUs=False):
     """
     Update the charge density (rho) based on the positions of particles.
@@ -125,6 +133,8 @@ def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_win
     #     z = index_particles(particle, particlez, dz)
     #     rho = rho.at[x, y, z].add( q / (dx*dy*dz) )
     #     return rho
+    # for i in range(Nparticles):
+    #     rho = addto_rho(i, rho)
 
     return jax.lax.fori_loop(0, Nparticles-1, addto_rho, rho )
 
@@ -143,5 +153,6 @@ def compute_rho(particles, rho, world, GPUs):
         if N_particles > 0:
             particle_x, particle_y, particle_z = species.get_position()
             rho = update_rho(N_particles, particle_x, particle_y, particle_z, dx, dy, dz, charge, x_wind, y_wind, z_wind, rho, GPUs)
+    return rho
 
 

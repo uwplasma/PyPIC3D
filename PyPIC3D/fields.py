@@ -16,7 +16,7 @@ from functools import partial
 
 from PyPIC3D.pstd import spectral_poisson_solve, spectral_laplacian, spectralBsolve, spectralEsolve, spectral_gradient
 from PyPIC3D.fdtd import centered_finite_difference_laplacian, centered_finite_difference_gradient
-from PyPIC3D.rho import update_rho
+from PyPIC3D.rho import update_rho, compute_rho
 from PyPIC3D.cg import conjugate_grad
 from PyPIC3D.sor import solve_poisson_sor
 from PyPIC3D.errors import compute_pe
@@ -86,7 +86,7 @@ def solve_poisson(rho, eps, dx, dy, dz, phi, solver, bc='periodic', M = None, GP
         lapl = functools.partial(centered_finite_difference_laplacian, dx=dx, dy=dy, dz=dz, bc=bc)
         lapl = jit(lapl)
         # define the laplacian operator using finite difference method
-        phi = conjugate_grad(lapl, -rho/eps, phi, tol=1e-8, maxiter=100000, M=M)
+        phi = conjugate_grad(lapl, -rho/eps, phi, tol=1e-6, maxiter=40000, M=M)
         #phi = solve_poisson_sor(phi, rho, dx, dy, dz, eps, omega=0.25, tol=1e-6, max_iter=100000)
     return phi
 
@@ -132,12 +132,13 @@ def calculateE(world, particles, constants, rho, phi, M, t, solver, bc, verbose,
     eps = constants['eps']
 
     if solver == 'spectral' or solver == 'fdtd':
-        for species in particles:
-            N_particles = species.get_number_of_particles()
-            charge = species.get_charge()
-            if N_particles > 0:
-                particle_x, particle_y, particle_z = species.get_position()
-                rho = update_rho(N_particles, particle_x, particle_y, particle_z, dx, dy, dz, charge, x_wind, y_wind, z_wind, rho, GPUs)
+        rho = compute_rho(particles, rho, world, GPUs)
+        # for species in particles:
+        #     N_particles = species.get_number_of_particles()
+        #     charge = species.get_charge()
+        #     if N_particles > 0:
+        #         particle_x, particle_y, particle_z = species.get_position()
+        #         rho = update_rho(N_particles, particle_x, particle_y, particle_z, dx, dy, dz, charge, x_wind, y_wind, z_wind, rho, GPUs)
 
 
     if verbose:
