@@ -402,7 +402,7 @@ def interpolate_and_stagger_field(field, grid, staggered_grid):
     # interpolate the field to the staggered grid
     return staggered_field
 
-def courant_condition(courant_number, world, simulation_parameters, constants):
+def courant_condition(courant_number, dx, dy, dz, simulation_parameters, constants):
     """
     Calculate the Courant condition for a given grid spacing and wave speed.
 
@@ -418,9 +418,6 @@ def courant_condition(courant_number, world, simulation_parameters, constants):
     Returns:
     float: The maximum allowable time step for stability.
     """
-    dx = world['dx']
-    dy = world['dy']
-    dz = world['dz']
     C = constants['C']
     return courant_number / (C * ( (1/dx) + (1/dy) + (1/dz) ) )
 # calculate the courant condition

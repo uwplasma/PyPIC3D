@@ -1,7 +1,7 @@
 # This is a configuration file for PyPIC3D
 [simulation_parameters]
 name = "TS Instability using Spectral methods"
-t_wind = 300e-9
+t_wind = 100e-12
 output_dir = "/home/christopherwoolford/Documents/PyPIC3D"
 bc = 'periodic'
 solver = 'spectral'
@@ -12,20 +12,20 @@ x_wind = 1e-2
 y_wind = 1e-2
 z_wind = 1e-2
 verbose = true
-electrostatic = false
+electrostatic = true
 
 [plotting]
 plot_errors = true
-phaseSpace  = true
+phaseSpace  = false
 plotpositions = false
 plotKE = false
 plotfields = true
 plot_dispersion = false
-plotting_interval = 1
+plotting_interval = 50
 
 [particle1]
 name = "electrons"
-N_particles = 1000
+N_particles = 5000
 charge = -1.602e-19
 mass   = 9.1093837e-31
 temperature = 1
