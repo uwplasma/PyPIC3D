@@ -7,6 +7,7 @@ from jax import jit
 import jax.numpy as jnp
 import math
 from pyevtk.hl import gridToVTK
+from jax import tree_util
 
 
 def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, key2, key3):
@@ -44,101 +45,6 @@ def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, ke
     # initialize the particles with a maxwell boltzmann distribution.
     return x, y, z, v_x, v_y, v_z
 
-def cold_start_init(start, N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, key2, key3):
-    """
-    Initializes the velocities and positions of the particles.
-
-    Parameters:
-    - N_particles (int): The number of particles.
-    - x_wind (float): The maximum value for the x-coordinate of the particles' positions.
-    - y_wind (float): The maximum value for the y-coordinate of the particles' positions.
-    - z_wind (float): The maximum value for the z-coordinate of the particles' positions.
-    - mass (float): The mass of the particles.
-    - T (float): The temperature of the system.
-    - kb (float): The Boltzmann constant.
-    - key (jax.random.PRNGKey): The random key for generating random numbers.
-
-    Returns:
-    - x (jax.numpy.ndarray): The x-coordinates of the particles' positions.
-    - y (jax.numpy.ndarray): The y-coordinates of the particles' positions.
-    - z (jax.numpy.ndarray): The z-coordinates of the particles' positions.
-    - v_x (numpy.ndarray): The x-component of the particles' velocities.
-    - v_y (numpy.ndarray): The y-component of the particles' velocities.
-    - v_z (numpy.ndarray): The z-component of the particles' velocities.
-    """
-    x = start * jnp.ones(N_particles)
-    y = start * jnp.ones(N_particles)
-    z = start * jnp.ones(N_particles)
-    # initialize the positions of the particles
-
-    std = kb * T / mass
-    v_x = np.random.normal(0, std, N_particles)
-    v_y = np.random.normal(0, std, N_particles)
-    v_z = np.random.normal(0, std, N_particles)
-    # initialize the particles with a maxwell boltzmann distribution.
-    return x, y, z, v_x, v_y, v_z
-
-
-@jit
-def periodic_boundary_condition(x_wind, y_wind, z_wind, x, y, z):
-    """
-    Implement periodic boundary conditions for the particles.
-
-    Returns:
-    - x (jax.numpy.ndarray): The x-coordinates of the particles' positions.
-    - y (jax.numpy.ndarray): The y-coordinates of the particles' positions.
-    - z (jax.numpy.ndarray): The z-coordinates of the particles' positions.
-    """
-    x = jnp.where(x > x_wind/2, -x_wind/2, x)
-    x = jnp.where(x < -x_wind/2,  x_wind/2, x)
-    y = jnp.where(y > y_wind/2, -y_wind/2, y)
-    y = jnp.where(y < -y_wind/2,  y_wind/2, y)
-    z = jnp.where(z > z_wind/2, -z_wind/2, z)
-    z = jnp.where(z < -z_wind/2,  z_wind/2, z)
-    return x, y, z
-
-@jit
-def euler_update(s, v, dt):
-    """
-    Update the position of the particles using the Euler method.
-
-    Parameters:
-    - s (jax.numpy.ndarray): The current position of the particles.
-    - v (jax.numpy.ndarray): The velocity of the particles.
-    - dt (float): The time step for the update.
-
-    Returns:
-    - jax.numpy.ndarray: The updated position of the particles.
-    """
-    return s + v * dt
-
-
-def update_position(x, y, z, vx, vy, vz, dt, x_wind, y_wind, z_wind, bc='periodic'):
-    """
-    Update the position of the particles.
-
-    Parameters:
-    x (float): The current x-coordinate of the particle.
-    y (float): The current y-coordinate of the particle.
-    z (float): The current z-coordinate of the particle.
-    vx (float): The velocity in the x-direction of the particle.
-    vy (float): The velocity in the y-direction of the particle.
-    vz (float): The velocity in the z-direction of the particle.
-    dt (float): The time step for the update.
-
-    Returns:
-    tuple: A tuple containing the updated x, y, and z coordinates of the particle.
-    """
-
-    x = euler_update(x, vx, dt)
-    y = euler_update(y, vy, dt)
-    z = euler_update(z, vz, dt)
-    # update the position of the particles
-
-    if bc == 'periodic':
-        x, y, z = periodic_boundary_condition(x_wind, y_wind, z_wind, x, y, z)
-    # apply periodic boundary conditions
-    return x, y, z
 
 @jit
 def total_KE(particle_species_list):
@@ -318,6 +224,7 @@ class particle_species:
         self.x2 = x2
         self.x3 = x3
 
+    @jit
     def update_subcell_position(self):
         self.zeta1 = self.zeta2
         self.zeta2 = self.x1 - compute_index(self.x1, self.dx)*self.dx
@@ -335,14 +242,21 @@ class particle_species:
     def momentum(self):
         return self.mass * jnp.sum(jnp.sqrt(self.v1**2 + self.v2**2 + self.v3**2))
 
+    @jit
     def periodic_boundary_condition(self, x_wind, y_wind, z_wind):
-        self.x1, self.x2, self.x3 = periodic_boundary_condition(x_wind, y_wind, z_wind, self.x1, self.x2, self.x3)
+        self.x1 = jnp.where(self.x1 > x_wind/2, -x_wind/2, self.x1)
+        self.x1 = jnp.where(self.x1 < -x_wind/2,  x_wind/2, self.x1)
+        self.x2 = jnp.where(self.x2 > y_wind/2, -y_wind/2, self.x2)
+        self.x2 = jnp.where(self.x2 < -y_wind/2,  y_wind/2, self.x2)
+        self.x3 = jnp.where(self.x3 > z_wind/2, -z_wind/2, self.x3)
+        self.x3 = jnp.where(self.x3 < -z_wind/2,  z_wind/2, self.x3)
 
+    @jit
     def update_position(self, dt, x_wind, y_wind, z_wind):
         if self.update_pos:
-            self.x1 = euler_update(self.x1, self.v1, dt)
-            self.x2 = euler_update(self.x2, self.v2, dt)
-            self.x3 = euler_update(self.x3, self.v3, dt)
+            self.x1 = self.x1 + self.v1*dt
+            self.x2 = self.x2 + self.v2*dt
+            self.x3 = self.x3 + self.v3*dt
             # update the position of the particles
             if self.bc == 'periodic':
                 self.periodic_boundary_condition(x_wind, y_wind, z_wind)
@@ -350,3 +264,11 @@ class particle_species:
 
             self.update_subcell_position()
             # update the subcell positions for charge conservation algorithm
+
+# Register the particle_species class as a PyTree
+tree_util.register_pytree_node(
+    particle_species,
+    lambda ps: ((ps.v1, ps.v2, ps.v3, ps.x1, ps.x2, ps.x3, ps.zeta1, ps.zeta2, ps.eta1, ps.eta2, ps.xi1, ps.xi2),
+                (ps.name, ps.N_particles, ps.charge, ps.mass, ps.T, ps.dx, ps.dy, ps.dz, ps.bc, ps.update_pos, ps.update_v)),
+    lambda data, children: particle_species(data[0], data[1], data[2], data[3], data[4], *children[:3], *children[3:6], data[5], data[6], data[7], data[8], data[9], data[10])
+)

@@ -95,6 +95,7 @@ def solve_poisson(rho, eps, dx, dy, dz, phi, solver, bc='periodic', M = None, GP
         #phi = solve_poisson_sor(phi, rho, dx, dy, dz, eps, omega=0.25, tol=1e-6, max_iter=100000)
     return phi
 
+
 def calculateE(world, particles, constants, rho, phi, M, t, solver, bc, verbose, GPUs):
     """
     Calculates the electric field components (Ex, Ey, Ez), electric potential (phi), and charge density (rho) based on the given parameters.
@@ -139,14 +140,17 @@ def calculateE(world, particles, constants, rho, phi, M, t, solver, bc, verbose,
     if solver == 'spectral' or solver == 'fdtd':
         rho = compute_rho(particles, rho, world, GPUs)
     # calculate the charge density based on the particle positions
+
     if verbose:
         print(f"Calculating Charge Density, Max Value: {jnp.max(rho)}")
 
+    solve_poisson_ = jit(partial(solve_poisson, solver=solver, bc=bc, GPUs=GPUs))
+
     if solver == 'spectral' or solver == 'fdtd':
         if t == 0:
-            phi = solve_poisson(rho, eps, dx, dy, dz, phi=rho, solver=solver, bc=bc, M=None, GPUs=GPUs)
+            phi = solve_poisson_(rho, eps, dx, dy, dz, phi=rho, M=None)
         else:
-            phi = solve_poisson(rho, eps, dx, dy, dz, phi=phi, solver=solver, bc=bc, M=M, GPUs=GPUs)
+            phi = solve_poisson_(rho, eps, dx, dy, dz, phi=phi, M=M)
 
 
     if verbose:
