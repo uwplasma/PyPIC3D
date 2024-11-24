@@ -22,8 +22,8 @@ from PyPIC3D.plotting import (
     save_vector_field_as_vtk
 )
 from PyPIC3D.particle import (
-    initial_particles, update_position, total_KE, total_momentum,
-    cold_start_init, particle_species
+    initial_particles, total_KE, total_momentum,
+    particle_species
 )
 from PyPIC3D.fields import (
     calculateE, update_B, update_E

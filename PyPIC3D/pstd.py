@@ -285,6 +285,7 @@ def spectral_laplacian(field, dx, dy, dz):
 
 
 @use_gpu_if_set
+@jit
 def particle_push(particles, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt, GPUs):
     """
     Updates the velocities of particles using the Boris algorithm.
