@@ -15,25 +15,7 @@ from functools import partial
 from PyPIC3D.utils import use_gpu_if_set
 # import external libraries
 
-
 @jit
-def index_particles(particle, positions, ds):
-    """
-    Calculate the index of a particle in a given position array.
-
-    Parameters:
-    - particle: int
-        The index of the particle.
-    - positions (array-like): The position array containing the particle positions.
-    - ds: float
-        The grid spacing.
-
-    Returns:
-    - index: int
-        The index of the particle in the position array, rounded down to the nearest integer.
-    """
-    return (positions.at[particle].get() / ds).astype(int)
-
 def particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
     """
     Distribute the charge of a particle to the surrounding grid points.
@@ -69,23 +51,14 @@ def particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
     y1 = y0 + 1
     z1 = z0 + 1
 
-    # # Debug print all these variables
-    # jax.debug.print("x0: {x0}, y0: {y0}, z0: {z0}", x0=x0, y0=y0, z0=z0)
-    # jax.debug.print("deltax: {deltax}, deltay: {deltay}, deltaz: {deltaz}", deltax=deltax, deltay=deltay, deltaz=deltaz)
-    # jax.debug.print("x1: {x1}, y1: {y1}, z1: {z1}", x1=x1, y1=y1, z1=z1)
-
-    # Print if any of these variables is NaN
-
     # Calculate the weights for the surrounding grid points
-    wx = deltax / dx #(x + x_wind / 2)
-    wy = deltay / dy #(y + y_wind / 2)
-    wz = deltaz / dz #(z + z_wind / 2)
+    wx = deltax / dx
+    wy = deltay / dy
+    wz = deltaz / dz
 
-    #jax.debug.print("wx: {wx}, wy: {wy}, wz: {wz}", wx=wx, wy=wy, wz=wz)
     # Calculate the volume of each grid point
     dv = dx * dy * dz
 
-    #jax.debug.print("dv: {dv}", dv=dv)
     # Distribute the charge of the particle to the surrounding grid points
     rho = rho.at[x0, y0, z0].add((q / dv) * (1 - wx) * (1 - wy) * (1 - wz), mode='drop')
     rho = rho.at[x1, y0, z0].add((q / dv) * wx * (1 - wy) * (1 - wz), mode='drop')
@@ -99,6 +72,7 @@ def particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
     return rho
 
 @use_gpu_if_set
+@jit
 def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_wind, y_wind, z_wind, rho, GPUs=False):
     """
     Update the charge density (rho) based on the positions of particles.
@@ -119,7 +93,6 @@ def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_win
     array-like: Updated charge density array.
     """
 
-
     def addto_rho(particle, rho):
         x = particlex.at[particle].get()
         y = particley.at[particle].get()
@@ -127,18 +100,10 @@ def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_win
         rho = particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind)
         return rho
 
-    # def addto_rho(particle, rho):
-    #     x = index_particles(particle, particlex, dx)
-    #     y = index_particles(particle, particley, dy)
-    #     z = index_particles(particle, particlez, dz)
-    #     rho = rho.at[x, y, z].add( q / (dx*dy*dz) )
-    #     return rho
-    # for i in range(Nparticles):
-    #     rho = addto_rho(i, rho)
-
     return jax.lax.fori_loop(0, Nparticles-1, addto_rho, rho )
 
 @use_gpu_if_set
+@jit
 def compute_rho(particles, rho, world, GPUs):
     dx = world['dx']
     dy = world['dy']
@@ -154,5 +119,3 @@ def compute_rho(particles, rho, world, GPUs):
             particle_x, particle_y, particle_z = species.get_position()
             rho = update_rho(N_particles, particle_x, particle_y, particle_z, dx, dy, dz, charge, x_wind, y_wind, z_wind, rho, GPUs)
     return rho
-
-
