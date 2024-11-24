@@ -14,7 +14,7 @@ import functools
 from functools import partial
 # import external libraries
 
-from PyPIC3D.pstd import spectral_poisson_solve, spectral_laplacian, spectralBsolve, spectralEsolve, spectral_gradient
+from PyPIC3D.pstd import spectral_poisson_solve, spectral_laplacian, spectral_gradient
 from PyPIC3D.fdtd import centered_finite_difference_laplacian, centered_finite_difference_gradient
 from PyPIC3D.rho import update_rho, compute_rho
 from PyPIC3D.cg import conjugate_grad
@@ -55,11 +55,16 @@ def initialize_fields(world):
     Bz = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
     # initialize the magnetic field arrays as 0
 
+    Jx = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+    Jy = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+    Jz = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+    # initialize the current density arrays as 0
+
     phi = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
     rho = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
     # initialize the electric potential and charge density arrays as 0
 
-    return Ex, Ey, Ez, Bx, By, Bz, phi, rho
+    return Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho
 
 @use_gpu_if_set
 def solve_poisson(rho, eps, dx, dy, dz, phi, solver, bc='periodic', M = None, GPUs = False):
@@ -133,14 +138,7 @@ def calculateE(world, particles, constants, rho, phi, M, t, solver, bc, verbose,
 
     if solver == 'spectral' or solver == 'fdtd':
         rho = compute_rho(particles, rho, world, GPUs)
-        # for species in particles:
-        #     N_particles = species.get_number_of_particles()
-        #     charge = species.get_charge()
-        #     if N_particles > 0:
-        #         particle_x, particle_y, particle_z = species.get_position()
-        #         rho = update_rho(N_particles, particle_x, particle_y, particle_z, dx, dy, dz, charge, x_wind, y_wind, z_wind, rho, GPUs)
-
-
+    # calculate the charge density based on the particle positions
     if verbose:
         print(f"Calculating Charge Density, Max Value: {jnp.max(rho)}")
 
@@ -167,3 +165,75 @@ def calculateE(world, particles, constants, rho, phi, M, t, solver, bc, verbose,
         Ez = -Ez
 
     return Ex, Ey, Ez, phi, rho
+
+
+
+@jit
+def update_E(grid, staggered_grid, E, B, J, world, constants, curl_func):
+    """
+    Update the electric field components (Ex, Ey, Ez) based on the given parameters.
+
+    Parameters:
+    grid (object): The grid object containing the simulation grid.
+    staggered_grid (object): The staggered grid object for the simulation.
+    E (tuple): A tuple containing the electric field components (Ex, Ey, Ez).
+    B (tuple): A tuple containing the magnetic field components (Bx, By, Bz).
+    J (tuple): A tuple containing the current density components (Jx, Jy, Jz).
+    world (dict): A dictionary containing the world parameters such as 'dx', 'dy', 'dz', and 'dt'.
+    constants (dict): A dictionary containing the physical constants such as 'C' (speed of light) and 'eps' (permittivity).
+    curl_func (function): A function to calculate the curl of the magnetic field.
+
+    Returns:
+    tuple: Updated electric field components (Ex, Ey, Ez).
+    """
+
+    Ex, Ey, Ez = E
+    Bx, By, Bz = B
+    Jx, Jy, Jz = J
+
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    dt = world['dt']
+    C = constants['C']
+    eps = constants['eps']
+
+    curlx, curly, curlz = curl_func(Bx, By, Bz)
+    # calculate the curl of the magnetic field
+    Ex = Ex +  ( C**2 * curlx - 1/eps * Jx) * dt/2
+    Ey = Ey +  ( C**2 * curly - 1/eps * Jy) * dt/2
+    Ez = Ez +  ( C**2 * curlz - 1/eps * Jz) * dt/2
+
+    return Ex, Ey, Ez
+
+
+@jit
+def update_B(grid, staggered_grid, E, B, world, constants, curl_func):
+    """
+    Update the magnetic field components (Bx, By, Bz) using the curl of the electric field.
+
+    Parameters:
+    grid (ndarray): The grid on which the fields are defined.
+    staggered_grid (ndarray): The staggered grid for field calculations.
+    E (tuple): The electric field components (Ex, Ey, Ez).
+    B (tuple): The magnetic field components (Bx, By, Bz).
+    world (dict): Dictionary containing simulation parameters such as 'dx', 'dy', 'dz', and 'dt'.
+    constants (dict): Dictionary containing physical constants.
+    curl_func (function): Function to calculate the curl of the electric field.
+
+    Returns:
+    tuple: Updated magnetic field components (Bx, By, Bz).
+    """
+
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    dt = world['dt']
+
+    curlx, curly, curlz = curl_func(Ex, Ey, Ez)
+    # calculate the curl of the electric field
+    Bx = Bx - dt/2*curlx
+    By = By - dt/2*curly
+    Bz = Bz - dt/2*curlz
+
+    return Bx, By, Bz
