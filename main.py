@@ -46,7 +46,7 @@ from PyPIC3D.utils import (
     plasma_frequency, courant_condition,
     debye_length, update_parameters_from_toml, dump_parameters_to_toml,
     load_particles_from_toml, use_gpu_if_set, precondition, build_coallocated_grid,
-    build_yee_grid
+    build_yee_grid, convert_to_jax_compatible
 )
 
 from PyPIC3D.errors import (
@@ -150,6 +150,11 @@ Nt     = int( t_wind / dt )
 # Nt for resolution
 
 world = {'dt': dt, 'dx': dx, 'dy': dy, 'dz': dz, 'Nx': Nx, 'Ny': Ny, 'Nz': Nz, 'x_wind': x_wind, 'y_wind': y_wind, 'z_wind': z_wind}
+# set the simulation world parameters
+
+world = convert_to_jax_compatible(world)
+constants = convert_to_jax_compatible(constants)
+# convert the world parameters to jax compatible format
 
 print(f'time window: {t_wind}')
 print(f'x window: {x_wind}')
@@ -169,10 +174,14 @@ particles = load_particles_from_toml("config.toml", simulation_parameters, world
 
 theoretical_freq = plasma_frequency(particles[0], world, constants)
 # calculate the expected plasma frequency from analytical theory, w = sqrt( ne^2 / (eps * me) )
+N_particles = particles[0].get_number_of_particles()
+Te = particles[0].get_temperature()
+me = particles[0].get_mass()
+eps = constants['eps']
 
 if theoretical_freq * dt > 2.0:
     print(f"# of Electrons is Low and may introduce numerical stability")
-    print(f"In order to correct this, # of Electrons needs to be at least { (2/dt)**2 * (me*eps/q_e**2) } for this spatial resolution")
+    #print(f"In order to correct this, # of Electrons needs to be at least { (2/dt)**2 * (me*eps/q_e**2) } for this spatial resolution")
 
 debye = debye_length(particles[0], world, constants)
 # calculate the debye length of the plasma
@@ -193,9 +202,7 @@ key5 = random.key(3456)
 
 
 #################################### Two Stream Instability #####################################################
-N_particles = particles[0].get_number_of_particles()
-Te = particles[0].get_temperature()
-me = particles[0].get_mass()
+
 # electron_x, electron_y, electron_z = particles[0].get_position()
 # ev_x, ev_y, ev_z = particles[0].get_velocity()
 # alternating_ones = (-1)**jnp.array(range(0,N_particles))
@@ -256,7 +263,7 @@ if solver == "spectral" and not electrostatic:
 p = []
 
 if solver == "spectral":
-    curl_func = functools.partial(spectral_curl, dx=dx, dy=dy, dz=dz)
+    curl_func = functools.partial(spectral_curl, world=world)
 elif solver == "fdtd":
     curl_func = functools.partial(centered_finite_difference_curl, dx=dx, dy=dy, dz=dz, bc=bc)
 

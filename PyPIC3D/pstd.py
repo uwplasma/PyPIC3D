@@ -16,6 +16,7 @@ from PyPIC3D.utils import interpolate_and_stagger_field, interpolate_field, use_
 from PyPIC3D.particle import particle_species
 from PyPIC3D.J import compute_current_density
 
+@partial(jit, static_argnums=(1, 2, 3))
 def detect_gibbs_phenomenon(field, dx, dy, dz, threshold=0.1):
     """
     Detect the Gibbs phenomenon in a given field by checking for oscillations near discontinuities.
@@ -45,7 +46,7 @@ def detect_gibbs_phenomenon(field, dx, dy, dz, threshold=0.1):
     return gibbs_detected
 
 @jit
-def spectral_divergence_correction(Ex, Ey, Ez, rho, dx, dy, dz, dt, constants):
+def spectral_divergence_correction(Ex, Ey, Ez, rho, world, constants):
     """
     Corrects the divergence of the electric field in Fourier space.
 
@@ -63,6 +64,10 @@ def spectral_divergence_correction(Ex, Ey, Ez, rho, dx, dy, dz, dt, constants):
     Returns:
     tuple: Corrected electric field components (Ex, Ey, Ez).
     """
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    dt = world['dt']
 
     Nx, Ny, Nz = Ex.shape
     kx = jnp.fft.fftfreq(Nx, dx) * 2 * jnp.pi
@@ -103,7 +108,7 @@ def spectral_divergence_correction(Ex, Ey, Ez, rho, dx, dy, dz, dt, constants):
     return Ex, Ey, Ez
 
 @jit
-def spectral_poisson_solve(rho, eps, dx, dy, dz):
+def spectral_poisson_solve(rho, constants, world):
     """
     Solve the Poisson equation for electrostatic potential using spectral method.
 
@@ -117,6 +122,11 @@ def spectral_poisson_solve(rho, eps, dx, dy, dz):
     Returns:
     - phi (ndarray): Solution to the Poisson equation.
     """
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    eps = constants['eps']
+
     Nx, Ny, Nz = rho.shape
     kx = jnp.fft.fftfreq(Nx, dx) * 2 * jnp.pi
     ky = jnp.fft.fftfreq(Ny, dy) * 2 * jnp.pi
@@ -137,7 +147,7 @@ def spectral_poisson_solve(rho, eps, dx, dy, dz):
     return phi
 
 @jit
-def spectral_divergence(xfield, yfield, zfield, dx, dy, dz):
+def spectral_divergence(xfield, yfield, zfield, world):
     """
     Calculate the spectral divergence of a 3D vector field.
 
@@ -156,7 +166,9 @@ def spectral_divergence(xfield, yfield, zfield, dx, dy, dz):
     Returns:
     ndarray: The real part of the inverse FFT of the spectral divergence.
     """
-
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
 
     Nx, Ny, Nz = xfield.shape
     kx = jnp.fft.fftfreq(Nx, dx) * 2 * jnp.pi
@@ -178,7 +190,7 @@ def spectral_divergence(xfield, yfield, zfield, dx, dy, dz):
 
 
 @jit
-def spectral_curl(xfield, yfield, zfield, dx, dy, dz):
+def spectral_curl(xfield, yfield, zfield, world):
     """
     Compute the curl of a 3D vector field using spectral methods.
 
@@ -193,6 +205,10 @@ def spectral_curl(xfield, yfield, zfield, dx, dy, dz):
     Returns:
     tuple: A tuple containing the x, y, and z components of the curl of the vector field.
     """
+
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
 
     Nx, Ny, Nz = xfield.shape
     kx = jnp.fft.fftfreq(Nx, dx) * 2 * jnp.pi
@@ -223,7 +239,7 @@ def spectral_curl(xfield, yfield, zfield, dx, dy, dz):
     return curlx, curly, curlz
 
 @jit
-def spectral_gradient(field, dx, dy, dz):
+def spectral_gradient(field, world):
     """
     Compute the gradient of a 3D scalar field using spectral methods.
 
@@ -236,6 +252,11 @@ def spectral_gradient(field, dx, dy, dz):
     Returns:
     tuple: A tuple containing the x, y, and z components of the gradient of the field.
     """
+
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+
     Nx, Ny, Nz = field.shape
     kx = jnp.fft.fftfreq(Nx, dx) * 2 * jnp.pi
     ky = jnp.fft.fftfreq(Ny, dy) * 2 * jnp.pi
@@ -255,7 +276,7 @@ def spectral_gradient(field, dx, dy, dz):
 
 
 @jit
-def spectral_laplacian(field, dx, dy, dz):
+def spectral_laplacian(field, world):
     """
     Calculates the Laplacian of a given field using spectral method. Assumes periodic boundary conditions.
 
@@ -273,6 +294,11 @@ def spectral_laplacian(field, dx, dy, dz):
     - numpy.ndarray
         The Laplacian of the field.
     """
+
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+
     Nx, Ny, Nz = field.shape
     kx = jnp.fft.fftfreq(Nx, dx) * 2 * jnp.pi
     ky = jnp.fft.fftfreq(Ny, dy) * 2 * jnp.pi
@@ -283,9 +309,8 @@ def spectral_laplacian(field, dx, dy, dz):
     # calculate the laplacian in Fourier space
     return jnp.fft.ifftn(lapl).real
 
-
-@use_gpu_if_set
 @jit
+@use_gpu_if_set
 def particle_push(particles, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt, GPUs):
     """
     Updates the velocities of particles using the Boris algorithm.
@@ -356,7 +381,6 @@ def boris(q, m, x, y, z, vx, vy, vz, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_gri
     bfield_aty = interpolate_field(By, (xgrid, ystagger, zgrid), x, y, z)
     bfield_atz = interpolate_field(Bz, (xgrid, ygrid, zstagger), x, y, z)
     # interpolate the magnetic field component arrays and calculate the b field at the particle positions
-
     vxminus = vx + q*dt/(2*m)*efield_atx
     vyminus = vy + q*dt/(2*m)*efield_aty
     vzminus = vz + q*dt/(2*m)*efield_atz
@@ -384,11 +408,10 @@ def boris(q, m, x, y, z, vx, vy, vz, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_gri
     newvy = vyplus + q*dt/(2*m)*efield_aty
     newvz = vzplus + q*dt/(2*m)*efield_atz
     # calculate the new velocity
-
     return newvx, newvy, newvz
 
 
-@jit
+@partial(jit, static_argnums=(3, 4, 5, 6))
 def solve_magnetic_vector_potential(Jx, Jy, Jz, dx, dy, dz, mu0):
     """
     Solve for the magnetic vector potential using the magnetostatic Laplacian equation in the Coulomb gauge.
@@ -438,7 +461,7 @@ def solve_magnetic_vector_potential(Jx, Jy, Jz, dx, dy, dz, mu0):
 
     return Ax, Ay, Az
 
-
+@partial(jit, static_argnums=(5))
 def initialize_magnetic_field(particles, grid, staggered_grid, world, constants, GPUs):
     """
     Initialize the magnetic field using the current density from the list of particles.
@@ -479,7 +502,7 @@ def initialize_magnetic_field(particles, grid, staggered_grid, world, constants,
 
     return Bx, By, Bz
 
-
+@jit
 def spectral_marder_correction(Ex, Ey, Ez, rho, world, constants, d):
     """
     Apply the Marder correction to the electric field to suppress numerical instabilities.

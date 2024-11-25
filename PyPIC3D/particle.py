@@ -224,7 +224,6 @@ class particle_species:
         self.x2 = x2
         self.x3 = x3
 
-    @jit
     def update_subcell_position(self):
         self.zeta1 = self.zeta2
         self.zeta2 = self.x1 - compute_index(self.x1, self.dx)*self.dx
@@ -242,7 +241,6 @@ class particle_species:
     def momentum(self):
         return self.mass * jnp.sum(jnp.sqrt(self.v1**2 + self.v2**2 + self.v3**2))
 
-    @jit
     def periodic_boundary_condition(self, x_wind, y_wind, z_wind):
         self.x1 = jnp.where(self.x1 > x_wind/2, -x_wind/2, self.x1)
         self.x1 = jnp.where(self.x1 < -x_wind/2,  x_wind/2, self.x1)
@@ -251,7 +249,6 @@ class particle_species:
         self.x3 = jnp.where(self.x3 > z_wind/2, -z_wind/2, self.x3)
         self.x3 = jnp.where(self.x3 < -z_wind/2,  z_wind/2, self.x3)
 
-    @jit
     def update_position(self, dt, x_wind, y_wind, z_wind):
         if self.update_pos:
             self.x1 = self.x1 + self.v1*dt
@@ -265,10 +262,18 @@ class particle_species:
             self.update_subcell_position()
             # update the subcell positions for charge conservation algorithm
 
+    def _tree_flatten(self):
+        return ((self.v1, self.v2, self.v3, self.x1, self.x2, self.x3, self.zeta1, self.zeta2, self.eta1, self.eta2, self.xi1, self.xi2),
+                (self.name, self.N_particles, self.charge, self.mass, self.T, self.dx, self.dy, self.dz, self.bc, self.update_pos, self.update_v))
+
+    @classmethod
+    def _tree_unflatten(cls, data, children):
+        return cls(data[0], data[1], data[2], data[3], data[4], *children[:3], *children[3:6], data[5], data[6], data[7], data[8], data[9], data[10])
+
+
 # Register the particle_species class as a PyTree
 tree_util.register_pytree_node(
     particle_species,
-    lambda ps: ((ps.v1, ps.v2, ps.v3, ps.x1, ps.x2, ps.x3, ps.zeta1, ps.zeta2, ps.eta1, ps.eta2, ps.xi1, ps.xi2),
-                (ps.name, ps.N_particles, ps.charge, ps.mass, ps.T, ps.dx, ps.dy, ps.dz, ps.bc, ps.update_pos, ps.update_v)),
-    lambda data, children: particle_species(data[0], data[1], data[2], data[3], data[4], *children[:3], *children[3:6], data[5], data[6], data[7], data[8], data[9], data[10])
+    particle_species._tree_flatten,
+    particle_species._tree_unflatten
 )
