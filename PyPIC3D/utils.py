@@ -18,9 +18,23 @@ from scipy.interpolate import RegularGridInterpolator
 import pandas as pd
 import vtk
 import vtkmodules.util.numpy_support as vtknp
+from jax.tree_util import tree_map
 # import external libraries
 
 from PyPIC3D.particle import initial_particles, particle_species
+
+def convert_to_jax_compatible(data):
+    """
+    Convert a dictionary to a JAX-compatible PyTree.
+    
+    Parameters:
+    - data (dict): The dictionary to convert.
+    
+    Returns:
+    - dict: The JAX-compatible PyTree.
+    """
+    return tree_map(lambda x: jnp.array(x) if isinstance(x, (int, float, list, tuple)) else x, data)
+
 
 def load_rectilinear_grid(file_path):
     reader = vtk.vtkRectilinearGridReader()

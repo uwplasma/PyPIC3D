@@ -16,6 +16,7 @@ from functools import partial
 from PyPIC3D.utils import interpolate_and_stagger_field, interpolate_field, use_gpu_if_set
 from PyPIC3D.particle import particle_species
 
+@partial(jit, static_argnums=(5))
 @use_gpu_if_set
 def compute_current_density(particles, Jx, Jy, Jz, world, GPUs):
     """
@@ -116,7 +117,7 @@ def update_current_density(Nparticles, particlex, particley, particlez, particle
 
     return jax.lax.fori_loop(0, Nparticles-1, addto_J, (Jx, Jy, Jz))
 
-@jit
+@partial(jit, static_argnums=(1, 2, 3))
 def VB_correction(particles, Nx, Ny, Nz):
     """
     Apply Villasenor-Buneman correction to ensure rigorous charge conservation for local electromagnetic field solvers.
