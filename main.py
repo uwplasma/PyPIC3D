@@ -146,7 +146,7 @@ courant_number = 1
 dt = courant_condition(courant_number, dx, dy, dz, simulation_parameters, constants)
 # calculate spatial resolution using courant condition
 #dt = 100*dt
-Nt     = int( t_wind / dt )
+Nt     = 1000#int( t_wind / dt )
 # Nt for resolution
 
 world = {'dt': dt, 'dx': dx, 'dy': dy, 'dz': dz, 'Nx': Nx, 'Ny': Ny, 'Nz': Nz, 'x_wind': x_wind, 'y_wind': y_wind, 'z_wind': z_wind}
@@ -208,13 +208,13 @@ key5 = random.key(3456)
 # alternating_ones = (-1)**jnp.array(range(0,N_particles))
 # relative_drift_velocity = 0.5*jnp.sqrt(3*constants['kb']*Te/me)
 # perturbation = relative_drift_velocity*alternating_ones
-# #perturbation *= (1 + 0.1*jnp.sin(2*jnp.pi*electron_x/x_wind))
+#perturbation *= (1 + 0.1*jnp.sin(2*jnp.pi*electron_x/x_wind))
 # ev_x = perturbation
 # ev_y = jnp.zeros(N_particles)
 # ev_z = jnp.zeros(N_particles)
 # particles[0].set_velocity(ev_x, ev_y, ev_z)
 
-# #electron_x = jnp.zeros(N_particles)
+# electron_x = jnp.zeros(N_particles)
 # electron_y = jnp.zeros(N_particles)# jnp.ones(N_particles) * y_wind/4*alternating_ones
 # electron_z = jnp.zeros(N_particles)
 # particles[0].set_position(electron_x, electron_y, electron_z)
@@ -259,6 +259,7 @@ print(f"Thermal Velocity: {jnp.sqrt(3*constants['kb']*Te/me)}\n")
 
 if solver == "spectral" and not electrostatic:
     Bx, By, Bz = initialize_magnetic_field(particles, E_grid, B_grid, world, constants, GPUs)
+    # initialize the magnetic field using the curl of the electric field
 
 p = []
 
@@ -270,11 +271,13 @@ elif solver == "fdtd":
 if plotfields:
     Jx_probe, Jy_probe, Jz_probe = [], [], []
 
+
 for t in range(Nt):
     print(f'Iteration {t}, Time: {t*dt} s')
     ################## PLOTTING ########################################################################################
 
     if t % plot_freq == 0:
+
         print(f"Mean E magnitude: {jnp.mean(jnp.sqrt(Ex**2 + Ey**2 + Ez**2))}")
         print(f"Mean B magnitude: {jnp.mean(jnp.sqrt(Bx**2 + By**2 + Bz**2))}")
         plot_t.append(t*dt)
