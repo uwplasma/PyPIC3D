@@ -25,7 +25,7 @@ plotting_interval = 50
 
 [particle1]
 name = "electrons"
-N_particles = 5000
+N_particles = 10000
 charge = -1.602e-19
 mass   = 9.1093837e-31
 temperature = 1
