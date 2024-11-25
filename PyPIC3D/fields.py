@@ -66,8 +66,9 @@ def initialize_fields(world):
 
     return Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho
 
+@partial(jit, static_argnums=(4, 5, 7))
 @use_gpu_if_set
-def solve_poisson(rho, eps, dx, dy, dz, phi, solver, bc='periodic', M = None, GPUs = False):
+def solve_poisson(rho, constants, world, phi, solver, bc='periodic', M = None, GPUs = False):
     """
     Solve the Poisson equation for electrostatic potential.
 
@@ -86,8 +87,12 @@ def solve_poisson(rho, eps, dx, dy, dz, phi, solver, bc='periodic', M = None, GP
     """
 
     if solver == 'spectral':
-        phi = spectral_poisson_solve(rho, eps, dx, dy, dz)
+        phi = spectral_poisson_solve(rho, constants, world)
     elif solver == 'fdtd':
+        eps = constants['eps']
+        dx = world['dx']
+        dy = world['dy']
+        dz = world['dz']
         lapl = functools.partial(centered_finite_difference_laplacian, dx=dx, dy=dy, dz=dz, bc=bc)
         lapl = jit(lapl)
         # define the laplacian operator using finite difference method
@@ -95,7 +100,7 @@ def solve_poisson(rho, eps, dx, dy, dz, phi, solver, bc='periodic', M = None, GP
         #phi = solve_poisson_sor(phi, rho, dx, dy, dz, eps, omega=0.25, tol=1e-6, max_iter=100000)
     return phi
 
-
+@partial(jit, static_argnums=(7, 8, 9, 10))
 def calculateE(world, particles, constants, rho, phi, M, t, solver, bc, verbose, GPUs):
     """
     Calculates the electric field components (Ex, Ey, Ez), electric potential (phi), and charge density (rho) based on the given parameters.
@@ -144,13 +149,11 @@ def calculateE(world, particles, constants, rho, phi, M, t, solver, bc, verbose,
     if verbose:
         print(f"Calculating Charge Density, Max Value: {jnp.max(rho)}")
 
-    solve_poisson_ = jit(partial(solve_poisson, solver=solver, bc=bc, GPUs=GPUs))
-
     if solver == 'spectral' or solver == 'fdtd':
-        if t == 0:
-            phi = solve_poisson_(rho, eps, dx, dy, dz, phi=rho, M=None)
-        else:
-            phi = solve_poisson_(rho, eps, dx, dy, dz, phi=phi, M=M)
+        phi = lax.cond(t == 0,
+                   lambda _: solve_poisson(rho, constants, world, phi=rho, solver=solver, bc=bc, M=None, GPUs=GPUs),
+                   lambda _: solve_poisson(rho, constants, world, phi=phi, solver=solver, bc=bc, M=M, GPUs=GPUs),
+                   operand=None)
 
 
     if verbose:
@@ -158,7 +161,7 @@ def calculateE(world, particles, constants, rho, phi, M, t, solver, bc, verbose,
         print(f"Potential Error: {compute_pe(phi, rho, constants, world, solver, bc='periodic')}%")
 
     if solver == 'spectral':
-        Ex, Ey, Ez = spectral_gradient(phi, dx, dy, dz)
+        Ex, Ey, Ez = spectral_gradient(phi, world)
         Ex = -Ex
         Ey = -Ey
         Ez = -Ez
