@@ -354,7 +354,7 @@ def dump_parameters_to_toml(simulation_stats, simulation_parameters, plotting_pa
         "simulation_stats": simulation_stats,
         "simulation_parameters": simulation_parameters,
         "plotting": plotting_parameters,
-        "constants": constants,
+        "constants": jax.tree_util.tree_map(lambda x: x.tolist() if isinstance(x, jnp.ndarray) else x, constants),
         "particles": []
     }
 

@@ -270,7 +270,6 @@ class particle_species:
     def _tree_unflatten(cls, data, children):
         return cls(data[0], data[1], data[2], data[3], data[4], *children[:3], *children[3:6], data[5], data[6], data[7], data[8], data[9], data[10])
 
-
 # Register the particle_species class as a PyTree
 tree_util.register_pytree_node(
     particle_species,
