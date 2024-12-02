@@ -19,3 +19,4 @@ from . import utils
 from . import pstd
 from . import fdtd
 from . import sor
+from . import boris

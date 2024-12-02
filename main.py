@@ -11,6 +11,7 @@ import equinox as eqx
 import os, sys
 import matplotlib.pyplot as plt
 import functools
+import argparse
 # Importing relevant libraries
 
 
@@ -26,7 +27,7 @@ from PyPIC3D.particle import (
     particle_species
 )
 from PyPIC3D.fields import (
-    calculateE, update_B, update_E
+    calculateE, update_B, update_E, initialize_fields
 )
 
 from PyPIC3D.J import (
@@ -46,7 +47,8 @@ from PyPIC3D.utils import (
     plasma_frequency, courant_condition,
     debye_length, update_parameters_from_toml, dump_parameters_to_toml,
     load_particles_from_toml, use_gpu_if_set, precondition, build_coallocated_grid,
-    build_yee_grid, convert_to_jax_compatible
+    build_yee_grid, convert_to_jax_compatible, load_external_fields_from_toml,
+    check_stability, print_stats
 )
 
 from PyPIC3D.errors import (
@@ -57,6 +59,9 @@ from PyPIC3D.defaults import (
     default_parameters
 )
 
+from PyPIC3D.boris import (
+    particle_push
+)
 
 from PyPIC3D.model import (
     PoissonPrecondition
@@ -79,7 +84,12 @@ model_name = "Preconditioner.eqx"
 # booleans for using a neural network to precondition Poisson's equation solver
 
 ############################ SETTINGS #####################################################################
-config_file = "config.toml"
+parser = argparse.ArgumentParser(description="3D PIC code using Jax")
+parser.add_argument('--config', type=str, default="config.toml", help='Path to the configuration file')
+args = parser.parse_args()
+# argument parser for the configuration file
+
+config_file = args.config
 # path to the configuration file
 
 plotting_parameters, simulation_parameters, constants = default_parameters()
@@ -88,50 +98,17 @@ plotting_parameters, simulation_parameters, constants = default_parameters()
 if os.path.exists(config_file):
     simulation_parameters, plotting_parameters, constants = update_parameters_from_toml(config_file, simulation_parameters, plotting_parameters, constants)
 
-
-cold_start = False
-# start all the particles at the same place (rho = 0)
-
 ############################# SIMULATION PARAMETERS ########################################################
+# Update locals with simulation parameters
+for key, value in simulation_parameters.items():
+    locals()[key] = value
 
-save_data = plotting_parameters["save_data"]
-plotfields = plotting_parameters["plotfields"]
-plotpositions = plotting_parameters["plotpositions"]
-plotvelocities = plotting_parameters["plotvelocities"]
-plotKE = plotting_parameters["plotKE"]
-plotEnergy = plotting_parameters["plotEnergy"]
-plasmaFreq = plotting_parameters["plasmaFreq"]
-phaseSpace = plotting_parameters["phaseSpace"]
-plot_errors = plotting_parameters["plot_errors"]
-plot_dispersion = plotting_parameters["plot_dispersion"]
-plot_freq = plotting_parameters["plotting_interval"]
-# booleans for plotting/saving data
-
-name = simulation_parameters["name"]
-solver = simulation_parameters["solver"]
-bc = simulation_parameters["bc"]
-Nx = simulation_parameters["Nx"]
-Ny = simulation_parameters["Ny"]
-Nz = simulation_parameters["Nz"]
-x_wind = simulation_parameters["x_wind"]
-y_wind = simulation_parameters["y_wind"]
-z_wind = simulation_parameters["z_wind"]
-t_wind = simulation_parameters["t_wind"]
-electrostatic = simulation_parameters["electrostatic"]
-benchmark = simulation_parameters["benchmark"]
-verbose = simulation_parameters["verbose"]
-# set the simulation parameters
+# Update locals with plotting parameters
+for key, value in plotting_parameters.items():
+    locals()[key] = value
 
 if benchmark: jax.profiler.start_trace("/home/christopherwoolford/Documents/PyPIC3D/tensorboard")
 # start the profiler using tensorboard
-
-if solver == 'spectral':
-    from PyPIC3D.pstd import particle_push
-    from PyPIC3D.fields import initialize_fields
-elif solver == 'fdtd':
-    from PyPIC3D.fdtd import particle_push
-    from PyPIC3D.fields import initialize_fields
-# set the particle push method
 
 print(f"Initializing Simulation: {name}\n")
 start = time.time()
@@ -140,85 +117,34 @@ start = time.time()
 dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
 # compute the spatial resolution
 
-
 ################ Courant Condition #############################################################################
 courant_number = 1
 dt = courant_condition(courant_number, dx, dy, dz, simulation_parameters, constants)
 # calculate spatial resolution using courant condition
-#dt = 100*dt
-Nt     = 1000#int( t_wind / dt )
+Nt     = int( t_wind / dt )
 # Nt for resolution
 
-world = {'dt': dt, 'dx': dx, 'dy': dy, 'dz': dz, 'Nx': Nx, 'Ny': Ny, 'Nz': Nz, 'x_wind': x_wind, 'y_wind': y_wind, 'z_wind': z_wind}
+world = {'dt': dt, 'Nt': Nt, 'dx': dx, 'dy': dy, 'dz': dz, 'Nx': Nx, 'Ny': Ny, 'Nz': Nz, 'x_wind': x_wind, 'y_wind': y_wind, 'z_wind': z_wind}
 # set the simulation world parameters
 
 world = convert_to_jax_compatible(world)
 constants = convert_to_jax_compatible(constants)
 # convert the world parameters to jax compatible format
 
-print(f'time window: {t_wind}')
-print(f'x window: {x_wind}')
-print(f'y window: {y_wind}')
-print(f'z window: {z_wind}')
-print(f"\nResolution")
-print(f'dx: {dx}')
-print(f'dy: {dy}')
-print(f'dz: {dz}')
-print(f'dt:          {dt}')
-print(f'Nt:          {Nt}\n')
+print_stats(world)
+################################### INITIALIZE PARTICLES AND FIELDS ########################################################
 
-################################### INITIALIZE PARTICLES ########################################################
+particles = load_particles_from_toml(config_file, simulation_parameters, world, constants)
+# load the particles from the configuration file
 
-particles = load_particles_from_toml("config.toml", simulation_parameters, world, constants)
-
-
-theoretical_freq = plasma_frequency(particles[0], world, constants)
-# calculate the expected plasma frequency from analytical theory, w = sqrt( ne^2 / (eps * me) )
-N_particles = particles[0].get_number_of_particles()
-Te = particles[0].get_temperature()
-me = particles[0].get_mass()
-eps = constants['eps']
-
-if theoretical_freq * dt > 2.0:
-    print(f"# of Electrons is Low and may introduce numerical stability")
-    #print(f"In order to correct this, # of Electrons needs to be at least { (2/dt)**2 * (me*eps/q_e**2) } for this spatial resolution")
-
-debye = debye_length(particles[0], world, constants)
-# calculate the debye length of the plasma
-
-
-if debye < dx:
-    print(f"Debye Length is less than the spatial resolution, this may introduce numerical instability")
+theoretical_freq, debye, thermal_velocity = check_stability(world, constants, particles[0], dt)
+# check the stability of the simulation
 
 Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho = initialize_fields(world)
 # initialize the electric and magnetic fields
 
-key1 = random.key(4353)
-key2 = random.key(1043)
-key3 = random.key(1234)
-key4 = random.key(2345)
-key5 = random.key(3456)
-# random keys for initializing the particles
-
-
-#################################### Two Stream Instability #####################################################
-
-# electron_x, electron_y, electron_z = particles[0].get_position()
-# ev_x, ev_y, ev_z = particles[0].get_velocity()
-# alternating_ones = (-1)**jnp.array(range(0,N_particles))
-# relative_drift_velocity = 0.5*jnp.sqrt(3*constants['kb']*Te/me)
-# perturbation = relative_drift_velocity*alternating_ones
-#perturbation *= (1 + 0.1*jnp.sin(2*jnp.pi*electron_x/x_wind))
-# ev_x = perturbation
-# ev_y = jnp.zeros(N_particles)
-# ev_z = jnp.zeros(N_particles)
-# particles[0].set_velocity(ev_x, ev_y, ev_z)
-
-# electron_x = jnp.zeros(N_particles)
-# electron_y = jnp.zeros(N_particles)# jnp.ones(N_particles) * y_wind/4*alternating_ones
-# electron_z = jnp.zeros(N_particles)
-# particles[0].set_position(electron_x, electron_y, electron_z)
-# # put electrons with opposite velocities in the same position along y
+Ex, Ey, Ez, Bx, By, Bz = load_external_fields_from_toml([Ex, Ey, Ez, Bx, By, Bz], config_file)
+# add any external fields to the simulation
 
 ##################################### Neural Network Preconditioner ################################################
 
@@ -253,13 +179,11 @@ if not electrostatic:
 E_grid, B_grid = build_yee_grid(world)
 # build the grid for the fields
 
-print(f"Theoretical Plasma Frequency: {theoretical_freq} Hz")
-print(f"Debye Length: {debye} m")
-print(f"Thermal Velocity: {jnp.sqrt(3*constants['kb']*Te/me)}\n")
 
-if solver == "spectral" and not electrostatic:
-    Bx, By, Bz = initialize_magnetic_field(particles, E_grid, B_grid, world, constants, GPUs)
-    # initialize the magnetic field using the curl of the electric field
+
+# if solver == "spectral" and not electrostatic:
+#     Bx, By, Bz = initialize_magnetic_field(particles, E_grid, B_grid, world, constants, GPUs)
+#     # initialize the magnetic field using the curl of the electric field
 
 p = []
 
@@ -271,13 +195,18 @@ elif solver == "fdtd":
 if plotfields:
     Jx_probe, Jy_probe, Jz_probe = [], [], []
 
+avg_x = []
+avg_z = []
+avg_y = []
 
 for t in range(Nt):
     print(f'Iteration {t}, Time: {t*dt} s')
     ################## PLOTTING ########################################################################################
 
-    if t % plot_freq == 0:
-
+    if t % plotting_interval == 0:
+        avg_x.append(jnp.mean(particles[0].get_position()[0]))
+        avg_y.append(jnp.mean(particles[0].get_position()[1]))
+        avg_z.append(jnp.mean(particles[0].get_position()[2]))
         print(f"Mean E magnitude: {jnp.mean(jnp.sqrt(Ex**2 + Ey**2 + Ez**2))}")
         print(f"Mean B magnitude: {jnp.mean(jnp.sqrt(Bx**2 + By**2 + Bz**2))}")
         plot_t.append(t*dt)
@@ -371,6 +300,10 @@ if plot_dispersion:
 
 plot_probe(p, plot_t, "Total Momentum", "TotalMomentum")
 
+plot_probe(avg_x, plot_t, "Average Electron X Position", "AverageX")
+plot_probe(avg_y, plot_t, "Average Electron Y Position", "AverageY")
+plot_probe(avg_z, plot_t, "Average Electron Z Position", "AverageZ")
+
 if plot_errors:
     plot_probe(div_error_E, plot_t, "Divergence Error of E Field", f"div_error_E")
     plot_probe(div_error_B, plot_t, "Divergence Error of B Field", f"div_error_B")
@@ -380,7 +313,7 @@ duration = end - start
 # calculate the total simulation time
 
 simulation_stats = {"total_time": duration, "total_iterations": Nt, "time_per_iteration": duration/Nt, "debye_length": debye.item(), \
-    "plasma_frequency": theoretical_freq.item(), 'thermal_velocity': jnp.sqrt(2*constants['kb']*Te/me).item()}
+    "plasma_frequency": theoretical_freq.item(), 'thermal_velocity': thermal_velocity.item()}
 
 dump_parameters_to_toml(simulation_stats, simulation_parameters, plotting_parameters, constants, particles)
 # save the parameters to an output file

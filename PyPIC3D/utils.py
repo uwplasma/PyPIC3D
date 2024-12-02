@@ -23,13 +23,103 @@ from jax.tree_util import tree_map
 
 from PyPIC3D.particle import initial_particles, particle_species
 
+def print_stats(world):
+    """
+    Print the statistics of the simulation world.
+    Parameters:
+    world (dict): A dictionary containing the following keys:
+        - 'Nt' (int): Number of time steps.
+        - 'dx' (float): Resolution in the x-direction.
+        - 'dy' (float): Resolution in the y-direction.
+        - 'dz' (float): Resolution in the z-direction.
+        - 'dt' (float): Time step size.
+        - 'x_wind' (float): Size of the window in the x-direction.
+        - 'y_wind' (float): Size of the window in the y-direction.
+        - 'z_wind' (float): Size of the window in the z-direction.
+    Prints:
+    The time window, x window, y window, z window, and resolution details (dx, dy, dz, dt, Nt).
+    """
+
+    Nt = world['Nt']
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    dt = world['dt']
+    x_wind = world['x_wind']
+    y_wind = world['y_wind']
+    z_wind = world['z_wind']
+    t_wind = Nt*dt
+    print(f'time window: {t_wind}')
+    print(f'x window: {x_wind}')
+    print(f'y window: {y_wind}')
+    print(f'z window: {z_wind}')
+    print(f"\nResolution")
+    print(f'dx: {dx}')
+    print(f'dy: {dy}')
+    print(f'dz: {dz}')
+    print(f'dt:          {dt}')
+    print(f'Nt:          {Nt}\n')
+
+def check_stability(world, constants, electrons, dt):
+    """
+    Check the stability of the simulation based on various physical parameters.
+
+    Parameters:
+    world (dict): A dictionary containing the spatial resolution and wind parameters.
+        - 'dx' (float): Spatial resolution in the x-direction.
+        - 'dy' (float): Spatial resolution in the y-direction.
+        - 'dz' (float): Spatial resolution in the z-direction.
+        - 'x_wind' (float): Wind speed in the x-direction.
+        - 'y_wind' (float): Wind speed in the y-direction.
+        - 'z_wind' (float): Wind speed in the z-direction.
+    constants (dict): A dictionary containing physical constants.
+        - 'eps' (float): Permittivity of free space.
+        - 'kb' (float): Boltzmann constant.
+    electrons (object): An object representing the electrons in the simulation.
+        - get_charge() (method): Returns the charge of an electron.
+        - get_mass() (method): Returns the mass of an electron.
+        - get_temperature() (method): Returns the temperature of the electrons.
+        - get_number_of_particles() (method): Returns the number of electrons.
+    dt (float): Time step of the simulation.
+
+    Prints:
+    - Warnings about numerical stability if the number of electrons is low or if the Debye length is less than the spatial resolution.
+    - Theoretical plasma frequency.
+    - Debye length.
+    - Thermal velocity.
+    - Number of electrons.
+    """
+    dx, dy, dz = world['dx'], world['dy'], world['dz']
+    x_wind, y_wind, z_wind = world['x_wind'], world['y_wind'], world['z_wind']
+    q_e = electrons.get_charge()
+    me = electrons.get_mass()
+    eps = constants['eps']
+    Te = electrons.get_temperature()
+    kb = constants['kb']
+
+    theoretical_freq = plasma_frequency(electrons, world, constants)
+    if theoretical_freq * dt > 2.0:
+        print(f"# of Electrons is Low and may introduce numerical stability")
+        print(f"In order to correct this, # of Electrons needs to be at least { (2/dt)**2 * (me*eps/q_e**2) } for this spatial resolution")
+
+    debye = debye_length(electrons, world, constants)
+    if debye < dx:
+        print(f"Debye Length is less than the spatial resolution, this may introduce numerical instability")
+
+    print(f"Theoretical Plasma Frequency: {theoretical_freq} Hz")
+    print(f"Debye Length: {debye} m")
+    thermal_velocity = jnp.sqrt(3*kb*Te/me)
+    print(f"Thermal Velocity: {thermal_velocity}\n")
+    print(f"Number of Electrons: {electrons.get_number_of_particles()}")
+    return theoretical_freq, debye, thermal_velocity
+
 def convert_to_jax_compatible(data):
     """
     Convert a dictionary to a JAX-compatible PyTree.
-    
+
     Parameters:
     - data (dict): The dictionary to convert.
-    
+
     Returns:
     - dict: The JAX-compatible PyTree.
     """
@@ -63,7 +153,7 @@ def read_toml_to_dataframe(toml_file):
     """
     # Read the TOML file
     data = toml.load(toml_file)
-    
+
     # Convert the TOML data to a pandas DataFrame
     df = pd.json_normalize(data, sep='_')
     # Transpose the DataFrame to swap rows and columns
@@ -216,7 +306,7 @@ def use_gpu_if_set(func):
         else:
             return func(*args, **kwargs)
     return wrapper
-    
+
 def fix_bc_and_jit_compile(func, bc_value):
     """
     Fixes the boundary condition argument of a function using functools.partial and then JIT compiles the new function.
@@ -238,6 +328,40 @@ def grab_particle_keys(config):
         if key[:8] == 'particle':
             particle_keys.append(key)
     return particle_keys
+
+def grab_field_keys(config):
+    field_keys = []
+    for key in config.keys():
+        if key[:5] == 'field':
+            field_keys.append(key)
+    return field_keys
+
+def load_external_fields_from_toml(fields, toml_file):
+    """
+    Load external fields from a TOML file.
+
+    Parameters:
+    - toml_file (str): Path to the TOML file.
+
+    Returns:
+    - dict: Dictionary containing the external fields.
+    """
+    config = toml.load(toml_file)
+
+    field_keys = grab_field_keys(config)
+
+    for toml_key in field_keys:
+        field_name = config[toml_key]['name']
+        print(f"Loading field: {field_name}")
+        field_type = config[toml_key]['type']
+        field_path = config[toml_key]['path']
+
+        external_field = jnp.load(field_path)
+
+        fields[field_type] += external_field
+        print(f"Field loaded successfully: {field_name}")
+
+    return fields
 
 def load_particles_from_toml(toml_file, simulation_parameters, world, constants):
     config = toml.load(toml_file)
@@ -264,7 +388,20 @@ def load_particles_from_toml(toml_file, simulation_parameters, world, constants)
         mass=config[toml_key]['mass']
         T=config[toml_key]['temperature']
         x, y, z, vx, vy, vz = initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, key2, key3)
-        
+
+        if 'initial_x' in config[toml_key]:
+            x = jnp.load(config[toml_key]['initial_x'])
+        if 'initial_y' in config[toml_key]:
+            y = jnp.load(config[toml_key]['initial_y'])
+        if 'initial_z' in config[toml_key]:
+            z = jnp.load(config[toml_key]['initial_z'])
+        if 'initial_vx' in config[toml_key]:
+            vx = jnp.load(config[toml_key]['initial_vx'])
+        if 'initial_vy' in config[toml_key]:
+            vy = jnp.load(config[toml_key]['initial_vy'])
+        if 'initial_vz' in config[toml_key]:
+            vz = jnp.load(config[toml_key]['initial_vz'])
+
         update_pos = True
         update_v   = True
 
@@ -292,8 +429,8 @@ def load_particles_from_toml(toml_file, simulation_parameters, world, constants)
             update_v=update_v
         )
         particles.append(particle)
-    
-    return particles 
+
+    return particles
 
 def debugprint(value):
     """
