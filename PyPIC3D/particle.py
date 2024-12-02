@@ -8,6 +8,7 @@ import jax.numpy as jnp
 import math
 from pyevtk.hl import gridToVTK
 from jax import tree_util
+from functools import partial
 
 
 def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, key2, key3):
@@ -78,7 +79,7 @@ def total_momentum(m, vx, vy, vz):
     return m * jnp.sum( jnp.sqrt( vx**2 + vy**2 + vz**2 ) )
 
 @jit
-def compute_index(x, dx):
+def compute_index(x, dx, window):
     """
     Compute the index of a position in a discretized space.
 
@@ -89,7 +90,8 @@ def compute_index(x, dx):
     Returns:
     int or ndarray: The computed index/indices as integer(s).
     """
-    return jnp.floor(x/dx).astype(int)
+    scaled_x = x + window/2
+    return jnp.floor( scaled_x / dx).astype(int)
 
 class particle_species:
     """
@@ -158,7 +160,8 @@ class particle_species:
         Updates the positions of the particles using Euler's method and applies boundary conditions.
     """
 
-    def __init__(self, name, N_particles, charge, mass, T, v1, v2, v3, x1, x2, x3, dx, dy, dz, bc='periodic', update_pos=True, update_v=True):
+    def __init__(self, name, N_particles, charge, mass, T, v1, v2, v3, x1, x2, x3, xwind, \
+                ywind, zwind, dx, dy, dz, bc='periodic', update_pos=True, update_v=True):
         self.name = name
         self.N_particles = N_particles
         self.charge = charge
@@ -173,11 +176,14 @@ class particle_species:
         self.dx = dx
         self.dy = dy
         self.dz = dz
-        self.zeta1 = self.x1 - compute_index(self.x1, self.dx)*self.dx
+        self.x_wind = xwind
+        self.y_wind = ywind
+        self.z_wind = zwind
+        self.zeta1 = ( self.x1 + self.x_wind/2 ) % self.dx
         self.zeta2 = self.zeta1
-        self.eta1  = self.x2 - compute_index(self.x2, self.dy)*self.dy
+        self.eta1  = ( self.x2 + self.y_wind/2 ) % self.dy
         self.eta2  = self.eta1
-        self.xi1   = self.x3 - compute_index(self.x3, self.dz)*self.dz
+        self.xi1   = ( self.x3 + self.z_wind/2 ) % self.dz
         self.xi2   = self.xi1
         self.bc = bc
         self.update_pos = update_pos
@@ -211,7 +217,7 @@ class particle_species:
         return self.dx, self.dy, self.dz
 
     def get_index(self):
-        return compute_index(self.x1, self.dx), compute_index(self.x2, self.dy), compute_index(self.x3, self.dz)
+        return compute_index(self.x1, self.dx, self.x_wind), compute_index(self.x2, self.dy, self.y_wind), compute_index(self.x3, self.dz, self.z_wind)
 
     def set_velocity(self, v1, v2, v3):
         if self.update_v:
@@ -226,11 +232,11 @@ class particle_species:
 
     def update_subcell_position(self):
         self.zeta1 = self.zeta2
-        self.zeta2 = self.x1 - compute_index(self.x1, self.dx)*self.dx
+        self.zeta2 = (self.x1 + self.x_wind / 2) % self.dx
         self.eta1  = self.eta2
-        self.eta2  = self.x2 - compute_index(self.x2, self.dy)*self.dy
+        self.eta2  = ( self.x2 + self.y_wind / 2 ) % self.dy
         self.xi1   = self.xi2
-        self.xi2   = self.x3 - compute_index(self.x3, self.dz)*self.dz
+        self.xi2   = ( self.x3 + self.z_wind / 2 ) % self.dz
 
     def set_mass(self, mass):
         self.mass = mass
@@ -264,11 +270,11 @@ class particle_species:
 
     def _tree_flatten(self):
         return ((self.v1, self.v2, self.v3, self.x1, self.x2, self.x3, self.zeta1, self.zeta2, self.eta1, self.eta2, self.xi1, self.xi2),
-                (self.name, self.N_particles, self.charge, self.mass, self.T, self.dx, self.dy, self.dz, self.bc, self.update_pos, self.update_v))
+                (self.name, self.N_particles, self.charge, self.mass, self.T, self.x_wind, self.y_wind, self.z_wind, self.dx, self.dy, self.dz, self.bc, self.update_pos, self.update_v))
 
     @classmethod
     def _tree_unflatten(cls, data, children):
-        return cls(data[0], data[1], data[2], data[3], data[4], *children[:3], *children[3:6], data[5], data[6], data[7], data[8], data[9], data[10])
+        return cls(data[0], data[1], data[2], data[3], data[4], *children[:3], *children[3:6], data[5], data[6], data[7], data[8], data[9], data[10], data[11], data[12], data[13])
 
 # Register the particle_species class as a PyTree
 tree_util.register_pytree_node(
