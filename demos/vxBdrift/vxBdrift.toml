@@ -38,16 +38,6 @@ initial_vx = '/home/christopherwoolford/Documents/PyPIC3D/demos/vxBdrift/vx.npy'
 initial_vy = '/home/christopherwoolford/Documents/PyPIC3D/demos/vxBdrift/vy.npy'
 initial_vz = '/home/christopherwoolford/Documents/PyPIC3D/demos/vxBdrift/vz.npy'
 
-
-[particle2]
-name = "ions"
-N_particles = 0
-charge = 1.602e-19
-mass = 1.67e-27
-temperature = 1
-update_pos = true
-update_v   = true
-
 [field1]
 name = 'external_By'
 type = 4

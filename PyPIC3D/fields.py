@@ -175,7 +175,7 @@ def calculateE(world, particles, constants, rho, phi, M, t, solver, bc, verbose,
 
 
 
-@jit
+@partial(jit, static_argnums=(7))
 def update_E(grid, staggered_grid, E, B, J, world, constants, curl_func):
     """
     Update the electric field components (Ex, Ey, Ez) based on the given parameters.
@@ -214,7 +214,7 @@ def update_E(grid, staggered_grid, E, B, J, world, constants, curl_func):
     return Ex, Ey, Ez
 
 
-@jit
+@partial(jit, static_argnums=(6))
 def update_B(grid, staggered_grid, E, B, world, constants, curl_func):
     """
     Update the magnetic field components (Bx, By, Bz) using the curl of the electric field.
@@ -236,6 +236,9 @@ def update_B(grid, staggered_grid, E, B, world, constants, curl_func):
     dy = world['dy']
     dz = world['dz']
     dt = world['dt']
+
+    Ex, Ey, Ez = E
+    Bx, By, Bz = B
 
     curlx, curly, curlz = curl_func(Ex, Ey, Ez)
     # calculate the curl of the electric field

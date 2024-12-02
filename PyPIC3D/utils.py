@@ -352,9 +352,9 @@ def load_external_fields_from_toml(fields, toml_file):
 
     for toml_key in field_keys:
         field_name = config[toml_key]['name']
-        print(f"Loading field: {field_name}")
         field_type = config[toml_key]['type']
         field_path = config[toml_key]['path']
+        print(f"Loading field: {field_name} from {field_path}")
 
         external_field = jnp.load(field_path)
 
@@ -390,17 +390,24 @@ def load_particles_from_toml(toml_file, simulation_parameters, world, constants)
         x, y, z, vx, vy, vz = initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, key2, key3)
 
         if 'initial_x' in config[toml_key]:
+            print(f"Loading initial_x from external source: {config[toml_key]['initial_x']}")
             x = jnp.load(config[toml_key]['initial_x'])
         if 'initial_y' in config[toml_key]:
+            print(f"Loading initial_y from external source: {config[toml_key]['initial_y']}")
             y = jnp.load(config[toml_key]['initial_y'])
         if 'initial_z' in config[toml_key]:
+            print(f"Loading initial_z from external source: {config[toml_key]['initial_z']}")
             z = jnp.load(config[toml_key]['initial_z'])
         if 'initial_vx' in config[toml_key]:
+            print(f"Loading initial_vx from external source: {config[toml_key]['initial_vx']}")
             vx = jnp.load(config[toml_key]['initial_vx'])
         if 'initial_vy' in config[toml_key]:
+            print(f"Loading initial_vy from external source: {config[toml_key]['initial_vy']}")
             vy = jnp.load(config[toml_key]['initial_vy'])
         if 'initial_vz' in config[toml_key]:
+            print(f"Loading initial_vz from external source: {config[toml_key]['initial_vz']}")
             vz = jnp.load(config[toml_key]['initial_vz'])
+        print('\n')
 
         update_pos = True
         update_v   = True
@@ -422,9 +429,13 @@ def load_particles_from_toml(toml_file, simulation_parameters, world, constants)
             v1=vx,
             v2=vy,
             v3=vz,
+            xwind=x_wind,
+            ywind=y_wind,
+            zwind=z_wind,
             dx=dx,
             dy=dy,
             dz=dz,
+            bc='periodic',
             update_pos=update_pos,
             update_v=update_v
         )
