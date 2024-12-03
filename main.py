@@ -121,7 +121,7 @@ dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
 courant_number = 1
 dt = courant_condition(courant_number, dx, dy, dz, simulation_parameters, constants)
 # calculate spatial resolution using courant condition
-Nt     = 10 #int( t_wind / dt )
+Nt     = int( t_wind / dt )
 # Nt for resolution
 
 world = {'dt': dt, 'Nt': Nt, 'dx': dx, 'dy': dy, 'dz': dz, 'Nx': Nx, 'Ny': Ny, 'Nz': Nz, 'x_wind': x_wind, 'y_wind': y_wind, 'z_wind': z_wind}
@@ -208,14 +208,14 @@ for t in range(Nt):
     ################## PLOTTING ########################################################################################
 
     if t % plotting_interval == 0:
-        z1, z2, e1, e2, x1, x2 = particles[0].get_subcell_position()
-        eta1.append(e1)
-        eta2.append(e2)
-        zeta1.append(z1)
-        zeta2.append(z2)
-        xi1.append(x1)
-        xi2.append(x2)
-        # plot the subcell positions
+        # z1, z2, e1, e2, x1, x2 = particles[0].get_subcell_position()
+        # eta1.append(e1)
+        # eta2.append(e2)
+        # zeta1.append(z1)
+        # zeta2.append(z2)
+        # xi1.append(x1)
+        # xi2.append(x2)
+        # # plot the subcell positions
         avg_x.append(jnp.mean(particles[0].get_position()[0]))
         avg_y.append(jnp.mean(particles[0].get_position()[1]))
         avg_z.append(jnp.mean(particles[0].get_position()[2]))
@@ -255,6 +255,9 @@ for t in range(Nt):
             Jx_probe.append(jnp.mean(Jx))
             Jy_probe.append(jnp.mean(Jy))
             Jz_probe.append(jnp.mean(Jz))
+            print(f"Mean Jx: {jnp.mean(Jx)}")
+            print(f"Mean Jy: {jnp.mean(Jy)}")
+            print(f"Mean Jz: {jnp.mean(Jz)}")
             plt.title(f'E at t={t*dt:.2e}s')
             Emag = jnp.sqrt(Ex**2 + Ey**2 + Ez**2)
             plt.imshow(Emag[:, :, int(Nz/2)], origin='lower', extent=[0, x_wind, 0, y_wind])
@@ -282,9 +285,7 @@ for t in range(Nt):
             particles[i].update_position(dt, x_wind, y_wind, z_wind)
             if verbose: print(f"Calculating {particles[i].get_name()} Positions, Mean Value: {jnp.mean(jnp.abs(particles[i].get_position()[0]))}")
             # update the particle positions
-    ################ FIELD UPDATE #######################################################################
-    Jx, Jy, Jz = VB_correction(particles, Nx, Ny, Nz)
-# calculate the corrections for charge conservation using villasenor buneamn 1991
+    ################ FIELD UPDATE ################################################################################################
     if not electrostatic:
         Jx, Jy, Jz = VB_correction(particles, Nx, Ny, Nz)
         # calculate the corrections for charge conservation using villasenor buneamn 1991
@@ -318,12 +319,12 @@ plot_probe(avg_x, plot_t, "Average Electron X Position", "AverageX")
 plot_probe(avg_y, plot_t, "Average Electron Y Position", "AverageY")
 plot_probe(avg_z, plot_t, "Average Electron Z Position", "AverageZ")
 
-plot_probe(eta1, plot_t, "Eta1", "Eta1")
-plot_probe(eta2, plot_t, "Eta2", "Eta2")
-plot_probe(zeta1, plot_t, "Zeta1", "Zeta1")
-plot_probe(zeta2, plot_t, "Zeta2", "Zeta2")
-plot_probe(xi1, plot_t, "Xi1", "Xi1")
-plot_probe(xi2, plot_t, "Xi2", "Xi2")
+# plot_probe(eta1, plot_t, "Eta1", "Eta1")
+# plot_probe(eta2, plot_t, "Eta2", "Eta2")
+# plot_probe(zeta1, plot_t, "Zeta1", "Zeta1")
+# plot_probe(zeta2, plot_t, "Zeta2", "Zeta2")
+# plot_probe(xi1, plot_t, "Xi1", "Xi1")
+# plot_probe(xi2, plot_t, "Xi2", "Xi2")
 # plot the subcell positions of the electrons
 
 if plot_errors:

@@ -1,7 +1,7 @@
 # This is a configuration file for PyPIC3D
 [simulation_parameters]
 name = "Demo of a TS instability with 10,000 electrons"
-t_wind = 5000e-12
+t_wind = 3000e-12
 output_dir = "/home/christopherwoolford/Documents/PyPIC3D"
 bc = 'periodic'
 solver = 'spectral'
@@ -21,7 +21,7 @@ plotpositions = false
 plotKE = false
 plotfields = true
 plot_dispersion = false
-plotting_interval = 200
+plotting_interval = 400
 
 [particle1]
 name = "electrons"
