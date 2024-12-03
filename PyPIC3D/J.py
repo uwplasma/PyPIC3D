@@ -117,7 +117,7 @@ def update_current_density(Nparticles, particlex, particley, particlez, particle
 
     return jax.lax.fori_loop(0, Nparticles-1, addto_J, (Jx, Jy, Jz))
 
-@partial(jit, static_argnums=(1, 2, 3))
+#@partial(jit, static_argnums=(1, 2, 3))
 def VB_correction(particles, Nx, Ny, Nz):
     """
     Apply Villasenor-Buneman correction to ensure rigorous charge conservation for local electromagnetic field solvers.
@@ -138,7 +138,6 @@ def VB_correction(particles, Nx, Ny, Nz):
     for species in particles:
         q = species.get_charge()
         # get the charge of the species
-
         zeta1, zeta2, eta1, eta2, xi1, xi2 = species.get_subcell_position()
         # get the particle positions
 
@@ -154,11 +153,7 @@ def VB_correction(particles, Nx, Ny, Nz):
         # compute the displacement variables from Buneman, Vilasenor 1991
 
         ix, iy, iz = species.get_index()
-
-        jax.debug.print("zeta1: {z1}, zeta2: {z2}, eta1: {e1}, eta2: {e2}, xi1: {x1}, xi2: {x2}", z1=zeta1, z2=zeta2, e1=eta1, e2=eta2, x1=xi1, x2=xi2)
-        jax.debug.print("deltax: {dx}, deltay: {dy}, deltaz: {dz}", dx=deltax, dy=deltay, dz=deltaz)
-        jax.debug.print("zetabar: {zb}, etabar: {eb}, xibar: {xb}", zb=zetabar, eb=etabar, xb=xibar)
-        jax.debug.print("ix: {ix}, iy: {iy}, iz: {iz}", ix=ix, iy=iy, iz=iz)
+        # get the index of the species
 
         Jx = Jx.at[ix, iy+1, iz+1].add( q*(deltax*zetabar*xibar + deltax*deltay*deltaz/12))
         # compute the first x correction for charge conservation along i+1/2, j, k
@@ -186,6 +181,6 @@ def VB_correction(particles, Nx, Ny, Nz):
         # compute the third z correction for charge conservation along i+1, j, k+1/2
         Jz = Jz.at[ix, iy, iz].add( q*(deltaz*(1-zetabar)*(1-etabar) + deltax*deltay*deltaz/12))
         # compute the fourth z correction for charge conservation along i, j, k+1/2
-        jax.debug.print("Mean Jx: {x}, Mean Jy: {y}, Mean Jz: {z}", x=jnp.mean(Jx), y=jnp.mean(Jy), z=jnp.mean(Jz))
+
     return Jx, Jy, Jz
     # return the current corrections

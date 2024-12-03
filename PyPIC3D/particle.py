@@ -230,13 +230,12 @@ class particle_species:
         self.x2 = x2
         self.x3 = x3
 
-    def update_subcell_position(self):
-        self.zeta1 = self.zeta2
-        self.zeta2 = (self.x1 + self.x_wind / 2) % self.dx
-        self.eta1  = self.eta2
-        self.eta2  = ( self.x2 + self.y_wind / 2 ) % self.dy
-        self.xi1   = self.xi2
-        self.xi2   = ( self.x3 + self.z_wind / 2 ) % self.dz
+    def calc_subcell_position(self):
+        newzeta = (self.x1 + self.x_wind / 2) % self.dx
+        neweta  = (self.x2 + self.y_wind / 2) % self.dy
+        newxi   = (self.x3 + self.z_wind / 2) % self.dz
+
+        return newzeta, neweta, newxi
 
     def set_mass(self, mass):
         self.mass = mass
@@ -265,7 +264,10 @@ class particle_species:
                 self.periodic_boundary_condition(x_wind, y_wind, z_wind)
             # apply periodic boundary conditions
 
-            self.update_subcell_position()
+            self.zeta1 = self.zeta2
+            self.eta1  = self.eta2
+            self.xi1   = self.xi2
+            self.zeta2, self.eta2, self.xi2 = self.calc_subcell_position()
             # update the subcell positions for charge conservation algorithm
 
     def _tree_flatten(self):
