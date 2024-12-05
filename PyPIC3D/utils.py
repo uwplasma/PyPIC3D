@@ -127,6 +127,15 @@ def convert_to_jax_compatible(data):
 
 
 def load_rectilinear_grid(file_path):
+    """
+    Load a rectilinear grid from a VTK file and extract the vector field components.
+    Parameters:
+    file_path (str): The path to the VTK file containing the rectilinear grid.
+    Returns:
+    tuple: A tuple containing three numpy arrays (field_x, field_y, field_z) representing
+           the x, y, and z components of the vector field, respectively. Each array is
+           reshaped to match the dimensions of the grid.
+    """
     reader = vtk.vtkRectilinearGridReader()
     reader.SetFileName(file_path)
     reader.Update()
@@ -245,6 +254,22 @@ def convert_spatial_resolution(dx1, dx2, dx3, from_system, to_system):
     raise ValueError("Invalid coordinate system conversion")
 
 def build_coallocated_grid(world):
+    """
+    Builds a co-allocated grid based on the provided world parameters.
+    Parameters:
+    world (dict): A dictionary containing the following keys:
+        - 'dx' (float): The grid spacing in the x-direction.
+        - 'dy' (float): The grid spacing in the y-direction.
+        - 'dz' (float): The grid spacing in the z-direction.
+        - 'x_wind' (float): The extent of the grid in the x-direction.
+        - 'y_wind' (float): The extent of the grid in the y-direction.
+        - 'z_wind' (float): The extent of the grid in the z-direction.
+    Returns:
+    tuple: A tuple containing two elements:
+        - grid (tuple): A tuple of three arrays representing the grid points in the x, y, and z directions.
+        - grid (tuple): A duplicate of the first grid tuple.
+    """
+
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
@@ -257,6 +282,22 @@ def build_coallocated_grid(world):
     return grid, grid
 
 def build_yee_grid(world):
+    """
+    Builds a Yee grid and a staggered Yee grid based on the provided world parameters.
+    Parameters:
+    world (dict): A dictionary containing the following keys:
+        - 'dx' (float): Grid spacing in the x-direction.
+        - 'dy' (float): Grid spacing in the y-direction.
+        - 'dz' (float): Grid spacing in the z-direction.
+        - 'x_wind' (float): Extent of the grid in the x-direction.
+        - 'y_wind' (float): Extent of the grid in the y-direction.
+        - 'z_wind' (float): Extent of the grid in the z-direction.
+    Returns:
+    tuple: A tuple containing two elements:
+        - grid (tuple of jnp.ndarray): The Yee grid with three arrays representing the x, y, and z coordinates.
+        - staggered_grid (tuple of jnp.ndarray): The staggered Yee grid with three arrays representing the x, y, and z coordinates.
+    """
+
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
@@ -323,6 +364,14 @@ def fix_bc_and_jit_compile(func, bc_value):
     return jit_compiled_func
 
 def grab_particle_keys(config):
+    """
+    Extracts and returns a list of keys from the given configuration dictionary
+    that start with the prefix 'particle'.
+    Args:
+        config (dict): A dictionary containing configuration keys and values.
+    Returns:
+        list: A list of keys from the configuration dictionary that start with 'particle'.
+    """
     particle_keys = []
     for key in config.keys():
         if key[:8] == 'particle':
@@ -330,6 +379,14 @@ def grab_particle_keys(config):
     return particle_keys
 
 def grab_field_keys(config):
+    """
+    Extracts and returns a list of keys from the given configuration dictionary
+    that start with the prefix 'field'.
+    Args:
+        config (dict): A dictionary containing configuration keys and values.
+    Returns:
+        list: A list of keys from the config dictionary that start with 'field'.
+    """
     field_keys = []
     for key in config.keys():
         if key[:5] == 'field':
@@ -364,6 +421,20 @@ def load_external_fields_from_toml(fields, toml_file):
     return fields
 
 def load_particles_from_toml(toml_file, simulation_parameters, world, constants):
+    """
+    Load particle data from a TOML file and initialize particle species.
+    Args:
+        toml_file (str): Path to the TOML file containing particle configuration.
+        simulation_parameters (dict): Dictionary containing simulation parameters.
+        world (dict): Dictionary containing world parameters such as 'x_wind', 'y_wind', 'z_wind', 'dx', 'dy', 'dz'.
+        constants (dict): Dictionary containing constants such as 'kb'.
+    Returns:
+        list: A list of particle_species objects initialized with the data from the TOML file.
+    The function reads particle configuration from the provided TOML file, initializes particle properties such as
+    position, velocity, charge, mass, and temperature. It also handles loading initial positions and velocities from
+    external sources if specified in the TOML file. The particles are then appended to a list and returned.
+    """
+
     config = toml.load(toml_file)
 
     x_wind = world['x_wind']
@@ -417,6 +488,14 @@ def load_particles_from_toml(toml_file, simulation_parameters, world, constants)
         if update_v in config[toml_key]:
             update_v = config[toml_key]['update_v']
 
+        zeta1 = ( x + x_wind/2 ) % dx
+        zeta2 = zeta1
+        eta1  = ( y + y_wind/2 ) % dy
+        eta2  = eta1
+        xi1   = ( z + z_wind/2 ) % dz
+        xi2   = xi1
+        subcells = zeta1, zeta2, eta1, eta2, xi1, xi2
+
         particle = particle_species(
             name=particle_name,
             N_particles=N_particles,
@@ -429,6 +508,7 @@ def load_particles_from_toml(toml_file, simulation_parameters, world, constants)
             v1=vx,
             v2=vy,
             v3=vz,
+            subcells=subcells,
             xwind=x_wind,
             ywind=y_wind,
             zwind=z_wind,

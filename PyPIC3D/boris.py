@@ -14,33 +14,6 @@ from functools import partial
 
 from PyPIC3D.utils import use_gpu_if_set, interpolate_and_stagger_field, interpolate_field
 
-def cross_product(a, b):
-    """
-    Calculate the cross product of two vectors. Supports 1D, 2D, and 3D vectors for 'a' and 3D vector for 'b'.
-
-    Args:
-        a (tuple): The first vector (1D, 2D, or 3D).
-        b (tuple): The second vector (3D).
-
-    Returns:
-        tuple: The cross product.
-    """
-    if len(a) == 1:
-        return (0, -a[0] * b[2], a[0] * b[1])
-    elif len(a) == 2:
-        ax, ay = a
-        bx, by, bz = b
-        return (0, 0, ax * by - ay * bx)
-    elif len(a) == 3:
-        ax, ay, az = a
-        bx, by, bz = b
-        cx = ay * bz - az * by
-        cy = az * bx - ax * bz
-        cz = ax * by - ay * bx
-        return cx, cy, cz
-    else:
-        raise ValueError("Vector 'a' must be either 1D, 2D, or 3D.")
-
 @jit
 @use_gpu_if_set
 def particle_push(particles, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt, GPUs):

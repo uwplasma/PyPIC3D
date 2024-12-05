@@ -21,11 +21,11 @@ plotpositions = false
 plotKE = false
 plotfields = true
 plot_dispersion = false
-plotting_interval = 400
+plotting_interval = 100
 
 [particle1]
 name = "electrons"
-N_particles = 10000
+N_particles = 50000
 charge = -1.602e-19
 mass   = 9.1093837e-31
 temperature = 1
@@ -37,13 +37,3 @@ initial_z = "/home/christopherwoolford/Documents/PyPIC3D/demos/two_stream/z.npy"
 initial_vx = "/home/christopherwoolford/Documents/PyPIC3D/demos/two_stream/vx.npy"
 initial_vy = "/home/christopherwoolford/Documents/PyPIC3D/demos/two_stream/vy.npy"
 initial_vz = "/home/christopherwoolford/Documents/PyPIC3D/demos/two_stream/vz.npy"
-
-
-[particle2]
-name = "ions"
-N_particles = 0
-charge = 1.602e-19
-mass = 1.67e-27
-temperature = 1
-update_pos = true
-update_v   = true

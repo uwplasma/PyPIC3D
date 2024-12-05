@@ -68,6 +68,8 @@ from PyPIC3D.model import (
 )
 # Importing functions from other files
 
+jax.config.update("jax_enable_x64", True)
+# set Jax to use 64 bit precision
 jax.config.update("jax_debug_nans", True)
 # debugging for nans
 
@@ -203,19 +205,25 @@ eta1, eta2 = [], []
 zeta1, zeta2 = [], []
 xi1, xi2 = [], []
 
+
+for i, particle in enumerate(particles):
+    print(f"Initial positions of particle species {i}: {particle.get_position()}")
+    print(f"Initial velocities of particle species {i}: {particle.get_velocity()}")
+
+print(f"Mean Electric Field (Ex): {jnp.mean(Ex)}")
+print(f"Mean Electric Field (Ey): {jnp.mean(Ey)}")
+print(f"Mean Electric Field (Ez): {jnp.mean(Ez)}")
+print(f"Mean Magnetic Field (Bx): {jnp.mean(Bx)}")
+print(f"Mean Magnetic Field (By): {jnp.mean(By)}")
+print(f"Mean Magnetic Field (Bz): {jnp.mean(Bz)}")
+
+
+# avg_vz = []
 for t in range(Nt):
     print(f'Iteration {t}, Time: {t*dt} s')
     ################## PLOTTING ########################################################################################
 
     if t % plotting_interval == 0:
-        # z1, z2, e1, e2, x1, x2 = particles[0].get_subcell_position()
-        # eta1.append(e1)
-        # eta2.append(e2)
-        # zeta1.append(z1)
-        # zeta2.append(z2)
-        # xi1.append(x1)
-        # xi2.append(x2)
-        # # plot the subcell positions
         avg_x.append(jnp.mean(particles[0].get_position()[0]))
         avg_y.append(jnp.mean(particles[0].get_position()[1]))
         avg_z.append(jnp.mean(particles[0].get_position()[2]))
@@ -233,7 +241,7 @@ for t in range(Nt):
         # if plotvelocities:
         #     plot_velocities(particles, t, x_wind, y_wind, z_wind)
         if phaseSpace:
-            particles_phase_space([particles[0]], t, "Particles")
+            particles_phase_space([particles[0]], world, t, "Particles")
         if plotfields:
             save_vector_field_as_vtk(Ex, Ey, Ez, E_grid, f"plots/fields/E_{t:09}.vtr")
             save_vector_field_as_vtk(Bx, By, Bz, B_grid, f"plots/fields/B_{t:09}.vtr")
@@ -264,6 +272,13 @@ for t in range(Nt):
             plt.colorbar(label='E')
             plt.tight_layout()
             plt.savefig(f'plots/E_slice/E_slice_{t:09}.png')
+            plt.close()
+
+            plt.title(f'Charge Density at t={t*dt:.2e}s')
+            plt.imshow(rho[:, :, int(Nz/2)], origin='lower', extent=[0, x_wind, 0, y_wind])
+            plt.colorbar(label='Charge Density')
+            plt.tight_layout()
+            plt.savefig(f'plots/rho_slice/rho_slice_{t:09}.png')
             plt.close()
 
 
@@ -318,14 +333,6 @@ plot_probe(p, plot_t, "Total Momentum", "TotalMomentum")
 plot_probe(avg_x, plot_t, "Average Electron X Position", "AverageX")
 plot_probe(avg_y, plot_t, "Average Electron Y Position", "AverageY")
 plot_probe(avg_z, plot_t, "Average Electron Z Position", "AverageZ")
-
-# plot_probe(eta1, plot_t, "Eta1", "Eta1")
-# plot_probe(eta2, plot_t, "Eta2", "Eta2")
-# plot_probe(zeta1, plot_t, "Zeta1", "Zeta1")
-# plot_probe(zeta2, plot_t, "Zeta2", "Zeta2")
-# plot_probe(xi1, plot_t, "Xi1", "Xi1")
-# plot_probe(xi2, plot_t, "Xi2", "Xi2")
-# plot the subcell positions of the electrons
 
 if plot_errors:
     plot_probe(div_error_E, plot_t, "Divergence Error of E Field", f"div_error_E")

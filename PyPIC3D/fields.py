@@ -147,7 +147,7 @@ def calculateE(world, particles, constants, rho, phi, M, t, solver, bc, verbose,
     # calculate the charge density based on the particle positions
 
     if verbose:
-        print(f"Calculating Charge Density, Max Value: {jnp.max(rho)}")
+        jax.debug.print("Calculating Charge Density, Max Value: {}", jnp.max(jnp.abs(rho)))
 
     if solver == 'spectral' or solver == 'fdtd':
         phi = lax.cond(t == 0,
@@ -157,8 +157,8 @@ def calculateE(world, particles, constants, rho, phi, M, t, solver, bc, verbose,
 
 
     if verbose:
-        print(f"Calculating Electric Potential, Max Value: {jnp.max(phi)}")
-        print(f"Potential Error: {compute_pe(phi, rho, constants, world, solver, bc='periodic')}%")
+        jax.debug.print("Calculating Electric Potential, Max Value: {}", jnp.max(phi))
+        jax.debug.print("Potential Error: {}%", compute_pe(phi, rho, constants, world, solver, bc='periodic'))
 
     if solver == 'spectral':
         Ex, Ey, Ez = spectral_gradient(phi, world)

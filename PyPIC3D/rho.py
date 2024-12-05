@@ -100,17 +100,37 @@ def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_win
         rho = particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind)
         return rho
 
-    return jax.lax.fori_loop(0, Nparticles-1, addto_rho, rho )
+    return jax.lax.fori_loop(0, Nparticles, addto_rho, rho )
 
 @use_gpu_if_set
 @jit
 def compute_rho(particles, rho, world, GPUs):
+    """
+    Compute the charge density (rho) for a given set of particles in a simulation world.
+    Parameters:
+    particles (list): A list of particle species, each containing methods to get the number of particles,
+                      their positions, and their charge.
+    rho (ndarray): The initial charge density array to be updated.
+    world (dict): A dictionary containing the simulation world parameters, including:
+                  - 'dx': Grid spacing in the x-direction.
+                  - 'dy': Grid spacing in the y-direction.
+                  - 'dz': Grid spacing in the z-direction.
+                  - 'x_wind': Window size in the x-direction.
+                  - 'y_wind': Window size in the y-direction.
+                  - 'z_wind': Window size in the z-direction.
+    GPUs (bool): A flag indicating whether to use GPU acceleration for the computation.
+    Returns:
+    ndarray: The updated charge density array.
+    """
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
     x_wind = world['x_wind']
     y_wind = world['y_wind']
     z_wind = world['z_wind']
+
+    rho = jnp.zeros_like(rho)
+    # reset rho to zero
 
     for species in particles:
         N_particles = species.get_number_of_particles()
