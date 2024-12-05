@@ -47,6 +47,18 @@ def plot_rho(rho, t, name, dx, dy, dz):
 # plot the charge density in the vtk file format
 
 def save_vector_field_as_vtk(fieldx, fieldy, fieldz, grid, file_path):
+    """
+    Save a 3D vector field as a VTK rectilinear grid file.
+    Parameters:
+    fieldx (numpy.ndarray): The x-component of the vector field.
+    fieldy (numpy.ndarray): The y-component of the vector field.
+    fieldz (numpy.ndarray): The z-component of the vector field.
+    grid (tuple of numpy.ndarray): A tuple containing the grid coordinates (x, y, z).
+    file_path (str): The file path where the VTK file will be saved.
+    Returns:
+    None
+    """
+
     # Create a new vtkRectilinearGrid
     rectilinear_grid = vtk.vtkRectilinearGrid()
     rectilinear_grid.SetDimensions(grid[0].size, grid[1].size, grid[2].size)
@@ -171,45 +183,6 @@ def plot_positions(particles, t, x_wind, y_wind, z_wind):
 
     fig.write_html(f"plots/positions/particles.{t:09}.html")
 
-# def plot_positions(particles, t, x_wind, y_wind, z_wind):
-#     """
-#     Makes a 3D plot of the positions of the particles.
-
-#     Parameters:
-#     particles (list): A list of ParticleSpecies objects containing positions.
-#     t (float): The time value.
-#     x_wind (float): The x-axis wind limit.
-#     y_wind (float): The y-axis wind limit.
-#     z_wind (float): The z-axis wind limit.
-
-#     Returns:
-#     None
-#     """
-#     x, y, z = [], [], []
-#     for species in particles:
-#         x.append(species.get_position()[0])
-#         y.append(species.get_position()[1])
-#         z.append(species.get_position()[2])
-#     x = jnp.concatenate(x)
-#     y = jnp.concatenate(y)
-#     z = jnp.concatenate(z)
-
-#     fig = plt.figure()
-#     ax = fig.add_subplot(projection='3d')
-#     ax.set_xlim( -(2/3)*x_wind, (2/3)*x_wind )
-#     ax.set_ylim( -(2/3)*y_wind, (2/3)*y_wind )
-#     ax.set_zlim( -(2/3)*z_wind, (2/3)*z_wind )
-#     ax.scatter(x, y, z)
-#     ax.set_xlabel('X (m)')
-#     ax.set_ylabel('Y (m)')
-#     ax.set_zlabel('Z (m)')
-#     plt.title("Particle Positions")
-
-#     if not os.path.exists("plots/positions"):
-#         os.makedirs("plots/positions")
-
-#     plt.savefig(f"plots/positions/particles.{t:09}.png", dpi=300)
-#     plt.close()
 
 def plot_velocity_histogram(vx, vy, vz, t, nbins=50):
     """
@@ -328,7 +301,7 @@ def plot_fft(signal, dt, name, savename):
     # plot the fft of a signal
 
 
-def particles_phase_space(particles, t, name):
+def particles_phase_space(particles, world, t, name):
     """
     Plot the phase space of the particles.
 
@@ -340,6 +313,10 @@ def particles_phase_space(particles, t, name):
     Returns:
     None
     """
+
+    x_wind = world['x_wind']
+    y_wind = world['y_wind']
+    z_wind = world['z_wind']
 
     colors = ['r', 'b', 'g', 'c', 'm', 'y', 'k']
     idx = 0
@@ -353,6 +330,7 @@ def particles_phase_space(particles, t, name):
     plt.xlabel("Position")
     plt.ylabel("Velocity")
     #plt.ylim(-1e10, 1e10)
+    plt.xlim(-(2/3)*x_wind, (2/3)*x_wind)
     plt.title(f"{name} Phase Space")
     plt.savefig(f"plots/phase_space/x/{name}_phase_space.{t:09}.png", dpi=300)
     plt.close()
@@ -365,6 +343,7 @@ def particles_phase_space(particles, t, name):
         idx += 1
     plt.xlabel("Position")
     plt.ylabel("Velocity")
+    plt.xlim(-(2/3)*y_wind, (2/3)*y_wind)
     plt.title(f"{name} Phase Space")
     plt.savefig(f"plots/phase_space/y/{name}_phase_space.{t:09}.png", dpi=150)
     plt.close()
@@ -377,6 +356,7 @@ def particles_phase_space(particles, t, name):
         idx += 1
     plt.xlabel("Position")
     plt.ylabel("Velocity")
+    plt.xlim(-(2/3)*z_wind, (2/3)*z_wind)
     plt.title(f"{name} Phase Space")
     plt.savefig(f"plots/phase_space/z/{name}_phase_space.{t:09}.png", dpi=150)
     plt.close()
