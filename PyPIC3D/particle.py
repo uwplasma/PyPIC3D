@@ -8,6 +8,7 @@ import jax.numpy as jnp
 import math
 from pyevtk.hl import gridToVTK
 from jax import tree_util
+from jax.tree_util import register_pytree_node_class
 from functools import partial
 
 
@@ -93,12 +94,13 @@ def compute_index(x, dx, window):
     scaled_x = x + window/2
     return jnp.floor( scaled_x / dx).astype(int)
 
+@register_pytree_node_class
 class particle_species:
     """
     A class to represent a species of particles in a simulation.
 
-    Attributes:
-    -----------
+    Attributes
+    ----------
     name : str
         The name of the particle species.
     N_particles : int
@@ -107,29 +109,35 @@ class particle_species:
         The charge of each particle.
     mass : float
         The mass of each particle.
+    T : float
+        The temperature of the particle species.
     v1, v2, v3 : array-like
         The velocity components of the particles.
     x1, x2, x3 : array-like
         The position components of the particles.
     dx, dy, dz : float
         The resolution of the grid in each dimension.
-    zeta1, zeta2, eta1, eta2, xi1, xi2 : array-like
+    x_wind, y_wind, z_wind : float
+        The wind components in each dimension.
+    zeta1, zeta2, eta1, eta2, xi1, xi2 : float
         The subcell positions for charge conservation.
     bc : str, optional
         The boundary condition type (default is 'periodic').
     update_pos : bool, optional
-        Flag to determine if positions should be updated (default is True).
+        Flag to update the position of particles (default is True).
     update_v : bool, optional
-        Flag to determine if velocities should be updated (default is True).
+        Flag to update the velocity of particles (default is True).
 
-    Methods:
-    --------
+    Methods
+    -------
     get_name():
         Returns the name of the particle species.
     get_charge():
         Returns the charge of the particles.
     get_number_of_particles():
-        Returns the number of particles.
+        Returns the number of particles in the species.
+    get_temperature():
+        Returns the temperature of the particle species.
     get_velocity():
         Returns the velocity components of the particles.
     get_position():
@@ -139,29 +147,34 @@ class particle_species:
     get_subcell_position():
         Returns the subcell positions for charge conservation.
     get_resolution():
-        Returns the grid resolution in each dimension.
+        Returns the resolution of the grid in each dimension.
     get_index():
-        Returns the grid indices of the particle positions.
+        Computes and returns the index of the particles in the grid.
     set_velocity(v1, v2, v3):
         Sets the velocity components of the particles.
     set_position(x1, x2, x3):
         Sets the position components of the particles.
-    update_subcell_position():
-        Updates the subcell positions for charge conservation.
+    calc_subcell_position():
+        Calculates and returns the new subcell positions.
     set_mass(mass):
         Sets the mass of the particles.
     kinetic_energy():
-        Returns the kinetic energy of the particles.
+        Computes and returns the kinetic energy of the particles.
     momentum():
-        Returns the momentum of the particles.
+        Computes and returns the momentum of the particles.
     periodic_boundary_condition(x_wind, y_wind, z_wind):
         Applies periodic boundary conditions to the particle positions.
     update_position(dt, x_wind, y_wind, z_wind):
-        Updates the positions of the particles using Euler's method and applies boundary conditions.
+        Updates the position of the particles based on their velocity and time step.
+    tree_flatten():
+        Flattens the particle species object for serialization.
+    tree_unflatten(aux_data, children):
+        Unflattens the particle species object from serialized data.
     """
 
-    def __init__(self, name, N_particles, charge, mass, T, v1, v2, v3, x1, x2, x3, xwind, \
-                ywind, zwind, dx, dy, dz, bc='periodic', update_pos=True, update_v=True):
+
+    def __init__(self, name, N_particles, charge, mass, T, v1, v2, v3, x1, x2, x3, subcells, \
+            xwind, ywind, zwind, dx, dy, dz, bc='periodic', update_pos=True, update_v=True):
         self.name = name
         self.N_particles = N_particles
         self.charge = charge
@@ -179,12 +192,7 @@ class particle_species:
         self.x_wind = xwind
         self.y_wind = ywind
         self.z_wind = zwind
-        self.zeta1 = ( self.x1 + self.x_wind/2 ) % self.dx
-        self.zeta2 = self.zeta1
-        self.eta1  = ( self.x2 + self.y_wind/2 ) % self.dy
-        self.eta2  = self.eta1
-        self.xi1   = ( self.x3 + self.z_wind/2 ) % self.dz
-        self.xi2   = self.xi1
+        self.zeta1, self.zeta2, self.eta1, self.eta2, self.xi1, self.xi2 = subcells
         self.bc = bc
         self.update_pos = update_pos
         self.update_v   = update_v
@@ -270,17 +278,50 @@ class particle_species:
             self.zeta2, self.eta2, self.xi2 = self.calc_subcell_position()
             # update the subcell positions for charge conservation algorithm
 
-    def _tree_flatten(self):
-        return ((self.v1, self.v2, self.v3, self.x1, self.x2, self.x3, self.zeta1, self.zeta2, self.eta1, self.eta2, self.xi1, self.xi2),
-                (self.name, self.N_particles, self.charge, self.mass, self.T, self.x_wind, self.y_wind, self.z_wind, self.dx, self.dy, self.dz, self.bc, self.update_pos, self.update_v))
+
+    def tree_flatten(self):
+        children = (
+            self.v1, self.v2, self.v3, \
+            self.x1, self.x2, self.x3, \
+            self.zeta1, self.zeta2, self.eta1, self.eta2, self.xi1, self.xi2
+        )
+
+        aux_data = (
+            self.name, self.N_particles, self.charge, self.mass, self.T, \
+            self.x_wind, self.y_wind, self.z_wind, self.dx, self.dy, self.dz, \
+            self.bc, self.update_pos, self.update_v
+        )
+        return children, aux_data
 
     @classmethod
-    def _tree_unflatten(cls, data, children):
-        return cls(data[0], data[1], data[2], data[3], data[4], *children[:3], *children[3:6], data[5], data[6], data[7], data[8], data[9], data[10], data[11], data[12], data[13])
+    def tree_unflatten(cls, aux_data, children):
+        v1, v2, v3, x1, x2, x3, zeta1, zeta2, eta1, eta2, xi1, xi2 = children
 
-# Register the particle_species class as a PyTree
-tree_util.register_pytree_node(
-    particle_species,
-    particle_species._tree_flatten,
-    particle_species._tree_unflatten
-)
+        name, N_particles, charge, mass, T, x_wind, y_wind, z_wind, dx, dy, \
+            dz, bc, update_pos, update_v = aux_data
+
+        subcells = zeta1, zeta2, eta1, eta2, xi1, xi2
+
+        return cls(
+            name=name,
+            N_particles=N_particles,
+            charge=charge,
+            mass=mass,
+            T=T,
+            x1=x1,
+            x2=x2,
+            x3=x3,
+            v1=v1,
+            v2=v2,
+            v3=v3,
+            subcells=subcells,
+            xwind=x_wind,
+            ywind=y_wind,
+            zwind=z_wind,
+            dx=dx,
+            dy=dy,
+            dz=dz,
+            bc=bc,
+            update_pos=update_pos,
+            update_v=update_v
+        )
