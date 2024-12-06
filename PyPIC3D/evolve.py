@@ -4,6 +4,7 @@
 
 import jax
 from jax import jit
+import jax.numpy as jnp
 from functools import partial
 
 from PyPIC3D.fields import (

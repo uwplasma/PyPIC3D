@@ -21,3 +21,4 @@ from . import sor
 from . import boris
 from . import rho
 from . import evolve
+from . import autodiff
