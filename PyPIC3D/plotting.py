@@ -651,7 +651,7 @@ def write_data(filename, time, data):
 
 def field_energy(fieldx, fieldy, fieldz, dx, dy, dz):
     abs_field_squared = jnp.sum(fieldx**2 + fieldy**2 + fieldz**2, axis=(1,2))
-    integral_field_squared = jnp.trapz(abs_field_squared, dx=dx)
+    integral_field_squared = jnp.trapezoid(abs_field_squared, dx=dx)
     return 0.5 * integral_field_squared
 
 def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid, B_grid, plotting_parameters, world, constants, solver, bc):
