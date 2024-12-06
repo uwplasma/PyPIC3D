@@ -318,6 +318,13 @@ def particles_phase_space(particles, world, t, name):
     None
     """
 
+    if not os.path.exists("plots/phase_space/x"):
+        os.makedirs("plots/phase_space/x")
+    if not os.path.exists("plots/phase_space/y"):
+        os.makedirs("plots/phase_space/y")
+    if not os.path.exists("plots/phase_space/z"):
+        os.makedirs("plots/phase_space/z")
+
     x_wind = world['x_wind']
     y_wind = world['y_wind']
     z_wind = world['z_wind']
@@ -626,6 +633,11 @@ def plot_slice(field_slice, t, name, world, dt):
     Returns:
     None
     """
+
+    if not os.path.exists(f"plots/{name}_slice"):
+        os.makedirs(f'plots/{name}_slice')
+    # Create directory if it doesn't exist
+    
     plt.title(f'{name} at t={t*dt:.2e}s')
     plt.imshow(field_slice, origin='lower', extent=[-world['x_wind']/2, world['x_wind']/2, -world['y_wind']/2, world['y_wind']/2])
     plt.colorbar(label=name)

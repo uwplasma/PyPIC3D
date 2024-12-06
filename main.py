@@ -95,8 +95,6 @@ loop = partial(time_loop, E_grid=E_grid, B_grid=B_grid, world=world, constants=c
 # #put electrons with opposite velocities in the same position along y
 
 
-
-
 ###################################################### SIMULATION LOOP #####################################
 start = time.time()
 # start the timer
