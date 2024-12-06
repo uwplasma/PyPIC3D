@@ -365,18 +365,18 @@ def particles_phase_space(particles, world, t, name):
     plt.savefig(f"plots/phase_space/z/{name}_phase_space.{t:09}.png", dpi=150)
     plt.close()
 
-    idx = 0
-    for species in particles:
-        x, y, z = species.get_position()
-        vx, vy, vz = species.get_velocity()
-        v_magnitude = jnp.sqrt(jnp.square(vx) + jnp.square(vy) + jnp.square(vz))
-        plt.scatter(x, v_magnitude, c=colors[idx])
-        idx += 1
-    plt.xlabel("Position")
-    plt.ylabel("Velocity Magnitude")
-    plt.title(f"{name} Phase Space (Magnitude)")
-    plt.savefig(f"plots/phase_space/magnitude/{name}_phase_space.{t:09}.png", dpi=150)
-    plt.close()
+    # idx = 0
+    # for species in particles:
+    #     x, y, z = species.get_position()
+    #     vx, vy, vz = species.get_velocity()
+    #     v_magnitude = jnp.sqrt(jnp.square(vx) + jnp.square(vy) + jnp.square(vz))
+    #     plt.scatter(x, v_magnitude, c=colors[idx])
+    #     idx += 1
+    # plt.xlabel("Position")
+    # plt.ylabel("Velocity Magnitude")
+    # plt.title(f"{name} Phase Space (Magnitude)")
+    # plt.savefig(f"plots/phase_space/magnitude/{name}_phase_space.{t:09}.png", dpi=150)
+    # plt.close()
 
 @jit
 def number_density(n, Nparticles, particlex, particley, particlez, dx, dy, dz, Nx, Ny, Nz):
@@ -609,7 +609,7 @@ def write_probe(probe_data, t, filename):
     Returns:
     None
     """
-    with open(filename, 'w') as file:
+    with open(filename, 'a') as file:
         file.write(f"{t}\t{probe_data}\n")
 
 def plot_slice(field_slice, t, name, world, dt):
@@ -645,7 +645,7 @@ def write_data(filename, time, data):
     Returns:
     None
     """
-    with open(filename, "w") as f:
+    with open(filename, "a") as f:
         f.write(f"{time}, {data}\n")
 
 
