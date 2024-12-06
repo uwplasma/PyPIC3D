@@ -23,6 +23,34 @@ from jax.tree_util import tree_map
 
 from PyPIC3D.particle import initial_particles, particle_species
 
+def particle_sanity_check(particles):
+    """
+    Perform a sanity check on the particles to ensure consistency in their attributes.
+
+    This function iterates over each species in the particles list and checks that the 
+    number of particles matches the shape of their position and velocity arrays.
+
+    Parameters:
+    particles (list): A list of species objects, where each species object must have 
+                      the following methods:
+                      - get_number_of_particles(): returns the number of particles (int)
+                      - get_position(): returns a tuple of numpy arrays (x, y, z) representing 
+                        the positions of the particles
+                      - get_velocity(): returns a tuple of numpy arrays (vx, vy, vz) representing 
+                        the velocities of the particles
+
+    Raises:
+    AssertionError: If the shapes of the position and velocity arrays do not match the 
+                    number of particles.
+    """
+
+    for species in particles:
+        N = species.get_number_of_particles()
+        x, y, z = species.get_position()
+        vx, vy, vz = species.get_velocity()
+        assert x.shape == y.shape == z.shape == vx.shape == vy.shape == vz.shape == (N,)
+
+
 def print_stats(world):
     """
     Print the statistics of the simulation world.
@@ -58,7 +86,7 @@ def print_stats(world):
     print(f'dy: {dy}')
     print(f'dz: {dz}')
     print(f'dt:          {dt}')
-    print(f'Nt:          {Nt}\n')
+    print(f'Nt:          {Nt}')
 
 def check_stability(world, constants, electrons, dt):
     """

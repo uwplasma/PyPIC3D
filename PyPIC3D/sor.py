@@ -2,6 +2,8 @@ import jax
 import jax.numpy as jnp
 
 
+#### DISCLAIMER: I have not tested this method and I have a gut feeling that it will not work as intended.
+
 def solve_poisson_sor(phi, rho, dx, dy, dz, eps, omega=1.5, tol=1e-6, max_iter=10000):
     """
     Solve Poisson's equation using Successive Over-Relaxation (SOR) method.

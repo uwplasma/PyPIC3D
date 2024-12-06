@@ -40,6 +40,10 @@ def compute_current_density(particles, Jx, Jy, Jz, world, GPUs):
     y_wind = world['y_wind']
     z_wind = world['z_wind']
 
+    Jx = jnp.zeros_like(Jx)
+    Jy = jnp.zeros_like(Jy)
+    Jz = jnp.zeros_like(Jz)
+
     for species in particles:
         N_particles = species.get_number_of_particles()
         charge = species.get_charge()

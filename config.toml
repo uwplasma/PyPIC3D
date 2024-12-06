@@ -16,10 +16,10 @@ electrostatic = true
 
 [plotting]
 plot_errors = true
-phaseSpace  = true
+phaseSpace  = false
 plotpositions = false
 plotKE = false
-plotfields = true
+plotfields = false
 plot_dispersion = false
 plotting_interval = 100
 
