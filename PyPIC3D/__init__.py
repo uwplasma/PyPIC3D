@@ -9,7 +9,6 @@ import matplotlib.pyplot as plt
 
 from . import cg
 from . import errors
-from . import defaults
 from . import fields
 from . import boundaryconditions
 from . import initialization
@@ -20,3 +19,5 @@ from . import pstd
 from . import fdtd
 from . import sor
 from . import boris
+from . import rho
+from . import evolve
