@@ -5,6 +5,7 @@ import jax
 from jax import random
 from jax import jit
 import jax.numpy as jnp
+from jax.experimental import checkify
 import math
 from pyevtk.hl import gridToVTK
 from jax import tree_util

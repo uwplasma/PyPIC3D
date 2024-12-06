@@ -14,6 +14,10 @@ from PyPIC3D.rho import update_rho
 import vtk
 import vtk.util.numpy_support as vtknp
 
+from PyPIC3D.errors import (
+    compute_electric_divergence_error, compute_magnetic_divergence_error
+)
+
 def plot_rho(rho, t, name, dx, dy, dz):
     """
     Plot the density field.
@@ -35,6 +39,7 @@ def plot_rho(rho, t, name, dx, dy, dz):
     x = np.linspace(0, Nx, Nx) * dx
     y = np.linspace(0, Ny, Ny) * dy
     z = np.linspace(0, Nz, Nz) * dz
+
 
     # Create directory if it doesn't exist
     directory = "./plots/rho"
@@ -211,7 +216,6 @@ def plot_velocity_histogram(vx, vy, vz, t, nbins=50):
 
     plt.savefig(f"plots/velocity_histograms/velocities.{t:09}.png", dpi=300)
     plt.close()
-
 
 def plot_KE(KE, t):
     """
@@ -592,6 +596,7 @@ def plot_dominant_modes(dominant_modes, t, name, savename):
 
     plt.savefig(f"plots/{savename}_dominant_modes.png", dpi=300)
     plt.close()
+
 def write_probe(probe_data, t, filename):
     """
     Writes probe data and timestep to a file.
@@ -604,5 +609,123 @@ def write_probe(probe_data, t, filename):
     Returns:
     None
     """
-    with open(filename, 'a+') as file:
+    with open(filename, 'w') as file:
         file.write(f"{t}\t{probe_data}\n")
+
+def plot_slice(field_slice, t, name, world, dt):
+    """
+    Plots a 2D slice of a field and saves the plot as a PNG file.
+
+    Parameters:
+    field_slice (2D array): The 2D array representing the field slice to be plotted.
+    t (int): The time step index.
+    name (str): The name of the field being plotted.
+    world (dict): A dictionary containing the dimensions of the world with keys 'x_wind' and 'y_wind'.
+    dt (float): The time step duration.
+
+    Returns:
+    None
+    """
+    plt.title(f'{name} at t={t*dt:.2e}s')
+    plt.imshow(field_slice, origin='lower', extent=[-world['x_wind']/2, world['x_wind']/2, -world['y_wind']/2, world['y_wind']/2])
+    plt.colorbar(label=name)
+    plt.tight_layout()
+    plt.savefig(f'plots/{name}_slice/{name}_slice_{t:09}.png')
+    plt.close()
+
+def write_data(filename, time, data):
+    """
+    Write the given time and data to a file.
+
+    Parameters:
+    filename (str): The name of the file to write to.
+    time (float): The time value to write.
+    data (any): The data to write.
+
+    Returns:
+    None
+    """
+    with open(filename, "w") as f:
+        f.write(f"{time}, {data}\n")
+
+
+def field_energy(fieldx, fieldy, fieldz, dx, dy, dz):
+    abs_field_squared = jnp.sum(fieldx**2 + fieldy**2 + fieldz**2, axis=(1,2))
+    integral_field_squared = jnp.trapz(abs_field_squared, dx=dx)
+    return 0.5 * integral_field_squared
+
+def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid, B_grid, plotting_parameters, world, constants, solver, bc):
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    Nx = world['Nx']
+    Ny = world['Ny']
+    Nz = world['Nz']
+
+    if plotting_parameters['plotpositions']:
+        plot_positions(particles, t, world['x_wind'], world['y_wind'], world['z_wind'])
+    if plotting_parameters['phaseSpace']:
+        particles_phase_space([particles[0]], world, t, "Particles")
+    if plotting_parameters['plotfields']:
+        # save_vector_field_as_vtk(Ex, Ey, Ez, E_grid, f"plots/fields/E_{t*dt:09}.vtr")
+        # save_vector_field_as_vtk(Bx, By, Bz, B_grid, f"plots/fields/B_{t*dt:09}.vtr")
+        # plot_rho(rho, t, "rho", dx, dy, dz)
+        write_data("data/averageE.txt", t*dt, jnp.mean(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)))
+        write_data("data/averageB.txt", t*dt, jnp.mean(jnp.sqrt(Bx**2 + By**2 + Bz**2)))
+        write_data("data/electric_field_energy.txt", t*dt, field_energy(Ex, Ey, Ez, dx, dy, dz))
+        write_data("data/magnetic_field_energy.txt", t*dt, field_energy(Bx, By, Bz, dx, dy, dz))
+        write_data("data/Jx_probe.txt", t*dt, jnp.mean(Jx))
+        write_data("data/Jy_probe.txt", t*dt, jnp.mean(Jy))
+        write_data("data/Jz_probe.txt", t*dt, jnp.mean(Jz))
+        plot_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], t, 'E', world, dt)
+        plot_slice(rho[:, :, int(Nz/2)], t, 'rho', world, dt)
+    if plotting_parameters['plotKE']:
+        write_data("data/kinetic_energy.txt", t*dt, sum(particle.kinetic_energy() for particle in particles))
+    if plotting_parameters['plot_errors']:
+        write_data("data/electric_divergence_errors.txt", t*dt, compute_electric_divergence_error(Ex, Ey, Ez, rho, constants, world, solver, bc))
+        write_data("data/magnetic_divergence_errors.txt", t*dt, compute_magnetic_divergence_error(Bx, By, Bz, world, solver, bc))
+
+def save_avg_positions(t, dt, particles):
+    with open("data/avg_x.txt", "a") as f_avg_x:
+        f_avg_x.write(f"{t*dt}, {jnp.mean(particles[0].get_position()[0])}\n")
+    with open("data/avg_y.txt", "a") as f_avg_y:
+        f_avg_y.write(f"{t*dt}, {jnp.mean(particles[0].get_position()[1])}\n")
+    with open("data/avg_z.txt", "a") as f_avg_z:
+        f_avg_z.write(f"{t*dt}, {jnp.mean(particles[0].get_position()[2])}\n")
+
+def save_total_momentum(t, dt, particles):
+    p0 = sum(particle.momentum() for particle in particles)
+    with open("data/kinetic_momentum.txt", "a") as f_momentum:
+        f_momentum.write(f"{t*dt}, {p0}\n")
+
+
+def plotter(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, M, solver, bc, electrostatic, verbose, GPUs):
+    """
+    Plots and saves various simulation data at specified intervals.
+    Parameters:
+    particles (list): List of particle objects in the simulation.
+    Ex, Ey, Ez (ndarray): Electric field components in the x, y, and z directions.
+    Bx, By, Bz (ndarray): Magnetic field components in the x, y, and z directions.
+    Jx, Jy, Jz (ndarray): Current density components in the x, y, and z directions.
+    rho (ndarray): Charge density.
+    phi (ndarray): Electric potential.
+    E_grid, B_grid (ndarray): Grids for electric and magnetic fields.
+    world (dict): Dictionary containing world parameters such as time step 'dt'.
+    constants (dict): Dictionary containing physical constants.
+    plotting_parameters (dict): Dictionary containing parameters for plotting, including 'plotting_interval'.
+    M (object): Mass matrix or related object.
+    solver (object): Solver object for the simulation.
+    bc (object): Boundary conditions object.
+    electrostatic (bool): Flag indicating if the simulation is electrostatic.
+    verbose (bool): Flag for verbose output.
+    GPUs (list): List of GPUs used in the simulation.
+    Returns:
+    None
+    """
+
+    dt = world['dt']
+
+    if t % plotting_parameters['plotting_interval'] == 0:
+        save_avg_positions(t, dt, particles)
+        save_total_momentum(t, dt, particles)
+        save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid, B_grid, plotting_parameters, world, constants, solver, bc)
