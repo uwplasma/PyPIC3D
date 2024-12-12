@@ -118,8 +118,6 @@ q_e = particles[0].get_charge()
 # np.save('electron_z_velocities.npy', ev_z)
 # exit()
 
-
-
 ###################################################### SIMULATION LOOP #####################################
 start = time.time()
 # start the timer
