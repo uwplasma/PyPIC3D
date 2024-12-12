@@ -8,11 +8,11 @@ solver = 'spectral'
 Nx = 60
 Ny = 30
 Nz = 30
-x_wind = 1e-2
-y_wind = 1e-2
-z_wind = 1e-2
+x_wind = 1e-3
+y_wind = 1e-3
+z_wind = 1e-3
 verbose = false
-electrostatic = true
+electrostatic = false
 
 [plotting]
 plot_errors = false

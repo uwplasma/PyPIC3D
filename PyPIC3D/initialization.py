@@ -15,7 +15,7 @@ from PyPIC3D.utils import (
     update_parameters_from_toml,
     load_particles_from_toml, precondition, build_coallocated_grid,
     build_yee_grid, convert_to_jax_compatible, load_external_fields_from_toml,
-    check_stability, print_stats, particle_sanity_check
+    check_stability, print_stats, particle_sanity_check, build_plasma_parameters_dict
 )
 
 
@@ -160,10 +160,13 @@ def initialize_simulation(config_file):
     particles = load_particles_from_toml(config_file, simulation_parameters, world, constants)
     # load the particles from the configuration file
 
+    plasma_parameters = build_plasma_parameters_dict(world, constants, particles[0], dt)
+    # build the plasma parameters dictionary
+
     particle_sanity_check(particles)
     # ensure the arrays for the particles are of the correct shape
 
-    theoretical_freq, debye, thermal_velocity = check_stability(world, constants, particles[0], dt)
+    check_stability(plasma_parameters, dt)
     # check the stability of the simulation
 
     Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho = initialize_fields(world)
@@ -198,4 +201,4 @@ def initialize_simulation(config_file):
     elif solver == "fdtd":
         curl_func = functools.partial(centered_finite_difference_curl, dx=dx, dy=dy, dz=dz, bc=bc)
 
-    return particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, M, solver, bc, electrostatic, verbose, GPUs, start, Nt, debye, theoretical_freq, thermal_velocity, curl_func
+    return particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, M, solver, bc, electrostatic, verbose, GPUs, start, Nt, curl_func
