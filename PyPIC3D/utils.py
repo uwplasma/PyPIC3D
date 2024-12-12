@@ -177,6 +177,48 @@ def load_rectilinear_grid(file_path):
     field_z = data[:, 2].reshape(len(x), len(y), len(z))
     return field_x, field_y, field_z
 
+
+def check_nyquist_criterion(Ex, Ey, Ez, Bx, By, Bz, world):
+    """
+    Check if the E and B fields meet the Nyquist criterion.
+
+    Parameters:
+    Ex (ndarray): The electric field component in the x-direction.
+    Ey (ndarray): The electric field component in the y-direction.
+    Ez (ndarray): The electric field component in the z-direction.
+    Bx (ndarray): The magnetic field component in the x-direction.
+    By (ndarray): The magnetic field component in the y-direction.
+    Bz (ndarray): The magnetic field component in the z-direction.
+    world (dict): A dictionary containing the spatial resolution parameters.
+        - 'dx' (float): Spatial resolution in the x-direction.
+        - 'dy' (float): Spatial resolution in the y-direction.
+        - 'dz' (float): Spatial resolution in the z-direction.
+
+    Returns:
+    bool: True if the fields meet the Nyquist criterion, False otherwise.
+    """
+    dx, dy, dz = world['dx'], world['dy'], world['dz']
+    nx, ny, nz = Ex.shape
+
+    # Calculate the maximum wavenumber that can be resolved
+    kx_max = jnp.pi / dx
+    ky_max = jnp.pi / dy
+    kz_max = jnp.pi / dz
+
+    # Calculate the wavenumber components of the fields
+    kx = jnp.fft.fftfreq(nx, d=dx) * 2 * jnp.pi
+    ky = jnp.fft.fftfreq(ny, d=dy) * 2 * jnp.pi
+    kz = jnp.fft.fftfreq(nz, d=dz) * 2 * jnp.pi
+
+    # Check if the wavenumber components exceed the maximum wavenumber
+    for field_name, field in {'Ex': Ex, 'Ey': Ey, 'Ez': Ez, 'Bx': Bx, 'By': By, 'Bz': Bz}.items():
+        kx_field = jnp.fft.fftn(field, axes=(0,))
+        ky_field = jnp.fft.fftn(field, axes=(1,))
+        kz_field = jnp.fft.fftn(field, axes=(2,))
+        if jnp.any(jnp.abs(kx_field) > kx_max) or jnp.any(jnp.abs(ky_field) > ky_max) or jnp.any(jnp.abs(kz_field) > kz_max):
+            print(f"Warning: The {field_name} field does not meet the Nyquist criterion. FFT may introduce aliasing.")
+
+
 # Define the function to read the TOML file and convert it to a DataFrame
 def read_toml_to_dataframe(toml_file):
     """

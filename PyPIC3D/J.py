@@ -122,7 +122,7 @@ def update_current_density(Nparticles, particlex, particley, particlez, particle
     return jax.lax.fori_loop(0, Nparticles-1, addto_J, (Jx, Jy, Jz))
 
 #@partial(jit, static_argnums=(1, 2, 3))
-def VB_correction(particles, Nx, Ny, Nz):
+def VB_correction(particles, Jx, Jy, Jz):
     """
     Apply Villasenor-Buneman correction to ensure rigorous charge conservation for local electromagnetic field solvers.
     Parameters:
@@ -137,7 +137,9 @@ def VB_correction(particles, Nx, Ny, Nz):
     Computer Physics Communications, 69(2-3), 306-316.
     """
 
-    Jx, Jy, Jz = jnp.zeros((Nx, Ny, Nz)), jnp.zeros((Nx, Ny, Nz)), jnp.zeros((Nx, Ny, Nz))
+    Jx = jnp.zeros_like(Jx)
+    Jy = jnp.zeros_like(Jy)
+    Jz = jnp.zeros_like(Jz)
     # initialize the current arrays as 0
     for species in particles:
         q = species.get_charge()

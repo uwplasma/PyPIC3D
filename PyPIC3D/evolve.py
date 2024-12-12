@@ -17,7 +17,7 @@ from PyPIC3D.J import (
 
 
 from PyPIC3D.utils import (
-    dump_parameters_to_toml
+    dump_parameters_to_toml, check_nyquist_criterion
 )
 
 
@@ -25,7 +25,7 @@ from PyPIC3D.boris import (
     particle_push
 )
 
-@partial(jit, static_argnums=(18, 19, 20, 21, 22, 23, 24))
+#@partial(jit, static_argnums=(18, 19, 20, 21, 22, 23, 24))
 def time_loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, curl_func, M, solver, bc, electrostatic, verbose, GPUs):
     """
     Perform a single time step in the simulation loop.
@@ -76,12 +76,15 @@ def time_loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid
     ################ FIELD UPDATE ################################################################################################
     if not electrostatic:
         Nx, Ny, Nz = world['Nx'], world['Ny'], world['Nz']
-        Jx, Jy, Jz = VB_correction(particles, Nx, Ny, Nz)
+        Jx, Jy, Jz = VB_correction(particles, Jx, Jy, Jz)
         # calculate the corrections for charge conservation using villasenor buneamn 1991
         Ex, Ey, Ez = update_E(E_grid, B_grid, (Ex, Ey, Ez), (Bx, By, Bz), (Jx, Jy, Jz), world, constants, curl_func)
         # update the electric field using the curl of the magnetic field
         Bx, By, Bz = update_B(E_grid, B_grid, (Bx, By, Bz), (Ex, Ey, Ez), world, constants, curl_func)
         # update the magnetic field using the curl of the electric field
+        if solver == 'spectral':
+            check_nyquist_criterion(Ex, Ey, Ez, Bx, By, Bz, world)
+            # check if the spectral solver can resolve the highest frequencies in the fields
 
 
     return particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho
