@@ -11,6 +11,7 @@ import jax.numpy as jnp
 import argparse
 from functools import partial
 from tqdm import tqdm
+import numpy as np
 # Importing relevant libraries
 
 from PyPIC3D.plotting import (
@@ -61,7 +62,7 @@ config_file = args.config
 
 ##################################### INITIALIZE SIMULATION ################################################
 
-particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, M, solver, bc, electrostatic, verbose, GPUs, start, Nt, debye, theoretical_freq, thermal_velocity, curl_func = initialize_simulation(config_file)
+particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, M, solver, bc, electrostatic, verbose, GPUs, start, Nt, curl_func = initialize_simulation(config_file)
 # initialize the simulation
 
 
@@ -71,18 +72,33 @@ loop = partial(time_loop, E_grid=E_grid, B_grid=B_grid, world=world, constants=c
 
 ############################################################################################################
 
+N_particles = particles[0].get_number_of_particles()
+Te = particles[0].get_temperature()
+me = particles[0].get_mass()
+q_e = particles[0].get_charge()
 
+# weight = (
+#     constants['eps']
+#     *me
+#     *constants['C']**2
+#     /q_e**2
+#     *world['Nx']**2
+#     /world['x_wind']
+#     /(2*N_particles)
+#     *plasma_parameters['Thermal Velocity']**2
+#     /plasma_parameters['dx per debye length']**2).item()
 
-# N_particles = particles[0].get_number_of_particles()
-# Te = particles[0].get_temperature()
+# particles[0].set_weight(weight)
+# # set the weight of the particles
 # me = particles[0].get_mass()
+
 # x_wind, y_wind, z_wind = world['x_wind'], world['y_wind'], world['z_wind']
 # electron_x, electron_y, electron_z = particles[0].get_position()
 # ev_x, ev_y, ev_z = particles[0].get_velocity()
 # alternating_ones = (-1)**jnp.array(range(0,N_particles))
 # relative_drift_velocity = 0.5*jnp.sqrt(3*constants['kb']*Te/me)
 # perturbation = relative_drift_velocity*alternating_ones
-# perturbation *= (1 + 0.05*jnp.sin(2*jnp.pi*electron_x/x_wind))
+# perturbation *= (1 + 0.1*jnp.sin(2*jnp.pi*electron_x/x_wind))
 # ev_x = perturbation
 # ev_y = jnp.zeros(N_particles)
 # ev_z = jnp.zeros(N_particles)
@@ -92,8 +108,15 @@ loop = partial(time_loop, E_grid=E_grid, B_grid=B_grid, world=world, constants=c
 # electron_y = jnp.zeros(N_particles)# jnp.ones(N_particles) * y_wind/4*alternating_ones
 # electron_z = jnp.zeros(N_particles)
 # particles[0].set_position(electron_x, electron_y, electron_z)
-#put electrons with opposite velocities in the same position along y
+# #put electrons with opposite velocities in the same position along y
 
+# np.save('electron_x_positions.npy', electron_x)
+# np.save('electron_y_positions.npy', electron_y)
+# np.save('electron_z_positions.npy', electron_z)
+# np.save('electron_x_velocities.npy', ev_x)
+# np.save('electron_y_velocities.npy', ev_y)
+# np.save('electron_z_velocities.npy', ev_z)
+# exit()
 
 
 
@@ -123,10 +146,13 @@ end = time.time()
 duration = end - start
 # calculate the total simulation time
 
-simulation_stats = {"total_time": duration, "total_iterations": Nt, "time_per_iteration": duration/Nt, "debye_length": debye.item(), \
-    "plasma_frequency": theoretical_freq.item(), 'thermal_velocity': thermal_velocity.item()}
+simulation_stats = {
+    "total_time": duration,
+    "total_iterations": Nt,
+    "time_per_iteration": duration / Nt
+}
 
-dump_parameters_to_toml(simulation_stats, simulation_parameters, plotting_parameters, constants, particles)
+dump_parameters_to_toml(simulation_stats, simulation_parameters, plasma_parameters, plotting_parameters, constants, particles)
 # save the parameters to an output file
 
 print(f"\nSimulation Complete")

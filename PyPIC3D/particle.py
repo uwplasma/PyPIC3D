@@ -175,11 +175,12 @@ class particle_species:
 
 
     def __init__(self, name, N_particles, charge, mass, T, v1, v2, v3, x1, x2, x3, subcells, \
-            xwind, ywind, zwind, dx, dy, dz, bc='periodic', update_pos=True, update_v=True):
+            xwind, ywind, zwind, dx, dy, dz, weight=1, bc='periodic', update_pos=True, update_v=True):
         self.name = name
         self.N_particles = N_particles
         self.charge = charge
         self.mass = mass
+        self.weight = weight
         self.T = T
         self.v1 = v1
         self.v2 = v2
@@ -202,7 +203,7 @@ class particle_species:
         return self.name
 
     def get_charge(self):
-        return self.charge
+        return self.charge*self.weight
 
     def get_number_of_particles(self):
         return self.N_particles
@@ -217,7 +218,7 @@ class particle_species:
         return self.x1, self.x2, self.x3
 
     def get_mass(self):
-        return self.mass
+        return self.mass*self.weight
 
     def get_subcell_position(self):
         return self.zeta1, self.zeta2, self.eta1, self.eta2, self.xi1, self.xi2
@@ -239,15 +240,18 @@ class particle_species:
         self.x2 = x2
         self.x3 = x3
 
+    def set_mass(self, mass):
+        self.mass = mass
+
+    def set_weight(self, weight):
+        self.weight = weight
+
     def calc_subcell_position(self):
         newzeta = (self.x1 + self.x_wind / 2) % self.dx
         neweta  = (self.x2 + self.y_wind / 2) % self.dy
         newxi   = (self.x3 + self.z_wind / 2) % self.dz
 
         return newzeta, neweta, newxi
-
-    def set_mass(self, mass):
-        self.mass = mass
 
     def kinetic_energy(self):
         return 0.5 * self.mass * jnp.sum(self.v1**2 + self.v2**2 + self.v3**2)
@@ -290,7 +294,7 @@ class particle_species:
         aux_data = (
             self.name, self.N_particles, self.charge, self.mass, self.T, \
             self.x_wind, self.y_wind, self.z_wind, self.dx, self.dy, self.dz, \
-            self.bc, self.update_pos, self.update_v
+            self.weight, self.bc, self.update_pos, self.update_v
         )
         return children, aux_data
 
@@ -299,7 +303,7 @@ class particle_species:
         v1, v2, v3, x1, x2, x3, zeta1, zeta2, eta1, eta2, xi1, xi2 = children
 
         name, N_particles, charge, mass, T, x_wind, y_wind, z_wind, dx, dy, \
-            dz, bc, update_pos, update_v = aux_data
+            dz, weight, bc, update_pos, update_v = aux_data
 
         subcells = zeta1, zeta2, eta1, eta2, xi1, xi2
 
@@ -322,6 +326,7 @@ class particle_species:
             dx=dx,
             dy=dy,
             dz=dz,
+            weight=weight,
             bc=bc,
             update_pos=update_pos,
             update_v=update_v
