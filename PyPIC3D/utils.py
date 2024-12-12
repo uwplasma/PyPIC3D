@@ -88,26 +88,20 @@ def print_stats(world):
     print(f'dt:          {dt}')
     print(f'Nt:          {Nt}')
 
-def check_stability(world, constants, electrons, dt):
+def check_stability(plasma_parameters, dt):
     """
     Check the stability of the simulation based on various physical parameters.
 
     Parameters:
-    world (dict): A dictionary containing the spatial resolution and wind parameters.
-        - 'dx' (float): Spatial resolution in the x-direction.
-        - 'dy' (float): Spatial resolution in the y-direction.
-        - 'dz' (float): Spatial resolution in the z-direction.
-        - 'x_wind' (float): Wind speed in the x-direction.
-        - 'y_wind' (float): Wind speed in the y-direction.
-        - 'z_wind' (float): Wind speed in the z-direction.
-    constants (dict): A dictionary containing physical constants.
-        - 'eps' (float): Permittivity of free space.
-        - 'kb' (float): Boltzmann constant.
-    electrons (object): An object representing the electrons in the simulation.
-        - get_charge() (method): Returns the charge of an electron.
-        - get_mass() (method): Returns the mass of an electron.
-        - get_temperature() (method): Returns the temperature of the electrons.
-        - get_number_of_particles() (method): Returns the number of electrons.
+    plasma_parameters (dict): A dictionary containing various plasma parameters.
+        - "Theoretical Plasma Frequency" (float): Theoretical plasma frequency.
+        - "Debye Length" (float): Debye length.
+        - "Thermal Velocity" (float): Thermal velocity.
+        - "Number of Electrons" (int): Number of electrons.
+        - "Temperature of Electrons" (float): Temperature of electrons.
+        - "DebyePerDx" (float): Debye length per dx.
+        - "DebyePerDy" (float): Debye length per dy.
+        - "DebyePerDz" (float): Debye length per dz.
     dt (float): Time step of the simulation.
 
     Prints:
@@ -117,29 +111,62 @@ def check_stability(world, constants, electrons, dt):
     - Thermal velocity.
     - Number of electrons.
     """
-    dx, dy, dz = world['dx'], world['dy'], world['dz']
-    x_wind, y_wind, z_wind = world['x_wind'], world['y_wind'], world['z_wind']
-    q_e = electrons.get_charge()
-    me = electrons.get_mass()
-    eps = constants['eps']
-    Te = electrons.get_temperature()
-    kb = constants['kb']
+    theoretical_freq = plasma_parameters["Theoretical Plasma Frequency"]
+    debye = plasma_parameters["Debye Length"]
+    thermal_velocity = plasma_parameters["Thermal Velocity"]
+    num_electrons = plasma_parameters["Number of Electrons"]
+    dxperDebye = plasma_parameters["dx per debye length"]
 
-    theoretical_freq = plasma_frequency(electrons, world, constants)
     if theoretical_freq * dt > 2.0:
         print(f"# of Electrons is Low and may introduce numerical stability")
-        print(f"In order to correct this, # of Electrons needs to be at least { (2/dt)**2 * (me*eps/q_e**2) } for this spatial resolution")
+        # print(f"In order to correct this, # of Electrons needs to be at least { (2/dt)**2 * (me*eps/q_e**2) } for this spatial resolution")
 
-    debye = debye_length(electrons, world, constants)
-    if debye < dx:
+    if dxperDebye < 1:
         print(f"Debye Length is less than the spatial resolution, this may introduce numerical instability")
 
     print(f"Theoretical Plasma Frequency: {theoretical_freq} Hz")
     print(f"Debye Length: {debye} m")
+    print(f"Thermal Velocity: {thermal_velocity}")
+    print(f'Dx Per Debye Length: {dxperDebye}')
+    print(f"Number of Electrons: {num_electrons}\n")
+
+
+
+def build_plasma_parameters_dict(world, constants, electrons, dt):
+    """
+    Build a dictionary containing various plasma parameters.
+
+    Parameters:
+    world (dict): A dictionary containing the spatial resolution and wind parameters.
+    constants (dict): A dictionary containing physical constants.
+    electrons (object): An object representing the electrons in the simulation.
+    dt (float): Time step of the simulation.
+
+    Returns:
+    dict: A dictionary containing the plasma parameters.
+    """
+
+    me = electrons.get_mass()
+    Te = electrons.get_temperature()
+    kb = constants['kb']
+    dx, dy, dz = world['dx'], world['dy'], world['dz']
+
+    theoretical_freq = plasma_frequency(electrons, world, constants)
+    debye = debye_length(electrons, world, constants)
     thermal_velocity = jnp.sqrt(3*kb*Te/me)
-    print(f"Thermal Velocity: {thermal_velocity}\n")
-    print(f"Number of Electrons: {electrons.get_number_of_particles()}")
-    return theoretical_freq, debye, thermal_velocity
+
+    plasma_parameters = {
+        "Theoretical Plasma Frequency": theoretical_freq,
+        "Debye Length": debye,
+        "Thermal Velocity": thermal_velocity,
+        "Number of Electrons": electrons.get_number_of_particles(),
+        "Temperature of Electrons": electrons.get_temperature(),
+        "dx per debye length": dx/debye,
+        "dy per debye length": dy/debye,
+        "dz per debye length": dz/debye,
+    }
+
+    return plasma_parameters
 
 def convert_to_jax_compatible(data):
     """
@@ -557,6 +584,10 @@ def load_particles_from_toml(toml_file, simulation_parameters, world, constants)
             update_pos = config[toml_key]['update_pos']
         if update_v in config[toml_key]:
             update_v = config[toml_key]['update_v']
+        
+        weight = 1.0
+        if weight in config[toml_key]:
+            weight = config[toml_key]['weight']
 
         zeta1 = ( x + x_wind/2 ) % dx
         zeta2 = zeta1
@@ -585,6 +616,7 @@ def load_particles_from_toml(toml_file, simulation_parameters, world, constants)
             dx=dx,
             dy=dy,
             dz=dz,
+            weight=weight,
             bc='periodic',
             update_pos=update_pos,
             update_v=update_v
@@ -633,7 +665,7 @@ def update_parameters_from_toml(config_file, simulation_parameters, plotting_par
 
     return simulation_parameters, plotting_parameters, constants
 
-def dump_parameters_to_toml(simulation_stats, simulation_parameters, plotting_parameters, constants, particles):
+def dump_parameters_to_toml(simulation_stats, simulation_parameters, plasma_parameters, plotting_parameters, constants, particles):
     """
     Dump the simulation, plotting parameters, and particle species into an output TOML file.
 
@@ -651,6 +683,7 @@ def dump_parameters_to_toml(simulation_stats, simulation_parameters, plotting_pa
     config = {
         "simulation_stats": simulation_stats,
         "simulation_parameters": simulation_parameters,
+        'plasma_parameters': plasma_parameters,
         "plotting": plotting_parameters,
         "constants": jax.tree_util.tree_map(lambda x: x.tolist() if isinstance(x, jnp.ndarray) else x, constants),
         "particles": []
