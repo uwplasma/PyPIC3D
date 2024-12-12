@@ -204,12 +204,24 @@ def update_E(grid, staggered_grid, E, B, J, world, constants, curl_func):
     dt = world['dt']
     C = constants['C']
     eps = constants['eps']
+    mu = constants['mu']
+
+    jax.debug.print("dx: {}", dx)
+    jax.debug.print("dy: {}", dy)
+    jax.debug.print("dz: {}", dz)
+    jax.debug.print("dt: {}", dt)
+    jax.debug.print("C: {}", C)
+    jax.debug.print("eps: {}", eps)
+    jax.debug.print("mu: {}", mu)
 
     curlx, curly, curlz = curl_func(Bx, By, Bz)
     # calculate the curl of the magnetic field
-    Ex = Ex +  ( C**2 * curlx - 1/eps * Jx) * dt/2
-    Ey = Ey +  ( C**2 * curly - 1/eps * Jy) * dt/2
-    Ez = Ez +  ( C**2 * curlz - 1/eps * Jz) * dt/2
+    jax.debug.print("Curl B Mean Magnitude: {}", jnp.mean(jnp.sqrt(curlx**2 + curly**2 + curlz**2)))
+    jax.debug.print("Current Density Mean Magnitude: {}", jnp.mean(jnp.sqrt(Jx**2 + Jy**2 + Jz**2)))
+
+    Ex = Ex +   C**2 * (curlx - mu * Jx) * dt
+    Ey = Ey +   C**2 * (curly - mu * Jy) * dt
+    Ez = Ez +   C**2 * (curlz - mu * Jz) * dt
 
     return Ex, Ey, Ez
 
@@ -241,9 +253,10 @@ def update_B(grid, staggered_grid, E, B, world, constants, curl_func):
     Bx, By, Bz = B
 
     curlx, curly, curlz = curl_func(Ex, Ey, Ez)
+    jax.debug.print("Curl E Mean Magnitude: {}", jnp.mean(jnp.sqrt(curlx**2 + curly**2 + curlz**2)))
     # calculate the curl of the electric field
-    Bx = Bx - dt/2*curlx
-    By = By - dt/2*curly
-    Bz = Bz - dt/2*curlz
+    Bx = Bx - dt*curlx
+    By = By - dt*curly
+    Bz = Bz - dt*curlz
 
     return Bx, By, Bz
