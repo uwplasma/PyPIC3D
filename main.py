@@ -80,9 +80,9 @@ loop = partial(time_loop, E_grid=E_grid, B_grid=B_grid, world=world, constants=c
 # electron_x, electron_y, electron_z = particles[0].get_position()
 # ev_x, ev_y, ev_z = particles[0].get_velocity()
 # alternating_ones = (-1)**jnp.array(range(0,N_particles))
-# relative_drift_velocity = 0.75*jnp.sqrt(3*constants['kb']*Te/me)
+# relative_drift_velocity = 0.5*jnp.sqrt(3*constants['kb']*Te/me)
 # perturbation = relative_drift_velocity*alternating_ones
-# perturbation *= (1 + 0.1*jnp.sin(2*jnp.pi*electron_x/x_wind))
+# perturbation *= (1 + 0.05*jnp.sin(2*jnp.pi*electron_x/x_wind))
 # ev_x = perturbation
 # ev_y = jnp.zeros(N_particles)
 # ev_z = jnp.zeros(N_particles)
@@ -92,7 +92,7 @@ loop = partial(time_loop, E_grid=E_grid, B_grid=B_grid, world=world, constants=c
 # electron_y = jnp.zeros(N_particles)# jnp.ones(N_particles) * y_wind/4*alternating_ones
 # electron_z = jnp.zeros(N_particles)
 # particles[0].set_position(electron_x, electron_y, electron_z)
-# #put electrons with opposite velocities in the same position along y
+#put electrons with opposite velocities in the same position along y
 
 
 
@@ -106,10 +106,10 @@ for t in tqdm(range(Nt)):
     # time loop to update the particles and fields
     plotter(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, M, solver, bc, electrostatic, verbose, GPUs)
     # save the data
-    grad1, grad2, grad3 = kinetic_energy_grad(particles[0])
-    write_data('data/dKE_dvx.txt', t*world['dt'], jnp.mean(grad1))
-    write_data('data/dKE_dvy.txt', t*world['dt'], jnp.mean(grad2))
-    write_data('data/dKE_dvz.txt', t*world['dt'], jnp.mean(grad3))
+    # grad1, grad2, grad3 = kinetic_energy_grad(particles[0])
+    # write_data('data/dKE_dvx.txt', t*world['dt'], jnp.mean(grad1))
+    # write_data('data/dKE_dvy.txt', t*world['dt'], jnp.mean(grad2))
+    # write_data('data/dKE_dvz.txt', t*world['dt'], jnp.mean(grad3))
     # write the gradient of the kinetic energy with respect to the velocity of the electrons
 
 
