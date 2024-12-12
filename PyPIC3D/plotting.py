@@ -318,6 +318,13 @@ def particles_phase_space(particles, world, t, name):
     None
     """
 
+    if not os.path.exists("plots/phase_space/x"):
+        os.makedirs("plots/phase_space/x")
+    if not os.path.exists("plots/phase_space/y"):
+        os.makedirs("plots/phase_space/y")
+    if not os.path.exists("plots/phase_space/z"):
+        os.makedirs("plots/phase_space/z")
+
     x_wind = world['x_wind']
     y_wind = world['y_wind']
     z_wind = world['z_wind']
@@ -626,6 +633,11 @@ def plot_slice(field_slice, t, name, world, dt):
     Returns:
     None
     """
+
+    if not os.path.exists(f"plots/{name}_slice"):
+        os.makedirs(f'plots/{name}_slice')
+    # Create directory if it doesn't exist
+    
     plt.title(f'{name} at t={t*dt:.2e}s')
     plt.imshow(field_slice, origin='lower', extent=[-world['x_wind']/2, world['x_wind']/2, -world['y_wind']/2, world['y_wind']/2])
     plt.colorbar(label=name)
@@ -651,7 +663,7 @@ def write_data(filename, time, data):
 
 def field_energy(fieldx, fieldy, fieldz, dx, dy, dz):
     abs_field_squared = jnp.sum(fieldx**2 + fieldy**2 + fieldz**2, axis=(1,2))
-    integral_field_squared = jnp.trapz(abs_field_squared, dx=dx)
+    integral_field_squared = jnp.trapezoid(abs_field_squared, dx=dx)
     return 0.5 * integral_field_squared
 
 def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid, B_grid, plotting_parameters, world, constants, solver, bc):

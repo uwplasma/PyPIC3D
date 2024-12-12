@@ -579,15 +579,41 @@ def load_particles_from_toml(toml_file, simulation_parameters, world, constants)
 
         update_pos = True
         update_v   = True
+        update_vx  = True
+        update_vy  = True
+        update_vz  = True
+        update_x   = True
+        update_y   = True
+        update_z   = True
 
-        if update_pos in config[toml_key]:
-            update_pos = config[toml_key]['update_pos']
-        if update_v in config[toml_key]:
-            update_v = config[toml_key]['update_v']
-        
         weight = 1.0
         if weight in config[toml_key]:
             weight = config[toml_key]['weight']
+        
+        if 'update_pos' in config[toml_key]:
+            update_pos = config[toml_key]['update_pos']
+            print(f"update_pos: {update_pos}")
+        if 'update_v' in config[toml_key]:
+            update_v = config[toml_key]['update_v']
+            print(f"update_v: {update_v}")
+        if 'update_vx' in config[toml_key]:
+            update_vx = config[toml_key]['update_vx']
+            print(f"update_vx: {update_vx}")
+        if 'update_vy' in config[toml_key]:
+            update_vy = config[toml_key]['update_vy']
+            print(f"update_vy: {update_vy}")
+        if 'update_vz' in config[toml_key]:
+            update_vz = config[toml_key]['update_vz']
+            print(f"update_vz: {update_vz}")
+        if 'update_x' in config[toml_key]:
+            update_x = config[toml_key]['update_x']
+            print(f"update_x: {update_x}")
+        if 'update_y' in config[toml_key]:
+            update_y = config[toml_key]['update_y']
+            print(f"update_y: {update_y}")
+        if 'update_z' in config[toml_key]:
+            update_z = config[toml_key]['update_z']
+            print(f"update_z: {update_z}")
 
         zeta1 = ( x + x_wind/2 ) % dx
         zeta2 = zeta1
@@ -618,6 +644,12 @@ def load_particles_from_toml(toml_file, simulation_parameters, world, constants)
             dz=dz,
             weight=weight,
             bc='periodic',
+            update_vx=update_vx,
+            update_vy=update_vy,
+            update_vz=update_vz,
+            update_x=update_x,
+            update_y=update_y,
+            update_z=update_z,
             update_pos=update_pos,
             update_v=update_v
         )
