@@ -67,7 +67,7 @@ def initialize_fields(world):
     return Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho
 
 @partial(jit, static_argnums=(4, 5, 7))
-@use_gpu_if_set
+#@use_gpu_if_set
 def solve_poisson(rho, constants, world, phi, solver, bc='periodic', M = None, GPUs = False):
     """
     Solve the Poisson equation for electrostatic potential.
@@ -93,14 +93,17 @@ def solve_poisson(rho, constants, world, phi, solver, bc='periodic', M = None, G
         dx = world['dx']
         dy = world['dy']
         dz = world['dz']
-        lapl = functools.partial(centered_finite_difference_laplacian, dx=dx, dy=dy, dz=dz, bc=bc)
-        lapl = jit(lapl)
+        #lapl = functools.partial(centered_finite_difference_laplacian, dx=dx, dy=dy, dz=dz, bc=bc)
+        #lapl = jit(lapl)
         # define the laplacian operator using finite difference method
-        phi = conjugate_grad(lapl, -rho/eps, phi, tol=1e-6, maxiter=40000, M=M)
+        #phi = conjugate_grad(lapl, -rho/eps, phi, tol=1e-9, maxiter=5000, M=M)
+        sor = functools.partial(solve_poisson_sor, dx=dx, dy=dy, dz=dz, eps=eps, omega=0.25, tol=1e-15, max_iter=8000)
+        phi = sor(phi, rho)
+        #phi = jax.scipy.sparse.linalg.cg(lapl, -rho/eps, x0=phi, tol=1e-6, maxiter=40000, M=M)[0]
         #phi = solve_poisson_sor(phi, rho, dx, dy, dz, eps, omega=0.25, tol=1e-6, max_iter=100000)
     return phi
 
-@partial(jit, static_argnums=(7, 8, 9, 10))
+@partial(jit, static_argnums=(6, 7, 8, 9, 10))
 def calculateE(world, particles, constants, rho, phi, M, t, solver, bc, verbose, GPUs):
     """
     Calculates the electric field components (Ex, Ey, Ez), electric potential (phi), and charge density (rho) based on the given parameters.
@@ -150,11 +153,10 @@ def calculateE(world, particles, constants, rho, phi, M, t, solver, bc, verbose,
         jax.debug.print("Calculating Charge Density, Max Value: {}", jnp.max(jnp.abs(rho)))
 
     if solver == 'spectral' or solver == 'fdtd':
-        phi = lax.cond(t == 0,
-                   lambda _: solve_poisson(rho, constants, world, phi=rho, solver=solver, bc=bc, M=None, GPUs=GPUs),
-                   lambda _: solve_poisson(rho, constants, world, phi=phi, solver=solver, bc=bc, M=M, GPUs=GPUs),
-                   operand=None)
-
+        if t == 0:
+            phi = solve_poisson(rho, constants, world, phi=rho, solver=solver, bc=bc, M=None, GPUs=GPUs)
+        else:
+            phi = solve_poisson(rho, constants, world, phi=phi, solver=solver, bc=bc, M=M, GPUs=GPUs)
 
     if verbose:
         jax.debug.print("Calculating Electric Potential, Max Value: {}", jnp.max(phi))

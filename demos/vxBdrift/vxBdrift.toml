@@ -1,17 +1,17 @@
 # This is a configuration file for PyPIC3D
 [simulation_parameters]
 name = "Demo of a vxB drift for 1 electron"
-t_wind = 2.5e-9
+t_wind = 100e-12
 output_dir = "/home/christopherwoolford/Documents/PyPIC3D"
 bc = 'periodic'
-solver = 'spectral'
+solver = 'fdtd'
 Nx = 60
 Ny = 30
 Nz = 30
 x_wind = 1e-3
 y_wind = 1e-3
 z_wind = 1e-3
-verbose = false
+verbose = true
 electrostatic = false
 
 [plotting]
@@ -21,7 +21,7 @@ plotpositions = false
 plotKE = false
 plotfields = true
 plot_dispersion = false
-plotting_interval = 100
+plotting_interval = 1
 
 [particle1]
 name = "electrons"
