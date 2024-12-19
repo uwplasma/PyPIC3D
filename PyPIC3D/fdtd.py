@@ -17,7 +17,7 @@ from functools import partial
 from PyPIC3D.utils import interpolate_and_stagger_field, interpolate_field, use_gpu_if_set
 from PyPIC3D.boundaryconditions import apply_zero_boundary_condition
 
-@partial(jit, static_argnums=(1, 2, 3, 4))
+#@partial(jit, static_argnums=(1, 2, 3, 4))
 def centered_finite_difference_laplacian(field, dx, dy, dz, bc):
     """
     Calculates the Laplacian of a given field using centered finite difference and applies the specified boundary conditions.
@@ -55,7 +55,7 @@ def centered_finite_difference_laplacian(field, dx, dy, dz, bc):
 
     return x_comp + y_comp + z_comp
 
-@partial(jit, static_argnums=(3, 4, 5, 6))
+#@partial(jit, static_argnums=(3, 4, 5, 6))
 def centered_finite_difference_curl(field_x, field_y, field_z, dx, dy, dz, bc):
     """
     Computes the curl of a vector field using centered finite differencing and applies the specified boundary conditions.
@@ -99,7 +99,7 @@ def centered_finite_difference_curl(field_x, field_y, field_z, dx, dy, dz, bc):
 
     return curl_x, curl_y, curl_z
 
-@partial(jit, static_argnums=(1, 2, 3, 4))
+#@partial(jit, static_argnums=(1, 2, 3, 4))
 def centered_finite_difference_gradient(field, dx, dy, dz, bc):
     """
     Computes the gradient of a scalar field using centered finite differencing and applies the specified boundary conditions.
@@ -134,7 +134,7 @@ def centered_finite_difference_gradient(field, dx, dy, dz, bc):
 
     return grad_x, grad_y, grad_z
 
-@partial(jit, static_argnums=(3, 4, 5, 6))
+#@partial(jit, static_argnums=(3, 4, 5, 6))
 def centered_finite_difference_divergence(field_x, field_y, field_z, dx, dy, dz, bc):
     """
     Computes the divergence of a vector field using centered finite differencing and applies the specified boundary conditions.

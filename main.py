@@ -45,9 +45,9 @@ jax.config.update("jax_enable_x64", True)
 # set Jax to use 64 bit precision
 jax.config.update("jax_debug_nans", True)
 # debugging for nans
-
 jax.config.update('jax_platform_name', 'cpu')
 # set Jax to use CPUs
+#jax.config.update("jax_disable_jit", True)
 ############################################################################################################
 
 ############################ ARG PARSER ####################################################################
@@ -72,10 +72,10 @@ loop = partial(time_loop, E_grid=E_grid, B_grid=B_grid, world=world, constants=c
 
 ############################################################################################################
 
-N_particles = particles[0].get_number_of_particles()
-Te = particles[0].get_temperature()
-me = particles[0].get_mass()
-q_e = particles[0].get_charge()
+# N_particles = particles[0].get_number_of_particles()
+# Te = particles[0].get_temperature()
+# me = particles[0].get_mass()
+# q_e = particles[0].get_charge()
 
 # weight = (
 #     constants['eps']
