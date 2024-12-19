@@ -14,6 +14,9 @@ import functools
 from functools import partial
 # import external libraries
 
+
+
+
 @jit
 def apply_M(Ax, M):
     """
@@ -96,3 +99,39 @@ def conjugate_grad(A, b, x0, tol=1e-6, atol=0.0, maxiter=10000, M=None):
     x_final, *_ = lax.while_loop(cond_fun, body_fun, initial_value)
 
     return x_final
+
+# # Preconditioned Conjugate Gradient Algorithm 
+
+# def preconditioned_conjugate_gradient(A, b, x0, M, tol=1e-6, max_iter=100): 
+    
+#     # Initialization 
+#     x = x0.copy() 
+#     r = b - A @ x 
+#     p = M.solve(r) 
+#     r_norm = np.linalg.norm(r) 
+    
+#     for i in range(max_iter): 
+#         # Check convergence 
+#         if r_norm < tol:
+#             return x 
+        
+#         # Update direction 
+#         alpha = (r.T @ r) / (p.T @ A @ p) 
+        
+#         # Update solution 
+#         x = x + alpha * p 
+        
+#         # Update residual 
+#         r_new = r - alpha * (A @ p) 
+        
+#         # Calculate beta 
+#         beta = (r_new.T @ r_new) / (r.T @ r) 
+        
+#         # Update search direction 
+#         p = M.solve(r_new) + beta * p 
+        
+#         r = r_new 
+#         r_norm = np.linalg.norm(r) 
+        
+#     # Return solution if not converged 
+#     return x

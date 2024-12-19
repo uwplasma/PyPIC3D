@@ -1,9 +1,11 @@
 import jax
 import jax.numpy as jnp
+from functools import partial
 
 
 #### DISCLAIMER: I have not tested this method and I have a gut feeling that it will not work as intended.
 
+#@partial(jax.jit, static_argnums=(2, 3, 4, 5, 6, 7, 8))
 def solve_poisson_sor(phi, rho, dx, dy, dz, eps, omega=1.5, tol=1e-6, max_iter=10000):
     """
     Solve Poisson's equation using Successive Over-Relaxation (SOR) method.
@@ -22,7 +24,12 @@ def solve_poisson_sor(phi, rho, dx, dy, dz, eps, omega=1.5, tol=1e-6, max_iter=1
     rho = jnp.array(rho)
     b = dx * dy * dz / jnp.pi
 
-    for _ in range(max_iter):
+    def cond_fun(val):
+        _, norm_diff, iter_count = val
+        return (norm_diff >= tol) & (iter_count < max_iter)
+
+    def body_fun(val):
+        phi, _, iter_count = val
         phi_old = phi.copy()
         phi = phi.at[1:-1, 1:-1, 1:-1].set(
             (1 - omega) * phi[1:-1, 1:-1, 1:-1] + omega / 6 * (
@@ -32,7 +39,8 @@ def solve_poisson_sor(phi, rho, dx, dy, dz, eps, omega=1.5, tol=1e-6, max_iter=1
                 b * rho[1:-1, 1:-1, 1:-1] / eps
             )
         )
-        if jnp.linalg.norm(phi - phi_old) < tol:
-            break
+        return phi, jnp.linalg.norm(phi - phi_old), iter_count + 1
+
+    phi, _, _ = jax.lax.while_loop(cond_fun, body_fun, (phi, jnp.inf, 0))
 
     return phi
