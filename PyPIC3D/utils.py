@@ -131,7 +131,6 @@ def check_stability(plasma_parameters, dt):
     print(f"Number of Electrons: {num_electrons}\n")
 
 
-
 def build_plasma_parameters_dict(world, constants, electrons, dt):
     """
     Build a dictionary containing various plasma parameters.
@@ -205,47 +204,6 @@ def load_rectilinear_grid(file_path):
     return field_x, field_y, field_z
 
 
-def check_nyquist_criterion(Ex, Ey, Ez, Bx, By, Bz, world):
-    """
-    Check if the E and B fields meet the Nyquist criterion.
-
-    Parameters:
-    Ex (ndarray): The electric field component in the x-direction.
-    Ey (ndarray): The electric field component in the y-direction.
-    Ez (ndarray): The electric field component in the z-direction.
-    Bx (ndarray): The magnetic field component in the x-direction.
-    By (ndarray): The magnetic field component in the y-direction.
-    Bz (ndarray): The magnetic field component in the z-direction.
-    world (dict): A dictionary containing the spatial resolution parameters.
-        - 'dx' (float): Spatial resolution in the x-direction.
-        - 'dy' (float): Spatial resolution in the y-direction.
-        - 'dz' (float): Spatial resolution in the z-direction.
-
-    Returns:
-    bool: True if the fields meet the Nyquist criterion, False otherwise.
-    """
-    dx, dy, dz = world['dx'], world['dy'], world['dz']
-    nx, ny, nz = Ex.shape
-
-    # Calculate the maximum wavenumber that can be resolved
-    kx_max = jnp.pi / dx
-    ky_max = jnp.pi / dy
-    kz_max = jnp.pi / dz
-
-    # Calculate the wavenumber components of the fields
-    kx = jnp.fft.fftfreq(nx, d=dx) * 2 * jnp.pi
-    ky = jnp.fft.fftfreq(ny, d=dy) * 2 * jnp.pi
-    kz = jnp.fft.fftfreq(nz, d=dz) * 2 * jnp.pi
-
-    # Check if the wavenumber components exceed the maximum wavenumber
-    for field_name, field in {'Ex': Ex, 'Ey': Ey, 'Ez': Ez, 'Bx': Bx, 'By': By, 'Bz': Bz}.items():
-        kx_field = jnp.fft.fftn(field, axes=(0,))
-        ky_field = jnp.fft.fftn(field, axes=(1,))
-        kz_field = jnp.fft.fftn(field, axes=(2,))
-        if jnp.any(jnp.abs(kx_field) > kx_max) or jnp.any(jnp.abs(ky_field) > ky_max) or jnp.any(jnp.abs(kz_field) > kz_max):
-            print(f"Warning: The {field_name} field does not meet the Nyquist criterion. FFT may introduce aliasing.")
-
-
 # Define the function to read the TOML file and convert it to a DataFrame
 def read_toml_to_dataframe(toml_file):
     """
@@ -266,89 +224,6 @@ def read_toml_to_dataframe(toml_file):
     df = df.transpose()
     return df
 
-def cylindrical_to_cartesian_matrix(r, theta, z):
-    """
-    Create a transformation matrix to convert cylindrical coordinates (r, theta, z) to Cartesian coordinates (x, y, z).
-
-    Parameters:
-    r (float): Radial distance in cylindrical coordinates.
-    theta (float): Angle in radians in cylindrical coordinates.
-    z (float): Height in cylindrical coordinates.
-
-    Returns:
-    ndarray: A 3x3 transformation matrix.
-    """
-    cos_theta = jnp.cos(theta)
-    sin_theta = jnp.sin(theta)
-
-    transformation_matrix = jnp.array([
-        [cos_theta, -r * sin_theta, 0],
-        [sin_theta, r * cos_theta, 0],
-        [0, 0, 1]
-    ])
-
-    return transformation_matrix
-
-def cartesian_to_cylindrical_vector_field(vector_field, x, y, z):
-    """
-    Transform a vector field from Cartesian coordinates (x, y, z) to cylindrical coordinates (r, theta, z).
-
-    Parameters:
-    vector_field (ndarray): The vector field in Cartesian coordinates.
-    x (ndarray): The x-coordinates.
-    y (ndarray): The y-coordinates.
-    z (ndarray): The z-coordinates.
-
-    Returns:
-    ndarray: The vector field in cylindrical coordinates.
-    """
-    r = jnp.sqrt(x**2 + y**2)
-    theta = jnp.arctan2(y, x)
-
-    cos_theta = jnp.cos(theta)
-    sin_theta = jnp.sin(theta)
-
-    # Transformation matrix from Cartesian to cylindrical coordinates
-    transformation_matrix = jnp.array([
-        [cos_theta, sin_theta, 0],
-        [-sin_theta, cos_theta, 0],
-        [0, 0, 1]
-    ])
-
-    # Apply the transformation to the vector field
-    cylindrical_vector_field = jnp.einsum('ij,j...->i...', transformation_matrix, vector_field)
-
-    return cylindrical_vector_field
-
-def convert_spatial_resolution(dx1, dx2, dx3, from_system, to_system):
-    """
-    Convert the spatial resolution parameters from one coordinate system to another.
-
-    Parameters:
-    dx (float): Grid spacing in the x-direction.
-    dy (float): Grid spacing in the y-direction.
-    dz (float): Grid spacing in the z-direction.
-    from_system (str): The original coordinate system ('cartesian' or 'cylindrical').
-    to_system (str): The target coordinate system ('cartesian' or 'cylindrical').
-
-    Returns:
-    tuple: Converted spatial resolution parameters (dx, dy, dz) in the target coordinate system.
-    """
-    if from_system == to_system:
-        return dx1, dx2, dx3
-
-    if from_system == 'cartesian' and to_system == 'cylindrical':
-        dr = jnp.sqrt(dx1**2 + dx2**2)
-        dtheta = jnp.arctan2(dx2, dx1)
-        return dr, dtheta, dx3
-
-    if from_system == 'cylindrical' and to_system == 'cartesian':
-        dx = dx1 * jnp.cos(dx2)
-        dy = dx2 * jnp.sin(dx2)
-        dz = dx3
-        return dx, dy, dz
-
-    raise ValueError("Invalid coordinate system conversion")
 
 def build_coallocated_grid(world):
     """
@@ -460,20 +335,6 @@ def fix_bc_and_jit_compile(func, bc_value):
     jit_compiled_func = jit(fixed_bc_func)
     return jit_compiled_func
 
-def grab_particle_keys(config):
-    """
-    Extracts and returns a list of keys from the given configuration dictionary
-    that start with the prefix 'particle'.
-    Args:
-        config (dict): A dictionary containing configuration keys and values.
-    Returns:
-        list: A list of keys from the configuration dictionary that start with 'particle'.
-    """
-    particle_keys = []
-    for key in config.keys():
-        if key[:8] == 'particle':
-            particle_keys.append(key)
-    return particle_keys
 
 def grab_field_keys(config):
     """
@@ -516,146 +377,6 @@ def load_external_fields_from_toml(fields, toml_file):
         print(f"Field loaded successfully: {field_name}")
 
     return fields
-
-def load_particles_from_toml(toml_file, simulation_parameters, world, constants):
-    """
-    Load particle data from a TOML file and initialize particle species.
-    Args:
-        toml_file (str): Path to the TOML file containing particle configuration.
-        simulation_parameters (dict): Dictionary containing simulation parameters.
-        world (dict): Dictionary containing world parameters such as 'x_wind', 'y_wind', 'z_wind', 'dx', 'dy', 'dz'.
-        constants (dict): Dictionary containing constants such as 'kb'.
-    Returns:
-        list: A list of particle_species objects initialized with the data from the TOML file.
-    The function reads particle configuration from the provided TOML file, initializes particle properties such as
-    position, velocity, charge, mass, and temperature. It also handles loading initial positions and velocities from
-    external sources if specified in the TOML file. The particles are then appended to a list and returned.
-    """
-
-    config = toml.load(toml_file)
-
-    x_wind = world['x_wind']
-    y_wind = world['y_wind']
-    z_wind = world['z_wind']
-    kb = constants['kb']
-    dx = world['dx']
-    dy = world['dy']
-    dz = world['dz']
-
-    i = 0
-    particles = []
-    particle_keys = grab_particle_keys(config)
-
-    for toml_key in particle_keys:
-        key1, key2, key3 = jax.random.PRNGKey(i), jax.random.PRNGKey(i+1), jax.random.PRNGKey(i+2)
-        i += 3
-        # build the particle random number generator keys
-        particle_name = config[toml_key]['name']
-        N_particles=config[toml_key]['N_particles']
-        charge=config[toml_key]['charge']
-        mass=config[toml_key]['mass']
-        T=config[toml_key]['temperature']
-        x, y, z, vx, vy, vz = initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, key2, key3)
-
-        if 'initial_x' in config[toml_key]:
-            print(f"Loading initial_x from external source: {config[toml_key]['initial_x']}")
-            x = jnp.load(config[toml_key]['initial_x'])
-        if 'initial_y' in config[toml_key]:
-            print(f"Loading initial_y from external source: {config[toml_key]['initial_y']}")
-            y = jnp.load(config[toml_key]['initial_y'])
-        if 'initial_z' in config[toml_key]:
-            print(f"Loading initial_z from external source: {config[toml_key]['initial_z']}")
-            z = jnp.load(config[toml_key]['initial_z'])
-        if 'initial_vx' in config[toml_key]:
-            print(f"Loading initial_vx from external source: {config[toml_key]['initial_vx']}")
-            vx = jnp.load(config[toml_key]['initial_vx'])
-        if 'initial_vy' in config[toml_key]:
-            print(f"Loading initial_vy from external source: {config[toml_key]['initial_vy']}")
-            vy = jnp.load(config[toml_key]['initial_vy'])
-        if 'initial_vz' in config[toml_key]:
-            print(f"Loading initial_vz from external source: {config[toml_key]['initial_vz']}")
-            vz = jnp.load(config[toml_key]['initial_vz'])
-        print('\n')
-
-        update_pos = True
-        update_v   = True
-        update_vx  = True
-        update_vy  = True
-        update_vz  = True
-        update_x   = True
-        update_y   = True
-        update_z   = True
-
-        weight = 1.0
-        if weight in config[toml_key]:
-            weight = config[toml_key]['weight']
-        
-        if 'update_pos' in config[toml_key]:
-            update_pos = config[toml_key]['update_pos']
-            print(f"update_pos: {update_pos}")
-        if 'update_v' in config[toml_key]:
-            update_v = config[toml_key]['update_v']
-            print(f"update_v: {update_v}")
-        if 'update_vx' in config[toml_key]:
-            update_vx = config[toml_key]['update_vx']
-            print(f"update_vx: {update_vx}")
-        if 'update_vy' in config[toml_key]:
-            update_vy = config[toml_key]['update_vy']
-            print(f"update_vy: {update_vy}")
-        if 'update_vz' in config[toml_key]:
-            update_vz = config[toml_key]['update_vz']
-            print(f"update_vz: {update_vz}")
-        if 'update_x' in config[toml_key]:
-            update_x = config[toml_key]['update_x']
-            print(f"update_x: {update_x}")
-        if 'update_y' in config[toml_key]:
-            update_y = config[toml_key]['update_y']
-            print(f"update_y: {update_y}")
-        if 'update_z' in config[toml_key]:
-            update_z = config[toml_key]['update_z']
-            print(f"update_z: {update_z}")
-
-        zeta1 = ( x + x_wind/2 ) % dx
-        zeta2 = zeta1
-        eta1  = ( y + y_wind/2 ) % dy
-        eta2  = eta1
-        xi1   = ( z + z_wind/2 ) % dz
-        xi2   = xi1
-        subcells = zeta1, zeta2, eta1, eta2, xi1, xi2
-
-        particle = particle_species(
-            name=particle_name,
-            N_particles=N_particles,
-            charge=charge,
-            mass=mass,
-            T=T,
-            x1=x,
-            x2=y,
-            x3=z,
-            v1=vx,
-            v2=vy,
-            v3=vz,
-            subcells=subcells,
-            xwind=x_wind,
-            ywind=y_wind,
-            zwind=z_wind,
-            dx=dx,
-            dy=dy,
-            dz=dz,
-            weight=weight,
-            bc='periodic',
-            update_vx=update_vx,
-            update_vy=update_vy,
-            update_vz=update_vz,
-            update_x=update_x,
-            update_y=update_y,
-            update_z=update_z,
-            update_pos=update_pos,
-            update_v=update_v
-        )
-        particles.append(particle)
-
-    return particles
 
 def debugprint(value):
     """

@@ -126,6 +126,11 @@ for t in tqdm(range(Nt)):
     particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi = loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi)
     # time loop to update the particles and fields
     plotter(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, M, solver, bc, electrostatic, verbose, GPUs)
+
+    curlx, curly, curlz = curl_func(Ex, Ey, Ez)
+    write_data('data/curl_Ex.txt', t * world['dt'], jnp.mean(curlx))
+    write_data('data/curl_Ey.txt', t * world['dt'], jnp.mean(curly))
+    write_data('data/curl_Ez.txt', t * world['dt'], jnp.mean(curlz))
     # save the data
     # grad1, grad2, grad3 = kinetic_energy_grad(particles[0])
     # write_data('data/dKE_dvx.txt', t*world['dt'], jnp.mean(grad1))

@@ -5,19 +5,23 @@ import os
 import time
 import functools
 import equinox as eqx
+import toml
 
 from PyPIC3D.model import (
     PoissonPrecondition
 )
 
+from PyPIC3D.particle import (
+    load_particles_from_toml
+)
+
 from PyPIC3D.utils import (
     courant_condition,
     update_parameters_from_toml,
-    load_particles_from_toml, precondition, build_coallocated_grid,
+    precondition, build_coallocated_grid,
     build_yee_grid, convert_to_jax_compatible, load_external_fields_from_toml,
     check_stability, print_stats, particle_sanity_check, build_plasma_parameters_dict
 )
-
 
 from PyPIC3D.fields import (
     calculateE, initialize_fields
@@ -29,6 +33,10 @@ from PyPIC3D.pstd import (
 
 from PyPIC3D.fdtd import (
     centered_finite_difference_curl
+)
+
+from PyPIC3D.pec import (
+    read_pec_boundaries_from_toml
 )
 
 def default_parameters():
@@ -175,6 +183,9 @@ def initialize_simulation(config_file):
     Ex, Ey, Ez, Bx, By, Bz = load_external_fields_from_toml([Ex, Ey, Ez, Bx, By, Bz], config_file)
     # add any external fields to the simulation
 
+    pecs = read_pec_boundaries_from_toml(config_file)
+    # read in perfectly electrical conductor boundaries
+
     ##################################### Neural Network Preconditioner ################################################
 
     key = jax.random.PRNGKey(0)
@@ -191,7 +202,7 @@ def initialize_simulation(config_file):
     # solve for the preconditioner using the neural network
 
     if not electrostatic:
-        Ex, Ey, Ez, phi, rho = calculateE(world, particles, constants, rho, phi, M, 0, solver, bc, verbose, GPUs)
+        Ex, Ey, Ez, phi, rho = calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, 0, solver, bc, verbose, GPUs, electrostatic)
 
     E_grid, B_grid = build_yee_grid(world)
     # build the grid for the fields
