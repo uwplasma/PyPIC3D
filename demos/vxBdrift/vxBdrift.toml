@@ -8,14 +8,14 @@ solver = 'fdtd'
 Nx = 60
 Ny = 30
 Nz = 30
-x_wind = 1e-3
-y_wind = 1e-3
-z_wind = 1e-3
+x_wind = 1e-4
+y_wind = 1e-4
+z_wind = 1e-4
 verbose = true
-electrostatic = false
+electrostatic = true
 
 [plotting]
-plot_errors = false
+plot_errors = true
 phaseSpace  = false
 plotpositions = false
 plotKE = false

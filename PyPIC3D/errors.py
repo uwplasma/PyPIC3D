@@ -45,9 +45,8 @@ def compute_pe(phi, rho, constants, world, solver, bc='periodic'):
     elif solver == 'autodiff':
         return 0
     poisson_error = x + rho/eps
-    index         = jnp.argmax(poisson_error)
-    return 200 * jnp.abs( jnp.ravel(poisson_error)[index]) / ( jnp.abs(jnp.ravel(rho/eps)[index])+ jnp.abs(jnp.ravel(x)[index]) )
-    # this method computes the relative percentage difference of poisson solver
+    magnitude = jnp.mean(jnp.abs(rho/eps)) + 1e-16
+    return jnp.mean(jnp.abs(poisson_error)) / magnitude
 
 @partial(jit, static_argnums=(4, 5))
 def compute_magnetic_divergence_error(Bx, By, Bz, world, solver, bc='periodic'):
@@ -76,7 +75,7 @@ def compute_magnetic_divergence_error(Bx, By, Bz, world, solver, bc='periodic'):
         divB = centered_finite_difference_divergence(Bx, By, Bz, dx, dy, dz, bc)
     elif solver == 'autodiff':
         return 0
-    divergence_error = jnp.sum(jnp.abs(divB))
+    divergence_error = jnp.mean(jnp.abs(divB))
     return divergence_error
 
 @partial(jit, static_argnums=(6, 7))

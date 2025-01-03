@@ -17,7 +17,11 @@ from PyPIC3D.J import (
 
 
 from PyPIC3D.utils import (
-    dump_parameters_to_toml, check_nyquist_criterion
+    dump_parameters_to_toml
+)
+
+from PyPIC3D.pstd import (
+     check_nyquist_criterion
 )
 
 
@@ -56,11 +60,9 @@ def time_loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid
 
 
     ############### SOLVE E FIELD ############################################################################################
-
-    if electrostatic:
-        Ex, Ey, Ez, phi, rho = calculateE(world, particles, constants, rho, phi, M, t, solver, bc, verbose, GPUs)
-        if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(jnp.sqrt(Ex**2 + Ey**2 + Ez**2))}")
-        # print the maximum value of the electric field
+    Ex, Ey, Ez, phi, rho = calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, t, solver, bc, verbose, GPUs, electrostatic)
+    if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(jnp.sqrt(Ex**2 + Ey**2 + Ez**2))}")
+    # print the maximum value of the electric field
 
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
@@ -78,6 +80,7 @@ def time_loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid
         Nx, Ny, Nz = world['Nx'], world['Ny'], world['Nz']
         Jx, Jy, Jz = VB_correction(particles, Jx, Jy, Jz)
         # calculate the corrections for charge conservation using villasenor buneamn 1991
+        if verbose: print(f"Calculating Current Density, Max Value: {jnp.max(jnp.sqrt(Jx**2 + Jy**2 + Jz**2))}")
         Ex, Ey, Ez = update_E(E_grid, B_grid, (Ex, Ey, Ez), (Bx, By, Bz), (Jx, Jy, Jz), world, constants, curl_func)
         # update the electric field using the curl of the magnetic field
         Bx, By, Bz = update_B(E_grid, B_grid, (Bx, By, Bz), (Ex, Ey, Ez), world, constants, curl_func)

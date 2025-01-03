@@ -11,6 +11,163 @@ from pyevtk.hl import gridToVTK
 from jax import tree_util
 from jax.tree_util import register_pytree_node_class
 from functools import partial
+import toml
+
+
+def grab_particle_keys(config):
+    """
+    Extracts and returns a list of keys from the given configuration dictionary
+    that start with the prefix 'particle'.
+    Args:
+        config (dict): A dictionary containing configuration keys and values.
+    Returns:
+        list: A list of keys from the configuration dictionary that start with 'particle'.
+    """
+    particle_keys = []
+    for key in config.keys():
+        if key[:8] == 'particle':
+            particle_keys.append(key)
+    return particle_keys
+
+def load_particles_from_toml(toml_file, simulation_parameters, world, constants):
+    """
+    Load particle data from a TOML file and initialize particle species.
+    Args:
+        toml_file (str): Path to the TOML file containing particle configuration.
+        simulation_parameters (dict): Dictionary containing simulation parameters.
+        world (dict): Dictionary containing world parameters such as 'x_wind', 'y_wind', 'z_wind', 'dx', 'dy', 'dz'.
+        constants (dict): Dictionary containing constants such as 'kb'.
+    Returns:
+        list: A list of particle_species objects initialized with the data from the TOML file.
+    The function reads particle configuration from the provided TOML file, initializes particle properties such as
+    position, velocity, charge, mass, and temperature. It also handles loading initial positions and velocities from
+    external sources if specified in the TOML file. The particles are then appended to a list and returned.
+    """
+
+    config = toml.load(toml_file)
+
+    x_wind = world['x_wind']
+    y_wind = world['y_wind']
+    z_wind = world['z_wind']
+    kb = constants['kb']
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+
+    i = 0
+    particles = []
+    particle_keys = grab_particle_keys(config)
+
+    for toml_key in particle_keys:
+        key1, key2, key3 = jax.random.PRNGKey(i), jax.random.PRNGKey(i+1), jax.random.PRNGKey(i+2)
+        i += 3
+        # build the particle random number generator keys
+        particle_name = config[toml_key]['name']
+        N_particles=config[toml_key]['N_particles']
+        charge=config[toml_key]['charge']
+        mass=config[toml_key]['mass']
+        T=config[toml_key]['temperature']
+        x, y, z, vx, vy, vz = initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, key2, key3)
+
+        if 'initial_x' in config[toml_key]:
+            print(f"Loading initial_x from external source: {config[toml_key]['initial_x']}")
+            x = jnp.load(config[toml_key]['initial_x'])
+        if 'initial_y' in config[toml_key]:
+            print(f"Loading initial_y from external source: {config[toml_key]['initial_y']}")
+            y = jnp.load(config[toml_key]['initial_y'])
+        if 'initial_z' in config[toml_key]:
+            print(f"Loading initial_z from external source: {config[toml_key]['initial_z']}")
+            z = jnp.load(config[toml_key]['initial_z'])
+        if 'initial_vx' in config[toml_key]:
+            print(f"Loading initial_vx from external source: {config[toml_key]['initial_vx']}")
+            vx = jnp.load(config[toml_key]['initial_vx'])
+        if 'initial_vy' in config[toml_key]:
+            print(f"Loading initial_vy from external source: {config[toml_key]['initial_vy']}")
+            vy = jnp.load(config[toml_key]['initial_vy'])
+        if 'initial_vz' in config[toml_key]:
+            print(f"Loading initial_vz from external source: {config[toml_key]['initial_vz']}")
+            vz = jnp.load(config[toml_key]['initial_vz'])
+        print('\n')
+
+        update_pos = True
+        update_v   = True
+        update_vx  = True
+        update_vy  = True
+        update_vz  = True
+        update_x   = True
+        update_y   = True
+        update_z   = True
+
+        weight = 1.0
+        if weight in config[toml_key]:
+            weight = config[toml_key]['weight']
+
+        if 'update_pos' in config[toml_key]:
+            update_pos = config[toml_key]['update_pos']
+            print(f"update_pos: {update_pos}")
+        if 'update_v' in config[toml_key]:
+            update_v = config[toml_key]['update_v']
+            print(f"update_v: {update_v}")
+        if 'update_vx' in config[toml_key]:
+            update_vx = config[toml_key]['update_vx']
+            print(f"update_vx: {update_vx}")
+        if 'update_vy' in config[toml_key]:
+            update_vy = config[toml_key]['update_vy']
+            print(f"update_vy: {update_vy}")
+        if 'update_vz' in config[toml_key]:
+            update_vz = config[toml_key]['update_vz']
+            print(f"update_vz: {update_vz}")
+        if 'update_x' in config[toml_key]:
+            update_x = config[toml_key]['update_x']
+            print(f"update_x: {update_x}")
+        if 'update_y' in config[toml_key]:
+            update_y = config[toml_key]['update_y']
+            print(f"update_y: {update_y}")
+        if 'update_z' in config[toml_key]:
+            update_z = config[toml_key]['update_z']
+            print(f"update_z: {update_z}")
+
+        zeta1 = ( x + x_wind/2 ) % dx
+        zeta2 = zeta1
+        eta1  = ( y + y_wind/2 ) % dy
+        eta2  = eta1
+        xi1   = ( z + z_wind/2 ) % dz
+        xi2   = xi1
+        subcells = zeta1, zeta2, eta1, eta2, xi1, xi2
+
+        particle = particle_species(
+            name=particle_name,
+            N_particles=N_particles,
+            charge=charge,
+            mass=mass,
+            T=T,
+            x1=x,
+            x2=y,
+            x3=z,
+            v1=vx,
+            v2=vy,
+            v3=vz,
+            subcells=subcells,
+            xwind=x_wind,
+            ywind=y_wind,
+            zwind=z_wind,
+            dx=dx,
+            dy=dy,
+            dz=dz,
+            weight=weight,
+            bc='periodic',
+            update_vx=update_vx,
+            update_vy=update_vy,
+            update_vz=update_vz,
+            update_x=update_x,
+            update_y=update_y,
+            update_z=update_z,
+            update_pos=update_pos,
+            update_v=update_v
+        )
+        particles.append(particle)
+
+    return particles
 
 
 def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, key2, key3):
@@ -172,7 +329,6 @@ class particle_species:
     tree_unflatten(aux_data, children):
         Unflattens the particle species object from serialized data.
     """
-
 
     def __init__(self, name, N_particles, charge, mass, T, v1, v2, v3, x1, x2, x3, subcells, \
             xwind, ywind, zwind, dx, dy, dz, weight=1, bc='periodic', update_x=True, update_y=True, update_z=True, \
