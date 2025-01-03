@@ -16,6 +16,48 @@ from PyPIC3D.utils import interpolate_and_stagger_field, interpolate_field, use_
 from PyPIC3D.particle import particle_species
 from PyPIC3D.J import compute_current_density
 
+
+def check_nyquist_criterion(Ex, Ey, Ez, Bx, By, Bz, world):
+    """
+    Check if the E and B fields meet the Nyquist criterion.
+
+    Parameters:
+    Ex (ndarray): The electric field component in the x-direction.
+    Ey (ndarray): The electric field component in the y-direction.
+    Ez (ndarray): The electric field component in the z-direction.
+    Bx (ndarray): The magnetic field component in the x-direction.
+    By (ndarray): The magnetic field component in the y-direction.
+    Bz (ndarray): The magnetic field component in the z-direction.
+    world (dict): A dictionary containing the spatial resolution parameters.
+        - 'dx' (float): Spatial resolution in the x-direction.
+        - 'dy' (float): Spatial resolution in the y-direction.
+        - 'dz' (float): Spatial resolution in the z-direction.
+
+    Returns:
+    bool: True if the fields meet the Nyquist criterion, False otherwise.
+    """
+    dx, dy, dz = world['dx'], world['dy'], world['dz']
+    nx, ny, nz = Ex.shape
+
+    # Calculate the maximum wavenumber that can be resolved
+    kx_max = jnp.pi / dx
+    ky_max = jnp.pi / dy
+    kz_max = jnp.pi / dz
+
+    # Calculate the wavenumber components of the fields
+    kx = jnp.fft.fftfreq(nx, d=dx) * 2 * jnp.pi
+    ky = jnp.fft.fftfreq(ny, d=dy) * 2 * jnp.pi
+    kz = jnp.fft.fftfreq(nz, d=dz) * 2 * jnp.pi
+
+    # Check if the wavenumber components exceed the maximum wavenumber
+    for field_name, field in {'Ex': Ex, 'Ey': Ey, 'Ez': Ez, 'Bx': Bx, 'By': By, 'Bz': Bz}.items():
+        kx_field = jnp.fft.fftn(field, axes=(0,))
+        ky_field = jnp.fft.fftn(field, axes=(1,))
+        kz_field = jnp.fft.fftn(field, axes=(2,))
+        if jnp.any(jnp.abs(kx_field) > kx_max) or jnp.any(jnp.abs(ky_field) > ky_max) or jnp.any(jnp.abs(kz_field) > kz_max):
+            print(f"Warning: The {field_name} field does not meet the Nyquist criterion. FFT may introduce aliasing.")
+
+
 @partial(jit, static_argnums=(1, 2, 3))
 def detect_gibbs_phenomenon(field, dx, dy, dz, threshold=0.1):
     """
@@ -309,107 +351,6 @@ def spectral_laplacian(field, world):
     # calculate the laplacian in Fourier space
     return jnp.fft.ifftn(lapl).real
 
-@jit
-@use_gpu_if_set
-def particle_push(particles, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt, GPUs):
-    """
-    Updates the velocities of particles using the Boris algorithm.
-
-    Args:
-        particles (Particles): The particles to be updated.
-        Ex (array-like): Electric field component in the x-direction.
-        Ey (array-like): Electric field component in the y-direction.
-        Ez (array-like): Electric field component in the z-direction.
-        Bx (array-like): Magnetic field component in the x-direction.
-        By (array-like): Magnetic field component in the y-direction.
-        Bz (array-like): Magnetic field component in the z-direction.
-        grid (Grid): The grid on which the fields are defined.
-        staggered_grid (Grid): The staggered grid for field interpolation.
-        dt (float): The time step for the update.
-
-    Returns:
-        Particles: The particles with updated velocities.
-    """
-    q = particles.get_charge()
-    m = particles.get_mass()
-    x, y, z = particles.get_position()
-    vx, vy, vz = particles.get_velocity()
-    # get the charge, mass, position, and velocity of the particles
-    newvx, newvy, newvz = boris(q, m, x, y, z, vx, vy, vz, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
-    # use the boris algorithm to update the velocities
-    particles.set_velocity(newvx, newvy, newvz)
-    # set the new velocities of the particles
-    return particles
-
-
-@jit
-def boris(q, m, x, y, z, vx, vy, vz, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt):
-    """
-    Perform the Boris algorithm to update the velocity of a charged particle in an electromagnetic field.
-
-    Parameters:
-    q (float): Charge of the particle.
-    m (float): Mass of the particle.
-    x (float): x-coordinate of the particle's position.
-    y (float): y-coordinate of the particle's position.
-    z (float): z-coordinate of the particle's position.
-    vx (float): x-component of the particle's velocity.
-    vy (float): y-component of the particle's velocity.
-    vz (float): z-component of the particle's velocity.
-    Ex (ndarray): x-component of the electric field array.
-    Ey (ndarray): y-component of the electric field array.
-    Ez (ndarray): z-component of the electric field array.
-    Bx (ndarray): x-component of the magnetic field array.
-    By (ndarray): y-component of the magnetic field array.
-    Bz (ndarray): z-component of the magnetic field array.
-    grid (ndarray): Grid for the electric field.
-    staggered_grid (ndarray): Staggered grid for the magnetic field.
-    dt (float): Time step for the update.
-
-    Returns:
-    tuple: Updated velocity components (newvx, newvy, newvz).
-    """
-
-    efield_atx = interpolate_field(Ex, grid, x, y, z)
-    efield_aty = interpolate_field(Ey, grid, x, y, z)
-    efield_atz = interpolate_field(Ez, grid, x, y, z)
-    # interpolate the electric field component arrays and calculate the e field at the particle positions
-    ygrid, xgrid, zgrid = grid
-    ystagger, xstagger, zstagger = staggered_grid
-
-    bfield_atx = interpolate_field(Bx, (xstagger, ygrid, zgrid), x, y, z)
-    bfield_aty = interpolate_field(By, (xgrid, ystagger, zgrid), x, y, z)
-    bfield_atz = interpolate_field(Bz, (xgrid, ygrid, zstagger), x, y, z)
-    # interpolate the magnetic field component arrays and calculate the b field at the particle positions
-    vxminus = vx + q*dt/(2*m)*efield_atx
-    vyminus = vy + q*dt/(2*m)*efield_aty
-    vzminus = vz + q*dt/(2*m)*efield_atz
-    # calculate the v minus vector used in the boris push algorithm
-    tx = q*dt/(2*m)*bfield_atx
-    ty = q*dt/(2*m)*bfield_aty
-    tz = q*dt/(2*m)*bfield_atz
-
-    vprimex = vxminus + (vyminus*tz - vzminus*ty)
-    vprimey = vyminus + (vzminus*tx - vxminus*tz)
-    vprimez = vzminus + (vxminus*ty - vyminus*tx)
-    # vprime = vminus + vminus cross t
-
-    smag = 2 / (1 + tx*tx + ty*ty + tz*tz)
-    sx = smag * tx
-    sy = smag * ty
-    sz = smag * tz
-    # calculate the scaled rotation vector
-
-    vxplus = vxminus + (vprimey*sz - vprimez*sy)
-    vyplus = vyminus + (vprimez*sx - vprimex*sz)
-    vzplus = vzminus + (vprimex*sy - vprimey*sx)
-
-    newvx = vxplus + q*dt/(2*m)*efield_atx
-    newvy = vyplus + q*dt/(2*m)*efield_aty
-    newvz = vzplus + q*dt/(2*m)*efield_atz
-    # calculate the new velocity
-    return newvx, newvy, newvz
-
 
 @partial(jit, static_argnums=(3, 4, 5, 6))
 def solve_magnetic_vector_potential(Jx, Jy, Jz, dx, dy, dz, mu0):
@@ -503,7 +444,7 @@ def initialize_magnetic_field(particles, grid, staggered_grid, world, constants,
     return Bx, By, Bz
 
 @jit
-def spectral_marder_correction(Ex, Ey, Ez, rho, world, constants, d):
+def spectral_marder_correction(Ex, Ey, Ez, rho, world, constants):
     """
     Apply the Marder correction to the electric field to suppress numerical instabilities.
 
@@ -520,16 +461,23 @@ def spectral_marder_correction(Ex, Ey, Ez, rho, world, constants, d):
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
+    dt = world['dt']
     eps = constants['eps']
 
     # Compute the spectral divergence of the electric field
-    divE = spectral_divergence(Ex, Ey, Ez, dx, dy, dz)
+    divE = spectral_divergence(Ex, Ey, Ez, world)
 
+    d = 1/(2*dt) * (dx**2 * dy**2 * dz**2) / (dx**2 + dy**2 + dz**2)
+    # compute the diffusion parameter
+
+    correction = d * (divE - rho/eps)
     # Compute the correction term
-    gradx, grady, gradz = spectral_gradient(divE - rho/eps, dx, dy, dz)
-    Ex_corrected = Ex - d*gradx
-    Ey_corrected = Ey - d*grady
-    Ez_corrected = Ez - d*gradz
+
+    gradx, grady, gradz = spectral_gradient( correction, world)
+    # Compute the gradient of the correction term
+    Ex_corrected = Ex + dt*gradx
+    Ey_corrected = Ey + dt*grady
+    Ez_corrected = Ez + dt*gradz
     # Apply the correction to the electric field
 
     return Ex_corrected, Ey_corrected, Ez_corrected
