@@ -29,7 +29,7 @@ from PyPIC3D.boris import (
     particle_push
 )
 
-#@partial(jit, static_argnums=(18, 19, 20, 21, 22, 23, 24))
+#@partial(jit, static_argnums=(0, 18, 19, 20, 21, 22, 23, 24))
 def time_loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, curl_func, M, solver, bc, electrostatic, verbose, GPUs):
     """
     Perform a single time step in the simulation loop.

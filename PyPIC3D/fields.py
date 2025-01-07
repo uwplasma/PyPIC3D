@@ -98,7 +98,7 @@ def solve_poisson(rho, constants, world, phi, solver, bc='periodic', M = None, G
         # #phi = conjugate_grad(lapl, -rho/eps, phi, tol=1e-9, maxiter=5000, M=M)
 
         # phi = conjugated_gradients(lapl, -rho/eps, phi, tol=1e-9, maxiter=1000)
-        sor = functools.partial(solve_poisson_sor, dx=dx, dy=dy, dz=dz, eps=eps, omega=0.25, tol=1e-15, max_iter=8000)
+        sor = functools.partial(solve_poisson_sor, dx=dx, dy=dy, dz=dz, eps=eps, omega=0.15, tol=1e-15, max_iter=15000)
         phi = sor(phi, rho)
         #phi = jax.scipy.sparse.linalg.cg(lapl, -rho/eps, x0=phi, tol=1e-6, maxiter=40000, M=M)[0]
         #phi = solve_poisson_sor(phi, rho, dx, dy, dz, eps, omega=0.25, tol=1e-6, max_iter=100000)
@@ -148,24 +148,29 @@ def calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, t, solver, 
     eps = constants['eps']
 
     if solver == 'spectral':
-        if verbose:
-            jax.debug.print("Calculating Charge Density, Max Value: {}", jnp.max(jnp.abs(rho)))
 
-        if t == 0:
-            phi = solve_poisson(rho, constants, world, phi=rho, solver=solver, bc=bc, M=None, GPUs=GPUs)
-        else:
-            phi = solve_poisson(rho, constants, world, phi=phi, solver=solver, bc=bc, M=M, GPUs=GPUs)
+        if electrostatic or t < 1:
+            rho = compute_rho(particles, rho, world, GPUs)
+            # calculate the charge density based on the particle positions
 
-        if verbose:
-            jax.debug.print("Calculating Electric Potential, Max Value: {}", jnp.max(phi))
-            jax.debug.print("Potential Error: {}%", compute_pe(phi, rho, constants, world, solver, bc='periodic'))
+            if verbose:
+                jax.debug.print("Calculating Charge Density, Max Value: {}", jnp.max(jnp.abs(rho)))
 
-        Ex, Ey, Ez = spectral_gradient(phi, world)
-        # compute the gradient of the electric potential to get the electric field
-        Ex = -Ex
-        Ey = -Ey
-        Ez = -Ez
-        # multiply by -1 to get the correct direction of the electric field
+            if t == 0:
+                phi = solve_poisson(rho, constants, world, phi=rho, solver=solver, bc=bc, M=None, GPUs=GPUs)
+            else:
+                phi = solve_poisson(rho, constants, world, phi=phi, solver=solver, bc=bc, M=M, GPUs=GPUs)
+
+            if verbose:
+                jax.debug.print("Calculating Electric Potential, Max Value: {}", jnp.max(phi))
+                jax.debug.print("Potential Error: {}%", compute_pe(phi, rho, constants, world, solver, bc='periodic'))
+
+            Ex, Ey, Ez = spectral_gradient(phi, world)
+            # compute the gradient of the electric potential to get the electric field
+            Ex = -Ex
+            Ey = -Ey
+            Ez = -Ez
+            # multiply by -1 to get the correct direction of the electric field
 
 
         # Ex, Ey, Ez = spectral_marder_correction(Ex, Ey, Ez, rho, world, constants)

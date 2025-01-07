@@ -180,7 +180,7 @@ def spectral_poisson_solve(rho, constants, world):
     k2 = k2.at[0, 0, 0].set(1.0)
     #k2 = jnp.where(k2 == 0, 1e-12, k2)
     # avoid division by zero
-    phi = jnp.fft.fftn(rho) / (eps*k2)
+    phi = -1 * jnp.fft.fftn(rho) / (eps*k2)
     # calculate the Fourier transform of the charge density and divide by the permittivity and squared wavenumber
     phi = phi.at[0, 0, 0].set(0)
     # set the DC component to zero
