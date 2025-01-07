@@ -4,13 +4,13 @@ name = "Demo of a vxB drift for 1 electron"
 t_wind = 100e-12
 output_dir = "/home/christopherwoolford/Documents/PyPIC3D"
 bc = 'periodic'
-solver = 'fdtd'
+solver = 'spectral'
 Nx = 60
 Ny = 30
 Nz = 30
-x_wind = 1e-4
-y_wind = 1e-4
-z_wind = 1e-4
+x_wind = 1e-1
+y_wind = 1e-1
+z_wind = 1e-1
 verbose = true
 electrostatic = true
 
