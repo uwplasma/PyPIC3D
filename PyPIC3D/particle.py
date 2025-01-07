@@ -12,6 +12,7 @@ from jax import tree_util
 from jax.tree_util import register_pytree_node_class
 from functools import partial
 import toml
+import functools
 
 
 def grab_particle_keys(config):
@@ -69,6 +70,10 @@ def load_particles_from_toml(toml_file, simulation_parameters, world, constants)
         T=config[toml_key]['temperature']
         x, y, z, vx, vy, vz = initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, key2, key3)
 
+        bc = 'periodic'
+        if 'bc' in config[toml_key]:
+            bc = config[toml_key]['bc']
+        # set the boundary condition
         if 'initial_x' in config[toml_key]:
             print(f"Loading initial_x from external source: {config[toml_key]['initial_x']}")
             x = jnp.load(config[toml_key]['initial_x'])
@@ -155,7 +160,7 @@ def load_particles_from_toml(toml_file, simulation_parameters, world, constants)
             dy=dy,
             dz=dz,
             weight=weight,
-            bc='periodic',
+            bc=bc,
             update_vx=update_vx,
             update_vy=update_vy,
             update_vz=update_vz,
@@ -352,7 +357,17 @@ class particle_species:
         self.y_wind = ywind
         self.z_wind = zwind
         self.zeta1, self.zeta2, self.eta1, self.eta2, self.xi1, self.xi2 = subcells
+
         self.bc = bc
+        # if bc == 'periodic':
+        #     print('Using periodic boundary conditions')
+        #     self.bc = functools.partial( periodic_boundary_condition, x_wind=xwind, y_wind=ywind, z_wind=zwind)
+        # elif bc == 'reflecting':
+        #     print('Using reflecting boundary conditions')
+        #     self.bc = functools.partial( reflecting_boundary_condition, x_wind=self.x_wind, y_wind=self.y_wind, z_wind=self.z_wind)
+        # else:
+        #     self.bc = lambda x, y, z, vx, vy, vz: (x, y, z, vx, vy, vz)
+
         self.update_x = update_x
         self.update_y = update_y
         self.update_z = update_z
@@ -425,6 +440,7 @@ class particle_species:
     def momentum(self):
         return self.mass * jnp.sum(jnp.sqrt(self.v1**2 + self.v2**2 + self.v3**2))
 
+
     def periodic_boundary_condition(self, x_wind, y_wind, z_wind):
         self.x1 = jnp.where(self.x1 > x_wind/2, -x_wind/2, self.x1)
         self.x1 = jnp.where(self.x1 < -x_wind/2,  x_wind/2, self.x1)
@@ -432,6 +448,19 @@ class particle_species:
         self.x2 = jnp.where(self.x2 < -y_wind/2,  y_wind/2, self.x2)
         self.x3 = jnp.where(self.x3 > z_wind/2, -z_wind/2, self.x3)
         self.x3 = jnp.where(self.x3 < -z_wind/2,  z_wind/2, self.x3)
+
+    def reflecting_boundary_condition(self, x_wind, y_wind, z_wind):
+        #self.x1 = jnp.where(self.x1 > x_wind/2, x_wind/2, self.x1)
+        #self.x1 = jnp.where(self.x1 < -x_wind/2, -x_wind/2, self.x1)
+        self.v1 = jnp.where((self.x1 > x_wind/2) | (self.x1 < -x_wind/2), -self.v1, self.v1)
+
+        #self.x2 = jnp.where(self.x2 > y_wind/2, y_wind/2, self.x2)
+        #self.x2 = jnp.where(self.x2 < -y_wind/2, -y_wind/2, self.x2)
+        self.v2 = jnp.where((self.x2 > y_wind/2) | (self.x2 < -y_wind/2), -self.v2, self.v2)
+
+        #self.x3 = jnp.where(self.x3 > z_wind/2, z_wind/2, self.x3)
+        #self.x3 = jnp.where(self.x3 < -z_wind/2, -z_wind/2, self.x3)
+        self.v3 = jnp.where((self.x3 > z_wind/2) | (self.x3 < -z_wind/2), -self.v3, self.v3)
 
     def update_position(self, dt, x_wind, y_wind, z_wind):
         if self.update_pos:
@@ -443,8 +472,13 @@ class particle_species:
                 self.x3 = self.x3 + self.v3 * dt
             # update the position of the particles
             if self.bc == 'periodic':
+                #print('Using periodic boundary conditions')
                 self.periodic_boundary_condition(x_wind, y_wind, z_wind)
-            # apply periodic boundary conditions
+            elif self.bc == 'reflecting':
+                #print('Using reflecting boundary conditions')
+                self.reflecting_boundary_condition(x_wind, y_wind, z_wind)
+            # self.x1, self.x2, self.x3, self.v1, self.v2, self.v3 = self.boundary_condition()
+            # apply boundary conditions
 
             self.zeta1 = self.zeta2
             self.eta1  = self.eta2
