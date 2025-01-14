@@ -18,7 +18,7 @@ def grab_pec_keys(config):
             pec_keys.append(key)
     return pec_keys
 
-def read_pec_boundaries_from_toml(toml_file):
+def read_pec_boundaries_from_toml(toml_file, world):
     """
     Reads PEC boundaries from a TOML file and returns a list of PEC objects.
 
@@ -29,6 +29,13 @@ def read_pec_boundaries_from_toml(toml_file):
         list: A list of PEC objects created from the TOML file.
     """
 
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    x_wind = world['x_wind']
+    y_wind = world['y_wind']
+    z_wind = world['z_wind']
+
     config = toml.load(toml_file)
     pec_keys = grab_pec_keys(config)
 
@@ -37,12 +44,20 @@ def read_pec_boundaries_from_toml(toml_file):
     for toml_key in pec_keys:
         name  = config[toml_key]['name']
         shape = config[toml_key]['shape']
-        xmin  = config[toml_key]['xmin']
-        xmax  = config[toml_key]['xmax']
-        ymin  = config[toml_key]['ymin']
-        ymax  = config[toml_key]['ymax']
-        zmin  = config[toml_key]['zmin']
-        zmax  = config[toml_key]['zmax']
+        xstart  = config[toml_key]['xstart']
+        xstop  = config[toml_key]['xend']
+        ystart  = config[toml_key]['ystart']
+        ystop  = config[toml_key]['ystop']
+        zstart  = config[toml_key]['zstart']
+        zstop  = config[toml_key]['zstop']
+
+        xmin = int(xstart / dx)
+        xmax = int(xstop / dx)
+        ymin = int(ystart / dy)
+        ymax = int(ystop / dy)
+        zmin = int(zstart / dz)
+        zmax = int(zstop / dz)
+        # convert the PEC boundary coordinates to grid indices
 
         pecs.append( PEC(name, xmin, xmax, ymin, ymax, zmin, zmax) )
 

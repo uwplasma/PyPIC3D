@@ -180,10 +180,15 @@ def initialize_simulation(config_file):
     Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho = initialize_fields(world)
     # initialize the electric and magnetic fields
 
-    Ex, Ey, Ez, Bx, By, Bz = load_external_fields_from_toml([Ex, Ey, Ez, Bx, By, Bz], config_file)
+    Ex_ext, Ey_ext, Ez_ext, Bx_ext, By_ext, Bz_ext = load_external_fields_from_toml([Ex, Ey, Ez, Bx, By, Bz], config_file)
     # add any external fields to the simulation
 
-    pecs = read_pec_boundaries_from_toml(config_file)
+    # import matplotlib.pyplot as plt
+    # plt.plot(Ex[:, 15, 15])
+    # plt.show()
+    # exit()
+
+    pecs = read_pec_boundaries_from_toml(config_file, world)
     # read in perfectly electrical conductor boundaries
 
     ##################################### Neural Network Preconditioner ################################################
@@ -201,8 +206,8 @@ def initialize_simulation(config_file):
     M = precondition( simulation_parameters['NN'], phi, rho, model)
     # solve for the preconditioner using the neural network
 
-    if not electrostatic:
-        Ex, Ey, Ez, phi, rho = calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, 0, solver, bc, verbose, GPUs, electrostatic)
+    # if not electrostatic:
+    #     Ex, Ey, Ez, phi, rho = calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, 0, solver, bc, verbose, GPUs, electrostatic)
 
     E_grid, B_grid = build_yee_grid(world)
     # build the grid for the fields
@@ -212,4 +217,6 @@ def initialize_simulation(config_file):
     elif solver == "fdtd":
         curl_func = functools.partial(centered_finite_difference_curl, dx=dx, dy=dy, dz=dz, bc=bc)
 
-    return particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, M, solver, bc, electrostatic, verbose, GPUs, start, Nt, curl_func
+    return particles, Ex, Ey, Ez, Ex_ext, Ey_ext, Ez_ext, Bx, By, Bz, Bx_ext, By_ext, Bz_ext, Jx, Jy, Jz, phi, \
+        rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, M, \
+            solver, bc, electrostatic, verbose, GPUs, start, Nt, curl_func, pecs

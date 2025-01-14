@@ -12,7 +12,7 @@ from pyevtk.hl import gridToVTK
 import functools
 from functools import partial
 
-from PyPIC3D.utils import use_gpu_if_set, interpolate_and_stagger_field, interpolate_field
+from PyPIC3D.utils import use_gpu_if_set, interpolate_and_stagger_field, interpolate_field, trilinear_interpolation
 
 @jit
 @use_gpu_if_set
