@@ -256,7 +256,7 @@ def spectral_curl(xfield, yfield, zfield, world):
     kx = jnp.fft.fftfreq(Nx, dx) * 2 * jnp.pi
     ky = jnp.fft.fftfreq(Ny, dy) * 2 * jnp.pi
     kz = jnp.fft.fftfreq(Nz, dz) * 2 * jnp.pi
-    kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
+    #kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
     # create 3D meshgrid of wavenumbers
 
     xfft = jnp.fft.fftn(xfield)
@@ -264,14 +264,14 @@ def spectral_curl(xfield, yfield, zfield, world):
     zfft = jnp.fft.fftn(zfield)
     # calculate the Fourier transform of the vector field
 
-    dfx_dy = jnp.fft.ifftn(-1j*ky*xfft).real
-    dfx_dz = jnp.fft.ifftn(-1j*kz*xfft).real
+    dfx_dy = jnp.fft.ifftn(1j*ky[None,:,None]*xfft).real
+    dfx_dz = jnp.fft.ifftn(1j*kz[None,None,:]*xfft).real
 
-    dfy_dx = jnp.fft.ifftn(-1j*kx*yfft).real
-    dfy_dz = jnp.fft.ifftn(-1j*kz*yfft).real
+    dfy_dx = jnp.fft.ifftn(1j*kx[:,None,None]*yfft).real
+    dfy_dz = jnp.fft.ifftn(1j*kz[None,None,:]*yfft).real
 
-    dfz_dx = jnp.fft.ifftn(-1j*kx*zfft).real
-    dfz_dy = jnp.fft.ifftn(-1j*ky*zfft).real
+    dfz_dx = jnp.fft.ifftn(1j*kx[:,None,None]*zfft).real
+    dfz_dy = jnp.fft.ifftn(1j*ky[None,:,None]*zfft).real
 
     curlx = dfz_dy - dfy_dz
     curly = dfx_dz - dfz_dx

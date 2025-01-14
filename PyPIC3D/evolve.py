@@ -30,39 +30,56 @@ from PyPIC3D.boris import (
 )
 
 #@partial(jit, static_argnums=(0, 18, 19, 20, 21, 22, 23, 24))
-def time_loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, curl_func, M, solver, bc, electrostatic, verbose, GPUs):
+def time_loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, Ex_ext, Ey_ext, Ez_ext, Bx_ext, By_ext, Bz_ext, E_grid, B_grid, world, constants, pecs, plotting_parameters, curl_func, M, solver, bc, electrostatic, verbose, GPUs):
     """
-    Perform a single time step in the simulation loop.
+    Perform a time step in the simulation, updating the electric and magnetic fields, and particle positions and velocities.
 
     Parameters:
     t (float): Current time step.
     particles (list): List of particle objects in the simulation.
     Ex, Ey, Ez (array): Electric field components.
+    Ex_ext, Ey_ext, Ez_ext (array): External electric field components.
     Bx, By, Bz (array): Magnetic field components.
+    Bx_ext, By_ext, Bz_ext (array): External magnetic field components.
     Jx, Jy, Jz (array): Current density components.
     rho (array): Charge density.
     phi (array): Electric potential.
-    E_grid, B_grid (array): Grids for electric and magnetic fields.
-    world (dict): Dictionary containing world parameters such as grid size and wind components.
+    E_grid (array): Grid for electric field.
+    B_grid (array): Grid for magnetic field.
+    world (dict): Dictionary containing simulation parameters such as grid size and time step.
     constants (dict): Dictionary containing physical constants.
-    plotting_parameters (dict): Parameters for plotting (not used in the function).
-    M (array): Preconditioner matrix.
-    solver (object): Solver object for field equations.
-    bc (object): Boundary conditions object.
-    electrostatic (bool): Flag to indicate if the simulation is electrostatic.
+    pecs (list): List of PEC (Perfect Electric Conductor) boundary conditions.
+    plotting_parameters (dict): Parameters for plotting (not used in this function).
+    curl_func (function): Function to compute the curl of a field.
+    M (array): Matrix for solving field equations.
+    solver (str): Type of solver to use ('spectral' or other).
+    bc (dict): Boundary conditions for the fields.
+    electrostatic (bool): Flag indicating if the simulation is electrostatic.
     verbose (bool): Flag to enable verbose output.
-    GPUs (bool): Flag to indicate if GPUs are used.
+    GPUs (bool): Flag to enable GPU acceleration.
 
     Returns:
-    tuple: Updated particles, electric field components (Ex, Ey, Ez), magnetic field components (Bx, By, Bz),
-           current density components (Jx, Jy, Jz), electric potential (phi), and charge density (rho).
+    tuple: Updated particles, electric field components (Ex, Ey, Ez), magnetic field components (Bx, By, Bz), current density components (Jx, Jy, Jz), electric potential (phi), and charge density (rho).
     """
+
 
 
     ############### SOLVE E FIELD ############################################################################################
     Ex, Ey, Ez, phi, rho = calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, t, solver, bc, verbose, GPUs, electrostatic)
     if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(jnp.sqrt(Ex**2 + Ey**2 + Ez**2))}")
     # print the maximum value of the electric field
+
+    ################ EXTERNAL FIELDS #########################################################################################
+    if t < 1:
+        Ex = Ex + Ex_ext
+        Ey = Ey + Ey_ext
+        Ez = Ez + Ez_ext
+        # add the external electric field to the electric field components
+
+        Bx = Bx + Bx_ext
+        By = By + By_ext
+        Bz = Bz + Bz_ext
+        # add the external magnetic field to the magnetic field components
 
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
@@ -88,6 +105,10 @@ def time_loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid
         if solver == 'spectral':
             check_nyquist_criterion(Ex, Ey, Ez, Bx, By, Bz, world)
             # check if the spectral solver can resolve the highest frequencies in the fields
+
+    for pec in pecs:
+        Ex, Ey, Ez = pec.apply_pec(Ex, Ey, Ez)
+        # apply any PEC boundary conditions to the electric field
 
 
     return particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho

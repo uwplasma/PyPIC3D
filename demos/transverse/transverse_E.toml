@@ -1,11 +1,12 @@
 # This is a configuration file for PyPIC3D
+# This config file loads in a transverse E field that propagates along x to test the curls
 [simulation_parameters]
-name = "PIC Dev"
+name = "Transverse E test"
 t_wind = 8000e-12
 output_dir = "/home/christopherwoolford/Documents/PyPIC3D"
 bc = 'periodic'
-solver = 'spectral'
-Nx = 50
+solver = 'fdtd' #spectral'
+Nx = 100
 Ny = 50
 Nz = 50
 x_wind = 1e-2
@@ -21,7 +22,7 @@ plotpositions = false
 plotKE = false
 plotfields = true
 plot_dispersion = false
-plotting_interval = 10
+plotting_interval = 1000
 
 [particle1]
 name = "electrons"
@@ -33,40 +34,19 @@ temperature = 1
 update_pos = true
 update_v = true
 
-[particle2]
-name = "ions"
-N_particles = 0 #10000
-weight = 1000
-charge = 1.602e-19
-mass = 1.67e-27
-temperature = 1
-update_pos = true
-update_v   = true
-
-#[pec1]
-#name = 'PEC wall'
-#shape = 'rect'
-#xstart = 0.0005
-#xstop  = 0.0007
-#ystart = 0
-#ystop  = 0.001
-#zstart = 0
-#zstop  = 0.001
-
-
 [field1]
 name = 'external_Ex'
 type = 0
-path = '/home/christopherwoolford/Documents/PyPIC3D/longitudinal_Ex.npy'
+path = '/home/christopherwoolford/Documents/PyPIC3D/demos/transverse/transverse_Ex.npy'
 
 
 [field2]
 name = 'external_Ey'
 type = 1
-path = '/home/christopherwoolford/Documents/PyPIC3D/longitudinal_Ey.npy'
+path = '/home/christopherwoolford/Documents/PyPIC3D/demos/transverse/transverse_Ey.npy'
 
 
 [field3]
 name = 'external_Ex'
 type = 2
-path = '/home/christopherwoolford/Documents/PyPIC3D/longitudinal_Ez.npy'
+path = '/home/christopherwoolford/Documents/PyPIC3D/demos/transverse/transverse_Ez.npy'
