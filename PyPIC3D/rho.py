@@ -15,6 +15,8 @@ from functools import partial
 from PyPIC3D.utils import use_gpu_if_set
 # import external libraries
 
+
+
 @jit
 def particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
     """

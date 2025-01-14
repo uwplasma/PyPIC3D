@@ -41,13 +41,13 @@ from PyPIC3D.plotting import (
 ############################################################################################################
 
 ###################### JAX SETTINGS ########################################################################
-#jax.config.update("jax_enable_x64", True)
+jax.config.update("jax_enable_x64", True)
 # set Jax to use 64 bit precision
 #jax.config.update("jax_debug_nans", True)
 # debugging for nans
 jax.config.update('jax_platform_name', 'cpu')
 # set Jax to use CPUs
-#jax.config.update("jax_disable_jit", True)
+jax.config.update("jax_disable_jit", True)
 ############################################################################################################
 
 ############################ ARG PARSER ####################################################################
@@ -62,12 +62,15 @@ config_file = args.config
 
 ##################################### INITIALIZE SIMULATION ################################################
 
-particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, M, solver, bc, electrostatic, verbose, GPUs, start, Nt, curl_func = initialize_simulation(config_file)
+particles, Ex, Ey, Ez, Ex_ext, Ey_ext, Ez_ext, Bx, By, Bz, Bx_ext, By_ext, Bz_ext, Jx, Jy, Jz, \
+    phi, rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, \
+        plasma_parameters, M, solver, bc, electrostatic, verbose, GPUs, start, Nt, curl_func, pecs = initialize_simulation(config_file)
 # initialize the simulation
 
 
-loop = partial(time_loop, E_grid=E_grid, B_grid=B_grid, world=world, constants=constants, plotting_parameters=plotting_parameters, \
-                   curl_func=curl_func, M=M, solver=solver, bc=bc, electrostatic=electrostatic, verbose=verbose, GPUs=GPUs)
+loop = partial(time_loop, Ex_ext=Ex_ext, Ey_ext=Ey_ext, Ez_ext=Ez_ext, Bx_ext=Bx_ext, By_ext=By_ext, Bz_ext=Bz_ext, E_grid=E_grid, \
+    B_grid=B_grid, world=world, constants=constants, plotting_parameters=plotting_parameters, pecs=pecs, curl_func=curl_func, M=M, \
+        solver=solver, bc=bc, electrostatic=electrostatic, verbose=verbose, GPUs=GPUs)
 # partial function for the time loop
 
 ############################################################################################################
@@ -126,6 +129,7 @@ for t in tqdm(range(Nt)):
     particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi = loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi)
     # time loop to update the particles and fields
     plotter(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, M, solver, bc, electrostatic, verbose, GPUs)
+    # plot the data
 
     curlx, curly, curlz = curl_func(Ex, Ey, Ez)
     write_data('data/curl_Ex.txt', t * world['dt'], jnp.mean(curlx))

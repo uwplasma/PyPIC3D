@@ -18,6 +18,8 @@ from PyPIC3D.errors import (
     compute_electric_divergence_error, compute_magnetic_divergence_error
 )
 
+from PyPIC3D.J import compute_current_density
+
 def plot_rho(rho, t, name, dx, dy, dz):
     """
     Plot the density field.
@@ -684,6 +686,7 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         # plot_rho(rho, t, "rho", dx, dy, dz)
         write_data("data/averageE.txt", t*dt, jnp.mean(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)))
         write_data("data/averageB.txt", t*dt, jnp.mean(jnp.sqrt(Bx**2 + By**2 + Bz**2)))
+        write_data("data/Eprobe.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx-1, Ny-1, Nz-1))
         write_data("data/electric_field_energy.txt", t*dt, field_energy(Ex, Ey, Ez, dx, dy, dz))
         write_data("data/magnetic_field_energy.txt", t*dt, field_energy(Bx, By, Bz, dx, dy, dz))
         write_data("data/Jx_probe.txt", t*dt, jnp.mean(Jx))
@@ -709,6 +712,33 @@ def save_total_momentum(t, dt, particles):
     p0 = sum(particle.momentum() for particle in particles)
     with open("data/kinetic_momentum.txt", "a") as f_momentum:
         f_momentum.write(f"{t*dt}, {p0}\n")
+
+def continuity_error(rho, old_rho, particles, world, divergence_func, GPUs):
+    """
+    Calculate the continuity error in a plasma simulation.
+
+    Parameters:
+    rho (array-like): Current charge density.
+    old_rho (array-like): Previous charge density.
+    particles (array-like): Particle data.
+    world (dict): Simulation world parameters, including time step 'dt'.
+    divergence_func (function): Function to compute the divergence of the current density.
+    GPUs (bool): Flag to indicate if GPUs are used for computation.
+
+    Returns:
+    float: The mean absolute continuity error.
+    """
+
+    dpdt = (rho - old_rho) / world['dt']
+    # calculate the change in charge density over time
+    Jx, Jy, Jz = jnp.zeros_like(rho), jnp.zeros_like(rho), jnp.zeros_like(rho)
+    Jx, Jy, Jz = compute_current_density(particles, Jx, Jy, Jz, world, GPUs)
+    # calculate the current density
+    divJ = divergence_func(Jx, Jy, Jz)
+    # calculate the divergence of the current density
+    continuity_error = dpdt + divJ
+    # calculate the continuity error
+    return jnp.mean(jnp.abs(continuity_error))
 
 
 def plotter(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, M, solver, bc, electrostatic, verbose, GPUs):

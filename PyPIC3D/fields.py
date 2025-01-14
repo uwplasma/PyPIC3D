@@ -14,9 +14,10 @@ import functools
 from functools import partial
 # import external libraries
 
-from PyPIC3D.pstd import spectral_poisson_solve, spectral_laplacian, spectral_gradient, spectral_marder_correction
-from PyPIC3D.fdtd import centered_finite_difference_laplacian, centered_finite_difference_gradient
+from PyPIC3D.pstd import spectral_poisson_solve, spectral_laplacian, spectral_gradient, spectral_divergence
+from PyPIC3D.fdtd import centered_finite_difference_laplacian, centered_finite_difference_gradient, centered_finite_difference_divergence
 from PyPIC3D.rho import update_rho, compute_rho
+from PyPIC3D.J import compute_current_density
 from PyPIC3D.cg import conjugated_gradients
 from PyPIC3D.sor import solve_poisson_sor
 from PyPIC3D.errors import compute_pe
@@ -147,6 +148,7 @@ def calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, t, solver, 
 
     eps = constants['eps']
 
+
     if solver == 'spectral':
 
         if electrostatic or t < 1:
@@ -173,9 +175,6 @@ def calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, t, solver, 
             # multiply by -1 to get the correct direction of the electric field
 
 
-        # Ex, Ey, Ez = spectral_marder_correction(Ex, Ey, Ez, rho, world, constants)
-        # # apply Marder correction to the electric field
-
     elif solver == 'fdtd':
 
         if electrostatic or t < 1:
@@ -200,6 +199,8 @@ def calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, t, solver, 
             Ez = -Ez
             # multiply by -1 to get the correct direction of the electric field
 
+    Ex, Ey, Ez = apply_friedman_filter((Ex, Ey, Ez), alpha=0.1)
+    # apply the Friedman filter to the electric field components
     return Ex, Ey, Ez, phi, rho
 
 
@@ -234,18 +235,18 @@ def update_E(grid, staggered_grid, E, B, J, world, constants, curl_func):
     eps = constants['eps']
     mu = constants['mu']
 
-    jax.debug.print("dx: {}", dx)
-    jax.debug.print("dy: {}", dy)
-    jax.debug.print("dz: {}", dz)
-    jax.debug.print("dt: {}", dt)
-    jax.debug.print("C: {}", C)
-    jax.debug.print("eps: {}", eps)
-    jax.debug.print("mu: {}", mu)
+    # jax.debug.print("dx: {}", dx)
+    # jax.debug.print("dy: {}", dy)
+    # jax.debug.print("dz: {}", dz)
+    # jax.debug.print("dt: {}", dt)
+    # jax.debug.print("C: {}", C)
+    # jax.debug.print("eps: {}", eps)
+    # jax.debug.print("mu: {}", mu)
 
     curlx, curly, curlz = curl_func(Bx, By, Bz)
     # calculate the curl of the magnetic field
-    jax.debug.print("Curl B Mean Magnitude: {}", jnp.mean(jnp.sqrt(curlx**2 + curly**2 + curlz**2)))
-    jax.debug.print("Current Density Mean Magnitude: {}", jnp.mean(jnp.sqrt(Jx**2 + Jy**2 + Jz**2)))
+    # jax.debug.print("Curl B Mean Magnitude: {}", jnp.mean(jnp.sqrt(curlx**2 + curly**2 + curlz**2)))
+    # jax.debug.print("Current Density Mean Magnitude: {}", jnp.mean(jnp.sqrt(Jx**2 + Jy**2 + Jz**2)))
 
     Ex = Ex.at[:,:,:].add( ( C**2 * curlx - Jx / eps ) * dt )
     Ey = Ey.at[:,:,:].add( ( C**2 * curly - Jy / eps ) * dt )
@@ -281,10 +282,38 @@ def update_B(grid, staggered_grid, E, B, world, constants, curl_func):
     Bx, By, Bz = B
 
     curlx, curly, curlz = curl_func(Ex, Ey, Ez)
-    jax.debug.print("Curl E Mean Magnitude: {}", jnp.mean(jnp.sqrt(curlx**2 + curly**2 + curlz**2)))
+    # jax.debug.print("Curl E Mean Magnitude: {}", jnp.mean(jnp.sqrt(curlx**2 + curly**2 + curlz**2)))
     # calculate the curl of the electric field
     Bx = Bx.at[:,:,:].add(-1*dt*curlx)
     By = By.at[:,:,:].add(-1*dt*curly)
     Bz = Bz.at[:,:,:].add(-1*dt*curlz)
 
     return Bx, By, Bz
+
+@jit
+def apply_friedman_filter(E, alpha=0.1):
+    """
+    Apply the Friedman filter to the electric field components (Ex, Ey, Ez).
+
+    Parameters:
+    - E (tuple): A tuple containing the electric field components (Ex, Ey, Ez).
+    - alpha (float): The smoothing parameter for the Friedman filter.
+
+    Returns:
+    - tuple: Filtered electric field components (Ex, Ey, Ez).
+    """
+    Ex, Ey, Ez = E
+
+    def friedman_filter(field, alpha):
+        filtered_field = alpha * field + (1 - alpha) * (
+            (jnp.roll(field, 1, axis=0) + jnp.roll(field, -1, axis=0) +
+             jnp.roll(field, 1, axis=1) + jnp.roll(field, -1, axis=1) +
+             jnp.roll(field, 1, axis=2) + jnp.roll(field, -1, axis=2)) / 6
+        )
+        return filtered_field
+
+    Ex_filtered = friedman_filter(Ex, alpha)
+    Ey_filtered = friedman_filter(Ey, alpha)
+    Ez_filtered = friedman_filter(Ez, alpha)
+
+    return Ex_filtered, Ey_filtered, Ez_filtered

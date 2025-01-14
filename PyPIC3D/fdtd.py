@@ -85,12 +85,27 @@ def centered_finite_difference_curl(field_x, field_y, field_z, dx, dy, dz, bc):
         field_y = apply_zero_boundary_condition(field_y)
         field_z = apply_zero_boundary_condition(field_z)
 
-    curl_x = (jnp.roll(field_z, shift=-1, axis=1) - jnp.roll(field_z, shift=1, axis=1)) / (2 * dy) - \
-                (jnp.roll(field_y, shift=-1, axis=2) - jnp.roll(field_y, shift=1, axis=2)) / (2 * dz)
-    curl_y = (jnp.roll(field_x, shift=-1, axis=2) - jnp.roll(field_x, shift=1, axis=2)) / (2 * dz) - \
-                (jnp.roll(field_z, shift=-1, axis=0) - jnp.roll(field_z, shift=1, axis=0)) / (2 * dx)
-    curl_z = (jnp.roll(field_y, shift=-1, axis=0) - jnp.roll(field_y, shift=1, axis=0)) / (2 * dx) - \
-                (jnp.roll(field_x, shift=-1, axis=1) - jnp.roll(field_x, shift=1, axis=1)) / (2 * dy)
+    # curl_x = (jnp.roll(field_z, shift=-1, axis=1) - jnp.roll(field_z, shift=1, axis=1)) / (2 * dy) - \
+    #             (jnp.roll(field_y, shift=-1, axis=2) - jnp.roll(field_y, shift=1, axis=2)) / (2 * dz)
+    # curl_y = (jnp.roll(field_x, shift=-1, axis=2) - jnp.roll(field_x, shift=1, axis=2)) / (2 * dz) - \
+    #             (jnp.roll(field_z, shift=-1, axis=0) - jnp.roll(field_z, shift=1, axis=0)) / (2 * dx)
+    # curl_z = (jnp.roll(field_y, shift=-1, axis=0) - jnp.roll(field_y, shift=1, axis=0)) / (2 * dx) - \
+    #             (jnp.roll(field_x, shift=-1, axis=1) - jnp.roll(field_x, shift=1, axis=1)) / (2 * dy)
+
+    dfx_dy = (jnp.roll(field_x, 1, axis=1) - jnp.roll(field_x, -1, axis=1)) / (2 * dy)
+    dfx_dz = (jnp.roll(field_x, 1, axis=2) - jnp.roll(field_x, -1, axis=2)) / (2 * dz)
+    # calculate the partial derivative of the x-component of the field with respect to y and z
+    dfy_dx = (jnp.roll(field_y, 1, axis=2) - jnp.roll(field_y, -1, axis=2)) / (2 * dz)
+    dfy_dz = (jnp.roll(field_y, 1, axis=0) - jnp.roll(field_y, -1, axis=0)) / (2 * dx)
+    # calculate the partial derivative of the y-component of the field with respect to x and z
+    dfz_dx = (jnp.roll(field_z, 1, axis=0) - jnp.roll(field_z, -1, axis=0)) / (2 * dx)
+    dfz_dy = (jnp.roll(field_z, 1, axis=1) - jnp.roll(field_z, -1, axis=1)) / (2 * dy)
+    # calculate the partial derivative of the z-component of the field with respect to x and y
+
+    curl_x = dfz_dy - dfy_dz
+    curl_y = dfx_dz - dfz_dx
+    curl_z = dfy_dx - dfx_dy
+    # calculate the curl of the field
 
     if bc == 'neumann':
         curl_x = apply_zero_boundary_condition(curl_x)
