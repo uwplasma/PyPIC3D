@@ -12,7 +12,7 @@ from pyevtk.hl import gridToVTK
 import functools
 from functools import partial
 
-from PyPIC3D.utils import interpolate_and_stagger_field, interpolate_field, use_gpu_if_set
+from PyPIC3D.utils import interpolate_field, use_gpu_if_set
 from PyPIC3D.particle import particle_species
 from PyPIC3D.J import compute_current_density
 

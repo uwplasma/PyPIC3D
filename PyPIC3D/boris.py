@@ -12,7 +12,7 @@ from pyevtk.hl import gridToVTK
 import functools
 from functools import partial
 
-from PyPIC3D.utils import use_gpu_if_set, interpolate_and_stagger_field, interpolate_field, trilinear_interpolation
+from PyPIC3D.utils import use_gpu_if_set, interpolate_field
 
 @jit
 @use_gpu_if_set
@@ -75,16 +75,16 @@ def boris(q, m, x, y, z, vx, vy, vz, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_gri
     tuple: Updated velocity components (newvx, newvy, newvz).
     """
 
-    efield_atx = interpolate_field(Ex, grid, x, y, z)
-    efield_aty = interpolate_field(Ey, grid, x, y, z)
-    efield_atz = interpolate_field(Ez, grid, x, y, z)
+    efield_atx = trilinear_interpolation(Ex, grid, x, y, z)
+    efield_aty = trilinear_interpolation(Ey, grid, x, y, z)
+    efield_atz = trilinear_interpolation(Ez, grid, x, y, z)
     # interpolate the electric field component arrays and calculate the e field at the particle positions
     ygrid, xgrid, zgrid = grid
     ystagger, xstagger, zstagger = staggered_grid
 
-    bfield_atx = interpolate_field(Bx, (xstagger, ygrid, zgrid), x, y, z)
-    bfield_aty = interpolate_field(By, (xgrid, ystagger, zgrid), x, y, z)
-    bfield_atz = interpolate_field(Bz, (xgrid, ygrid, zstagger), x, y, z)
+    bfield_atx = trilinear_interpolation(Bx, (xstagger, ygrid, zgrid), x, y, z)
+    bfield_aty = trilinear_interpolation(By, (xgrid, ystagger, zgrid), x, y, z)
+    bfield_atz = trilinear_interpolation(Bz, (xgrid, ygrid, zstagger), x, y, z)
     # interpolate the magnetic field component arrays and calculate the b field at the particle positions
     vxminus = vx + q*dt/(2*m)*efield_atx
     vyminus = vy + q*dt/(2*m)*efield_aty
@@ -114,3 +114,41 @@ def boris(q, m, x, y, z, vx, vy, vz, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_gri
     newvz = vzplus + q*dt/(2*m)*efield_atz
     # calculate the new velocity
     return newvx, newvy, newvz
+
+@jit
+def trilinear_interpolation(field, grid, x, y, z):
+    """
+    Perform trilinear interpolation on a 3D field at given (x, y, z) coordinates.
+
+    Parameters:
+    field (ndarray): The 3D field to interpolate.
+    grid (tuple): A tuple of three arrays representing the grid points in the x, y, and z directions.
+    x (ndarray): The x-coordinates where interpolation is desired.
+    y (ndarray): The y-coordinates where interpolation is desired.
+    z (ndarray): The z-coordinates where interpolation is desired.
+
+    Returns:
+    ndarray: Interpolated values at the specified (x, y, z) coordinates.
+    """
+    x_grid, y_grid, z_grid = grid
+    x_idx = jnp.searchsorted(x_grid, x) - 1
+    y_idx = jnp.searchsorted(y_grid, y) - 1
+    z_idx = jnp.searchsorted(z_grid, z) - 1
+
+    x0, x1 = x_grid[x_idx], x_grid[x_idx + 1]
+    y0, y1 = y_grid[y_idx], y_grid[y_idx + 1]
+    z0, z1 = z_grid[z_idx], z_grid[z_idx + 1]
+
+    xd = (x - x0) / (x1 - x0)
+    yd = (y - y0) / (y1 - y0)
+    zd = (z - z0) / (z1 - z0)
+
+    c00 = field[x_idx, y_idx, z_idx] * (1 - xd) + field[x_idx + 1, y_idx, z_idx] * xd
+    c01 = field[x_idx, y_idx, z_idx + 1] * (1 - xd) + field[x_idx + 1, y_idx, z_idx + 1] * xd
+    c10 = field[x_idx, y_idx + 1, z_idx] * (1 - xd) + field[x_idx + 1, y_idx + 1, z_idx] * xd
+    c11 = field[x_idx, y_idx + 1, z_idx + 1] * (1 - xd) + field[x_idx + 1, y_idx + 1, z_idx + 1] * xd
+
+    c0 = c00 * (1 - yd) + c10 * yd
+    c1 = c01 * (1 - yd) + c11 * yd
+
+    return c0 * (1 - zd) + c1 * zd
