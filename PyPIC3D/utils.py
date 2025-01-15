@@ -478,65 +478,65 @@ def interpolate_field(field, grid, x, y, z):
     return interpolate(points)
 
 
-def trilinear_interpolation(field, grid, x, y, z):
-    """
-    Perform trilinear interpolation on a 3D field at given (x, y, z) coordinates.
+# def trilinear_interpolation(field, grid, x, y, z):
+#     """
+#     Perform trilinear interpolation on a 3D field at given (x, y, z) coordinates.
 
-    Parameters:
-    field (ndarray): The 3D field to interpolate.
-    grid (tuple): A tuple of three arrays representing the grid points in the x, y, and z directions.
-    x (ndarray): The x-coordinates where interpolation is desired.
-    y (ndarray): The y-coordinates where interpolation is desired.
-    z (ndarray): The z-coordinates where interpolation is desired.
+#     Parameters:
+#     field (ndarray): The 3D field to interpolate.
+#     grid (tuple): A tuple of three arrays representing the grid points in the x, y, and z directions.
+#     x (ndarray): The x-coordinates where interpolation is desired.
+#     y (ndarray): The y-coordinates where interpolation is desired.
+#     z (ndarray): The z-coordinates where interpolation is desired.
 
-    Returns:
-    ndarray: Interpolated values at the specified (x, y, z) coordinates.
-    """
-    x_grid, y_grid, z_grid = grid
-    x_idx = jnp.searchsorted(x_grid, x) - 1
-    y_idx = jnp.searchsorted(y_grid, y) - 1
-    z_idx = jnp.searchsorted(z_grid, z) - 1
+#     Returns:
+#     ndarray: Interpolated values at the specified (x, y, z) coordinates.
+#     """
+#     x_grid, y_grid, z_grid = grid
+#     x_idx = jnp.searchsorted(x_grid, x) - 1
+#     y_idx = jnp.searchsorted(y_grid, y) - 1
+#     z_idx = jnp.searchsorted(z_grid, z) - 1
 
-    x0, x1 = x_grid[x_idx], x_grid[x_idx + 1]
-    y0, y1 = y_grid[y_idx], y_grid[y_idx + 1]
-    z0, z1 = z_grid[z_idx], z_grid[z_idx + 1]
+#     x0, x1 = x_grid[x_idx], x_grid[x_idx + 1]
+#     y0, y1 = y_grid[y_idx], y_grid[y_idx + 1]
+#     z0, z1 = z_grid[z_idx], z_grid[z_idx + 1]
 
-    xd = (x - x0) / (x1 - x0)
-    yd = (y - y0) / (y1 - y0)
-    zd = (z - z0) / (z1 - z0)
+#     xd = (x - x0) / (x1 - x0)
+#     yd = (y - y0) / (y1 - y0)
+#     zd = (z - z0) / (z1 - z0)
 
-    c00 = field[x_idx, y_idx, z_idx] * (1 - xd) + field[x_idx + 1, y_idx, z_idx] * xd
-    c01 = field[x_idx, y_idx, z_idx + 1] * (1 - xd) + field[x_idx + 1, y_idx, z_idx + 1] * xd
-    c10 = field[x_idx, y_idx + 1, z_idx] * (1 - xd) + field[x_idx + 1, y_idx + 1, z_idx] * xd
-    c11 = field[x_idx, y_idx + 1, z_idx + 1] * (1 - xd) + field[x_idx + 1, y_idx + 1, z_idx + 1] * xd
+#     c00 = field[x_idx, y_idx, z_idx] * (1 - xd) + field[x_idx + 1, y_idx, z_idx] * xd
+#     c01 = field[x_idx, y_idx, z_idx + 1] * (1 - xd) + field[x_idx + 1, y_idx, z_idx + 1] * xd
+#     c10 = field[x_idx, y_idx + 1, z_idx] * (1 - xd) + field[x_idx + 1, y_idx + 1, z_idx] * xd
+#     c11 = field[x_idx, y_idx + 1, z_idx + 1] * (1 - xd) + field[x_idx + 1, y_idx + 1, z_idx + 1] * xd
 
-    c0 = c00 * (1 - yd) + c10 * yd
-    c1 = c01 * (1 - yd) + c11 * yd
+#     c0 = c00 * (1 - yd) + c10 * yd
+#     c1 = c01 * (1 - yd) + c11 * yd
 
-    return c0 * (1 - zd) + c1 * zd
+#     return c0 * (1 - zd) + c1 * zd
 
-@jit
-def interpolate_and_stagger_field(field, grid, staggered_grid):
-    """
-    Interpolates a given field defined on a grid to a staggered grid.
+# @jit
+# def interpolate_and_stagger_field(field, grid, staggered_grid):
+#     """
+#     Interpolates a given field defined on a grid to a staggered grid.
 
-    Parameters:
-    field (array-like): The field values defined on the original grid.
-    grid (array-like): The coordinates of the original grid.
-    staggered_grid (array-like): The coordinates of the staggered grid where the field needs to be interpolated.
+#     Parameters:
+#     field (array-like): The field values defined on the original grid.
+#     grid (array-like): The coordinates of the original grid.
+#     staggered_grid (array-like): The coordinates of the staggered grid where the field needs to be interpolated.
 
-    Returns:
-    array-like: The interpolated field values on the staggered grid.
-    """
+#     Returns:
+#     array-like: The interpolated field values on the staggered grid.
+#     """
 
-    interpolate = jax.scipy.interpolate.RegularGridInterpolator(grid, field, fill_value=0)
-    # create the interpolator
-    mesh = jnp.meshgrid( *staggered_grid, indexing='ij')
-    points = jnp.stack(mesh, axis=-1)
-    # get the points for the interpolation
-    staggered_field = interpolate( points)
-    # interpolate the field to the staggered grid
-    return staggered_field
+#     interpolate = jax.scipy.interpolate.RegularGridInterpolator(grid, field, fill_value=0)
+#     # create the interpolator
+#     mesh = jnp.meshgrid( *staggered_grid, indexing='ij')
+#     points = jnp.stack(mesh, axis=-1)
+#     # get the points for the interpolation
+#     staggered_field = interpolate( points)
+#     # interpolate the field to the staggered grid
+#     return staggered_field
 
 def courant_condition(courant_number, dx, dy, dz, simulation_parameters, constants):
     """
