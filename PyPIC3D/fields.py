@@ -199,7 +199,7 @@ def calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, t, solver, 
             Ez = -Ez
             # multiply by -1 to get the correct direction of the electric field
 
-    Ex, Ey, Ez = apply_friedman_filter((Ex, Ey, Ez), alpha=0.1)
+    #Ex, Ey, Ez = apply_friedman_filter((Ex, Ey, Ez), alpha=0.1)
     # apply the Friedman filter to the electric field components
     return Ex, Ey, Ez, phi, rho
 
@@ -244,9 +244,13 @@ def update_E(grid, staggered_grid, E, B, J, world, constants, curl_func):
     # jax.debug.print("mu: {}", mu)
 
     curlx, curly, curlz = curl_func(Bx, By, Bz)
+
     # calculate the curl of the magnetic field
     # jax.debug.print("Curl B Mean Magnitude: {}", jnp.mean(jnp.sqrt(curlx**2 + curly**2 + curlz**2)))
     # jax.debug.print("Current Density Mean Magnitude: {}", jnp.mean(jnp.sqrt(Jx**2 + Jy**2 + Jz**2)))
+
+    #jax.debug.print("Max Magnitude of J: {}", jnp.max(jnp.sqrt(Jx**2 + Jy**2 + Jz**2)))
+    #jax.debug.print("Max Magnitude of Curl B: {}", jnp.max(jnp.sqrt(curlx**2 + curly**2 + curlz**2)))
 
     Ex = Ex.at[:,:,:].add( ( C**2 * curlx - Jx / eps ) * dt )
     Ey = Ey.at[:,:,:].add( ( C**2 * curly - Jy / eps ) * dt )
@@ -282,7 +286,7 @@ def update_B(grid, staggered_grid, E, B, world, constants, curl_func):
     Bx, By, Bz = B
 
     curlx, curly, curlz = curl_func(Ex, Ey, Ez)
-    # jax.debug.print("Curl E Mean Magnitude: {}", jnp.mean(jnp.sqrt(curlx**2 + curly**2 + curlz**2)))
+    #jax.debug.print("Curl E Mean Magnitude: {}", jnp.max(jnp.sqrt(curlx**2 + curly**2 + curlz**2)))
     # calculate the curl of the electric field
     Bx = Bx.at[:,:,:].add(-1*dt*curlx)
     By = By.at[:,:,:].add(-1*dt*curly)
