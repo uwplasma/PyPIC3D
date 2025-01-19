@@ -66,8 +66,11 @@ def time_loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, Ex_ext
 
     ############### SOLVE E FIELD ############################################################################################
     Ex, Ey, Ez, phi, rho = calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, t, solver, bc, verbose, GPUs, electrostatic)
+    # calculate the electric field using the Poisson equation
+
     if verbose: print(f"Calculating Electric Field, Max Value: {jnp.max(jnp.sqrt(Ex**2 + Ey**2 + Ez**2))}")
-    # print the maximum value of the electric field
+    if verbose: print(f"Calculating Magnetic Field, Max Value: {jnp.max(jnp.sqrt(Bx**2 + By**2 + Bz**2))}")
+    # print the maximum value of the electric and magnetic fields
 
     ################ EXTERNAL FIELDS #########################################################################################
     if t < 1:
@@ -100,10 +103,10 @@ def time_loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, Ex_ext
         if verbose: print(f"Calculating Current Density, Max Value: {jnp.max(jnp.sqrt(Jx**2 + Jy**2 + Jz**2))}")
         Ex, Ey, Ez = update_E(E_grid, B_grid, (Ex, Ey, Ez), (Bx, By, Bz), (Jx, Jy, Jz), world, constants, curl_func)
         # update the electric field using the curl of the magnetic field
-        Bx, By, Bz = update_B(E_grid, B_grid, (Bx, By, Bz), (Ex, Ey, Ez), world, constants, curl_func)
+        Bx, By, Bz = update_B(E_grid, B_grid, (Ex, Ey, Ez), (Bx, By, Bz), world, constants, curl_func)
         # update the magnetic field using the curl of the electric field
-        if solver == 'spectral':
-            check_nyquist_criterion(Ex, Ey, Ez, Bx, By, Bz, world)
+        #if solver == 'spectral':
+            #check_nyquist_criterion(Ex, Ey, Ez, Bx, By, Bz, world)
             # check if the spectral solver can resolve the highest frequencies in the fields
 
     for pec in pecs:

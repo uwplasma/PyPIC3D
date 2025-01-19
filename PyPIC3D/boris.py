@@ -75,16 +75,16 @@ def boris(q, m, x, y, z, vx, vy, vz, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_gri
     tuple: Updated velocity components (newvx, newvy, newvz).
     """
 
-    efield_atx = trilinear_interpolation(Ex, grid, x, y, z)
-    efield_aty = trilinear_interpolation(Ey, grid, x, y, z)
-    efield_atz = trilinear_interpolation(Ez, grid, x, y, z)
+    efield_atx = interpolate_field(Ex, grid, x, y, z)
+    efield_aty = interpolate_field(Ey, grid, x, y, z)
+    efield_atz = interpolate_field(Ez, grid, x, y, z)
     # interpolate the electric field component arrays and calculate the e field at the particle positions
     ygrid, xgrid, zgrid = grid
     ystagger, xstagger, zstagger = staggered_grid
 
-    bfield_atx = trilinear_interpolation(Bx, (xstagger, ygrid, zgrid), x, y, z)
-    bfield_aty = trilinear_interpolation(By, (xgrid, ystagger, zgrid), x, y, z)
-    bfield_atz = trilinear_interpolation(Bz, (xgrid, ygrid, zstagger), x, y, z)
+    bfield_atx = interpolate_field(Bx, (xstagger, ygrid, zgrid), x, y, z)
+    bfield_aty = interpolate_field(By, (xgrid, ystagger, zgrid), x, y, z)
+    bfield_atz = interpolate_field(Bz, (xgrid, ygrid, zstagger), x, y, z)
     # interpolate the magnetic field component arrays and calculate the b field at the particle positions
     vxminus = vx + q*dt/(2*m)*efield_atx
     vyminus = vy + q*dt/(2*m)*efield_aty
