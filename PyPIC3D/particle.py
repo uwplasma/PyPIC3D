@@ -450,17 +450,19 @@ class particle_species:
         self.x3 = jnp.where(self.x3 < -z_wind/2,  z_wind/2, self.x3)
 
     def reflecting_boundary_condition(self, x_wind, y_wind, z_wind):
-        #self.x1 = jnp.where(self.x1 > x_wind/2, x_wind/2, self.x1)
-        #self.x1 = jnp.where(self.x1 < -x_wind/2, -x_wind/2, self.x1)
+
         self.v1 = jnp.where((self.x1 > x_wind/2) | (self.x1 < -x_wind/2), -self.v1, self.v1)
+        self.x1 = jnp.where(self.x1 > x_wind/2, x_wind/2, self.x1)
+        self.x1 = jnp.where(self.x1 < -x_wind/2, -x_wind/2, self.x1)
 
-        #self.x2 = jnp.where(self.x2 > y_wind/2, y_wind/2, self.x2)
-        #self.x2 = jnp.where(self.x2 < -y_wind/2, -y_wind/2, self.x2)
         self.v2 = jnp.where((self.x2 > y_wind/2) | (self.x2 < -y_wind/2), -self.v2, self.v2)
+        self.x2 = jnp.where(self.x2 > y_wind/2, y_wind/2, self.x2)
+        self.x2 = jnp.where(self.x2 < -y_wind/2, -y_wind/2, self.x2)
 
-        #self.x3 = jnp.where(self.x3 > z_wind/2, z_wind/2, self.x3)
-        #self.x3 = jnp.where(self.x3 < -z_wind/2, -z_wind/2, self.x3)
         self.v3 = jnp.where((self.x3 > z_wind/2) | (self.x3 < -z_wind/2), -self.v3, self.v3)
+        self.x3 = jnp.where(self.x3 > z_wind/2, z_wind/2, self.x3)
+        self.x3 = jnp.where(self.x3 < -z_wind/2, -z_wind/2, self.x3)
+
 
     def update_position(self, dt, x_wind, y_wind, z_wind):
         if self.update_pos:
