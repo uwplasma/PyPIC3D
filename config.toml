@@ -54,19 +54,3 @@ update_v   = true
 #zstop  = 0.001
 
 
-[field1]
-name = 'external_Ex'
-type = 0
-path = '/home/christopherwoolford/Documents/PyPIC3D/longitudinal_Ex.npy'
-
-
-[field2]
-name = 'external_Ey'
-type = 1
-path = '/home/christopherwoolford/Documents/PyPIC3D/longitudinal_Ey.npy'
-
-
-[field3]
-name = 'external_Ex'
-type = 2
-path = '/home/christopherwoolford/Documents/PyPIC3D/longitudinal_Ez.npy'
