@@ -3,7 +3,6 @@
 # to test the feasibility of using Jax for plasma simulations to take advantage of
 # Jax's auto-differentiation capabilities
 
-
 ########################################## IMPORT LIBRARIES #############################################
 import time
 import jax
@@ -75,51 +74,6 @@ loop = partial(time_loop, Ex_ext=Ex_ext, Ey_ext=Ey_ext, Ez_ext=Ez_ext, Bx_ext=Bx
 
 ############################################################################################################
 
-# N_particles = particles[0].get_number_of_particles()
-# Te = particles[0].get_temperature()
-# me = particles[0].get_mass()
-# q_e = particles[0].get_charge()
-
-# weight = (
-#     constants['eps']
-#     *me
-#     *constants['C']**2
-#     /q_e**2
-#     *world['Nx']**2
-#     /world['x_wind']
-#     /(2*N_particles)
-#     *plasma_parameters['Thermal Velocity']**2
-#     /plasma_parameters['dx per debye length']**2).item()
-
-# particles[0].set_weight(weight)
-# # set the weight of the particles
-# me = particles[0].get_mass()
-
-# x_wind, y_wind, z_wind = world['x_wind'], world['y_wind'], world['z_wind']
-# electron_x, electron_y, electron_z = particles[0].get_position()
-# ev_x, ev_y, ev_z = particles[0].get_velocity()
-# alternating_ones = (-1)**jnp.array(range(0,N_particles))
-# relative_drift_velocity = 0.5*jnp.sqrt(3*constants['kb']*Te/me)
-# perturbation = relative_drift_velocity*alternating_ones
-# perturbation *= (1 + 0.1*jnp.sin(2*jnp.pi*electron_x/x_wind))
-# ev_x = perturbation
-# ev_y = jnp.zeros(N_particles)
-# ev_z = jnp.zeros(N_particles)
-# particles[0].set_velocity(ev_x, ev_y, ev_z)
-
-# #electron_x = jnp.zeros(N_particles)
-# electron_y = jnp.zeros(N_particles)# jnp.ones(N_particles) * y_wind/4*alternating_ones
-# electron_z = jnp.zeros(N_particles)
-# particles[0].set_position(electron_x, electron_y, electron_z)
-# #put electrons with opposite velocities in the same position along y
-
-# np.save('electron_x_positions.npy', electron_x)
-# np.save('electron_y_positions.npy', electron_y)
-# np.save('electron_z_positions.npy', electron_z)
-# np.save('electron_x_velocities.npy', ev_x)
-# np.save('electron_y_velocities.npy', ev_y)
-# np.save('electron_z_velocities.npy', ev_z)
-# exit()
 
 ###################################################### SIMULATION LOOP #####################################
 start = time.time()
@@ -128,21 +82,8 @@ start = time.time()
 for t in tqdm(range(Nt)):
     particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi = loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi)
     # time loop to update the particles and fields
-    plotter(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, M, solver, bc, electrostatic, verbose, GPUs)
+    plotter(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters, solver, bc)
     # plot the data
-
-    curlx, curly, curlz = curl_func(Ex, Ey, Ez)
-    write_data('data/curl_Ex.txt', t * world['dt'], jnp.mean(curlx))
-    write_data('data/curl_Ey.txt', t * world['dt'], jnp.mean(curly))
-    write_data('data/curl_Ez.txt', t * world['dt'], jnp.mean(curlz))
-    # save the data
-    # grad1, grad2, grad3 = kinetic_energy_grad(particles[0])
-    # write_data('data/dKE_dvx.txt', t*world['dt'], jnp.mean(grad1))
-    # write_data('data/dKE_dvy.txt', t*world['dt'], jnp.mean(grad2))
-    # write_data('data/dKE_dvz.txt', t*world['dt'], jnp.mean(grad3))
-    # write the gradient of the kinetic energy with respect to the velocity of the electrons
-
-
 
 end = time.time()
 # end the timer
