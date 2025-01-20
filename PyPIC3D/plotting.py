@@ -148,7 +148,7 @@ def plot_1dposition(x, name, particle):
     plt.close()
 
 
-def plot_positions(particles, t, x_wind, y_wind, z_wind):
+def plot_positions(particles, t, x_wind, y_wind, z_wind, path):
     """
     Makes an interactive 3D plot of the positions of the particles using Plotly.
 
@@ -185,10 +185,10 @@ def plot_positions(particles, t, x_wind, y_wind, z_wind):
         title="Particle Positions"
     )
 
-    if not os.path.exists("plots/positions"):
-        os.makedirs("plots/positions")
+    if not os.path.exists(f"{path}/data/positions"):
+        os.makedirs(f"{path}/data/positions")
 
-    fig.write_html(f"plots/positions/particles.{t:09}.html")
+    fig.write_html(f"{path}/data/positions/particles.{t:09}.html")
 
 
 def plot_velocity_histogram(vx, vy, vz, t, nbins=50):
@@ -307,7 +307,7 @@ def plot_fft(signal, dt, name, savename):
     # plot the fft of a signal
 
 
-def particles_phase_space(particles, world, t, name):
+def particles_phase_space(particles, world, t, name, path):
     """
     Plot the phase space of the particles.
 
@@ -320,12 +320,12 @@ def particles_phase_space(particles, world, t, name):
     None
     """
 
-    if not os.path.exists("plots/phase_space/x"):
-        os.makedirs("plots/phase_space/x")
-    if not os.path.exists("plots/phase_space/y"):
-        os.makedirs("plots/phase_space/y")
-    if not os.path.exists("plots/phase_space/z"):
-        os.makedirs("plots/phase_space/z")
+    if not os.path.exists(f"{path}/phase_space/x"):
+        os.makedirs(f"{path}/phase_space/x")
+    if not os.path.exists(f"{path}/phase_space/y"):
+        os.makedirs(f"{path}/phase_space/y")
+    if not os.path.exists(f"{path}/phase_space/z"):
+        os.makedirs(f"{path}/phase_space/z")
 
     x_wind = world['x_wind']
     y_wind = world['y_wind']
@@ -345,7 +345,7 @@ def particles_phase_space(particles, world, t, name):
     #plt.ylim(-1e10, 1e10)
     plt.xlim(-(2/3)*x_wind, (2/3)*x_wind)
     plt.title(f"{name} Phase Space")
-    plt.savefig(f"plots/phase_space/x/{name}_phase_space.{t:09}.png", dpi=300)
+    plt.savefig(f"{path}/data/phase_space/x/{name}_phase_space.{t:09}.png", dpi=300)
     plt.close()
 
     idx = 0
@@ -358,7 +358,7 @@ def particles_phase_space(particles, world, t, name):
     plt.ylabel("Velocity")
     plt.xlim(-(2/3)*y_wind, (2/3)*y_wind)
     plt.title(f"{name} Phase Space")
-    plt.savefig(f"plots/phase_space/y/{name}_phase_space.{t:09}.png", dpi=150)
+    plt.savefig(f"{path}/data/phase_space/y/{name}_phase_space.{t:09}.png", dpi=150)
     plt.close()
 
     idx = 0
@@ -371,7 +371,7 @@ def particles_phase_space(particles, world, t, name):
     plt.ylabel("Velocity")
     plt.xlim(-(2/3)*z_wind, (2/3)*z_wind)
     plt.title(f"{name} Phase Space")
-    plt.savefig(f"plots/phase_space/z/{name}_phase_space.{t:09}.png", dpi=150)
+    plt.savefig(f"{path}/data/phase_space/z/{name}_phase_space.{t:09}.png", dpi=150)
     plt.close()
 
     # idx = 0
@@ -621,7 +621,7 @@ def write_probe(probe_data, t, filename):
     with open(filename, 'a') as file:
         file.write(f"{t}\t{probe_data}\n")
 
-def plot_slice(field_slice, t, name, world, dt):
+def plot_slice(field_slice, t, name, path, world, dt):
     """
     Plots a 2D slice of a field and saves the plot as a PNG file.
 
@@ -644,7 +644,7 @@ def plot_slice(field_slice, t, name, world, dt):
     plt.imshow(field_slice, origin='lower', extent=[-world['x_wind']/2, world['x_wind']/2, -world['y_wind']/2, world['y_wind']/2])
     plt.colorbar(label=name)
     plt.tight_layout()
-    plt.savefig(f'plots/{name}_slice/{name}_slice_{t:09}.png')
+    plt.savefig(f'{path}/data/{name}_slice/{name}_slice_{t:09}.png', dpi=300)
     plt.close()
 
 def write_data(filename, time, data):
@@ -668,7 +668,7 @@ def field_energy(fieldx, fieldy, fieldz, dx, dy, dz):
     integral_field_squared = jnp.trapezoid(abs_field_squared, dx=dx)
     return 0.5 * integral_field_squared
 
-def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid, B_grid, plotting_parameters, world, constants, solver, bc):
+def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid, B_grid, plotting_parameters, world, constants, solver, bc, output_dir):
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
@@ -677,40 +677,45 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
     Nz = world['Nz']
 
     if plotting_parameters['plotpositions']:
-        plot_positions(particles, t, world['x_wind'], world['y_wind'], world['z_wind'])
+        plot_positions(particles, t, world['x_wind'], world['y_wind'], world['z_wind'], output_dir)
     if plotting_parameters['phaseSpace']:
-        particles_phase_space([particles[0]], world, t, "Particles")
+        particles_phase_space([particles[0]], world, t, "Particles", output_dir)
     if plotting_parameters['plotfields']:
-        # save_vector_field_as_vtk(Ex, Ey, Ez, E_grid, f"plots/fields/E_{t*dt:09}.vtr")
-        # save_vector_field_as_vtk(Bx, By, Bz, B_grid, f"plots/fields/B_{t*dt:09}.vtr")
+        # save_vector_field_as_vtk(Ex, Ey, Ez, E_grid, f"{output_dir}/fields/E_{t*dt:09}.vtr")
+        # save_vector_field_as_vtk(Bx, By, Bz, B_grid, f"{output_dir}/fields/B_{t*dt:09}.vtr")
         # plot_rho(rho, t, "rho", dx, dy, dz)
-        write_data("data/averageE.txt", t*dt, jnp.mean(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)))
-        write_data("data/averageB.txt", t*dt, jnp.mean(jnp.sqrt(Bx**2 + By**2 + Bz**2)))
-        write_data("data/Eprobe.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx-1, Ny-1, Nz-1))
-        write_data("data/electric_field_energy.txt", t*dt, field_energy(Ex, Ey, Ez, dx, dy, dz))
-        write_data("data/magnetic_field_energy.txt", t*dt, field_energy(Bx, By, Bz, dx, dy, dz))
-        write_data("data/Jx_probe.txt", t*dt, jnp.mean(Jx))
-        write_data("data/Jy_probe.txt", t*dt, jnp.mean(Jy))
-        write_data("data/Jz_probe.txt", t*dt, jnp.mean(Jz))
-        plot_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], t, 'E', world, dt)
-        plot_slice(rho[:, :, int(Nz/2)], t, 'rho', world, dt)
+        write_data(f"{output_dir}/data/averageE.txt", t*dt, jnp.mean(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)))
+        write_data(f"{output_dir}/data/averageB.txt", t*dt, jnp.mean(jnp.sqrt(Bx**2 + By**2 + Bz**2)))
+        write_data(f"{output_dir}/data/Eprobe.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx-1, Ny-1, Nz-1))
+        write_data(f"{output_dir}/data/electric_field_energy.txt", t*dt, field_energy(Ex, Ey, Ez, dx, dy, dz))
+        write_data(f"{output_dir}/data/magnetic_field_energy.txt", t*dt, field_energy(Bx, By, Bz, dx, dy, dz))
+        write_data(f"{output_dir}/data/Jx_probe.txt", t*dt, jnp.mean(Jx))
+        write_data(f"{output_dir}/data/Jy_probe.txt", t*dt, jnp.mean(Jy))
+        write_data(f"{output_dir}/data/Jz_probe.txt", t*dt, jnp.mean(Jz))
+        plot_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], t, 'E', output_dir, world, dt)
+        plot_slice(rho[:, :, int(Nz/2)], t, 'rho', output_dir, world, dt)
     if plotting_parameters['plotKE']:
-        write_data("data/kinetic_energy.txt", t*dt, sum(particle.kinetic_energy() for particle in particles))
+        write_data(f"{output_dir}/data/kinetic_energy.txt", t*dt, sum(particle.kinetic_energy() for particle in particles))
     if plotting_parameters['plot_errors']:
-        write_data("data/electric_divergence_errors.txt", t*dt, compute_electric_divergence_error(Ex, Ey, Ez, rho, constants, world, solver, bc))
-        write_data("data/magnetic_divergence_errors.txt", t*dt, compute_magnetic_divergence_error(Bx, By, Bz, world, solver, bc))
+        write_data(f"{output_dir}/data/electric_divergence_errors.txt", t*dt, compute_electric_divergence_error(Ex, Ey, Ez, rho, constants, world, solver, bc))
+        write_data(f"{output_dir}/data/magnetic_divergence_errors.txt", t*dt, compute_magnetic_divergence_error(Bx, By, Bz, world, solver, bc))
 
-def save_avg_positions(t, dt, particles):
-    with open("data/avg_x.txt", "a") as f_avg_x:
+def save_avg_positions(t, dt, particles, output_dir):
+    avg_x_path = os.path.join(output_dir, "data/avg_x.txt")
+    avg_y_path = os.path.join(output_dir, "data/avg_y.txt")
+    avg_z_path = os.path.join(output_dir, "data/avg_z.txt")
+
+    with open(avg_x_path, "a") as f_avg_x:
         f_avg_x.write(f"{t*dt}, {jnp.mean(particles[0].get_position()[0])}\n")
-    with open("data/avg_y.txt", "a") as f_avg_y:
+    with open(avg_y_path, "a") as f_avg_y:
         f_avg_y.write(f"{t*dt}, {jnp.mean(particles[0].get_position()[1])}\n")
-    with open("data/avg_z.txt", "a") as f_avg_z:
+    with open(avg_z_path, "a") as f_avg_z:
         f_avg_z.write(f"{t*dt}, {jnp.mean(particles[0].get_position()[2])}\n")
 
-def save_total_momentum(t, dt, particles):
+def save_total_momentum(t, dt, particles, output_dir):
     p0 = sum(particle.momentum() for particle in particles)
-    with open("data/kinetic_momentum.txt", "a") as f_momentum:
+    filename = os.path.join(output_dir, "data/total_momentum.txt")
+    with open(filename, "a") as f_momentum:
         f_momentum.write(f"{t*dt}, {p0}\n")
 
 def continuity_error(rho, old_rho, particles, world, divergence_func, GPUs):
@@ -741,7 +746,7 @@ def continuity_error(rho, old_rho, particles, world, divergence_func, GPUs):
     return jnp.mean(jnp.abs(continuity_error))
 
 
-def plotter(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, M, solver, bc, electrostatic, verbose, GPUs):
+def plotter(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters, solver, bc):
     """
     Plots and saves various simulation data at specified intervals.
     Parameters:
@@ -766,8 +771,9 @@ def plotter(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, 
     """
 
     dt = world['dt']
+    output_dir = simulation_parameters['output_dir']
 
     if t % plotting_parameters['plotting_interval'] == 0:
-        save_avg_positions(t, dt, particles)
-        save_total_momentum(t, dt, particles)
-        save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid, B_grid, plotting_parameters, world, constants, solver, bc)
+        save_avg_positions(t, dt, particles, output_dir)
+        save_total_momentum(t, dt, particles, output_dir)
+        save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid, B_grid, plotting_parameters, world, constants, solver, bc, output_dir)
