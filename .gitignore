@@ -1,5 +1,4 @@
-plots/
-literature/
+data/
 __pycache__/
 tensorboard/
 *.gif
