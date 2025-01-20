@@ -636,8 +636,8 @@ def plot_slice(field_slice, t, name, path, world, dt):
     None
     """
 
-    if not os.path.exists(f"plots/{name}_slice"):
-        os.makedirs(f'plots/{name}_slice')
+    if not os.path.exists(f"{path}/data/{name}_slice"):
+        os.makedirs(f'{path}/data/{name}_slice')
     # Create directory if it doesn't exist
     
     plt.title(f'{name} at t={t*dt:.2e}s')
