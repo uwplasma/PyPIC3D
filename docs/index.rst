@@ -12,6 +12,7 @@ Welcome to PyPIC3D's documentation!
    solvers
    chargeconservation
    yee
+   demos
 
 Indices and tables
 ==================
