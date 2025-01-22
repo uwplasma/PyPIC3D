@@ -3,8 +3,8 @@ from jax import random
 if __name__ == "__main__":
     # Spatial Grid
     Nx = 50
-    Ny = 10
-    Nz = 10
+    Ny = 50
+    Nz = 50
     x_wind = 1e-3
     y_wind = 1e-3
     z_wind = 1e-3
@@ -17,7 +17,7 @@ if __name__ == "__main__":
     vy = jnp.zeros(N_electrons)
     vz = jnp.zeros(N_electrons)
 
-    vmax = 1e6
+    vmax = 2000
     alternating_ones = jnp.array( [ (-1)**i for i in range(N_electrons) ] )
     vx = vmax * alternating_ones
     # every other electron has a negative velocity
