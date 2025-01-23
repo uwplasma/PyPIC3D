@@ -320,12 +320,12 @@ def particles_phase_space(particles, world, t, name, path):
     None
     """
 
-    if not os.path.exists(f"{path}/phase_space/x"):
-        os.makedirs(f"{path}/phase_space/x")
-    if not os.path.exists(f"{path}/phase_space/y"):
-        os.makedirs(f"{path}/phase_space/y")
-    if not os.path.exists(f"{path}/phase_space/z"):
-        os.makedirs(f"{path}/phase_space/z")
+    if not os.path.exists(f"{path}/data/phase_space/x"):
+        os.makedirs(f"{path}/data/phase_space/x")
+    if not os.path.exists(f"{path}/data/phase_space/y"):
+        os.makedirs(f"{path}/data/phase_space/y")
+    if not os.path.exists(f"{path}/data/phase_space/z"):
+        os.makedirs(f"{path}/data/phase_space/z")
 
     x_wind = world['x_wind']
     y_wind = world['y_wind']
