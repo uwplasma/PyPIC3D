@@ -582,8 +582,17 @@ def plasma_frequency(electrons, world, constants):
     N_electrons = electrons.get_number_of_particles()
     me = electrons.get_mass()
     eps = constants['eps']
-    ne = N_electrons / (x_wind*y_wind*z_wind)
-    return jnp.sqrt(  ne * q_e**2  / (eps*me)  )
+
+    # these values are so small that I was having issues calculating
+    # the plasma frequency with floating point precision so I had to
+    # break it down into smaller parts
+    sqrt_dv = jnp.sqrt( x_wind * y_wind * z_wind )
+    sqrt_ne = jnp.sqrt( N_electrons ) / sqrt_dv
+    sqrt_eps = jnp.sqrt( eps )
+    sqrt_me = jnp.sqrt( me )
+    pf = sqrt_ne * q_e / (sqrt_eps * sqrt_me)
+
+    return pf
 # calculate the expected plasma frequency from analytical theory
 
 def debye_length(electrons, world, constants):
