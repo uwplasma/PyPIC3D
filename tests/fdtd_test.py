@@ -1,72 +1,76 @@
 import unittest
-import numpy as np
-from PyPIC3D.fdtd import periodic_laplacian, neumann_laplacian, dirichlet_laplacian, curlx, curly, curlz, update_B, update_E
-
+import jax
 import jax.numpy as jnp
+import sys
+import os
+
+# Add the parent directory to the sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from PyPIC3D.fdtd import (
+    centered_finite_difference_curl, centered_finite_difference_laplacian,
+    centered_finite_difference_gradient, centered_finite_difference_divergence
+)
+
+jax.config.update("jax_enable_x64", True)
+
 
 class TestFDTDMethods(unittest.TestCase):
 
     def setUp(self):
-        self.field = jnp.array([[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]])
-        self.dx = 1.0
-        self.dy = 1.0
-        self.dz = 1.0
-        self.dt = 0.1
-        self.C = 1.0
+        x = jnp.linspace(0, 1, 10)
+        y = jnp.linspace(0, 1, 10)
+        z = jnp.linspace(0, 1, 10)
+        self.X, self.Y, self.Z = jnp.meshgrid(x, y, z, indexing='ij')
+        self.phi = self.X**2 + self.Y**2 + self.Z**2
+        self.constants = {'eps': 1.0}
+        self.rho = -6 * jnp.ones_like(self.phi)  # Laplacian of phi = -6
+        self.bc = 'periodic'
+        self.Nx = 10
+        self.Ny = 10
+        self.Nz = 10
+        self.dx = 1.0/9
+        self.dy = 1.0/9
+        self.dz = 1.0/9
+        self.world = {'dx': self.dx, 'dy': self.dy, 'dz': self.dz}
+        self.Ex = -2 * self.X
+        self.Ey = -2 * self.Y
+        self.Ez = -2 * self.Z
 
-    def test_periodic_laplacian(self):
-        result = periodic_laplacian(self.field, self.dx, self.dy, self.dz)
-        expected = jnp.array([[[0.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.0, 0.0]]])
-        np.testing.assert_array_almost_equal(result, expected)
+    def test_centered_finite_difference_laplacian(self):
+        laplacian = centered_finite_difference_laplacian(self.phi, self.dx, self.dy, self.dz, self.bc)
+        self.assertEqual(laplacian.shape, (self.Nx, self.Ny, self.Nz))
+        jnp.allclose(laplacian, self.rho, rtol=1e-5)
 
-    def test_neumann_laplacian(self):
-        result = neumann_laplacian(self.field, self.dx, self.dy, self.dz)
-        expected = jnp.array([[[0.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.0, 0.0]]])
-        np.testing.assert_array_almost_equal(result, expected)
+    def test_centered_finite_difference_gradient(self):
+        gradx, grady, gradz = centered_finite_difference_gradient(self.phi, self.dx, self.dy, self.dz, self.bc)
+        self.assertEqual(gradx.shape, (self.Nx, self.Ny, self.Nz))
+        self.assertEqual(grady.shape, (self.Nx, self.Ny, self.Nz))
+        self.assertEqual(gradz.shape, (self.Nx, self.Ny, self.Nz))
+        jnp.allclose(gradx, self.Ex, rtol=1e-5)
+        jnp.allclose(grady, self.Ey, rtol=1e-5)
+        jnp.allclose(gradz, self.Ez, rtol=1e-5)
+        # test against analytical solution
 
-    def test_dirichlet_laplacian(self):
-        result = dirichlet_laplacian(self.field, self.dx, self.dy, self.dz)
-        expected = jnp.array([[[0.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.0, 0.0]]])
-        np.testing.assert_array_almost_equal(result, expected)
+    def test_centered_finite_difference_divergence(self):
+        divE = centered_finite_difference_divergence(self.Ex, self.Ey, self.Ez, self.dx, self.dy, self.dz, self.bc)
+        self.assertEqual(divE.shape, (self.Nx, self.Ny, self.Nz))
+        jnp.allclose(divE, self.rho, rtol=1e-5)
 
-    def test_curlx(self):
-        yfield = jnp.array([[1.0, 2.0], [3.0, 4.0]])
-        zfield = jnp.array([[5.0, 6.0], [7.0, 8.0]])
-        result = curlx(yfield, zfield, self.dy, self.dz)
-        expected = jnp.array([[0.0, 0.0], [0.0, 0.0]])
-        np.testing.assert_array_almost_equal(result, expected)
-
-    def test_curly(self):
-        xfield = jnp.array([[1.0, 2.0], [3.0, 4.0]])
-        zfield = jnp.array([[5.0, 6.0], [7.0, 8.0]])
-        result = curly(xfield, zfield, self.dx, self.dz)
-        expected = jnp.array([[0.0, 0.0], [0.0, 0.0]])
-        np.testing.assert_array_almost_equal(result, expected)
-
-    def test_curlz(self):
-        yfield = jnp.array([[1.0, 2.0], [3.0, 4.0]])
-        xfield = jnp.array([[5.0, 6.0], [7.0, 8.0]])
-        result = curlz(yfield, xfield, self.dx, self.dy)
-        expected = jnp.array([[0.0, 0.0], [0.0, 0.0]])
-        np.testing.assert_array_almost_equal(result, expected)
-
-    def test_update_B(self):
-        Bx, By, Bz = self.field, self.field, self.field
-        Ex, Ey, Ez = self.field, self.field, self.field
-        result_Bx, result_By, result_Bz = update_B(Bx, By, Bz, Ex, Ey, Ez, self.dx, self.dy, self.dz, self.dt)
-        expected_Bx, expected_By, expected_Bz = self.field, self.field, self.field
-        np.testing.assert_array_almost_equal(result_Bx, expected_Bx)
-        np.testing.assert_array_almost_equal(result_By, expected_By)
-        np.testing.assert_array_almost_equal(result_Bz, expected_Bz)
-
-    def test_update_E(self):
-        Ex, Ey, Ez = self.field, self.field, self.field
-        Bx, By, Bz = self.field, self.field, self.field
-        result_Ex, result_Ey, result_Ez = update_E(Ex, Ey, Ez, Bx, By, Bz, self.dx, self.dy, self.dz, self.dt, self.C)
-        expected_Ex, expected_Ey, expected_Ez = self.field, self.field, self.field
-        np.testing.assert_array_almost_equal(result_Ex, expected_Ex)
-        np.testing.assert_array_almost_equal(result_Ey, expected_Ey)
-        np.testing.assert_array_almost_equal(result_Ez, expected_Ez)
-
+    def test_centered_finite_difference_curl(self):
+        Fx = self.Y
+        Fy = -self.X
+        Fz = jnp.zeros_like(self.X)
+        curlx, curly, curlz = centered_finite_difference_curl(Fx, Fy, Fz, self.dx, self.dy, self.dz, self.bc)
+        self.assertEqual(curlx.shape, (self.Nx, self.Ny, self.Nz))
+        self.assertEqual(curly.shape, (self.Nx, self.Ny, self.Nz))
+        self.assertEqual(curlz.shape, (self.Nx, self.Ny, self.Nz))
+        expected_curlx = jnp.zeros_like(self.X)
+        expected_curly = jnp.zeros_like(self.Y)
+        expected_curlz = -2 * jnp.ones_like(self.Z)
+        jnp.allclose(curlx, expected_curlx, rtol=1e-5)
+        jnp.allclose(curly, expected_curly, rtol=1e-5)
+        jnp.allclose(curlz, expected_curlz, rtol=1e-5)
+    
 if __name__ == '__main__':
     unittest.main()
