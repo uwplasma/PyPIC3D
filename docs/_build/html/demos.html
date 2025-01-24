@@ -5,7 +5,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Usage &#8212; PyPIC3D 0.1.0 documentation</title>
+    <title>Demos &#8212; PyPIC3D 0.1.0 documentation</title>
     <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=d1102ebc" />
     <link rel="stylesheet" type="text/css" href="_static/basic.css?v=686e5160" />
     <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
@@ -14,8 +14,7 @@
     <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Solvers Overview" href="solvers.html" />
-    <link rel="prev" title="Welcome to PyPIC3D’s documentation!" href="index.html" />
+    <link rel="prev" title="Yee Grid" href="yee.html" />
    
   <link rel="stylesheet" href="_static/custom.css" type="text/css" />
   
@@ -33,19 +32,28 @@
 
           <div class="body" role="main">
             
-  <section id="usage">
-<h1>Usage<a class="headerlink" href="#usage" title="Link to this heading">¶</a></h1>
-<p>This section explains how to use the <cite>PyPIC3D</cite> code.</p>
-<section id="initialization">
-<h2>Initialization<a class="headerlink" href="#initialization" title="Link to this heading">¶</a></h2>
-<p>To initialize the simulation, use the <cite>initialize_simulation</cite> function:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">PyPIC3D.initialization</span> <span class="kn">import</span> <span class="n">initialize_simulation</span>
-
-<span class="n">config_file</span> <span class="o">=</span> <span class="s1">&#39;path/to/config.toml&#39;</span>
-<span class="n">simulation_data</span> <span class="o">=</span> <span class="n">initialize_simulation</span><span class="p">(</span><span class="n">config_file</span><span class="p">)</span>
+  <section id="demos">
+<h1>Demos<a class="headerlink" href="#demos" title="Link to this heading">¶</a></h1>
+<p>This section provides a list of demos that showcase the capabilities of the <cite>PyPIC3D</cite> code. Each demo includes a brief description and instructions on how to run it.</p>
+<section id="two-stream-instability">
+<h2>Two Stream Instability<a class="headerlink" href="#two-stream-instability" title="Link to this heading">¶</a></h2>
+<p>The two stream instability demo showcases the phenomenon where two streams of charged particles interact and create instabilities. This is a common occurrence in plasma physics and is important for understanding various space and laboratory plasmas.</p>
+<p>In this demo, we simulate two counter-streaming electron beams and observe the growth of instabilities over time. The simulation uses a Particle-In-Cell (PIC) method to model the behavior of the particles and the resulting electric fields.</p>
+<p>Key Features:</p>
+<blockquote>
+<div><p>Simulation of two counter-streaming electron beams.</p>
+<p>Visualization of particle distribution and electric field evolution.</p>
+<p>Analysis of instability growth rates.</p>
+</div></blockquote>
+<p>To run the demo, do the following:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Navigate to the two_stream demo directory</span>
+<span class="nb">cd</span><span class="w"> </span>demos/two_stream
+<span class="c1"># Generate the initial particle distribution</span>
+python<span class="w"> </span>gen_data.py
+<span class="c1"># Run the main simulation with the configuration file</span>
+python<span class="w"> </span>main.py<span class="w"> </span>--config<span class="w"> </span>demos/two_stream/two_stream.toml
 </pre></div>
 </div>
-<p>For more details, refer to the function documentation in the code.</p>
 </section>
 </section>
 
@@ -77,22 +85,21 @@
 <script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
 <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Usage</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#initialization">Initialization</a></li>
-</ul>
-</li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Usage</a></li>
 <li class="toctree-l1"><a class="reference internal" href="solvers.html">Solvers Overview</a></li>
 <li class="toctree-l1"><a class="reference internal" href="chargeconservation.html">Charge Conservation Method</a></li>
 <li class="toctree-l1"><a class="reference internal" href="yee.html">Yee Grid</a></li>
-<li class="toctree-l1"><a class="reference internal" href="demos.html">Two Stream Instability Demo</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Demos</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#two-stream-instability">Two Stream Instability</a></li>
+</ul>
+</li>
 </ul>
 
 <div class="relations">
 <h3>Related Topics</h3>
 <ul>
   <li><a href="index.html">Documentation overview</a><ul>
-      <li>Previous: <a href="index.html" title="previous chapter">Welcome to PyPIC3D’s documentation!</a></li>
-      <li>Next: <a href="solvers.html" title="next chapter">Solvers Overview</a></li>
+      <li>Previous: <a href="yee.html" title="previous chapter">Yee Grid</a></li>
   </ul></li>
 </ul>
 </div>
@@ -116,7 +123,7 @@
       &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
       
       |
-      <a href="_sources/usage.rst.txt"
+      <a href="_sources/demos.rst.txt"
           rel="nofollow">Page source</a>
     </div>
 
