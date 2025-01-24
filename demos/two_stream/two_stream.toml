@@ -1,7 +1,7 @@
 # This is a configuration file for PyPIC3D
 [simulation_parameters]
 name = "Demo of a TS instability with 10,000 electrons"
-t_wind = 10e-9 # 150e-9
+t_wind = 10e-9
 output_dir = "/home/christopherwoolford/Documents/PyPIC3D"
 bc = 'periodic'
 solver = 'spectral' # 'spectral'
@@ -31,7 +31,7 @@ mass   = 9.1093837e-31
 temperature = 1
 update_pos = true
 update_v = true
-weight = 500
+weight = 250
 initial_vx = 'demos/two_stream/electron_x_velocities.npy'
 initial_vy = 'demos/two_stream/electron_y_velocities.npy'
 initial_vz = 'demos/two_stream/electron_z_velocities.npy'
