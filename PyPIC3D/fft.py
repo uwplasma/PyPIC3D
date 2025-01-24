@@ -1,32 +1,55 @@
 import jax
 import jax.numpy as jnp
-from jax.experimental import shard_map
+from   jax.sharding import Mesh, PartitionSpec as P
+from jax.experimental.shard_map import shard_map
+from functools import partial
 
-@jax.jit
-def fft_slab_decomposition(field):
+@partial(jax.jit, static_argnums=(1,))
+def fft_slab_decomposition(field, axis=2):
     """
     Perform a slab decomposition of a 3D field and apply FFT to each slab in parallel.
 
     Args:
         field (jnp.ndarray): A 3D array with shape (Nx, Ny, Nz) representing the field to be transformed.
+        axis (int): The axis along which to perform the FFT. Default is 2.
 
     Returns:
         jnp.ndarray: A 3D array with the same shape as the input field, containing the FFT-transformed data.
     """
+
+    axes = [0, 1, 2]
+    axes.remove(axis)
     # Assume field is a 3D array with shape (Nx, Ny, Nz)
-    slabs = jnp.array_split(field, jax.device_count(), axis=2)  # Split along z-axis
+
+    N = field.shape[axes[0]]
+    # get the number of slabs
+
+    slabs = jnp.split(field, N, axis=axes[0]) # split along different axis
+
+
+    #print("Field shape:", field.shape)
+    #print("Slabs shape:", [slab.shape for slab in slabs])
+
 
     def fft_slab(slab):
-        return jnp.fft.fftn(slab)
+        return jnp.fft.fft(jnp.array(slab), axis=axis)
 
     # Use shard_map to apply FFT to each slab in parallel
-    fft_slabs = shard_map(fft_slab, slabs)
+    mesh = Mesh(jax.devices(), ('i',))
+    f_shmapped = shard_map(fft_slab, mesh, in_specs=P('i'), out_specs=P('i'))
 
     # Concatenate the results back into a single array
-    return jnp.concatenate(fft_slabs, axis=2)
 
-@jax.jit
-def fft_pencil_decomposition(field):
+    fft_slabs = f_shmapped(slabs)
+
+    #print("FFT Slabs shape:", [slab.shape for slab in fft_slabs])
+    fft_field = jnp.array(fft_slabs).reshape(field.shape)
+    fft_field = fft_field.transpose(axes[0], axes[1], axis)
+    #print("FFT Field shape:", fft_field.shape)
+    return fft_field
+
+@partial(jax.jit, static_argnums=(1,))
+def fft_pencil_decomposition(field, axis=2):
     """
     Perform FFT on a 3D array using pencil decomposition.
 
@@ -41,15 +64,30 @@ def fft_pencil_decomposition(field):
         jnp.ndarray: A 3D array with the same shape as the input, containing
                      the FFT-transformed data.
     """
+
+    axes = [0, 1, 2]
+    axes.remove(axis)
+
+    N1 = field.shape[axes[0]]
+    N2 = field.shape[axes[1]]
     # Assume field is a 3D array with shape (Nx, Ny, Nz)
-    pencils = [jnp.array_split(slab, jax.device_count(), axis=1) for slab in jnp.array_split(field, jax.device_count(), axis=2)]
+    pencils = jnp.split(field, N1, axis=axes[0])
+    pencils = [jnp.split(pencil, N2, axis=axes[1]) for pencil in pencils]
     pencils = [pencil for sublist in pencils for pencil in sublist]  # Flatten the list of lists
 
-    def fft_pencil(pencil):
-        return jnp.fft.fftn(pencil)
+    #print("Field shape:", field.shape)
+    #print("Pencils shape:", [pencil.shape for pencil in pencils])
+    def fft_pencil(pencil, axis=axis):
+        return jnp.fft.fft(jnp.array(pencil), axis=axis)
 
     # Use shard_map to apply FFT to each pencil in parallel
-    fft_pencils = shard_map(fft_pencil, pencils)
+    mesh = Mesh(jax.devices(), ('i',))
+    f_shmapped = shard_map(fft_pencil, mesh, in_specs=P('i'), out_specs=P('i'))
 
+    fft_pencils = f_shmapped(pencils)
     # Concatenate the results back into a single array
-    return jnp.concatenate(fft_pencils, axis=1)
+
+    # Reshape the FFT pencils back into the original 3D field shape
+    fft_field = jnp.array(fft_pencils).reshape(field.shape)
+    fft_field = fft_field.transpose(axes[0], axes[1], axis)
+    return fft_field
