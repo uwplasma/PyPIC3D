@@ -27,6 +27,16 @@ class TestFFTDecompositions(unittest.TestCase):
         # Check if the result is a complex array
         self.assertTrue(jnp.iscomplexobj(result))
 
+    def test_fft_pencil_decomposition(self):
+        # Perform FFT using pencil decomposition
+        result = fft_pencil_decomposition(self.field)
+
+        # Check if the result has the same shape as the input
+        self.assertEqual(result.shape, self.field.shape)
+
+        # Check if the result is a complex array
+        self.assertTrue(jnp.iscomplexobj(result))
+
     # def test_fft_slab_decomposition_known_freq(self):
     #     # Create a sample 3D field with a known frequency
     #     freq = 2.0
@@ -54,19 +64,6 @@ class TestFFTDecompositions(unittest.TestCase):
     #     self.assertAlmostEqual(jnp.abs(result[1, 0, 0]), expected_freq_component, places=5)
     #     self.assertAlmostEqual(jnp.abs(result[0, 1, 0]), expected_freq_component, places=5)
     #     self.assertAlmostEqual(jnp.abs(result[0, 0, 1]), expected_freq_component, places=5)
-
-
-    def test_fft_pencil_decomposition(self):
-        # Perform FFT using pencil decomposition
-        result = fft_pencil_decomposition(self.field)
-
-        # Check if the result has the same shape as the input
-        self.assertEqual(result.shape, self.field.shape)
-
-        # Check if the result is a complex array
-        self.assertTrue(jnp.iscomplexobj(result))
-
-
     # def test_fft_pencil_decomposition_known_freq(self):
     #     # Create a sample 3D field with a known frequency
     #     freq = 2.0
