@@ -40,9 +40,9 @@ from PyPIC3D.plotting import (
 ############################################################################################################
 
 ###################### JAX SETTINGS ########################################################################
-#jax.config.update("jax_enable_x64", True)
+jax.config.update("jax_enable_x64", True)
 # set Jax to use 64 bit precision
-#jax.config.update("jax_debug_nans", True)
+jax.config.update("jax_debug_nans", True)
 # debugging for nans
 jax.config.update('jax_platform_name', 'cpu')
 # set Jax to use CPUs
@@ -79,11 +79,16 @@ loop = partial(time_loop, Ex_ext=Ex_ext, Ey_ext=Ey_ext, Ez_ext=Ez_ext, Bx_ext=Bx
 start = time.time()
 # start the timer
 
+# jax.profiler.start_trace("/tmp/tensorboard")
+
 for t in tqdm(range(Nt)):
     particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi = loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi)
     # time loop to update the particles and fields
     plotter(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters, solver, bc)
     # plot the data
+
+# jax.profiler.stop_trace()
+# # stop the trace
 
 end = time.time()
 # end the timer
