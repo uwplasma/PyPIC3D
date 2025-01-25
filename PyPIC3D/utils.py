@@ -435,9 +435,9 @@ def dump_parameters_to_toml(simulation_stats, simulation_parameters, plasma_para
 
     config = {
         "simulation_stats": simulation_stats,
-        "simulation_parameters": simulation_parameters,
-        'plasma_parameters': plasma_parameters,
-        "plotting": plotting_parameters,
+        "simulation_parameters": jax.tree_util.tree_map(lambda x: x.tolist() if isinstance(x, jnp.ndarray) else x, simulation_parameters),
+        'plasma_parameters': jax.tree_util.tree_map(lambda x: x.tolist() if isinstance(x, jnp.ndarray) else x, plasma_parameters),
+        "plotting": jax.tree_util.tree_map(lambda x: x.tolist() if isinstance(x, jnp.ndarray) else x, plotting_parameters),
         "constants": jax.tree_util.tree_map(lambda x: x.tolist() if isinstance(x, jnp.ndarray) else x, constants),
         "particles": []
     }
