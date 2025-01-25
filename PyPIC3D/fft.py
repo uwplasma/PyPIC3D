@@ -4,8 +4,8 @@ from   jax.sharding import Mesh, PartitionSpec as P
 from jax.experimental.shard_map import shard_map
 from functools import partial
 
-@partial(jax.jit, static_argnums=(1,))
-def fft_slab_decomposition(field, axis=2):
+@partial(jax.jit, static_argnums=(1,2))
+def fft_slab_decomposition(field, axis=2, num_cores=2):
     """
     Perform a slab decomposition of a 3D field and apply FFT to each slab in parallel.
 
@@ -32,15 +32,17 @@ def fft_slab_decomposition(field, axis=2):
 
 
     def fft_slab(slab):
-        return jnp.fft.fft(jnp.array(slab), axis=axis)
+        return jnp.fft.fftn(jnp.array(slab), axes=[axis])
 
     # Use shard_map to apply FFT to each slab in parallel
-    mesh = Mesh(jax.devices(), ('i',))
-    f_shmapped = shard_map(fft_slab, mesh, in_specs=P('i'), out_specs=P('i'))
+    #mesh = Mesh(jax.devices()[:num_cores], ('i',))
+    #f_shmapped = shard_map(fft_slab, mesh, in_specs=P('i'), out_specs=P('i'))
 
     # Concatenate the results back into a single array
 
-    fft_slabs = f_shmapped(slabs)
+    #fft_slabs = f_shmapped(slabs)
+
+    fft_slabs = [fft_slab(slab) for slab in slabs]
 
     #print("FFT Slabs shape:", [slab.shape for slab in fft_slabs])
     fft_field = jnp.array(fft_slabs).reshape(field.shape)
@@ -49,7 +51,7 @@ def fft_slab_decomposition(field, axis=2):
     return fft_field
 
 @partial(jax.jit, static_argnums=(1,))
-def fft_pencil_decomposition(field, axis=2):
+def fft_pencil_decomposition(field, axis=2, num_cores=2):
     """
     Perform FFT on a 3D array using pencil decomposition.
 
@@ -78,10 +80,10 @@ def fft_pencil_decomposition(field, axis=2):
     #print("Field shape:", field.shape)
     #print("Pencils shape:", [pencil.shape for pencil in pencils])
     def fft_pencil(pencil, axis=axis):
-        return jnp.fft.fft(jnp.array(pencil), axis=axis)
+        return jnp.fft.fftn(jnp.array(pencil), axes=[axis])
 
     # Use shard_map to apply FFT to each pencil in parallel
-    mesh = Mesh(jax.devices(), ('i',))
+    mesh = Mesh(jax.devices()[:num_cores], ('i',))
     f_shmapped = shard_map(fft_pencil, mesh, in_specs=P('i'), out_specs=P('i'))
 
     fft_pencils = f_shmapped(pencils)
