@@ -320,12 +320,12 @@ def particles_phase_space(particles, world, t, name, path):
     None
     """
 
-    if not os.path.exists(f"{path}/phase_space/x"):
-        os.makedirs(f"{path}/phase_space/x")
-    if not os.path.exists(f"{path}/phase_space/y"):
-        os.makedirs(f"{path}/phase_space/y")
-    if not os.path.exists(f"{path}/phase_space/z"):
-        os.makedirs(f"{path}/phase_space/z")
+    if not os.path.exists(f"{path}/data/phase_space/x"):
+        os.makedirs(f"{path}/data/phase_space/x")
+    if not os.path.exists(f"{path}/data/phase_space/y"):
+        os.makedirs(f"{path}/data/phase_space/y")
+    if not os.path.exists(f"{path}/data/phase_space/z"):
+        os.makedirs(f"{path}/data/phase_space/z")
 
     x_wind = world['x_wind']
     y_wind = world['y_wind']
@@ -386,6 +386,24 @@ def particles_phase_space(particles, world, t, name, path):
     # plt.title(f"{name} Phase Space (Magnitude)")
     # plt.savefig(f"plots/phase_space/magnitude/{name}_phase_space.{t:09}.png", dpi=150)
     # plt.close()
+
+def center_of_mass(particles):
+    """
+    Calculate the center of mass of a particle species.
+
+    Parameters:
+    - particles (ParticleSpecies): The particle species object containing positions and masses.
+
+    Returns:
+    - ndarray: The center of mass coordinates.
+    """
+    total_mass = particles.get_mass() * particles.get_number_of_particles()
+    # get the total mass of the particles
+    x_com = jnp.sum( particles.get_mass() * particles.get_position()[0] ) / total_mass
+    y_com = jnp.sum( particles.get_mass() * particles.get_position()[1] ) / total_mass
+    z_com = jnp.sum( particles.get_mass() * particles.get_position()[2] ) / total_mass
+    # calculate the center of mass
+    return x_com, y_com, z_com
 
 @jit
 def number_density(n, Nparticles, particlex, particley, particlez, dx, dy, dz, Nx, Ny, Nz):
@@ -636,8 +654,8 @@ def plot_slice(field_slice, t, name, path, world, dt):
     None
     """
 
-    if not os.path.exists(f"plots/{name}_slice"):
-        os.makedirs(f'plots/{name}_slice')
+    if not os.path.exists(f"{path}/data/{name}_slice"):
+        os.makedirs(f'{path}/data/{name}_slice')
     # Create directory if it doesn't exist
     
     plt.title(f'{name} at t={t*dt:.2e}s')
@@ -705,12 +723,13 @@ def save_avg_positions(t, dt, particles, output_dir):
     avg_y_path = os.path.join(output_dir, "data/avg_y.txt")
     avg_z_path = os.path.join(output_dir, "data/avg_z.txt")
 
+    xcom, ycom, zcom = center_of_mass(particles[0])
     with open(avg_x_path, "a") as f_avg_x:
-        f_avg_x.write(f"{t*dt}, {jnp.mean(particles[0].get_position()[0])}\n")
+        f_avg_x.write(f"{t*dt}, {  xcom  }\n")
     with open(avg_y_path, "a") as f_avg_y:
-        f_avg_y.write(f"{t*dt}, {jnp.mean(particles[0].get_position()[1])}\n")
+        f_avg_y.write(f"{t*dt}, {  ycom }\n")
     with open(avg_z_path, "a") as f_avg_z:
-        f_avg_z.write(f"{t*dt}, {jnp.mean(particles[0].get_position()[2])}\n")
+        f_avg_z.write(f"{t*dt}, {  zcom }\n")
 
 def save_total_momentum(t, dt, particles, output_dir):
     p0 = sum(particle.momentum() for particle in particles)
