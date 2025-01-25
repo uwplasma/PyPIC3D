@@ -115,40 +115,98 @@ def boris(q, m, x, y, z, vx, vy, vz, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_gri
     # calculate the new velocity
     return newvx, newvy, newvz
 
+
+
 @jit
-def trilinear_interpolation(field, grid, x, y, z):
+def modified_boris(q, m, x, y, z, vx, vy, vz, Ex, Ey, Ez, Bx, By, Bz, w, g, grid, staggered_grid, dt):
     """
-    Perform trilinear interpolation on a 3D field at given (x, y, z) coordinates.
+    Perform the Modified Boris algorithm to update the velocity of a bounded charged particle in an electromagnetic field.
 
     Parameters:
-    field (ndarray): The 3D field to interpolate.
-    grid (tuple): A tuple of three arrays representing the grid points in the x, y, and z directions.
-    x (ndarray): The x-coordinates where interpolation is desired.
-    y (ndarray): The y-coordinates where interpolation is desired.
-    z (ndarray): The z-coordinates where interpolation is desired.
+    q (float): Charge of the particle.
+    m (float): Mass of the particle.
+    x (float): x-coordinate of the particle's position.
+    y (float): y-coordinate of the particle's position.
+    z (float): z-coordinate of the particle's position.
+    vx (float): x-component of the particle's velocity.
+    vy (float): y-component of the particle's velocity.
+    vz (float): z-component of the particle's velocity.
+    Ex (ndarray): x-component of the electric field array.
+    Ey (ndarray): y-component of the electric field array.
+    Ez (ndarray): z-component of the electric field array.
+    Bx (ndarray): x-component of the magnetic field array.
+    By (ndarray): y-component of the magnetic field array.
+    Bz (ndarray): z-component of the magnetic field array.
+    w (float): The frequency of the particle.
+    g (float): The damping factor of the particle.
+    grid (ndarray): Grid for the electric field.
+    staggered_grid (ndarray): Staggered grid for the magnetic field.
+    dt (float): Time step for the update.
 
     Returns:
-    ndarray: Interpolated values at the specified (x, y, z) coordinates.
+    tuple: Updated velocity components (newvx, newvy, newvz).
     """
-    x_grid, y_grid, z_grid = grid
-    x_idx = jnp.searchsorted(x_grid, x) - 1
-    y_idx = jnp.searchsorted(y_grid, y) - 1
-    z_idx = jnp.searchsorted(z_grid, z) - 1
 
-    x0, x1 = x_grid[x_idx], x_grid[x_idx + 1]
-    y0, y1 = y_grid[y_idx], y_grid[y_idx + 1]
-    z0, z1 = z_grid[z_idx], z_grid[z_idx + 1]
+    efield_atx = interpolate_field(Ex, grid, x, y, z)
+    efield_aty = interpolate_field(Ey, grid, x, y, z)
+    efield_atz = interpolate_field(Ez, grid, x, y, z)
+    # interpolate the electric field component arrays and calculate the e field at the particle positions
+    ygrid, xgrid, zgrid = grid
+    ystagger, xstagger, zstagger = staggered_grid
 
-    xd = (x - x0) / (x1 - x0)
-    yd = (y - y0) / (y1 - y0)
-    zd = (z - z0) / (z1 - z0)
+    bfield_atx = interpolate_field(Bx, (xstagger, ygrid, zgrid), x, y, z)
+    bfield_aty = interpolate_field(By, (xgrid, ystagger, zgrid), x, y, z)
+    bfield_atz = interpolate_field(Bz, (xgrid, ygrid, zstagger), x, y, z)
+    # interpolate the magnetic field component arrays and calculate the b field at the particle positions
 
-    c00 = field[x_idx, y_idx, z_idx] * (1 - xd) + field[x_idx + 1, y_idx, z_idx] * xd
-    c01 = field[x_idx, y_idx, z_idx + 1] * (1 - xd) + field[x_idx + 1, y_idx, z_idx + 1] * xd
-    c10 = field[x_idx, y_idx + 1, z_idx] * (1 - xd) + field[x_idx + 1, y_idx + 1, z_idx] * xd
-    c11 = field[x_idx, y_idx + 1, z_idx + 1] * (1 - xd) + field[x_idx + 1, y_idx + 1, z_idx + 1] * xd
+    wdotx = jnp.matmul(w, jnp.array([x, y, z]))
+    # calculate the dot product of the frequency matrix and the position vector
+    # w is a 3x3 matrix and x is a 3x1 vector, so the result is a 3x1 vector
 
-    c0 = c00 * (1 - yd) + c10 * yd
-    c1 = c01 * (1 - yd) + c11 * yd
 
-    return c0 * (1 - zd) + c1 * zd
+    vxminus = vx + (dt/2)*( (q/m)*efield_atx - wdotx[0] )
+    vyminus = vy + (dt/2)*( (q/m)*efield_aty - wdotx[1] )
+    vzminus = vz + (dt/2)*( (q/m)*efield_atz - wdotx[2] )
+    # calculate the v minus vector used in the boris push algorithm
+
+
+    ##################### ROTATION MATRIX #####################
+    bn = (dt/2)*(q/m)*jnp.array([bfield_atx, bfield_aty, bfield_atz])
+    # calculate the b field vector
+
+    detL = jnp.determinant( jnp.identity(3) + (dt/2)*g )   +  jnp.dot( (dt/2)*g, jnp.matmul( jnp.identity(3) + (dt/2)*g, bn ) )
+    # calculate the determinant of the L matrix
+
+    ###########################################################
+
+
+    # # calculate the v minus vector used in the boris push algorithm
+    # tx = q*dt/(2*m)*bfield_atx
+    # ty = q*dt/(2*m)*bfield_aty
+    # tz = q*dt/(2*m)*bfield_atz
+
+    # vprimex = vxminus + (vyminus*tz - vzminus*ty)
+    # vprimey = vyminus + (vzminus*tx - vxminus*tz)
+    # vprimez = vzminus + (vxminus*ty - vyminus*tx)
+    # # vprime = vminus + vminus cross t
+
+    # smag = 2 / (1 + tx*tx + ty*ty + tz*tz)
+    # sx = smag * tx
+    # sy = smag * ty
+    # sz = smag * tz
+    # # calculate the scaled rotation vector
+
+    # vxplus = vxminus + (vprimey*sz - vprimez*sy)
+    # vyplus = vyminus + (vprimez*sx - vprimex*sz)
+    # vzplus = vzminus + (vprimex*sy - vprimey*sx)
+
+
+
+
+
+
+    newvx = vxplus + (dt/2)*( (q/m)*efield_atx - wdotx[0] )
+    newvy = vyplus + (dt/2)*( (q/m)*efield_aty - wdotx[1] )
+    newvz = vzplus + (dt/2)*( (q/m)*efield_atz - wdotx[2] )
+    # calculate the new velocity
+    return newvx, newvy, newvz
