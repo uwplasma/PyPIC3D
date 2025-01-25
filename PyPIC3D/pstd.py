@@ -15,6 +15,7 @@ from functools import partial
 from PyPIC3D.utils import interpolate_field, use_gpu_if_set
 from PyPIC3D.particle import particle_species
 from PyPIC3D.J import compute_current_density
+from PyPIC3D.fft import fft_slab_decomposition, ifft_slab_decomposition
 
 
 def check_nyquist_criterion(Ex, Ey, Ez, Bx, By, Bz, world):
@@ -264,6 +265,13 @@ def spectral_curl(xfield, yfield, zfield, world):
     zfft = jnp.fft.fftn(zfield)
     # calculate the Fourier transform of the vector field
 
+    # xfft_y = fft_slab_decomposition(xfield, axis=1)
+    # xfft_z = fft_slab_decomposition(xfield, axis=2)
+    # yfft_x = fft_slab_decomposition(yfield, axis=0)
+    # yfft_z = fft_slab_decomposition(yfield, axis=2)
+    # zfft_x = fft_slab_decomposition(zfield, axis=0)
+    # zfft_y = fft_slab_decomposition(zfield, axis=1)
+
     dfx_dy = jnp.fft.ifftn(-1j*ky*xfft).real
     dfx_dz = jnp.fft.ifftn(-1j*kz*xfft).real
 
@@ -272,6 +280,16 @@ def spectral_curl(xfield, yfield, zfield, world):
 
     dfz_dx = jnp.fft.ifftn(-1j*kx*zfft).real
     dfz_dy = jnp.fft.ifftn(-1j*ky*zfft).real
+
+    # dfx_dy = ifft_slab_decomposition(-1j*ky*xfft_y, axis=1).real
+    # dfx_dz = ifft_slab_decomposition(-1j*kz*xfft_z, axis=2).real
+
+    # dfy_dx = ifft_slab_decomposition(-1j*kx*yfft_x, axis=0).real
+    # dfy_dz = ifft_slab_decomposition(-1j*kz*yfft_z, axis=2).real
+
+    # dfz_dx = ifft_slab_decomposition(-1j*kx*zfft_x, axis=0).real
+    # dfz_dy = ifft_slab_decomposition(-1j*ky*zfft_y, axis=1).real
+
 
     curlx = dfz_dy - dfy_dz
     curly = dfx_dz - dfz_dx
