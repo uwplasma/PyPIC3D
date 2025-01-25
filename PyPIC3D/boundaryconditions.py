@@ -1,4 +1,3 @@
-import numpy as np
 import matplotlib.pyplot as plt
 import jax
 from jax import random
@@ -29,17 +28,17 @@ def apply_supergaussian_boundary_condition(field, boundary_thickness, order, str
     ndarray: The field with Super-Gaussian boundary conditions applied.
     """
     def supergaussian_factor(x, thickness, order, strength):
-        return np.exp(-strength * (x / thickness)**order)
+        return jnp.exp(-strength * (x / thickness)**order)
 
     nx, ny, nz = field.shape
     for i in range(boundary_thickness):
         factor = supergaussian_factor(i, boundary_thickness, order, strength)
-        field[i, :, :] *= factor
-        field[nx - 1 - i, :, :] *= factor
-        field[:, i, :] *= factor
-        field[:, ny - 1 - i, :] *= factor
-        field[:, :, i] *= factor
-        field[:, :, nz - 1 - i] *= factor
+        field = field.at[i, :, :].mul(factor)
+        field = field.at[nx - 1 - i, :, :].mul(factor)
+        field = field.at[:, i, :].mul(factor)
+        field = field.at[:, ny - 1 - i, :].mul(factor)
+        field = field.at[:, :, i].mul(factor)
+        field = field.at[:, :, nz - 1 - i].mul(factor)
 
     return field
 
