@@ -39,10 +39,10 @@ class TestFFTDecompositions(unittest.TestCase):
 
     # def test_fft_slab_decomposition_known_freq(self):
     #     # Create a sample 3D field with a known frequency
-    #     freq = 2.0
-    #     x = jnp.linspace(0, 2 * jnp.pi, 50)
-    #     y = jnp.linspace(0, 2 * jnp.pi, 50)
-    #     z = jnp.linspace(0, 2 * jnp.pi, 50)
+    #     freq = 3
+    #     x = jnp.linspace(0, 2 * jnp.pi, 100)
+    #     y = jnp.linspace(0, 2 * jnp.pi, 100)
+    #     z = jnp.linspace(0, 2 * jnp.pi, 100)
     #     X, Y, Z = jnp.meshgrid(x, y, z, indexing='ij')
     #     self.field = jnp.sin(freq * X)
 
@@ -53,17 +53,28 @@ class TestFFTDecompositions(unittest.TestCase):
     #     import matplotlib.pyplot as plt
 
     #     # Plot a 1D slice along the x-axis
-    #     plt.plot(jnp.abs(result[:, 0, 0]))
+    #     kx = jnp.fft.fftfreq(100, 2 * jnp.pi / 100)
+    #     plt.plot(kx, result[:, 0, 0])
     #     plt.title('1D Slice along x-axis of FFT result')
     #     plt.xlabel('Index')
     #     plt.ylabel('Magnitude')
     #     plt.grid(True)
     #     plt.show()
+
+    #     # gt = jnp.fft.fftn(self.field, axes=[0])
+    #     # plt.plot(kx, gt[:, 0, 0])
+    #     # plt.title('1D Slice along x-axis of FFT result')
+    #     # plt.xlabel('Index')
+    #     # plt.ylabel('Magnitude')
+    #     # plt.grid(True)
+    #     # plt.show()
     #     # Check if the result has the expected frequency component
-    #     expected_freq_component = 3 * (8 / 2) * (8 / 2) * (8 / 2)
-    #     self.assertAlmostEqual(jnp.abs(result[1, 0, 0]), expected_freq_component, places=5)
-    #     self.assertAlmostEqual(jnp.abs(result[0, 1, 0]), expected_freq_component, places=5)
-    #     self.assertAlmostEqual(jnp.abs(result[0, 0, 1]), expected_freq_component, places=5)
+
+    #     argmax = jnp.argmax(jnp.abs(result[49:, 0, 0]))
+    #     expected_kx = 2 * jnp.pi * freq
+    #     print(kx[argmax])
+    #     print(expected_kx)
+    #     self.assertAlmostEqual(kx[argmax], expected_kx, places=5)
     # def test_fft_pencil_decomposition_known_freq(self):
     #     # Create a sample 3D field with a known frequency
     #     freq = 2.0
