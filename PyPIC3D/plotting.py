@@ -639,6 +639,30 @@ def write_probe(probe_data, t, filename):
     with open(filename, 'a') as file:
         file.write(f"{t}\t{probe_data}\n")
 
+def plot_initial_KE(particles, path):
+    """
+    Plots the initial kinetic energy of the particles.
+
+    Parameters:
+    - particles (Particles): The particles to be plotted.
+    - t (ndarray): The time values.
+    - name (str): The name of the plot.
+
+    Returns:
+    None
+    """
+    for particle in particles:
+        particle_name = particle.get_name().replace(" ", "")
+        vx, vy, vz = particle.get_velocity()
+        vmag = jnp.sqrt(vx**2 + vy**2 + vz**2)
+        KE = 0.5 * particle.get_mass() * vmag**2
+        plt.hist(KE, bins=50)
+        plt.xlabel("Kinetic Energy")
+        plt.ylabel("Number of Particles")
+        plt.title("Initial Kinetic Energy")
+        plt.savefig(f"{path}/data/{particle_name}_initialKE.png", dpi=300)
+        plt.close()
+
 def plot_slice(field_slice, t, name, path, world, dt):
     """
     Plots a 2D slice of a field and saves the plot as a PNG file.

@@ -39,6 +39,10 @@ from PyPIC3D.pec import (
     read_pec_boundaries_from_toml
 )
 
+from PyPIC3D.plotting import (
+    plot_initial_KE
+)
+
 def default_parameters():
     """
     Returns a dictionary of default parameters for the simulation.
@@ -167,6 +171,9 @@ def initialize_simulation(config_file):
 
     particles = load_particles_from_toml(config_file, simulation_parameters, world, constants)
     # load the particles from the configuration file
+
+    plot_initial_KE(particles, path=simulation_parameters['output_dir'])
+    # plot the initial kinetic energy of the particles
 
     plasma_parameters = build_plasma_parameters_dict(world, constants, particles[0], dt)
     # build the plasma parameters dictionary
