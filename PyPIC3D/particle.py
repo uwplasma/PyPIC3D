@@ -68,7 +68,44 @@ def load_particles_from_toml(toml_file, simulation_parameters, world, constants)
         charge=config[toml_key]['charge']
         mass=config[toml_key]['mass']
         T=config[toml_key]['temperature']
-        x, y, z, vx, vy, vz = initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, key2, key3)
+
+        if 'w' in config[toml_key]:
+            w = jnp.array(config[toml_key]['w']) * jnp.identity(3)
+        else:
+            w = jnp.zeros((3,3))
+
+        if 'g' in config[toml_key]:
+            g = jnp.array(config[toml_key]['g']) * jnp.identity(3)
+        else:
+            g = jnp.zeros((3,3))
+
+        bounded = False
+        if 'bounded' in config[toml_key]:
+            bounded = config[toml_key]['bounded']
+        # check if the particle species is bounded or not
+        if bounded:
+            print(f"Initializing bounded particle species: {particle_name}")
+            print(f"Using w:\n {w}")
+            print(f"Using g:\n {g}")
+            try:
+                xmin = config[toml_key]['xmin']
+                xmax = config[toml_key]['xmax']
+                ymin = config[toml_key]['ymin']
+                ymax = config[toml_key]['ymax']
+                zmin = config[toml_key]['zmin']
+                zmax = config[toml_key]['zmax']
+            except:
+                print(f"Error: Bounded particle species {particle_name} requires xmin, xmax, ymin, ymax, zmin, zmax")
+                exit(1)
+            if "fermi_energy" in config[toml_key]:
+                fermi_energy = config[toml_key]['fermi_energy']
+            else:
+                fermi_energy = 1.0
+            
+            x, y, z, vx, vy, vz = initial_bound_particles(N_particles, xmin, xmax, ymin, ymax, zmin, zmax, mass, T, fermi_energy, kb, key1, key2, key3)
+        else:
+            print(f"Initializing unbounded particle species: {particle_name}")
+            x, y, z, vx, vy, vz = initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, key2, key3)
 
         bc = 'periodic'
         if 'bc' in config[toml_key]:
@@ -132,6 +169,7 @@ def load_particles_from_toml(toml_file, simulation_parameters, world, constants)
             update_z = config[toml_key]['update_z']
             print(f"update_z: {update_z}")
 
+
         zeta1 = ( x + x_wind/2 ) % dx
         zeta2 = zeta1
         eta1  = ( y + y_wind/2 ) % dy
@@ -173,6 +211,76 @@ def load_particles_from_toml(toml_file, simulation_parameters, world, constants)
         particles.append(particle)
 
     return particles
+
+def fermi_dirac_distribution(energy, fermi_energy, T, kb):
+    """
+    Calculate the Fermi-Dirac distribution for a given energy, Fermi energy, temperature, and Boltzmann constant.
+    Args:
+        energy (float): The energy of the particle.
+        fermi_energy (float): The Fermi energy of the particle.
+        T (float): The temperature of the system.
+        kb (float): The Boltzmann constant.
+    Returns:
+        float: The value of the Fermi-Dirac distribution at the given energy.
+    The function calculates the Fermi-Dirac distribution for a given energy, Fermi energy, temperature, and Boltzmann constant.
+    """
+    return 1 / (jnp.exp( (energy-fermi_energy)/kb*T) + 1)
+
+def initial_bound_particles(N_particles, minx, maxx, miny, maxy, minz, maxz, mass, T, fermi_energy, kb, key1, key2, key3):
+    """
+    Initializes the velocities and positions of the particles.
+
+    Parameters:
+    - N_particles (int): The number of particles.
+    - minx (float): The minimum value for the x-coordinate of the particles' positions.
+    - maxx (float): The maximum value for the x-coordinate of the particles' positions.
+    - miny (float): The minimum value for the y-coordinate of the particles' positions.
+    - maxy (float): The maximum value for the y-coordinate of the particles' positions.
+    - minz (float): The minimum value for the z-coordinate of the particles' positions.
+    - maxz (float): The maximum value for the z-coordinate of the particles' positions.
+    - mass (float): The mass of the particles.
+    - T (float): The temperature of the system.
+    - kb (float): The Boltzmann constant.
+    - key (jax.random.PRNGKey): The random key for generating random numbers.
+
+    Returns:
+    - x (jax.numpy.ndarray): The x-coordinates of the particles' positions.
+    - y (jax.numpy.ndarray): The y-coordinates of the particles' positions.
+    - z (jax.numpy.ndarray): The z-coordinates of the particles' positions.
+    - v_x (numpy.ndarray): The x-component of the particles' velocities.
+    - v_y (numpy.ndarray): The y-component of the particles' velocities.
+    - v_z (numpy.ndarray): The z-component of the particles' velocities.
+    """
+    x = jax.random.uniform(key1, shape = (N_particles,), minval=minx, maxval=maxx)
+    y = jax.random.uniform(key2, shape = (N_particles,), minval=miny, maxval=maxy)
+    z = jax.random.uniform(key3, shape = (N_particles,), minval=minz, maxval=maxz)
+    # initialize the positions of the particles
+    
+    uniformdist = jax.random.uniform(key1, shape=(N_particles,), minval=1e-3, maxval=1)
+    # Generate random numbers from a uniform distribution
+    energy = fermi_energy - kb * T * jnp.log(uniformdist)
+    # print(energy)
+    # print(kb*T)
+    # print(fermi_energy)
+    vmag = jnp.sqrt(2*energy/mass)
+    # get the magnitude of the velocity from the fermi dirac distribution
+
+    # plt.hist(energy, bins=30, alpha=0.75, edgecolor='black')
+    # plt.title('Histogram of Velocity Magnitude')
+    # plt.xlabel('Velocity Magnitude')
+    # plt.ylabel('Frequency')
+    # plt.show()
+    # exit()
+
+    random_numbers = jax.random.dirichlet(key3, jnp.ones(3))
+    # Generate three random numbers that sum to 1 from the dirichlet distribution for the velocity components
+    v_x = vmag * random_numbers[0]
+    v_y = vmag * random_numbers[1]
+    v_z = vmag * random_numbers[2]
+    # initialize the velocity components using the fermi dirac distribution and the random numbers
+
+    return x, y, z, v_x, v_y, v_z
+
 
 
 def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, key2, key3):
@@ -261,7 +369,6 @@ def compute_index(x, dx, window):
 class particle_species:
     """
     A class to represent a species of particles in a simulation.
-
     Attributes
     ----------
     name : str
@@ -272,8 +379,10 @@ class particle_species:
         The charge of each particle.
     mass : float
         The mass of each particle.
+    weight : float, optional
+        The weight of the particles (default is 1).
     T : float
-        The temperature of the particle species.
+        The temperature of the particles.
     v1, v2, v3 : array-like
         The velocity components of the particles.
     x1, x2, x3 : array-like
@@ -281,63 +390,76 @@ class particle_species:
     dx, dy, dz : float
         The resolution of the grid in each dimension.
     x_wind, y_wind, z_wind : float
-        The wind components in each dimension.
-    zeta1, zeta2, eta1, eta2, xi1, xi2 : float
+        The dimensions of the simulation box.
+    zeta1, zeta2, eta1, eta2, xi1, xi2 : array-like
         The subcell positions for charge conservation.
     bc : str, optional
         The boundary condition type (default is 'periodic').
-    update_pos : bool, optional
-        Flag to update the position of particles (default is True).
-    update_v : bool, optional
-        Flag to update the velocity of particles (default is True).
-
+    update_x, update_y, update_z : bool, optional
+        Flags to update the position components (default is True).
+    update_vx, update_vy, update_vz : bool, optional
+        Flags to update the velocity components (default is True).
+    update_pos, update_v : bool, optional
+        Flags to update the position and velocity (default is True).
+    w, g : array-like, optional
+        Frequency and damping matrices for bound species (default is zero matrices).
     Methods
     -------
     get_name():
         Returns the name of the particle species.
     get_charge():
-        Returns the charge of the particles.
+        Returns the charge of the particles multiplied by their weight.
     get_number_of_particles():
         Returns the number of particles in the species.
     get_temperature():
-        Returns the temperature of the particle species.
+        Returns the temperature of the particles.
     get_velocity():
         Returns the velocity components of the particles.
     get_position():
         Returns the position components of the particles.
     get_mass():
-        Returns the mass of the particles.
+        Returns the mass of the particles multiplied by their weight.
     get_subcell_position():
         Returns the subcell positions for charge conservation.
     get_resolution():
         Returns the resolution of the grid in each dimension.
     get_index():
-        Computes and returns the index of the particles in the grid.
+        Returns the grid indices of the particle positions.
+    get_freqmatrix():
+        Returns the frequency matrix.
+    get_dampingmatrix():
+        Returns the damping matrix.
     set_velocity(v1, v2, v3):
         Sets the velocity components of the particles.
     set_position(x1, x2, x3):
         Sets the position components of the particles.
-    calc_subcell_position():
-        Calculates and returns the new subcell positions.
     set_mass(mass):
         Sets the mass of the particles.
+    set_weight(weight):
+        Sets the weight of the particles.
+    calc_subcell_position():
+        Calculates the subcell positions for charge conservation.
     kinetic_energy():
-        Computes and returns the kinetic energy of the particles.
+        Calculates the kinetic energy of the particles.
     momentum():
-        Computes and returns the momentum of the particles.
+        Calculates the momentum of the particles.
     periodic_boundary_condition(x_wind, y_wind, z_wind):
         Applies periodic boundary conditions to the particle positions.
+    reflecting_boundary_condition(x_wind, y_wind, z_wind):
+        Applies reflecting boundary conditions to the particle positions and velocities.
     update_position(dt, x_wind, y_wind, z_wind):
-        Updates the position of the particles based on their velocity and time step.
+        Updates the position of the particles based on their velocities and boundary conditions.
     tree_flatten():
-        Flattens the particle species object for serialization.
+        Flattens the particle species object for JAX transformations.
     tree_unflatten(aux_data, children):
-        Unflattens the particle species object from serialized data.
+        Unflattens the particle species object for JAX transformations.
     """
+
 
     def __init__(self, name, N_particles, charge, mass, T, v1, v2, v3, x1, x2, x3, subcells, \
             xwind, ywind, zwind, dx, dy, dz, weight=1, bc='periodic', update_x=True, update_y=True, update_z=True, \
-                update_vx=True, update_vy=True, update_vz=True, update_pos=True, update_v=True):
+                update_vx=True, update_vy=True, update_vz=True, update_pos=True, update_v=True, w=jnp.zeros((3,3)), \
+                    g=jnp.zeros((3,3))):
         self.name = name
         self.N_particles = N_particles
         self.charge = charge
@@ -357,17 +479,7 @@ class particle_species:
         self.y_wind = ywind
         self.z_wind = zwind
         self.zeta1, self.zeta2, self.eta1, self.eta2, self.xi1, self.xi2 = subcells
-
         self.bc = bc
-        # if bc == 'periodic':
-        #     print('Using periodic boundary conditions')
-        #     self.bc = functools.partial( periodic_boundary_condition, x_wind=xwind, y_wind=ywind, z_wind=zwind)
-        # elif bc == 'reflecting':
-        #     print('Using reflecting boundary conditions')
-        #     self.bc = functools.partial( reflecting_boundary_condition, x_wind=self.x_wind, y_wind=self.y_wind, z_wind=self.z_wind)
-        # else:
-        #     self.bc = lambda x, y, z, vx, vy, vz: (x, y, z, vx, vy, vz)
-
         self.update_x = update_x
         self.update_y = update_y
         self.update_z = update_z
@@ -376,6 +488,10 @@ class particle_species:
         self.update_vz = update_vz
         self.update_pos = update_pos
         self.update_v   = update_v
+
+        self.w = w
+        self.g = g
+        # matricies for bounded species
 
     def get_name(self):
         return self.name
@@ -407,6 +523,11 @@ class particle_species:
     def get_index(self):
         return compute_index(self.x1, self.dx, self.x_wind), compute_index(self.x2, self.dy, self.y_wind), compute_index(self.x3, self.dz, self.z_wind)
 
+    def get_freqmatrix(self):
+        return self.w
+    def get_dampingmatrix(self):
+        return self.g
+    
     def set_velocity(self, v1, v2, v3):
         if self.update_v:
             if self.update_vx:
@@ -439,7 +560,6 @@ class particle_species:
 
     def momentum(self):
         return self.mass * jnp.sum(jnp.sqrt(self.v1**2 + self.v2**2 + self.v3**2))
-
 
     def periodic_boundary_condition(self, x_wind, y_wind, z_wind):
         self.x1 = jnp.where(self.x1 > x_wind/2, -x_wind/2, self.x1)
@@ -500,7 +620,7 @@ class particle_species:
             self.name, self.N_particles, self.charge, self.mass, self.T, \
             self.x_wind, self.y_wind, self.z_wind, self.dx, self.dy, self.dz, \
             self.weight, self.bc, self.update_pos, self.update_v, self.update_x, self.update_y, \
-            self.update_z, self.update_vx, self.update_vy, self.update_vz
+            self.update_z, self.update_vx, self.update_vy, self.update_vz, self.w, self.g
         )
         return children, aux_data
 
@@ -509,7 +629,8 @@ class particle_species:
         v1, v2, v3, x1, x2, x3, zeta1, zeta2, eta1, eta2, xi1, xi2 = children
 
         name, N_particles, charge, mass, T, x_wind, y_wind, z_wind, dx, dy, \
-            dz, weight, bc, update_pos, update_v, update_x, update_y, update_z, update_vx, update_vy, update_vz = aux_data
+            dz, weight, bc, update_pos, update_v, update_x, update_y, update_z, \
+                update_vx, update_vy, update_vz, w, g = aux_data
 
         subcells = zeta1, zeta2, eta1, eta2, xi1, xi2
 
@@ -541,5 +662,7 @@ class particle_species:
             update_vy=update_vy,
             update_vz=update_vz,
             update_pos=update_pos,
-            update_v=update_v
+            update_v=update_v,
+            w=w,
+            g=g
         )

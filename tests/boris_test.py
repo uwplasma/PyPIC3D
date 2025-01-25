@@ -40,7 +40,47 @@ class TestBorisMethods(unittest.TestCase):
         # grid and staggered grid for a 5x5x5 grid with a spacing of 1/5 and a timestep of 0.1
 
     def test_boris(self):
-        newvx, newvy, newvz = boris(self.q, self.m, self.x, self.y, self.z, self.vx, self.vy, self.vz, self.Ex, self.Ey, self.Ez, self.Bx, self.By, self.Bz, self.grid, self.staggered_grid, self.dt)
+
+        Ex_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.grid, self.Ex, fill_value=0)
+        Ey_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.grid, self.Ey, fill_value=0)
+        Ez_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.grid, self.Ez, fill_value=0)
+
+        Bx_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.staggered_grid, self.Bx, fill_value=0)
+        By_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.staggered_grid, self.By, fill_value=0)
+        Bz_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.staggered_grid, self.Bz, fill_value=0)
+
+        E_interpolate = (Ex_interpolate, Ey_interpolate, Ez_interpolate)
+        B_interpolate = (Bx_interpolate, By_interpolate, Bz_interpolate)
+        # create interpolators for the electric and magnetic fields
+        newvx, newvy, newvz = boris(self.x, self.y, self.z, self.vx, self.vy, self.vz, self.q, self.m, E_interpolate, B_interpolate, self.grid, self.staggered_grid, self.dt)
+        self.assertIsInstance(newvx, jnp.ndarray)
+        self.assertIsInstance(newvy, jnp.ndarray)
+        self.assertIsInstance(newvz, jnp.ndarray)
+        # make sure the velocities are jax arrays
+        jnp.allclose(newvx, 1.0)
+        # make sure the x velocity is unchanged
+        jnp.allclose(newvy, 0.0)
+        # make sure the y velocity is unchanged
+        jnp.allclose(newvz, 1.0)
+        # make sure the z velocity is 1.0 from the magnetic field
+
+    def test_modified_boris(self):
+        
+        Ex_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.grid, self.Ex, fill_value=0)
+        Ey_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.grid, self.Ey, fill_value=0)
+        Ez_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.grid, self.Ez, fill_value=0)
+
+        Bx_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.staggered_grid, self.Bx, fill_value=0)
+        By_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.staggered_grid, self.By, fill_value=0)
+        Bz_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.staggered_grid, self.Bz, fill_value=0)
+
+        E_interpolate = (Ex_interpolate, Ey_interpolate, Ez_interpolate)
+        B_interpolate = (Bx_interpolate, By_interpolate, Bz_interpolate)
+        # create interpolators for the electric and magnetic fields
+
+        w = jnp.zeros( (3,3) )
+        g = jnp.zeros( (3,3) )
+        newvx, newvy, newvz = modified_boris(self.x, self.y, self.z, self.vx, self.vy, self.vz, self.q, self.m, E_interpolate, B_interpolate, w, g, self.grid, self.staggered_grid, self.dt)
         self.assertIsInstance(newvx, jnp.ndarray)
         self.assertIsInstance(newvy, jnp.ndarray)
         self.assertIsInstance(newvz, jnp.ndarray)
