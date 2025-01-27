@@ -351,17 +351,17 @@ def grab_field_keys(config):
             field_keys.append(key)
     return field_keys
 
-def load_external_fields_from_toml(fields, toml_file):
+def load_external_fields_from_toml(fields, config):
     """
     Load external fields from a TOML file.
 
     Parameters:
-    - toml_file (str): Path to the TOML file.
+    - fields (dict): Dictionary containing the external fields.
+    - config (dict): Dictionary containing the configuration values.
 
     Returns:
     - dict: Dictionary containing the external fields.
     """
-    config = toml.load(toml_file)
 
     field_keys = grab_field_keys(config)
 
@@ -387,20 +387,18 @@ def debugprint(value):
     """
     jax.debug.print('{x}', x=value)
 
-def update_parameters_from_toml(config_file, simulation_parameters, plotting_parameters, constants):
+def update_parameters_from_toml(config, simulation_parameters, plotting_parameters, constants):
     """
     Update the simulation parameters with values from a TOML config file.
 
     Parameters:
-    - config_file (str): Path to the TOML config file.
+    - config (dict): Dictionary containing the configuration values.
     - simulation_parameters (dict): Dictionary of default simulation parameters.
     - plotting_parameters (dict): Dictionary of default plotting parameters.
 
     Returns:
     - tuple: Updated simulation parameters and plotting parameters.
     """
-    # Load the TOML config file
-    config = toml.load(config_file)
 
     # Update the simulation parameters with values from the config file
     for key, value in config["simulation_parameters"].items():

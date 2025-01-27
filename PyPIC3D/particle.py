@@ -30,11 +30,11 @@ def grab_particle_keys(config):
             particle_keys.append(key)
     return particle_keys
 
-def load_particles_from_toml(toml_file, simulation_parameters, world, constants):
+def load_particles_from_toml(config, simulation_parameters, world, constants):
     """
     Load particle data from a TOML file and initialize particle species.
     Args:
-        toml_file (str): Path to the TOML file containing particle configuration.
+        config (dict): Dictionary containing configuration keys and values.
         simulation_parameters (dict): Dictionary containing simulation parameters.
         world (dict): Dictionary containing world parameters such as 'x_wind', 'y_wind', 'z_wind', 'dx', 'dy', 'dz'.
         constants (dict): Dictionary containing constants such as 'kb'.
@@ -45,7 +45,7 @@ def load_particles_from_toml(toml_file, simulation_parameters, world, constants)
     external sources if specified in the TOML file. The particles are then appended to a list and returned.
     """
 
-    config = toml.load(toml_file)
+
 
     x_wind = world['x_wind']
     y_wind = world['y_wind']

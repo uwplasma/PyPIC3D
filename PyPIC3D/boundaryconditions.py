@@ -79,7 +79,7 @@ def get_material_surface_keys(config):
             surface_keys.append(key)
     return surface_keys
 
-def load_material_surfaces_from_toml(config_file):
+def load_material_surfaces_from_toml(config):
     """
     Load material surfaces from a TOML file.
 
@@ -89,7 +89,6 @@ def load_material_surfaces_from_toml(config_file):
     Returns:
     - list: List of MaterialSurface objects.
     """
-    config = toml.load(config_file)
     surface_keys = get_material_surface_keys(config)
     surfaces = []
 
