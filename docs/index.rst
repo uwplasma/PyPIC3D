@@ -12,6 +12,9 @@ Welcome to PyPIC3D's documentation!
    solvers
    chargeconservation
    yee
+   particles
+   lasers
+   materialsurfaces
    demos
 
 Indices and tables
