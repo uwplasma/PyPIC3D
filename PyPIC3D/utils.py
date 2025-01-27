@@ -558,6 +558,34 @@ def courant_condition(courant_number, dx, dy, dz, simulation_parameters, constan
     return courant_number / (C * ( (1/dx) + (1/dy) + (1/dz) ) )
 # calculate the courant condition
 
+def modified_courant_condition(courant_number, world, constants, wb, wp):
+    """
+    Calculate the modified Courant condition for a given grid spacing and wave speed.
+
+    The modified Courant condition is a stability criterion for numerical solutions of partial differential equations. 
+    It ensures that the numerical domain of dependence contains the true domain of dependence.
+
+    Parameters:
+    courant_number (float): Courant number.
+    world (dict): A dictionary containing the spatial resolution and wind parameters.
+    constants (dict): A dictionary containing physical constants.
+    wb (ndarray): frequency of the bounded particles.
+    wp (float): plasma frequency of the bounded particles.
+
+    Returns:
+    float: The maximum allowable time step for stability.
+    """
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    C = constants['C']
+
+    wb2 = wb[0,0]**2 + wb[1,1]**2 + wb[2,2]**2
+    wp2 = wp**2
+
+    dt = 1 / jnp.sqrt( 0.25*(wb2 + wp2) + C**2 * ( (1/dx)**2 + (1/dy)**2 + (1/dz)**2 ) )
+    return courant_number * dt
+
 def plasma_frequency(electrons, world, constants):
     """
     Calculate the theoretical frequency of a system based on the given parameters.
