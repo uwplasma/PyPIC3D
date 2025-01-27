@@ -15,6 +15,7 @@ Welcome to PyPIC3D's documentation!
    particles
    lasers
    materialsurfaces
+   experiments
    demos
 
 Indices and tables
