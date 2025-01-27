@@ -65,9 +65,9 @@ class TestParticleMethods(unittest.TestCase):
         x, y, z, vx, vy, vz = initial_particles(
             N_particles=self.N_particles,
             minx=-self.x_wind/2,
-            maxy=self.x_wind/2,
-            minz=-self.y_wind/2,
-            maxz=self.y_wind/2,
+            maxx=self.x_wind/2,
+            miny=-self.y_wind/2,
+            maxy=self.y_wind/2,
             minz=-self.z_wind/2,
             maxz=self.z_wind/2,
             mass=self.mass,
