@@ -616,7 +616,7 @@ def plasma_frequency(electrons, world, constants):
     sqrt_ne = jnp.sqrt( N_electrons ) / sqrt_dv
     sqrt_eps = jnp.sqrt( eps )
     sqrt_me = jnp.sqrt( me )
-    pf = sqrt_ne * q_e / (sqrt_eps * sqrt_me)
+    pf = sqrt_ne * jnp.abs(q_e) / (sqrt_eps * sqrt_me)
 
     return pf
 # calculate the expected plasma frequency from analytical theory
