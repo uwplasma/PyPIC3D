@@ -69,15 +69,18 @@ def load_particles_from_toml(toml_file, simulation_parameters, world, constants)
         mass=config[toml_key]['mass']
         T=config[toml_key]['temperature']
 
-        if 'w' in config[toml_key]:
-            w = jnp.array(config[toml_key]['w']) * jnp.identity(3)
-        else:
-            w = jnp.zeros((3,3))
+        w = jnp.zeros((3,3))
+        g = jnp.zeros((3,3))
+        # initialize the frequency and damping matrices for the particle species
 
-        if 'g' in config[toml_key]:
-            g = jnp.array(config[toml_key]['g']) * jnp.identity(3)
-        else:
-            g = jnp.zeros((3,3))
+
+        xmin = -x_wind/2
+        xmax = x_wind/2
+        ymin = -y_wind/2
+        ymax = y_wind/2
+        zmin = -z_wind/2
+        zmax = z_wind/2
+        # set the default bounds for the particle species
 
         bounded = False
         if 'bounded' in config[toml_key]:
@@ -85,6 +88,8 @@ def load_particles_from_toml(toml_file, simulation_parameters, world, constants)
         # check if the particle species is bounded or not
         if bounded:
             print(f"Initializing bounded particle species: {particle_name}")
+            w = jnp.array(config[toml_key]['w']) * jnp.identity(3)
+            g = jnp.array(config[toml_key]['g']) * jnp.identity(3)
             print(f"Using w:\n {w}")
             print(f"Using g:\n {g}")
             try:
@@ -105,7 +110,21 @@ def load_particles_from_toml(toml_file, simulation_parameters, world, constants)
             x, y, z, vx, vy, vz = initial_bound_particles(N_particles, xmin, xmax, ymin, ymax, zmin, zmax, mass, T, fermi_energy, kb, key1, key2, key3)
         else:
             print(f"Initializing unbounded particle species: {particle_name}")
-            x, y, z, vx, vy, vz = initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, key2, key3)
+            if 'xmin' in config[toml_key]:
+                xmin = config[toml_key]['xmin']
+            if 'xmax' in config[toml_key]:
+                xmax = config[toml_key]['xmax']
+            if 'ymin' in config[toml_key]:
+                ymin = config[toml_key]['ymin']
+            if 'ymax' in config[toml_key]:
+                ymax = config[toml_key]['ymax']
+            if 'zmin' in config[toml_key]:
+                zmin = config[toml_key]['zmin']
+            if 'zmax' in config[toml_key]:
+                zmax = config[toml_key]['zmax']
+            # set the bounds for the particle species if specified
+            x, y, z, vx, vy, vz = initial_particles(N_particles, xmin, xmax, ymin, ymax, zmin, zmax, mass, T, kb, key1, key2, key3)
+        # initialize the positions and velocities of the particles
 
         bc = 'periodic'
         if 'bc' in config[toml_key]:
@@ -283,15 +302,18 @@ def initial_bound_particles(N_particles, minx, maxx, miny, maxy, minz, maxz, mas
 
 
 
-def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, key2, key3):
+def initial_particles(N_particles, minx, maxx, miny, maxy, minz, maxz, mass, T, kb, key1, key2, key3):
     """
     Initializes the velocities and positions of the particles.
 
     Parameters:
     - N_particles (int): The number of particles.
-    - x_wind (float): The maximum value for the x-coordinate of the particles' positions.
-    - y_wind (float): The maximum value for the y-coordinate of the particles' positions.
-    - z_wind (float): The maximum value for the z-coordinate of the particles' positions.
+    - minx (float): The minimum value for the x-coordinate of the particles' positions.
+    - maxx (float): The maximum value for the x-coordinate of the particles' positions.
+    - miny (float): The minimum value for the y-coordinate of the particles' positions.
+    - maxy (float): The maximum value for the y-coordinate of the particles' positions.
+    - minz (float): The minimum value for the z-coordinate of the particles' positions.
+    - maxz (float): The maximum value for the z-coordinate of the particles' positions.
     - mass (float): The mass of the particles.
     - T (float): The temperature of the system.
     - kb (float): The Boltzmann constant.
@@ -305,11 +327,9 @@ def initial_particles(N_particles, x_wind, y_wind, z_wind, mass, T, kb, key1, ke
     - v_y (numpy.ndarray): The y-component of the particles' velocities.
     - v_z (numpy.ndarray): The z-component of the particles' velocities.
     """
-    initial_wind = 1.0
-    # what is the initial window for the particles (as a fraction of spatial window)
-    x = jax.random.uniform(key1, shape = (N_particles,), minval=-initial_wind*x_wind/2, maxval=initial_wind*x_wind/2)
-    y = jax.random.uniform(key2, shape = (N_particles,), minval=-initial_wind*y_wind/2, maxval=initial_wind*y_wind/2)
-    z = jax.random.uniform(key3, shape = (N_particles,), minval=-initial_wind*z_wind/2, maxval=initial_wind*z_wind/2)
+    x = jax.random.uniform(key1, shape = (N_particles,), minval=minx, maxval=maxx)
+    y = jax.random.uniform(key2, shape = (N_particles,), minval=miny, maxval=maxy)
+    z = jax.random.uniform(key3, shape = (N_particles,), minval=minz, maxval=maxz)
     # initialize the positions of the particles
     std = kb * T / mass
     v_x = np.random.normal(0, std, N_particles)

@@ -1,0 +1,168 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+    <title>Material Surfaces &#8212; PyPIC3D 0.1.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css" />
+    <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+    <script src="_static/jquery.js"></script>
+    <script src="_static/underscore.js"></script>
+    <script src="_static/doctools.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Demos" href="demos.html" />
+    <link rel="prev" title="Laser Pulses" href="lasers.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="material-surfaces">
+<h1>Material Surfaces<a class="headerlink" href="#material-surfaces" title="Permalink to this headline">¶</a></h1>
+<p>Material boundaries in particle in cell simulations typically used spatially varying
+permittivities to model the interaction of particles with different materials. In PyPIC3D,
+material surfaces can be defined using the <cite>MaterialSurface</cite> class. This class allows users
+to model a surface such as metal by simulating a plasma with a surface boundary condition
+based on the work function of the material. This allows for the simulation of materials with
+electron spill over.</p>
+<section id="usage">
+<h2>Usage<a class="headerlink" href="#usage" title="Permalink to this headline">¶</a></h2>
+<p>To define a material surface in PyPIC3D, you must create a particle species within the region
+of the material and define the surface of the material using the <cite>MaterialSurface</cite> class.</p>
+<p>Here is an example of how you might define a material surface in the configuration file:</p>
+<div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="k">[particle1]</span><span class="w"></span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;electrons&quot;</span><span class="w"></span>
+<span class="n">N_particles</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">30000</span><span class="w"></span>
+<span class="n">weight</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">100</span><span class="w"></span>
+<span class="n">charge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-1</span><span class="mf">.602e-19</span><span class="w"></span>
+<span class="n">mass</span><span class="w">   </span><span class="o">=</span><span class="w"> </span><span class="mf">9.1093837e-31</span><span class="w"></span>
+<span class="n">temperature</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="w"></span>
+<span class="n">xmin</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-0</span><span class="mf">.025</span><span class="w"></span>
+<span class="n">xmax</span><span class="w"> </span><span class="o">=</span><span class="w">  </span><span class="mf">0.025</span><span class="w"></span>
+<span class="n">ymin</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-0</span><span class="mf">.025</span><span class="w"></span>
+<span class="n">ymax</span><span class="w"> </span><span class="o">=</span><span class="w">  </span><span class="mf">0.025</span><span class="w"></span>
+<span class="n">zmin</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-0</span><span class="mf">.025</span><span class="w"></span>
+<span class="n">zmax</span><span class="w"> </span><span class="o">=</span><span class="w">  </span><span class="mf">0.025</span><span class="w"></span>
+
+<span class="k">[particle2]</span><span class="w"></span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;ions&quot;</span><span class="w"></span>
+<span class="n">N_particles</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">30000</span><span class="w"></span>
+<span class="n">weight</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">100</span><span class="w"></span>
+<span class="n">charge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">1.602e-19</span><span class="w"></span>
+<span class="n">mass</span><span class="w">   </span><span class="o">=</span><span class="w"> </span><span class="mf">1.67e-27</span><span class="w"></span>
+<span class="n">temperature</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="w"></span>
+<span class="n">xmin</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-0</span><span class="mf">.025</span><span class="w"></span>
+<span class="n">xmax</span><span class="w"> </span><span class="o">=</span><span class="w">  </span><span class="mf">0.025</span><span class="w"></span>
+<span class="n">ymin</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-0</span><span class="mf">.025</span><span class="w"></span>
+<span class="n">ymax</span><span class="w"> </span><span class="o">=</span><span class="w">  </span><span class="mf">0.025</span><span class="w"></span>
+<span class="n">zmin</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-0</span><span class="mf">.025</span><span class="w"></span>
+<span class="n">zmax</span><span class="w"> </span><span class="o">=</span><span class="w">  </span><span class="mf">0.025</span><span class="w"></span>
+
+<span class="k">[surface1]</span><span class="w"></span>
+<span class="n">name</span><span class="o">=</span><span class="s">&#39;tungsten face&#39;</span><span class="w"></span>
+<span class="n">material</span><span class="o">=</span><span class="s">&#39;tungsten&#39;</span><span class="w"></span>
+<span class="n">work_function_x</span><span class="o">=</span><span class="s">&#39;work_function_x.npy&#39;</span><span class="w"></span>
+<span class="n">work_function_y</span><span class="o">=</span><span class="s">&#39;work_function_y.npy&#39;</span><span class="w"></span>
+<span class="n">work_function_z</span><span class="o">=</span><span class="s">&#39;work_function_z.npy&#39;</span><span class="w"></span>
+</pre></div>
+</div>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">PyPIC3D</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="solvers.html">Solvers Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="chargeconservation.html">Charge Conservation Method</a></li>
+<li class="toctree-l1"><a class="reference internal" href="yee.html">Yee Grid</a></li>
+<li class="toctree-l1"><a class="reference internal" href="particles.html">Particle Species</a></li>
+<li class="toctree-l1"><a class="reference internal" href="particles.html#bounded-particles">Bounded Particles</a></li>
+<li class="toctree-l1"><a class="reference internal" href="lasers.html">Laser Pulses</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Material Surfaces</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#usage">Usage</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="demos.html">Demos</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="lasers.html" title="previous chapter">Laser Pulses</a></li>
+      <li>Next: <a href="demos.html" title="next chapter">Demos</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 4.3.2</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+      |
+      <a href="_sources/materialsurfaces.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

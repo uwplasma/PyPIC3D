@@ -4,12 +4,14 @@ from jax import random
 from jax import jit
 from jax import lax
 from jax._src.scipy.sparse.linalg import _vdot_real_tree, _add, _sub, _mul
-from jax.tree_util import tree_leaves
+from jax import tree_util
+from jax.tree_util import register_pytree_node_class
 import jax.numpy as jnp
 import math
 from pyevtk.hl import gridToVTK
 import functools
 from functools import partial
+import toml
 
 # Christopher Woolford, Oct 22 2024
 # This file contains functions that apply boundary conditions to a field.
@@ -61,3 +63,139 @@ def apply_zero_boundary_condition(field):
     field = field.at[:, :, -1].set(0)
 
     return field
+
+def get_material_surface_keys(config):
+    """
+    Extracts and returns a list of keys from the given configuration dictionary
+    that start with the prefix 'surface'.
+    Args:
+        config (dict): A dictionary containing configuration keys and values.
+    Returns:
+        list: A list of keys from the config dictionary that start with 'surface'.
+    """
+    surface_keys = []
+    for key in config.keys():
+        if key[:7] == 'surface':
+            surface_keys.append(key)
+    return surface_keys
+
+def load_material_surfaces_from_toml(config_file):
+    """
+    Load material surfaces from a TOML file.
+
+    Parameters:
+    - config (dict): Dictionary containing the configuration.
+
+    Returns:
+    - list: List of MaterialSurface objects.
+    """
+    config = toml.load(config_file)
+    surface_keys = get_material_surface_keys(config)
+    surfaces = []
+
+    for toml_key in surface_keys:
+        try:
+            surface_config = config[toml_key]
+            name = surface_config['name']
+            material = surface_config['material']
+            work_function_x_path = surface_config['work_function_x']
+            work_function_y_path = surface_config['work_function_y']
+            work_function_z_path = surface_config['work_function_z']
+            # load the work function paths
+            work_function_x = jnp.load(work_function_x_path)
+            work_function_y = jnp.load(work_function_y_path)
+            work_function_z = jnp.load(work_function_z_path)
+            # load the work functions
+            surface = MaterialSurface(name, material, work_function_x, work_function_y, work_function_z)
+            # define the material surface
+            surfaces.append(surface)
+        except Exception as e:
+            print(f"Error loading material surface: {toml_key}")
+            print(e)
+
+    return surfaces
+
+@register_pytree_node_class
+class MaterialSurface:
+    """
+    Class representing a material surface.
+    """
+
+    def __init__(self, name, material, work_function_x, work_function_y, work_function_z):
+        """
+        Initialize a MaterialSurface object.
+
+        Parameters:
+        - name (str): Name of the material surface.
+        - material (str): Material of the surface.
+        - work_function_x (float): Work function in the x-direction.
+        - work_function_y (float): Work function in the y-direction.
+        - work_function_z (float): Work function in the z-direction.
+        """
+
+        print(f"Initializing material surface: {name}")
+        self.name = name
+        self.material = material
+        self.work_function = jnp.array([work_function_x, work_function_y, work_function_z])
+
+    def get_material(self):
+        """
+        Get the material of the surface.
+
+        Returns:
+        - str: Material of the surface.
+        """
+        return self.material
+
+    def get_work_function(self):
+        """
+        Get the work function of the material surface.
+
+        Returns:
+        - ndarray: Work function of the material surface.
+        """
+        return self.work_function[0], self.work_function[1], self.work_function[2]
+    
+    def get_work_function_x(self):
+        """
+        Get the work function in the x-direction.
+
+        Returns:
+        - float: Work function in the x-direction.
+        """
+        return self.work_function[0]
+    
+    def get_work_function_y(self):
+        """
+        Get the work function in the y-direction.
+
+        Returns:
+        - float: Work function in the y-direction.
+        """
+        return self.work_function[1]
+    
+    def get_work_function_z(self):
+        """
+        Get the work function in the z-direction.
+
+        Returns:
+        - float: Work function in the z-direction.
+        """
+        return self.work_function[2]
+    
+
+    def tree_flatten(self):
+        children = None
+        aux_data = (self.name, self.material, self.work_function)
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        name, material, work_function = aux_data
+
+        return cls(
+            name=name,
+            material=material,
+            work_function_x=work_function[0],
+            work_function_y=work_function[1],
+            work_function_z=work_function[2]
+        )

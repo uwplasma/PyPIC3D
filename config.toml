@@ -1,13 +1,13 @@
 # This is a configuration file for PyPIC3D
 [simulation_parameters]
 name = "PIC Dev"
-t_wind = 100e-12
+t_wind = 1000e-12
 output_dir = "/home/christopherwoolford/Documents/PyPIC3D"
 bc = 'periodic'
 solver = 'spectral'
-Nx = 100
-Ny = 100
-Nz = 100
+Nx = 200
+Ny = 200
+Nz = 200
 x_wind = 1e-1
 y_wind = 1e-1
 z_wind = 1e-1
@@ -25,18 +25,35 @@ plotting_interval = 10
 
 [particle1]
 name = "electrons"
-N_particles = 1000000
+N_particles = 30000
 weight = 100
 charge = -1.602e-19
 mass   = 9.1093837e-31
-temperature = 293000
-bounded = true
-fermi_energy = 1.56e-18
-xmin = -0.4e-2
-xmax = -0.3e-2
-ymin = -0.5e-1
-ymax = 0.5e-1
-zmin = -0.5e-1
-zmax = 0.5e-1
-w = [0.0,1.0,1.0]
-g = [0.0,0.5,0.0]
+temperature = 1
+xmin = -0.025
+xmax =  0.025
+ymin = -0.025
+ymax =  0.025
+zmin = -0.025
+zmax =  0.025
+
+[particle2]
+name = "ions"
+N_particles = 30000
+weight = 100
+charge = 1.602e-19
+mass   = 1.67e-27
+temperature = 1
+xmin = -0.025
+xmax =  0.025
+ymin = -0.025
+ymax =  0.025
+zmin = -0.025
+zmax =  0.025
+
+[surface1]
+name='tungsten face'
+material='tungsten'
+work_function_x='work_function_x.npy'
+work_function_y='work_function_y.npy'
+work_function_z='work_function_z.npy'

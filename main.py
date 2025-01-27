@@ -63,13 +63,14 @@ config_file = args.config
 
 particles, Ex, Ey, Ez, Ex_ext, Ey_ext, Ez_ext, Bx, By, Bz, Bx_ext, By_ext, Bz_ext, Jx, Jy, Jz, \
     phi, rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, \
-        plasma_parameters, M, solver, bc, electrostatic, verbose, GPUs, start, Nt, curl_func, pecs = initialize_simulation(config_file)
+        plasma_parameters, M, solver, bc, electrostatic, verbose, GPUs, start, Nt, curl_func, \
+            pecs, lasers, surfaces = initialize_simulation(config_file)
 # initialize the simulation
 
 
 loop = partial(time_loop, Ex_ext=Ex_ext, Ey_ext=Ey_ext, Ez_ext=Ez_ext, Bx_ext=Bx_ext, By_ext=By_ext, Bz_ext=Bz_ext, E_grid=E_grid, \
-    B_grid=B_grid, world=world, constants=constants, plotting_parameters=plotting_parameters, pecs=pecs, curl_func=curl_func, M=M, \
-        solver=solver, bc=bc, electrostatic=electrostatic, verbose=verbose, GPUs=GPUs)
+    B_grid=B_grid, world=world, constants=constants, pecs=pecs, lasers=lasers, surfaces=surfaces,                                                   \
+        curl_func=curl_func, M=M, solver=solver, bc=bc, electrostatic=electrostatic, verbose=verbose, GPUs=GPUs)
 # partial function for the time loop
 
 ############################################################################################################

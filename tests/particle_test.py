@@ -63,7 +63,19 @@ class TestParticleMethods(unittest.TestCase):
             key1, key2, key3: Keys for random number generation.
         """
         x, y, z, vx, vy, vz = initial_particles(
-            self.N_particles, self.x_wind, self.y_wind, self.z_wind, self.mass, self.T, self.kb, self.key1, self.key2, self.key3
+            N_particles=self.N_particles,
+            minx=-self.x_wind/2,
+            maxy=self.x_wind/2,
+            minz=-self.y_wind/2,
+            maxz=self.y_wind/2,
+            minz=-self.z_wind/2,
+            maxz=self.z_wind/2,
+            mass=self.mass,
+            T=self.T,
+            kb=self.kb,
+            key1=self.key1,
+            key2=self.key2,
+            key3=self.key3,
         )
         self.assertEqual(x.shape[0], self.N_particles)
         self.assertEqual(y.shape[0], self.N_particles)

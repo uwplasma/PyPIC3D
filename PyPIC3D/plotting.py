@@ -283,14 +283,14 @@ def fft(signal, dt):
 
     N = signal.shape[0]
     # get the total length of the signal
-    yf = scipy.fft.fft(signal)[:int(N/2)]
+    yf = jnp.fft.fftn(signal)[:int(N/2)]
     # do a fast fourier transform
     xf = scipy.fft.fftfreq(N, dt)[:int(N/2)]
     # get the frequency index for the fast fourier transform
     return xf, yf
 
 
-def plot_fft(signal, dt, name, savename):
+def plot_fft(signal, dt, name, path):
     xf, yf = fft(signal, dt)
 
     plt.plot(xf, np.abs(yf))
@@ -298,10 +298,11 @@ def plot_fft(signal, dt, name, savename):
     plt.ylabel("Amplitude")
     plt.title(f"FFT of {name}")
 
-    if not os.path.exists("plots"):
-        os.makedirs("plots")
+    if not os.path.exists(f"{path}/data/fft"):
+        os.makedirs(f"{path}/data/fft")
 
-    plt.savefig(f"plots/{savename}.png", dpi=300)
+    savename = name.replace(" ", "_")
+    plt.savefig(f"{path}/data/fft/{savename}.png", dpi=300)
     plt.close()
     return xf[ np.argmax(np.abs(yf)[1:]) ]
     # plot the fft of a signal
@@ -397,6 +398,9 @@ def center_of_mass(particles):
     Returns:
     - ndarray: The center of mass coordinates.
     """
+    if particles.get_number_of_particles() == 0:
+        return 0, 0, 0
+    
     total_mass = particles.get_mass() * particles.get_number_of_particles()
     # get the total mass of the particles
     x_com = jnp.sum( particles.get_mass() * particles.get_position()[0] ) / total_mass
@@ -718,6 +722,10 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
     Ny = world['Ny']
     Nz = world['Nz']
 
+    #Eline = jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[175, :, 0]
+    # select a slice of the E field along the y-axis
+    #_ = plot_fft(Eline, dt, f"E along Tungsten {t}", output_dir)
+
     if plotting_parameters['plotpositions']:
         plot_positions(particles, t, world['x_wind'], world['y_wind'], world['z_wind'], output_dir)
     if plotting_parameters['phaseSpace']:
@@ -729,6 +737,7 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         write_data(f"{output_dir}/data/averageE.txt", t*dt, jnp.mean(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)))
         write_data(f"{output_dir}/data/averageB.txt", t*dt, jnp.mean(jnp.sqrt(Bx**2 + By**2 + Bz**2)))
         write_data(f"{output_dir}/data/Eprobe.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx-1, Ny-1, Nz-1))
+        write_data(f"{output_dir}/data/centerE.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx//2, Ny//2, Nz//2))
         write_data(f"{output_dir}/data/electric_field_energy.txt", t*dt, field_energy(Ex, Ey, Ez, dx, dy, dz))
         write_data(f"{output_dir}/data/magnetic_field_energy.txt", t*dt, field_energy(Bx, By, Bz, dx, dy, dz))
         write_data(f"{output_dir}/data/Jx_probe.txt", t*dt, jnp.mean(Jx))
