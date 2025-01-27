@@ -51,7 +51,7 @@ def load_lasers_from_toml(config_file, constants, world, grid, staggered_grid):
 @register_pytree_node_class
 class LaserPulse:
     def __init__(self, max_electric_field, k0, omega0, pulse_width, \
-                  xstart, ystart, zstart, width, constants, world, grid, staggered_grid, points=20):
+                  xstart, ystart, zstart, width, constants, world, grid, staggered_grid, points=40):
         self.max_electric_field = max_electric_field
         self.k0 = k0
         self.omega0 = omega0
@@ -120,7 +120,7 @@ class LaserPulse:
         return weight * time_window * y_gaussian * z_gaussian * self.max_electric_field * x_sin / C
 
     
-    def inject_laser(self, Ex, Ey, Ez, Bx, By, Bz, t):
+    def inject_incident_fields(self, Ex, Ey, Ez, Bx, By, Bz, t):
         """
         Injects the laser fields into the simulation grid.
 

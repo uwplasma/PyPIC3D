@@ -86,6 +86,10 @@ def time_loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, Ex_ext
         Bz = Bz + Bz_ext
         # add the external magnetic field to the magnetic field components
 
+    for laser in lasers:
+        Ex, Ey, Ez, Bx, By, Bz = laser.inject_incident_fields(Ex, Ey, Ez, Bx, By, Bz, t)
+        # inject any laser pulses into the electric and magnetic fields
+    
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
         if particles[i].get_number_of_particles() > 0:
@@ -131,10 +135,6 @@ def time_loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, Ex_ext
     for pec in pecs:
         Ex, Ey, Ez = pec.apply_pec(Ex, Ey, Ez)
         # apply any PEC boundary conditions to the electric field
-
-    for laser in lasers:
-        Ex, Ey, Ez, Bx, By, Bz = laser.inject_laser(Ex, Ey, Ez, Bx, By, Bz, t)
-        # inject any laser pulses into the electric and magnetic fields
 
 
     return particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho
