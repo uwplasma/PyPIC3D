@@ -43,7 +43,12 @@ class PyPIC3DExperiment(epyc.Experiment):
         return {
             'duration': duration,
             'final_particles': particles,
-            'final_fields': (Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi)
+            'final_fields': (Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi),
+            'plasma_parameters': plasma_parameters,
+            'simulation_parameters': simulation_parameters,
+            'constants': constants,
+            'world': world,
+            'plotting_parameters': plotting_parameters,
         }
     
 class ParameterScan(epyc.Lab):
