@@ -87,7 +87,7 @@ oscillator is used to model bounded particles such as semimetals by simulating a
 of ions. This is done by added additional force terms to the Boris Push algorithm.
 
 Incorporating Bounded Particles in a Simulation
------------------------------------------
+------------------------------------------------
 
 To incorporate bounded particles in a simulation, the following parameters must be set for a particle species in the configuration file:
 
