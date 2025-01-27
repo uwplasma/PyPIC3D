@@ -52,7 +52,7 @@ zmin = -0.025
 zmax =  0.025
 
 [laser1]
-max_electric_field = 1000000000000
+max_electric_field = 100000
 k0 = 7853981.633974483
 omega0 = 2.36e15
 pulse_width = 20e-12

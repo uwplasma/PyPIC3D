@@ -21,7 +21,7 @@ def grab_laser_keys(config):
     return laser_keys
 
 
-def load_lasers_from_toml(config_file, constants, world, grid, staggered_grid):
+def load_lasers_from_toml(config, constants, world, grid, staggered_grid):
     """
     Load laser pulses from a TOML file.
 
@@ -31,7 +31,6 @@ def load_lasers_from_toml(config_file, constants, world, grid, staggered_grid):
     Returns:
     - list: List of LaserPulse objects.
     """
-    config = toml.load(config_file)
     laser_keys = grab_laser_keys(config)
     lasers = []
 

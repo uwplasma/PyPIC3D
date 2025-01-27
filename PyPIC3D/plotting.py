@@ -825,7 +825,8 @@ def plotter(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, 
     dt = world['dt']
     output_dir = simulation_parameters['output_dir']
 
-    if t % plotting_parameters['plotting_interval'] == 0:
-        save_avg_positions(t, dt, particles, output_dir)
-        save_total_momentum(t, dt, particles, output_dir)
-        save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid, B_grid, plotting_parameters, world, constants, solver, bc, output_dir)
+    if plotting_parameters['plotting']:
+        if t % plotting_parameters['plotting_interval'] == 0:
+            save_avg_positions(t, dt, particles, output_dir)
+            save_total_momentum(t, dt, particles, output_dir)
+            save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid, B_grid, plotting_parameters, world, constants, solver, bc, output_dir)

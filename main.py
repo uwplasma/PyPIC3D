@@ -11,6 +11,7 @@ import argparse
 from functools import partial
 from tqdm import tqdm
 import numpy as np
+import toml
 # Importing relevant libraries
 
 from PyPIC3D.plotting import (
@@ -56,7 +57,8 @@ args = parser.parse_args()
 # argument parser for the configuration file
 config_file = args.config
 # path to the configuration file
-
+print(f"Using Configuration File: {config_file}")
+toml_file = toml.load(config_file)
 ############################################################################################################
 
 ##################################### INITIALIZE SIMULATION ################################################
@@ -64,7 +66,7 @@ config_file = args.config
 particles, Ex, Ey, Ez, Ex_ext, Ey_ext, Ez_ext, Bx, By, Bz, Bx_ext, By_ext, Bz_ext, Jx, Jy, Jz, \
     phi, rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, \
         plasma_parameters, M, solver, bc, electrostatic, verbose, GPUs, start, Nt, curl_func, \
-            pecs, lasers, surfaces = initialize_simulation(config_file)
+            pecs, lasers, surfaces = initialize_simulation(toml_file)
 # initialize the simulation
 
 
