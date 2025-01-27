@@ -30,7 +30,7 @@ from PyPIC3D.boris import (
 )
 
 #@partial(jit, static_argnums=(0, 18, 19, 20, 21, 22, 23, 24))
-def time_loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, Ex_ext, Ey_ext, Ez_ext, Bx_ext, By_ext, Bz_ext, E_grid, B_grid, world, constants, pecs, plotting_parameters, curl_func, M, solver, bc, electrostatic, verbose, GPUs):
+def time_loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, Ex_ext, Ey_ext, Ez_ext, Bx_ext, By_ext, Bz_ext, E_grid, B_grid, world, constants, pecs, lasers, surfaces, curl_func, M, solver, bc, electrostatic, verbose, GPUs):
     """
     Perform a time step in the simulation, updating the electric and magnetic fields, and particle positions and velocities.
 
@@ -49,6 +49,8 @@ def time_loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, Ex_ext
     world (dict): Dictionary containing simulation parameters such as grid size and time step.
     constants (dict): Dictionary containing physical constants.
     pecs (list): List of PEC (Perfect Electric Conductor) boundary conditions.
+    lasers (list): List of laser objects.
+    surfaces (list): List of surface objects.
     plotting_parameters (dict): Parameters for plotting (not used in this function).
     curl_func (function): Function to compute the curl of a field.
     M (array): Matrix for solving field equations.
@@ -87,8 +89,25 @@ def time_loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, Ex_ext
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
         if particles[i].get_number_of_particles() > 0:
+            ######################### Material Surfaces ############################################
+            work_function_x = jnp.zeros_like(Ex)
+            work_function_y = jnp.zeros_like(Ey)
+            work_function_z = jnp.zeros_like(Ez)
+            for surface in surfaces:
+                work_function_x += surface.get_work_function_x()
+                work_function_y += surface.get_work_function_y()
+                work_function_z += surface.get_work_function_z()
+                # get the work functions from the material surfaces
+
+            total_Ex = Ex + work_function_x
+            total_Ey = Ey + work_function_y
+            total_Ez = Ez + work_function_z
+            # add the work functions as background fields
+            ########################################################################################
+
+
             if verbose: print(f'Updating {particles[i].get_name()}')
-            particles[i] = particle_push(particles[i], Ex, Ey, Ez, Bx, By, Bz, E_grid, B_grid, world['dt'], GPUs)
+            particles[i] = particle_push(particles[i], total_Ex, total_Ey, total_Ez, Bx, By, Bz, E_grid, B_grid, world['dt'], GPUs)
             # use boris push for particle velocities
             if verbose: print(f"Calculating {particles[i].get_name()} Velocities, Mean Value: {jnp.mean(jnp.abs(particles[i].get_velocity()[0]))}")
             x_wind, y_wind, z_wind = world['x_wind'], world['y_wind'], world['z_wind']
@@ -112,6 +131,10 @@ def time_loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, Ex_ext
     for pec in pecs:
         Ex, Ey, Ez = pec.apply_pec(Ex, Ey, Ez)
         # apply any PEC boundary conditions to the electric field
+
+    for laser in lasers:
+        Ex, Ey, Ez, Bx, By, Bz = laser.inject_laser(Ex, Ey, Ez, Bx, By, Bz, t)
+        # inject any laser pulses into the electric and magnetic fields
 
 
     return particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho

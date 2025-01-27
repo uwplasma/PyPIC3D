@@ -43,6 +43,14 @@ from PyPIC3D.plotting import (
     plot_initial_KE
 )
 
+from PyPIC3D.laser import (
+    load_lasers_from_toml
+)
+
+from PyPIC3D.boundaryconditions import (
+    load_material_surfaces_from_toml
+)
+
 def default_parameters():
     """
     Returns a dictionary of default parameters for the simulation.
@@ -166,6 +174,9 @@ def initialize_simulation(config_file):
     constants = convert_to_jax_compatible(constants)
     # convert the world parameters to jax compatible format
 
+    E_grid, B_grid = build_yee_grid(world)
+    # build the grid for the fields
+
     print_stats(world)
     ################################### INITIALIZE PARTICLES AND FIELDS ########################################################
 
@@ -213,11 +224,13 @@ def initialize_simulation(config_file):
     M = precondition( simulation_parameters['NN'], phi, rho, model)
     # solve for the preconditioner using the neural network
 
-    # if not electrostatic:
-    #     Ex, Ey, Ez, phi, rho = calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, 0, solver, bc, verbose, GPUs, electrostatic)
+    ####################################################################################################################
 
-    E_grid, B_grid = build_yee_grid(world)
-    # build the grid for the fields
+    lasers = load_lasers_from_toml(config_file, constants, world, E_grid, B_grid)
+    # load the lasers from the configuration file
+
+    surfaces = load_material_surfaces_from_toml(config_file)
+    # load the material surfaces from the configuration file
 
     if solver == "spectral":
         curl_func = functools.partial(spectral_curl, world=world)
@@ -226,4 +239,4 @@ def initialize_simulation(config_file):
 
     return particles, Ex, Ey, Ez, Ex_ext, Ey_ext, Ez_ext, Bx, By, Bz, Bx_ext, By_ext, Bz_ext, Jx, Jy, Jz, phi, \
         rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, M, \
-            solver, bc, electrostatic, verbose, GPUs, start, Nt, curl_func, pecs
+            solver, bc, electrostatic, verbose, GPUs, start, Nt, curl_func, pecs, lasers, surfaces
