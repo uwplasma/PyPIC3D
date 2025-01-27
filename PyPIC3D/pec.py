@@ -18,13 +18,13 @@ def grab_pec_keys(config):
             pec_keys.append(key)
     return pec_keys
 
-def read_pec_boundaries_from_toml(toml_file, world):
+def read_pec_boundaries_from_toml(config, world):
     """
     Reads PEC boundaries from a TOML file and returns a list of PEC objects.
 
     Args:
-        toml_file (str): Path to the TOML file containing PEC boundary definitions.
-
+        config (dict): A dictionary containing configuration keys and values.
+        world (dict): A dictionary containing the world
     Returns:
         list: A list of PEC objects created from the TOML file.
     """
@@ -36,7 +36,6 @@ def read_pec_boundaries_from_toml(toml_file, world):
     y_wind = world['y_wind']
     z_wind = world['z_wind']
 
-    config = toml.load(toml_file)
     pec_keys = grab_pec_keys(config)
 
     pecs = []

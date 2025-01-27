@@ -59,6 +59,7 @@ def default_parameters():
     dict: A dictionary of default parameters.
     """
     plotting_parameters = {
+    "plotting" : True,
     "save_data": False,
     "plotfields": False,
     "plotpositions": False,
@@ -106,12 +107,12 @@ def default_parameters():
     # return the dictionaries
 
 
-def initialize_simulation(config_file):
+def initialize_simulation(toml_file):
     """
     Initializes the simulation with the given configuration file.
 
     Parameters:
-    config_file (str): Path to the configuration file.
+    toml_file (toml): The configuration file for the simulation.
 
     Returns:
     tuple: A tuple containing the following elements:
@@ -142,8 +143,8 @@ def initialize_simulation(config_file):
     plotting_parameters, simulation_parameters, constants = default_parameters()
     # load the default parameters
 
-    if os.path.exists(config_file):
-        simulation_parameters, plotting_parameters, constants = update_parameters_from_toml(config_file, simulation_parameters, plotting_parameters, constants)
+    if toml_file is not None:
+        simulation_parameters, plotting_parameters, constants = update_parameters_from_toml(toml_file, simulation_parameters, plotting_parameters, constants)
 
     print(f"Initializing Simulation: { simulation_parameters['name'] }")
     start = time.time()
@@ -178,9 +179,13 @@ def initialize_simulation(config_file):
     # build the grid for the fields
 
     print_stats(world)
+
+    if not os.path.exists(f"{simulation_parameters['output_dir']}/data"):
+        os.makedirs(f"{simulation_parameters['output_dir']}/data")
+        # create the data directory if it doesn't exist
     ################################### INITIALIZE PARTICLES AND FIELDS ########################################################
 
-    particles = load_particles_from_toml(config_file, simulation_parameters, world, constants)
+    particles = load_particles_from_toml(toml_file, simulation_parameters, world, constants)
     # load the particles from the configuration file
 
     plot_initial_KE(particles, path=simulation_parameters['output_dir'])
@@ -198,7 +203,7 @@ def initialize_simulation(config_file):
     Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho = initialize_fields(world)
     # initialize the electric and magnetic fields
 
-    Ex_ext, Ey_ext, Ez_ext, Bx_ext, By_ext, Bz_ext = load_external_fields_from_toml([Ex, Ey, Ez, Bx, By, Bz], config_file)
+    Ex_ext, Ey_ext, Ez_ext, Bx_ext, By_ext, Bz_ext = load_external_fields_from_toml([Ex, Ey, Ez, Bx, By, Bz], toml_file)
     # add any external fields to the simulation
 
     # import matplotlib.pyplot as plt
@@ -206,7 +211,7 @@ def initialize_simulation(config_file):
     # plt.show()
     # exit()
 
-    pecs = read_pec_boundaries_from_toml(config_file, world)
+    pecs = read_pec_boundaries_from_toml(toml_file, world)
     # read in perfectly electrical conductor boundaries
 
     ##################################### Neural Network Preconditioner ################################################
@@ -226,10 +231,10 @@ def initialize_simulation(config_file):
 
     ####################################################################################################################
 
-    lasers = load_lasers_from_toml(config_file, constants, world, E_grid, B_grid)
+    lasers = load_lasers_from_toml(toml_file, constants, world, E_grid, B_grid)
     # load the lasers from the configuration file
 
-    surfaces = load_material_surfaces_from_toml(config_file)
+    surfaces = load_material_surfaces_from_toml(toml_file)
     # load the material surfaces from the configuration file
 
     if solver == "spectral":
