@@ -20,7 +20,8 @@ from PyPIC3D.utils import (
     update_parameters_from_toml,
     precondition, build_coallocated_grid,
     build_yee_grid, convert_to_jax_compatible, load_external_fields_from_toml,
-    check_stability, print_stats, particle_sanity_check, build_plasma_parameters_dict
+    check_stability, print_stats, particle_sanity_check, build_plasma_parameters_dict,
+    modified_courant_condition
 )
 
 from PyPIC3D.fields import (
@@ -164,10 +165,8 @@ def initialize_simulation(toml_file):
     # compute the spatial resolution
     courant_number = 1
     dt = courant_condition(courant_number, dx, dy, dz, simulation_parameters, constants)
-    # calculate temporal resolution using courant condition
     Nt     = int( t_wind / dt )
     # Nt for resolution
-
     world = {'dt': dt, 'Nt': Nt, 'dx': dx, 'dy': dy, 'dz': dz, 'Nx': Nx, 'Ny': Ny, 'Nz': Nz, 'x_wind': x_wind, 'y_wind': y_wind, 'z_wind': z_wind}
     # set the simulation world parameters
 
@@ -178,7 +177,6 @@ def initialize_simulation(toml_file):
     E_grid, B_grid = build_yee_grid(world)
     # build the grid for the fields
 
-    print_stats(world)
 
     if not os.path.exists(f"{simulation_parameters['output_dir']}/data"):
         os.makedirs(f"{simulation_parameters['output_dir']}/data")
@@ -187,6 +185,17 @@ def initialize_simulation(toml_file):
 
     particles = load_particles_from_toml(toml_file, simulation_parameters, world, constants)
     # load the particles from the configuration file
+
+    dt = modified_courant_condition(courant_number, world, constants, particles)
+    # calculate temporal resolution using courant condition
+    Nt     = int( t_wind / dt )
+    # Nt for resolution
+    world['dt'] = dt
+    world['Nt'] = Nt
+    # update the world parameters
+
+    print_stats(world)
+
 
     plot_initial_KE(particles, path=simulation_parameters['output_dir'])
     # plot the initial kinetic energy of the particles

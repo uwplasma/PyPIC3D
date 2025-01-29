@@ -191,9 +191,9 @@ def plot_positions(particles, t, x_wind, y_wind, z_wind, path):
     fig.write_html(f"{path}/data/positions/particles.{t:09}.html")
 
 
-def plot_velocity_histogram(vx, vy, vz, t, nbins=50):
+def plot_velocity_histogram(species, t, output_dir, nbins=50):
     """
-    Plots the histogram of the velocities of the particles.
+    Plots the histogram of the magnitudes of the velocities of the particles.
 
     Parameters:
     vx (array-like): The x-component of the velocities of the particles.
@@ -204,19 +204,18 @@ def plot_velocity_histogram(vx, vy, vz, t, nbins=50):
     Returns:
     None
     """
-    fig, axs = plt.subplots(3)
-    fig.suptitle('Particle Velocities')
-    axs[0].hist(jnp.abs(vx), bins=nbins)
-    axs[0].set_title('X-Component')
-    axs[1].hist(jnp.abs(vy), bins=nbins)
-    axs[1].set_title('Y-Component')
-    axs[2].hist(jnp.abs(vz), bins=nbins)
-    axs[2].set_title('Z-Component')
+    vx, vy, vz = species.get_velocity()
+    species_name = species.get_name().replace(" ", "")
+    v_magnitude = jnp.sqrt(vx**2 + vy**2 + vz**2)
+    plt.hist(v_magnitude, bins=nbins)
+    plt.title('Particle Velocity Magnitudes')
+    plt.xlabel('Velocity Magnitude')
+    plt.ylabel('Number of Particles')
 
-    if not os.path.exists("plots/velocity_histograms"):
-        os.makedirs("plots/velocity_histograms")
+    if not os.path.exists(f"{output_dir}/data/velocity_histograms/{species_name}"):
+        os.makedirs(f"{output_dir}/data/velocity_histograms/{species_name}")
 
-    plt.savefig(f"plots/velocity_histograms/velocities.{t:09}.png", dpi=300)
+    plt.savefig(f"{output_dir}/data/velocity_histograms/{species_name}/velocities.{t:09}.png", dpi=200)
     plt.close()
 
 def plot_KE(KE, t):
@@ -725,6 +724,10 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
     #Eline = jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[175, :, 0]
     # select a slice of the E field along the y-axis
     #_ = plot_fft(Eline, dt, f"E along Tungsten {t}", output_dir)
+
+    if plotting_parameters['plotvelocities']:
+        for species in particles:
+            plot_velocity_histogram(species, t, output_dir, nbins=50)
 
     if plotting_parameters['plotpositions']:
         plot_positions(particles, t, world['x_wind'], world['y_wind'], world['z_wind'], output_dir)

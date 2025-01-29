@@ -160,9 +160,9 @@ def build_plasma_parameters_dict(world, constants, electrons, dt):
         "Thermal Velocity": thermal_velocity,
         "Number of Electrons": electrons.get_number_of_particles(),
         "Temperature of Electrons": electrons.get_temperature(),
-        "dx per debye length": dx/debye,
-        "dy per debye length": dy/debye,
-        "dz per debye length": dz/debye,
+        "dx per debye length": debye/dx,
+        "dy per debye length": debye/dy,
+        "dz per debye length": debye/dz,
     }
 
     return plasma_parameters
@@ -556,7 +556,7 @@ def courant_condition(courant_number, dx, dy, dz, simulation_parameters, constan
     return courant_number / (C * ( (1/dx) + (1/dy) + (1/dz) ) )
 # calculate the courant condition
 
-def modified_courant_condition(courant_number, world, constants, wb, wp):
+def modified_courant_condition(courant_number, world, constants, particles):
     """
     Calculate the modified Courant condition for a given grid spacing and wave speed.
 
@@ -578,7 +578,22 @@ def modified_courant_condition(courant_number, world, constants, wb, wp):
     dz = world['dz']
     C = constants['C']
 
-    wb2 = wb[0,0]**2 + wb[1,1]**2 + wb[2,2]**2
+    wp = 0
+    wb2 = 0
+
+    for species in particles:
+        if species.is_bounded():
+            wp = wp + plasma_frequency(species, world, constants)
+            w = species.get_freqmatrix()
+            # get the frequency matrice
+            wb2 = wb2 + w[0,0]**2 + w[1,1]**2 + w[2,2]**2
+            # get the diagonal components
+        
+    if len(particles) > 0:
+        wp = wp / len(particles)
+        wb2 = wb2 / len(particles)
+    # take the averages
+
     wp2 = wp**2
 
     dt = 1 / jnp.sqrt( 0.25*(wb2 + wp2) + C**2 * ( (1/dx)**2 + (1/dy)**2 + (1/dz)**2 ) )
@@ -586,20 +601,22 @@ def modified_courant_condition(courant_number, world, constants, wb, wp):
 
 def plasma_frequency(electrons, world, constants):
     """
-    Calculate the theoretical frequency of a system based on the given parameters.
+    Calculate the plasma frequency.
+
+    The plasma frequency is calculated using the properties of the electrons,
+    the dimensions of the world, and physical constants.
 
     Parameters:
-    N_electrons (float): Number of electrons in the system.
-    x_wind (float): Width of the system in the x-dimension.
-    y_wind (float): Width of the system in the y-dimension.
-    z_wind (float): Width of the system in the z-dimension.
-    eps (float): Permittivity of the medium.
-    me (float): Mass of an electron.
-    q_e (float): Charge of an electron.
+    electrons (object): An object representing the electrons, which should have
+                        methods get_charge(), get_number_of_particles(), and get_mass().
+    world (dict): A dictionary containing the dimensions of the world with keys:
+                  'x_wind', 'y_wind', and 'z_wind'.
+    constants (dict): A dictionary containing physical constants with key 'eps'.
 
     Returns:
-    float: Theoretical frequency of the system.
+    float: The calculated plasma frequency.
     """
+
 
     x_wind = world['x_wind']
     y_wind = world['y_wind']
