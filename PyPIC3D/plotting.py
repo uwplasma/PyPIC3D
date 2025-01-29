@@ -708,10 +708,31 @@ def write_data(filename, time, data):
         f.write(f"{time}, {data}\n")
 
 
-def field_energy(fieldx, fieldy, fieldz, dx, dy, dz):
-    abs_field_squared = jnp.sum(fieldx**2 + fieldy**2 + fieldz**2, axis=(1,2))
-    integral_field_squared = jnp.trapezoid(abs_field_squared, dx=dx)
-    return 0.5 * integral_field_squared
+def total_field_energy(fieldx, fieldy, fieldz, world, constants):
+    """
+    Calculate the total field energy from the given field components.
+    This function computes the energy of the electric field components along 
+    the x, y, and z axes using the trapezoidal rule for numerical integration.
+    Parameters:
+    fieldx (array-like): The electric field component along the x-axis.
+    fieldy (array-like): The electric field component along the y-axis.
+    fieldz (array-like): The electric field component along the z-axis.
+    dx (float): The spacing between points along the x-axis.
+    dy (float): The spacing between points along the y-axis.
+    dz (float): The spacing between points along the z-axis.
+    Returns:
+    float: The total energy of the electric field.
+    """
+
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    # get the grid spacings
+    field2 = fieldx**2 + fieldy**2 + fieldz**2
+    # calculate the square of the field
+    integral = jnp.trapezoid(jnp.trapezoid(jnp.trapezoid(field2, dx=dx), dx=dy), dx=dz)
+    # integrate the square of the field along x, y, and z
+    return 0.5 * constants['eps'] * integral
 
 def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid, B_grid, plotting_parameters, world, constants, solver, bc, output_dir):
     dx = world['dx']
@@ -741,8 +762,8 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         write_data(f"{output_dir}/data/averageB.txt", t*dt, jnp.mean(jnp.sqrt(Bx**2 + By**2 + Bz**2)))
         write_data(f"{output_dir}/data/Eprobe.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx-1, Ny-1, Nz-1))
         write_data(f"{output_dir}/data/centerE.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx//2, Ny//2, Nz//2))
-        write_data(f"{output_dir}/data/electric_field_energy.txt", t*dt, field_energy(Ex, Ey, Ez, dx, dy, dz))
-        write_data(f"{output_dir}/data/magnetic_field_energy.txt", t*dt, field_energy(Bx, By, Bz, dx, dy, dz))
+        write_data(f"{output_dir}/data/electric_field_energy.txt", t*dt, total_field_energy(Ex, Ey, Ez, world, constants))
+        write_data(f"{output_dir}/data/magnetic_field_energy.txt", t*dt, total_field_energy(Bx, By, Bz, world, constants))
         write_data(f"{output_dir}/data/Jx_probe.txt", t*dt, jnp.mean(Jx))
         write_data(f"{output_dir}/data/Jy_probe.txt", t*dt, jnp.mean(Jy))
         write_data(f"{output_dir}/data/Jz_probe.txt", t*dt, jnp.mean(Jz))
