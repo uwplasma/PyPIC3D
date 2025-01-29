@@ -24,7 +24,8 @@ xmax = 0.05e-1
 ximin = int( (xmin + 0.5*x_wind) / x_wind )
 ximax = int( (xmax + 0.5*x_wind) / x_wind )
 
-Ex = Ex.at[ximin:ximax, :, :] .set(potential_wall)
+Ex = Ex.at[ximin, :, :] .set(potential_wall)
+Ex = Ex.at[ximax, :, :] .set(potential_wall)
 
 
 jnp.save('barrier_x.npy', Ex)
