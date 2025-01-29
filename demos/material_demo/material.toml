@@ -1,13 +1,13 @@
 # This is a configuration file for PyPIC3D
 [simulation_parameters]
-name = "Friedel Oscillations Demo"
-t_wind = 400e-12
+name = "Material Demo"
+t_wind = 50e-12
 output_dir = "/home/christopherwoolford/Documents/PyPIC3D"
 bc = 'periodic'
 solver = 'spectral'
-Nx = 200
-Ny = 200
-Nz = 200
+Nx = 100
+Ny = 100
+Nz = 100
 x_wind = 1e-1
 y_wind = 1e-1
 z_wind = 1e-1
@@ -15,17 +15,18 @@ verbose = false
 electrostatic = false
 
 [plotting]
+plotvelocities = true
 plot_errors = false
 phaseSpace  = false
 plotpositions = false
 plotKE = false
 plotfields = true
 plot_dispersion = false
-plotting_interval = 1
+plotting_interval = 100
 
 [particle1]
 name = "electrons"
-N_particles = 20000
+N_particles = 10000
 weight = 100
 charge = -1.602e-19
 mass   = 9.1093837e-31
@@ -39,5 +40,4 @@ ymax = 0.5e-1
 zmin = -0.5e-1
 zmax = 0.5e-1
 w = [76e14, 76e14, 76e14]
-g = [76e13, 76e13, 76e13]
-# define a bound particle species with the plasma frequency of tungsten
+g = [10e14, 10e14, 10e14]
