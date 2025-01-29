@@ -225,7 +225,10 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
             update_y=update_y,
             update_z=update_z,
             update_pos=update_pos,
-            update_v=update_v
+            update_v=update_v,
+            bound=bounded,
+            w=w,
+            g=g,
         )
         particles.append(particle)
 
@@ -479,7 +482,7 @@ class particle_species:
     def __init__(self, name, N_particles, charge, mass, T, v1, v2, v3, x1, x2, x3, subcells, \
             xwind, ywind, zwind, dx, dy, dz, weight=1, bc='periodic', update_x=True, update_y=True, update_z=True, \
                 update_vx=True, update_vy=True, update_vz=True, update_pos=True, update_v=True, w=jnp.zeros((3,3)), \
-                    g=jnp.zeros((3,3))):
+                    g=jnp.zeros((3,3)), bound=False):
         self.name = name
         self.N_particles = N_particles
         self.charge = charge
@@ -509,6 +512,7 @@ class particle_species:
         self.update_pos = update_pos
         self.update_v   = update_v
 
+        self.bound = bound
         self.w = w
         self.g = g
         # matricies for bounded species
@@ -542,6 +546,9 @@ class particle_species:
 
     def get_index(self):
         return compute_index(self.x1, self.dx, self.x_wind), compute_index(self.x2, self.dy, self.y_wind), compute_index(self.x3, self.dz, self.z_wind)
+
+    def is_bounded(self):
+        return self.bound
 
     def get_freqmatrix(self):
         return self.w

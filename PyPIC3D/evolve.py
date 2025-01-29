@@ -94,19 +94,19 @@ def time_loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, Ex_ext
     for i in range(len(particles)):
         if particles[i].get_number_of_particles() > 0:
             ######################### Material Surfaces ############################################
-            work_function_x = jnp.zeros_like(Ex)
-            work_function_y = jnp.zeros_like(Ey)
-            work_function_z = jnp.zeros_like(Ez)
+            barrier_x = jnp.zeros_like(Ex)
+            barrier_y = jnp.zeros_like(Ey)
+            barrier_z = jnp.zeros_like(Ez)
             for surface in surfaces:
-                work_function_x += surface.get_work_function_x()
-                work_function_y += surface.get_work_function_y()
-                work_function_z += surface.get_work_function_z()
-                # get the work functions from the material surfaces
+                barrier_x += surface.get_barrier_x()
+                barrier_y += surface.get_barrier_y()
+                barrier_z += surface.get_barrier_z()
+                # get the boundaries of the material surfaces
 
-            total_Ex = Ex + work_function_x
-            total_Ey = Ey + work_function_y
-            total_Ez = Ez + work_function_z
-            # add the work functions as background fields
+            total_Ex = Ex + barrier_x
+            total_Ey = Ey + barrier_y
+            total_Ez = Ez + barrier_z
+            # add the boundaries as background fields
             ########################################################################################
 
 
