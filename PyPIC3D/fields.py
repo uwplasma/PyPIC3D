@@ -12,6 +12,7 @@ import math
 from pyevtk.hl import gridToVTK
 import functools
 from functools import partial
+from memory_profiler import profile
 # import external libraries
 
 from PyPIC3D.pstd import spectral_poisson_solve, spectral_laplacian, spectral_gradient, spectral_divergence
@@ -105,7 +106,8 @@ def solve_poisson(rho, constants, world, phi, solver, bc='periodic', M = None, G
         #phi = solve_poisson_sor(phi, rho, dx, dy, dz, eps, omega=0.25, tol=1e-6, max_iter=100000)
     return phi
 
-@partial(jit, static_argnums=(9, 10, 11, 12, 13, 14))
+#@profile
+#@partial(jit, static_argnums=(9, 10, 11, 12, 13, 14))
 def calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, t, solver, bc, verbose, GPUs, electrostatic):
     """
     Calculates the electric field components (Ex, Ey, Ez), electric potential (phi), and charge density (rho) based on the given parameters.
