@@ -86,32 +86,32 @@ def time_loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, Ex_ext
         Bz = Bz + Bz_ext
         # add the external magnetic field to the magnetic field components
 
-    for laser in lasers:
-        Ex, Ey, Ez, Bx, By, Bz = laser.inject_incident_fields(Ex, Ey, Ez, Bx, By, Bz, t)
-        # inject any laser pulses into the electric and magnetic fields
+    # for laser in lasers:
+    #     Ex, Ey, Ez, Bx, By, Bz = laser.inject_incident_fields(Ex, Ey, Ez, Bx, By, Bz, t)
+    #     # inject any laser pulses into the electric and magnetic fields
     
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
         if particles[i].get_number_of_particles() > 0:
             ######################### Material Surfaces ############################################
-            barrier_x = jnp.zeros_like(Ex)
-            barrier_y = jnp.zeros_like(Ey)
-            barrier_z = jnp.zeros_like(Ez)
-            for surface in surfaces:
-                barrier_x += surface.get_barrier_x()
-                barrier_y += surface.get_barrier_y()
-                barrier_z += surface.get_barrier_z()
-                # get the boundaries of the material surfaces
+            # barrier_x = jnp.zeros_like(Ex)
+            # barrier_y = jnp.zeros_like(Ey)
+            # barrier_z = jnp.zeros_like(Ez)
+            # for surface in surfaces:
+            #     barrier_x += surface.get_barrier_x()
+            #     barrier_y += surface.get_barrier_y()
+            #     barrier_z += surface.get_barrier_z()
+            #     # get the boundaries of the material surfaces
 
-            total_Ex = Ex + barrier_x
-            total_Ey = Ey + barrier_y
-            total_Ez = Ez + barrier_z
-            # add the boundaries as background fields
+            # total_Ex = Ex + barrier_x
+            # total_Ey = Ey + barrier_y
+            # total_Ez = Ez + barrier_z
+            # # add the boundaries as background fields
             ########################################################################################
 
 
             if verbose: print(f'Updating {particles[i].get_name()}')
-            particles[i] = particle_push(particles[i], total_Ex, total_Ey, total_Ez, Bx, By, Bz, E_grid, B_grid, world['dt'], GPUs)
+            particles[i] = particle_push(particles[i], Ex, Ey, Ez, Bx, By, Bz, E_grid, B_grid, world['dt'], GPUs)
             # use boris push for particle velocities
             if verbose: print(f"Calculating {particles[i].get_name()} Velocities, Mean Value: {jnp.mean(jnp.abs(particles[i].get_velocity()[0]))}")
             x_wind, y_wind, z_wind = world['x_wind'], world['y_wind'], world['z_wind']

@@ -97,15 +97,15 @@ def load_material_surfaces_from_toml(config):
             surface_config = config[toml_key]
             name = surface_config['name']
             material = surface_config['material']
-            work_function_x_path = surface_config['work_function_x']
-            work_function_y_path = surface_config['work_function_y']
-            work_function_z_path = surface_config['work_function_z']
+            barrier_x_path = surface_config['barrier_x']
+            barrier_y_path = surface_config['barrier_y']
+            barrier_z_path = surface_config['barrier_z']
             # load the work function paths
-            work_function_x = jnp.load(work_function_x_path)
-            work_function_y = jnp.load(work_function_y_path)
-            work_function_z = jnp.load(work_function_z_path)
+            barrier_x = jnp.load(barrier_x_path)
+            barrier_y = jnp.load(barrier_y_path)
+            barrier_z = jnp.load(barrier_z_path)
             # load the work functions
-            surface = MaterialSurface(name, material, work_function_x, work_function_y, work_function_z)
+            surface = MaterialSurface(name, material, barrier_x, barrier_y, barrier_z)
             # define the material surface
             surfaces.append(surface)
         except Exception as e:
@@ -120,22 +120,22 @@ class MaterialSurface:
     Class representing a material surface.
     """
 
-    def __init__(self, name, material, work_function_x, work_function_y, work_function_z):
+    def __init__(self, name, material, barrier_x, barrier_y, barrier_z):
         """
         Initialize a MaterialSurface object.
 
         Parameters:
         - name (str): Name of the material surface.
         - material (str): Material of the surface.
-        - work_function_x (float): Work function in the x-direction.
-        - work_function_y (float): Work function in the y-direction.
-        - work_function_z (float): Work function in the z-direction.
+        - barrier_x (float): Work function in the x-direction.
+        - barrier_y (float): Work function in the y-direction.
+        - barrier_z (float): Work function in the z-direction.
         """
 
         print(f"Initializing material surface: {name}")
         self.name = name
         self.material = material
-        self.work_function = jnp.array([work_function_x, work_function_y, work_function_z])
+        self.barrier = jnp.array([barrier_x, barrier_y, barrier_z])
 
     def get_material(self):
         """
@@ -146,55 +146,55 @@ class MaterialSurface:
         """
         return self.material
 
-    def get_work_function(self):
+    def get_barrier(self):
         """
         Get the work function of the material surface.
 
         Returns:
         - ndarray: Work function of the material surface.
         """
-        return self.work_function[0], self.work_function[1], self.work_function[2]
+        return self.barrier[0], self.barrier[1], self.barrier[2]
     
-    def get_work_function_x(self):
+    def get_barrier_x(self):
         """
         Get the work function in the x-direction.
 
         Returns:
         - float: Work function in the x-direction.
         """
-        return self.work_function[0]
+        return self.barrier[0]
     
-    def get_work_function_y(self):
+    def get_barrier_y(self):
         """
         Get the work function in the y-direction.
 
         Returns:
         - float: Work function in the y-direction.
         """
-        return self.work_function[1]
+        return self.barrier[1]
     
-    def get_work_function_z(self):
+    def get_barrier_z(self):
         """
         Get the work function in the z-direction.
 
         Returns:
         - float: Work function in the z-direction.
         """
-        return self.work_function[2]
+        return self.barrier[2]
     
 
     def tree_flatten(self):
         children = None
-        aux_data = (self.name, self.material, self.work_function)
+        aux_data = (self.name, self.material, self.barrier)
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        name, material, work_function = aux_data
+        name, material, barrier = aux_data
 
         return cls(
             name=name,
             material=material,
-            work_function_x=work_function[0],
-            work_function_y=work_function[1],
-            work_function_z=work_function[2]
+            barrier_x=barrier[0],
+            barrier_y=barrier[1],
+            barrier_z=barrier[2]
         )

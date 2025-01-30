@@ -583,10 +583,10 @@ class particle_species:
         return newzeta, neweta, newxi
 
     def kinetic_energy(self):
-        return 0.5 * self.mass * jnp.sum(self.v1**2 + self.v2**2 + self.v3**2)
+        return 0.5 * self.weight * self.mass * jnp.sum(self.v1**2 + self.v2**2 + self.v3**2)
 
     def momentum(self):
-        return self.mass * jnp.sum(jnp.sqrt(self.v1**2 + self.v2**2 + self.v3**2))
+        return self.mass * self.weight * jnp.sum(jnp.sqrt(self.v1**2 + self.v2**2 + self.v3**2))
 
     def periodic_boundary_condition(self, x_wind, y_wind, z_wind):
         self.x1 = jnp.where(self.x1 > x_wind/2, -x_wind/2, self.x1)

@@ -5,38 +5,41 @@ t_wind = 1000e-12
 output_dir = "/home/christopherwoolford/Documents/PyPIC3D"
 bc = 'periodic'
 solver = 'spectral'
-Nx = 50
-Ny = 50
-Nz = 50
+Nx = 100
+Ny = 100
+Nz = 100
 x_wind = 1e-2
 y_wind = 1e-2
 z_wind = 1e-2
 verbose = false
 electrostatic = false
+initial_B = true
 
 [plotting]
 plot_errors = false
 phaseSpace  = true
 plotpositions = false
-plotKE = false
+plotKE = true
 plotfields = true
 plot_dispersion = false
-plotting_interval = 2
+plotting_interval = 1
 
 [particle1]
 name = "electrons"
-N_particles = 10000
+N_particles = 50000
 charge = -1.602e-19
 mass   = 9.1093837e-31
 temperature = 1
-weight = 250
+weight = 1000
+initial_x = 'demos/plasma_oscillations/x.npy'
+initial_y = 'demos/plasma_oscillations/y.npy'
+initial_z = 'demos/plasma_oscillations/z.npy'
 
-[laser1]
-max_electric_field = 1000000000000
-k0 = 7853981.633974483
-omega0 = 2.36e15
-pulse_width = 20e-12
-xstart = 0.0e-1
-ystart = 0
-zstart = 0
-width  = 0.15e-1
+
+[particle2]
+name = "ions"
+N_particles = 50000
+charge = 1.602e-19
+mass   = 1.67e-27
+temperature = 1
+weight = 1000
