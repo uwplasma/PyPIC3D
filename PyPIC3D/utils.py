@@ -552,8 +552,14 @@ def courant_condition(courant_number, dx, dy, dz, simulation_parameters, constan
     Returns:
     float: The maximum allowable time step for stability.
     """
+
+    solver = simulation_parameters['solver']
+
+    #if solver == 'fdtd':
     C = constants['C']
     return courant_number / (C * ( (1/dx) + (1/dy) + (1/dz) ) )
+    # elif solver == 'spectral':
+    #     return 2/jnp.pi / jnp.sqrt( 1/(dx**2) + 1/(dy**2) + 1/(dz**2) )
 # calculate the courant condition
 
 def modified_courant_condition(courant_number, world, constants, particles):

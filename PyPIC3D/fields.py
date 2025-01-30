@@ -99,7 +99,7 @@ def solve_poisson(rho, constants, world, phi, solver, bc='periodic', M = None, G
         # #phi = conjugate_grad(lapl, -rho/eps, phi, tol=1e-9, maxiter=5000, M=M)
 
         # phi = conjugated_gradients(lapl, -rho/eps, phi, tol=1e-9, maxiter=1000)
-        sor = functools.partial(solve_poisson_sor, dx=dx, dy=dy, dz=dz, eps=eps, omega=0.15, tol=1e-15, max_iter=15000)
+        sor = functools.partial(solve_poisson_sor, dx=dx, dy=dy, dz=dz, eps=eps, omega=0.15, tol=1e-12, max_iter=15000)
         phi = sor(phi, rho)
         #phi = jax.scipy.sparse.linalg.cg(lapl, -rho/eps, x0=phi, tol=1e-6, maxiter=40000, M=M)[0]
         #phi = solve_poisson_sor(phi, rho, dx, dy, dz, eps, omega=0.25, tol=1e-6, max_iter=100000)
@@ -159,9 +159,9 @@ def calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, t, solver, 
                 jax.debug.print("Calculating Charge Density, Max Value: {}", jnp.max(jnp.abs(rho)))
 
             if t == 0:
-                phi = solve_poisson(rho, constants, world, phi=rho, solver=solver, bc=bc, M=None, GPUs=GPUs)
+                phi = phi.at[:,:,:].set(solve_poisson(rho, constants, world, phi=rho, solver=solver, bc=bc, M=None, GPUs=GPUs))
             else:
-                phi = solve_poisson(rho, constants, world, phi=phi, solver=solver, bc=bc, M=M, GPUs=GPUs)
+                phi = phi.at[:,:,:].set(solve_poisson(rho, constants, world, phi=phi, solver=solver, bc=bc, M=M, GPUs=GPUs))
 
             if verbose:
                 jax.debug.print("Calculating Electric Potential, Max Value: {}", jnp.max(phi))
