@@ -131,7 +131,7 @@ def compute_rho(particles, rho, world, GPUs):
     y_wind = world['y_wind']
     z_wind = world['z_wind']
 
-    rho = jnp.zeros_like(rho)
+    rho = rho.at[:,:,:].set(0)
     # reset rho to zero
 
     for species in particles:

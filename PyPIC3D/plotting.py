@@ -730,7 +730,7 @@ def total_field_energy(fieldx, fieldy, fieldz, world, constants):
     # get the grid spacings
     field2 = fieldx**2 + fieldy**2 + fieldz**2
     # calculate the square of the field
-    integral = jnp.trapezoid(jnp.trapezoid(jnp.trapezoid(field2, dx=dx), dx=dy), dx=dz)
+    integral = jnp.trapezoid(jnp.trapezoid(jnp.trapezoid(field2, dx=dz), dx=dy), dx=dx)
     # integrate the square of the field along x, y, and z
     return 0.5 * constants['eps'] * integral
 
@@ -745,6 +745,12 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
     #Eline = jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[175, :, 0]
     # select a slice of the E field along the y-axis
     #_ = plot_fft(Eline, dt, f"E along Tungsten {t}", output_dir)
+
+    E2_integral = jnp.trapezoid(jnp.trapezoid(jnp.trapezoid(Ex**2 + Ey**2 + Ez**2, dx=dz), dx=dy), dx=dx)
+    B2_integral = jnp.trapezoid(jnp.trapezoid(jnp.trapezoid(Bx**2 + By**2 + Bz**2, dx=dz), dx=dy), dx=dx)
+    field_energy = 0.5*constants['eps']*E2_integral + 0.5/constants['mu']*B2_integral
+    total_energy = sum(particle.kinetic_energy() for particle in particles) + field_energy
+    write_data(f"{output_dir}/data/total_energy.txt", t*dt, total_energy)
 
     if plotting_parameters['plotvelocities']:
         for species in particles:
@@ -762,8 +768,8 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         write_data(f"{output_dir}/data/averageB.txt", t*dt, jnp.mean(jnp.sqrt(Bx**2 + By**2 + Bz**2)))
         write_data(f"{output_dir}/data/Eprobe.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx-1, Ny-1, Nz-1))
         write_data(f"{output_dir}/data/centerE.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx//2, Ny//2, Nz//2))
-        write_data(f"{output_dir}/data/electric_field_energy.txt", t*dt, total_field_energy(Ex, Ey, Ez, world, constants))
-        write_data(f"{output_dir}/data/magnetic_field_energy.txt", t*dt, total_field_energy(Bx, By, Bz, world, constants))
+        write_data(f"{output_dir}/data/electric_field_energy.txt", t*dt, 0.5*constants['eps']*E2_integral)
+        write_data(f"{output_dir}/data/magnetic_field_energy.txt", t*dt, 0.5/constants['mu']*B2_integral)
         write_data(f"{output_dir}/data/Jx_probe.txt", t*dt, jnp.mean(Jx))
         write_data(f"{output_dir}/data/Jy_probe.txt", t*dt, jnp.mean(Jy))
         write_data(f"{output_dir}/data/Jz_probe.txt", t*dt, jnp.mean(Jz))

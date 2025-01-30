@@ -370,7 +370,8 @@ def spectral_laplacian(field, world):
     return jnp.fft.ifftn(lapl).real
 
 
-@partial(jit, static_argnums=(3, 4, 5, 6))
+#@partial(jit, static_argnums=(3, 4, 5, 6))
+@jit
 def solve_magnetic_vector_potential(Jx, Jy, Jz, dx, dy, dz, mu0):
     """
     Solve for the magnetic vector potential using the magnetostatic Laplacian equation in the Coulomb gauge.
@@ -457,7 +458,7 @@ def initialize_magnetic_field(particles, grid, staggered_grid, world, constants,
     Ax, Ay, Az = solve_magnetic_vector_potential(Jx, Jy, Jz, dx, dy, dz, mu0)
 
     # Compute the magnetic field from the vector potential
-    Bx, By, Bz = spectral_curl(Ax, Ay, Az, dx, dy, dz)
+    Bx, By, Bz = spectral_curl(Ax, Ay, Az, world)
 
     return Bx, By, Bz
 

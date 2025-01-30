@@ -137,9 +137,9 @@ def VB_correction(particles, Jx, Jy, Jz):
     Computer Physics Communications, 69(2-3), 306-316.
     """
 
-    Jx = jnp.zeros_like(Jx)
-    Jy = jnp.zeros_like(Jy)
-    Jz = jnp.zeros_like(Jz)
+    Jx = Jx.at[:, :, :].set(0)
+    Jy = Jy.at[:, :, :].set(0)
+    Jz = Jz.at[:, :, :].set(0)
     # initialize the current arrays as 0
     for species in particles:
         q = species.get_charge()

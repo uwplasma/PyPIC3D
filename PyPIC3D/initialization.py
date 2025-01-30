@@ -29,7 +29,7 @@ from PyPIC3D.fields import (
 )
 
 from PyPIC3D.pstd import (
-    spectral_curl
+    spectral_curl, initialize_magnetic_field
 )
 
 from PyPIC3D.fdtd import (
@@ -186,13 +186,13 @@ def initialize_simulation(toml_file):
     particles = load_particles_from_toml(toml_file, simulation_parameters, world, constants)
     # load the particles from the configuration file
 
-    dt = modified_courant_condition(courant_number, world, constants, particles)
-    # calculate temporal resolution using courant condition
-    Nt     = int( t_wind / dt )
-    # Nt for resolution
-    world['dt'] = dt
-    world['Nt'] = Nt
-    # update the world parameters
+    # dt = modified_courant_condition(courant_number, world, constants, particles)
+    # # calculate temporal resolution using courant condition
+    # Nt     = int( t_wind / dt )
+    # # Nt for resolution
+    # world['dt'] = dt
+    # world['Nt'] = Nt
+    # # update the world parameters
 
     print_stats(world)
 
@@ -250,6 +250,11 @@ def initialize_simulation(toml_file):
         curl_func = functools.partial(spectral_curl, world=world)
     elif solver == "fdtd":
         curl_func = functools.partial(centered_finite_difference_curl, dx=dx, dy=dy, dz=dz, bc=bc)
+
+
+    # if not electrostatic:
+    #     Bx, By, Bz = initialize_magnetic_field(particles, E_grid, B_grid, world, constants, GPUs)
+    # # initialize the magnetic field
 
     return particles, Ex, Ey, Ez, Ex_ext, Ey_ext, Ez_ext, Bx, By, Bz, Bx_ext, By_ext, Bz_ext, Jx, Jy, Jz, phi, \
         rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, M, \
