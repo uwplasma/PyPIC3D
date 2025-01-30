@@ -1,7 +1,7 @@
 # Christopher Woolford Dec 5, 2024
 # This contains the evolution loop for the 3D PIC code that calculates the electric and magnetic fields and updates the particles.
 
-from memory_profiler import profile
+#from memory_profiler import profile
 import jax
 from jax import jit
 import jax.numpy as jnp
