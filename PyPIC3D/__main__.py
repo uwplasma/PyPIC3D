@@ -40,17 +40,6 @@ from PyPIC3D.plotting import (
 # Importing functions from the PyPIC3D package
 ############################################################################################################
 
-###################### JAX SETTINGS ########################################################################
-jax.config.update("jax_enable_x64", True)
-# set Jax to use 64 bit precision
-jax.config.update("jax_debug_nans", True)
-# debugging for nans
-jax.config.update('jax_platform_name', 'cpu')
-# set Jax to use CPUs
-#jax.config.update("jax_disable_jit", True)
-############################################################################################################
-
-
 
 def run_PyPIC3D(config_file):
     ##################################### INITIALIZE SIMULATION ################################################
@@ -110,6 +99,16 @@ def run_PyPIC3D(config_file):
 
 
 if __name__ == "__main__":
+    ###################### JAX SETTINGS ########################################################################
+    #jax.config.update("jax_enable_x64", True)
+    # set Jax to use 64 bit precision
+    #jax.config.update("jax_debug_nans", True)
+    # debugging for nans
+    #jax.config.update('jax_platform_name', 'cpu')
+    # set Jax to use CPUs
+    #jax.config.update("jax_disable_jit", True)
+    ############################################################################################################
+
     ############################ ARG PARSER ####################################################################
     parser = argparse.ArgumentParser(description="3D PIC code using Jax")
     parser.add_argument('--config', type=str, help='Path to the configuration file')

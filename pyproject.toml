@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "PyPIC3D"
+version = "0.1.4"
+description = "A 3D Particle-In-Cell simulation package"
+authors = [
+    { name = "Christopher Woolford", email = "clwoolford@wisc.edu" }
+]
+license = { file = "LICENSE" }
+dynamic = ["dependencies"]
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+[tool.setuptools]
+packages = ["PyPIC3D"]
