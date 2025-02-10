@@ -34,7 +34,10 @@ class TestFieldsMethods(unittest.TestCase):
             'C': 3e8
         }
         self.grid, self.staggered_grid = build_yee_grid(self.world)
-        self.Ex, self.Ey, self.Ez, self.Bx, self.By, self.Bz, self.Jx, self.Jy, self.Jz, self.phi, self.rho = initialize_fields(self.world)
+        Nx = self.world['Nx']
+        Ny = self.world['Ny']
+        Nz = self.world['Nz']
+        self.Ex, self.Ey, self.Ez, self.Bx, self.By, self.Bz, self.Jx, self.Jy, self.Jz, self.phi, self.rho = initialize_fields(Nx, Ny, Nz)
         # build initial fields
 
         x = jnp.linspace(0, 1, 10)

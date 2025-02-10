@@ -2,7 +2,6 @@ import time
 import jax
 from jax import random
 import jax.numpy as jnp
-import equinox as eqx
 import os, sys
 import matplotlib.pyplot as plt
 # import external libraries

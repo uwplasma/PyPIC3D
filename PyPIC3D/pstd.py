@@ -1,21 +1,16 @@
-import numpy as np
-import matplotlib.pyplot as plt
 import jax
 from jax import random
 from jax import jit
 from jax import lax
-from jax._src.scipy.sparse.linalg import _vdot_real_tree, _add, _sub, _mul
-from jax.tree_util import tree_leaves
 import jax.numpy as jnp
-import math
-from pyevtk.hl import gridToVTK
 import functools
 from functools import partial
+import jaxdecomp
+# import external libraries
 
-from PyPIC3D.utils import interpolate_field, use_gpu_if_set
 from PyPIC3D.particle import particle_species
 from PyPIC3D.J import compute_current_density
-from PyPIC3D.fft import fft_slab_decomposition, ifft_slab_decomposition
+# import internal libraries
 
 
 def check_nyquist_criterion(Ex, Ey, Ez, Bx, By, Bz, world):
@@ -107,45 +102,37 @@ def spectral_divergence_correction(Ex, Ey, Ez, rho, world, constants):
     Returns:
     tuple: Corrected electric field components (Ex, Ey, Ez).
     """
-    dx = world['dx']
-    dy = world['dy']
-    dz = world['dz']
-    dt = world['dt']
 
-    Nx, Ny, Nz = Ex.shape
-    kx = jnp.fft.fftfreq(Nx, dx) * 2 * jnp.pi
-    ky = jnp.fft.fftfreq(Ny, dy) * 2 * jnp.pi
-    kz = jnp.fft.fftfreq(Nz, dz) * 2 * jnp.pi
-    kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
-    # create 3D meshgrid of wavenumbers
+    k = jaxdecomp.fft.fftfreq3d(Ex)
+    # get the wavevector
 
-    rho_fft = jnp.fft.fftn(rho)
+    rho_fft = jaxdecomp.fft.pfft3d(rho)
     # calculate the Fourier transform of the charge density
 
-    correction_mag = kx*Ex + ky*Ey + kz*Ez + 1j*rho_fft/constants['eps']
+    correction_mag = k[0]*Ex + k[1]*Ey + k[2]*Ez + 1j*rho_fft/constants['eps']
     # calculate the magnitude of the correction term
-    kmag = jnp.sqrt(kx**2 + ky**2 + kz**2)
+    kmag = jnp.sqrt(k[0]**2 + k[1]**2 + k[2]**2)
     kmag = kmag.at[0, 0, 0].set(1.0)
     # avoid division by zero
 
-    x_correction = correction_mag * kx / kmag
+    x_correction = correction_mag * k[0] / kmag
     x_correction = x_correction.at[0, 0, 0].set(0)
 
-    y_correction = correction_mag * ky / kmag
+    y_correction = correction_mag * k[1] / kmag
     y_correction = y_correction.at[0, 0, 0].set(0)
 
-    z_correction = correction_mag * kz / kmag
+    z_correction = correction_mag * k[2] / kmag
     z_correction = z_correction.at[0, 0, 0].set(0)
     # calculate the correction term in Fourier space
 
-    Ex_fft = jnp.fft.fftn(Ex)
-    Ey_fft = jnp.fft.fftn(Ey)
-    Ez_fft = jnp.fft.fftn(Ez)
+    Ex_fft = jaxdecomp.fft.pfft3d(Ex)
+    Ey_fft = jaxdecomp.fft.pfft3d(Ey)
+    Ez_fft = jaxdecomp.fft.pfft3d(Ez)
     # calculate the Fourier transform of the electric field
 
-    Ex = jnp.fft.ifftn(Ex_fft - x_correction).real
-    Ey = jnp.fft.ifftn(Ey_fft - y_correction).real
-    Ez = jnp.fft.ifftn(Ez_fft - z_correction).real
+    Ex = jaxdecomp.fft.pifft3d(Ex_fft - x_correction).real
+    Ey = jaxdecomp.fft.pifft3d(Ey_fft - y_correction).real
+    Ez = jaxdecomp.fft.pifft3d(Ez_fft - z_correction).real
     # apply the correction to the electric field
 
     return Ex, Ey, Ez
@@ -170,22 +157,17 @@ def spectral_poisson_solve(rho, constants, world):
     dz = world['dz']
     eps = constants['eps']
 
-    Nx, Ny, Nz = rho.shape
-    kx = jnp.fft.fftfreq(Nx, dx) * 2 * jnp.pi
-    ky = jnp.fft.fftfreq(Ny, dy) * 2 * jnp.pi
-    kz = jnp.fft.fftfreq(Nz, dz) * 2 * jnp.pi
-    kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
-    # create 3D meshgrid of wavenumbers
-    k2 = kx**2 + ky**2 + kz**2
+    krho = jaxdecomp.fft.pfft3d(rho)
+    # fourier transform that charge density
+    k = jaxdecomp.fft.fftfreq3d(krho)
+    # get the wavenumbers
+    k2 = k[0]**2 + k[1]**2 + k[2]**2
     # calculate the squared wavenumber
     k2 = k2.at[0, 0, 0].set(1.0)
-    #k2 = jnp.where(k2 == 0, 1e-12, k2)
-    # avoid division by zero
-    phi = -1 * jnp.fft.fftn(rho) / (eps*k2)
-    # calculate the Fourier transform of the charge density and divide by the permittivity and squared wavenumber
+    phi = -1 * krho / (eps*k2)
     phi = phi.at[0, 0, 0].set(0)
     # set the DC component to zero
-    phi = jnp.fft.ifftn(phi).real
+    phi = jaxdecomp.fft.pifft3d(phi).real
     # calculate the inverse Fourier transform to obtain the electric potential
     return phi
 
@@ -209,28 +191,19 @@ def spectral_divergence(xfield, yfield, zfield, world):
     Returns:
     ndarray: The real part of the inverse FFT of the spectral divergence.
     """
-    dx = world['dx']
-    dy = world['dy']
-    dz = world['dz']
 
-    Nx, Ny, Nz = xfield.shape
-    kx = jnp.fft.fftfreq(Nx, dx) * 2 * jnp.pi
-    ky = jnp.fft.fftfreq(Ny, dy) * 2 * jnp.pi
-    kz = jnp.fft.fftfreq(Nz, dz) * 2 * jnp.pi
-    kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
-    # create 3D meshgrid of wavenumbers
-
-    xfft = jnp.fft.fftn(xfield)
-    yfft = jnp.fft.fftn(yfield)
-    zfft = jnp.fft.fftn(zfield)
+    xfft = jaxdecomp.fft.pfft3d(xfield)
+    yfft = jaxdecomp.fft.pfft3d(yfield)
+    zfft = jaxdecomp.fft.pfft3d(zfield)
     # calculate the Fourier transform of the vector field
 
-    div = (-1j)*kx*xfft + (-1j)*ky*yfft + (-1j)*kz*zfft
-    # calculate the divergence of the vector field
+    k = jaxdecomp.fft.fftfreq3d(xfft)
+    # get the wavevector
 
-    return jnp.fft.ifftn(div).real
+    div = -1j * k[0] * xfft + -1j * k[1] * yfft + -1j * k[2] * zfft
+    # calculate the divergence in Fourier space
 
-
+    return jaxdecomp.fft.pifft3d(div).real
 
 @jit
 def spectral_curl(xfield, yfield, zfield, world):
@@ -249,54 +222,20 @@ def spectral_curl(xfield, yfield, zfield, world):
     tuple: A tuple containing the x, y, and z components of the curl of the vector field.
     """
 
-    dx = world['dx']
-    dy = world['dy']
-    dz = world['dz']
-
-    Nx, Ny, Nz = xfield.shape
-    kx = jnp.fft.fftfreq(Nx, dx) * 2 * jnp.pi
-    ky = jnp.fft.fftfreq(Ny, dy) * 2 * jnp.pi
-    kz = jnp.fft.fftfreq(Nz, dz) * 2 * jnp.pi
-    kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
-    # create 3D meshgrid of wavenumbers
-
-    xfft = jnp.fft.fftn(xfield)
-    yfft = jnp.fft.fftn(yfield)
-    zfft = jnp.fft.fftn(zfield)
+    xfft = jaxdecomp.fft.pfft3d(xfield)
+    yfft = jaxdecomp.fft.pfft3d(yfield)
+    zfft = jaxdecomp.fft.pfft3d(zfield)
     # calculate the Fourier transform of the vector field
 
-    # xfft_y = fft_slab_decomposition(xfield, axis=1)
-    # xfft_z = fft_slab_decomposition(xfield, axis=2)
-    # yfft_x = fft_slab_decomposition(yfield, axis=0)
-    # yfft_z = fft_slab_decomposition(yfield, axis=2)
-    # zfft_x = fft_slab_decomposition(zfield, axis=0)
-    # zfft_y = fft_slab_decomposition(zfield, axis=1)
+    k = jaxdecomp.fft.fftfreq3d(xfft)
+    # get the wavevector
 
-    dfx_dy = jnp.fft.ifftn(-1j*ky*xfft).real
-    dfx_dz = jnp.fft.ifftn(-1j*kz*xfft).real
+    curlx = -1j * k[1] * zfft - -1j * k[2] * yfft
+    curly = -1j * k[2] * xfft - -1j * k[0] * zfft
+    curlz = -1j * k[0] * yfft - -1j * k[1] * xfft
+    # calculate the curl in Fourier space
 
-    dfy_dx = jnp.fft.ifftn(-1j*kx*yfft).real
-    dfy_dz = jnp.fft.ifftn(-1j*kz*yfft).real
-
-    dfz_dx = jnp.fft.ifftn(-1j*kx*zfft).real
-    dfz_dy = jnp.fft.ifftn(-1j*ky*zfft).real
-
-    # dfx_dy = ifft_slab_decomposition(-1j*ky*xfft_y, axis=1).real
-    # dfx_dz = ifft_slab_decomposition(-1j*kz*xfft_z, axis=2).real
-
-    # dfy_dx = ifft_slab_decomposition(-1j*kx*yfft_x, axis=0).real
-    # dfy_dz = ifft_slab_decomposition(-1j*kz*yfft_z, axis=2).real
-
-    # dfz_dx = ifft_slab_decomposition(-1j*kx*zfft_x, axis=0).real
-    # dfz_dy = ifft_slab_decomposition(-1j*ky*zfft_y, axis=1).real
-
-
-    curlx = dfz_dy - dfy_dz
-    curly = dfx_dz - dfz_dx
-    curlz = dfy_dx - dfx_dy
-    # calculate the curl of the vector field
-
-    return curlx, curly, curlz
+    return jaxdecomp.fft.pifft3d(curlx).real, jaxdecomp.fft.pifft3d(curly).real, jaxdecomp.fft.pifft3d(curlz).real
 
 @jit
 def spectral_gradient(field, world):
@@ -313,26 +252,18 @@ def spectral_gradient(field, world):
     tuple: A tuple containing the x, y, and z components of the gradient of the field.
     """
 
-    dx = world['dx']
-    dy = world['dy']
-    dz = world['dz']
-
-    Nx, Ny, Nz = field.shape
-    kx = jnp.fft.fftfreq(Nx, dx) * 2 * jnp.pi
-    ky = jnp.fft.fftfreq(Ny, dy) * 2 * jnp.pi
-    kz = jnp.fft.fftfreq(Nz, dz) * 2 * jnp.pi
-    kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
-    # create 3D meshgrid of wavenumbers
-
-    field_fft = jnp.fft.fftn(field)
+    field_fft = jaxdecomp.fft.pfft3d(field)
     # calculate the Fourier transform of the field
 
-    gradx = -1j * kx * field_fft
-    grady = -1j * ky * field_fft
-    gradz = -1j * kz * field_fft
+    k = jaxdecomp.fft.fftfreq3d(field_fft)
+    # get the wavevector
+
+    gradx = -1j * k[0] * field_fft
+    grady = -1j * k[1] * field_fft
+    gradz = -1j * k[2] * field_fft
     # calculate the gradient in Fourier space
 
-    return jnp.fft.ifftn(gradx).real, jnp.fft.ifftn(grady).real, jnp.fft.ifftn(gradz).real
+    return jaxdecomp.fft.pifft3d(gradx).real, jaxdecomp.fft.pifft3d(grady).real, jaxdecomp.fft.pifft3d(gradz).real
 
 
 @jit
@@ -354,20 +285,16 @@ def spectral_laplacian(field, world):
     - numpy.ndarray
         The Laplacian of the field.
     """
+    field_fft = jaxdecomp.fft.pfft3d(field)
+    # calculate the Fourier transform of the field
 
-    dx = world['dx']
-    dy = world['dy']
-    dz = world['dz']
+    k = jaxdecomp.fft.fftfreq3d(field_fft)
+    # get the wavevector
 
-    Nx, Ny, Nz = field.shape
-    kx = jnp.fft.fftfreq(Nx, dx) * 2 * jnp.pi
-    ky = jnp.fft.fftfreq(Ny, dy) * 2 * jnp.pi
-    kz = jnp.fft.fftfreq(Nz, dz) * 2 * jnp.pi
-    kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
-    # create 3D meshgrid of wavenumbers
-    lapl = -(kx**2 + ky**2 + kz**2) * jnp.fft.fftn(field)
+    lapl = -(k[0]**2 + k[1]**2 + k[2]**2) * field_fft
     # calculate the laplacian in Fourier space
-    return jnp.fft.ifftn(lapl).real
+
+    return jaxdecomp.fft.pifft3d(lapl).real
 
 
 #@partial(jit, static_argnums=(3, 4, 5, 6))
@@ -391,17 +318,16 @@ def solve_magnetic_vector_potential(Jx, Jy, Jz, dx, dy, dz, mu0):
     - Az (ndarray): The z-component of the magnetic vector potential.
     """
     Nx, Ny, Nz = Jx.shape
-    kx = jnp.fft.fftfreq(Nx, dx) * 2 * jnp.pi
-    ky = jnp.fft.fftfreq(Ny, dy) * 2 * jnp.pi
-    kz = jnp.fft.fftfreq(Nz, dz) * 2 * jnp.pi
-    kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
-    k2 = kx**2 + ky**2 + kz**2
+    k = jaxdecomp.fft.fftfreq3d(Jx)
+    # get the wavevector
+
+    k2 = k[0]**2 + k[1]**2 + k[2]**2
     k2 = k2.at[0, 0, 0].set(1.0)
     # avoid division by zero
 
-    Jx_fft = jnp.fft.fftn(Jx)
-    Jy_fft = jnp.fft.fftn(Jy)
-    Jz_fft = jnp.fft.fftn(Jz)
+    Jx_fft = jaxdecomp.fft.pfft3d(Jx)
+    Jy_fft = jaxdecomp.fft.pfft3d(Jy)
+    Jz_fft = jaxdecomp.fft.pfft3d(Jz)
     # calculate the Fourier transform of the current density
 
     Ax_fft = mu0 * Jx_fft / k2
@@ -414,9 +340,9 @@ def solve_magnetic_vector_potential(Jx, Jy, Jz, dx, dy, dz, mu0):
     Az_fft = Az_fft.at[0, 0, 0].set(0)
     # set the DC component to zero
 
-    Ax = jnp.fft.ifftn(Ax_fft).real
-    Ay = jnp.fft.ifftn(Ay_fft).real
-    Az = jnp.fft.ifftn(Az_fft).real
+    Ax = jaxdecomp.fft.pifft3d(Ax_fft).real
+    Ay = jaxdecomp.fft.pifft3d(Ay_fft).real
+    Az = jaxdecomp.fft.pifft3d(Az_fft).real
     # calculate the inverse Fourier transform to obtain the magnetic vector potential
 
     return Ax, Ay, Az

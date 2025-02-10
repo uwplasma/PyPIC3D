@@ -25,7 +25,7 @@ from PyPIC3D.errors import compute_pe
 from PyPIC3D.utils import use_gpu_if_set
 # import internal libraries
 
-def initialize_fields(world):
+def initialize_fields(Nx, Ny, Nz):
     """
     Initializes the electric and magnetic field arrays, as well as the electric potential and charge density arrays.
 
@@ -44,9 +44,6 @@ def initialize_fields(world):
     - phi (ndarray): Electric potential array.
     - rho (ndarray): Charge density array.
     """
-    Nx = world['Nx']
-    Ny = world['Ny']
-    Nz = world['Nz']
     # get the number of grid points in each direction
     Ex = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
     Ey = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
