@@ -13,3 +13,5 @@ settings.json
 output.toml
 *_experiments/
 runs/
+PyPIC3D.egg-info/
+dist/
