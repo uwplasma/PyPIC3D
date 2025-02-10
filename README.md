@@ -16,9 +16,22 @@ PyPIC3D can be used for various plasma simulation applications, including but no
 - **Optimization**: Utilizing autodifferentiation for optimizing plasma configurations and parameters.
 - **Surrogate Modeling**: Creating surrogate models to approximate plasma behavior, reducing computational costs for large-scale simulations.
 
-### Getting Started
+### Installation
+PyPIC3D can be install from the PyPI repository using PIP by running the following command:
 
-To get started with PyPIC3D, ensure you have Python and Jax installed. Follow the installation instructions and examples provided in the repository to set up and run your simulations.
+```bash
+    pip install PyPIC3D
+```
+
+### Getting Started
+To get started with PyPIC3D, follow the instructions in the read the docs to create a configuration file
+or use an existing demo.
+
+To run PyPIC3D on a configuration file, run the following command:
+
+```bash
+python -m PyPIC3D --config filename.toml
+```
 
 ### Code Structure
 
