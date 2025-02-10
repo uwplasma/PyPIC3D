@@ -1,15 +1,13 @@
 import jax
 import jax.numpy as jnp
 from jax import random
+from jax.experimental import mesh_utils, multihost_utils
+from jax.experimental.shard_map import shard_map
+from jax.sharding import Mesh, PartitionSpec, NamedSharding
 import os
 import time
 import functools
-import equinox as eqx
 import toml
-
-from PyPIC3D.model import (
-    PoissonPrecondition
-)
 
 from PyPIC3D.particle import (
     load_particles_from_toml
@@ -91,6 +89,7 @@ def default_parameters():
         "benchmark": False, # boolean for using the profiler
         "verbose": False, # boolean for printing verbose output
         "GPUs": False, # boolean for using GPUs
+        "ncpus": 1, # number of CPUs to use
         "NN" : False, # boolean for using neural networks
         "model_name": None, # neural network model name
     }
@@ -159,6 +158,7 @@ def initialize_simulation(toml_file):
     bc = simulation_parameters['bc']
     verbose = simulation_parameters['verbose']
     GPUs = simulation_parameters['GPUs']
+    ncpus = simulation_parameters['ncpus']
     # set the simulation parameters
 
     dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
@@ -186,16 +186,8 @@ def initialize_simulation(toml_file):
     particles = load_particles_from_toml(toml_file, simulation_parameters, world, constants)
     # load the particles from the configuration file
 
-    # dt = modified_courant_condition(courant_number, world, constants, particles)
-    # # calculate temporal resolution using courant condition
-    # Nt     = int( t_wind / dt )
-    # # Nt for resolution
-    # world['dt'] = dt
-    # world['Nt'] = Nt
-    # # update the world parameters
-
     print_stats(world)
-
+    # print the statistics of the simulation
 
     plot_initial_KE(particles, path=simulation_parameters['output_dir'])
     # plot the initial kinetic energy of the particles
@@ -209,16 +201,17 @@ def initialize_simulation(toml_file):
     check_stability(plasma_parameters, dt)
     # check the stability of the simulation
 
-    Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho = initialize_fields(world)
+    devices = mesh_utils.create_device_mesh((ncpus,))
+    mesh = Mesh(devices, ('data',))
+    sharding = NamedSharding(mesh, PartitionSpec('data',))
+    init_fields = jax.jit(initialize_fields, out_shardings=sharding, static_argnums=(0,1,2))
+    # create the mesh for the fields
+
+    Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho = init_fields(Nx, Ny, Nz)
     # initialize the electric and magnetic fields
 
     Ex_ext, Ey_ext, Ez_ext, Bx_ext, By_ext, Bz_ext = load_external_fields_from_toml([Ex, Ey, Ez, Bx, By, Bz], toml_file)
     # add any external fields to the simulation
-
-    # import matplotlib.pyplot as plt
-    # plt.plot(Ex[:, 15, 15])
-    # plt.show()
-    # exit()
 
     pecs = read_pec_boundaries_from_toml(toml_file, world)
     # read in perfectly electrical conductor boundaries
@@ -235,7 +228,7 @@ def initialize_simulation(toml_file):
         # load the model from file
     else: model = None
 
-    M = precondition( simulation_parameters['NN'], phi, rho, model)
+    M = None # precondition( simulation_parameters['NN'], phi, rho, model)
     # solve for the preconditioner using the neural network
 
     ####################################################################################################################
