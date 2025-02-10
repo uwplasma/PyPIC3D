@@ -4,8 +4,8 @@ import jax.numpy as jnp
 import sys
 import os
 
-# Add the parent directory to the sys.path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# # Add the parent directory to the sys.path
+# sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from PyPIC3D.particle import (
     initial_particles, total_KE, total_momentum, particle_species

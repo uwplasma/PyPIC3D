@@ -4,8 +4,8 @@ import jax.numpy as jnp
 import sys
 import os
 
-# Add the parent directory to the sys.path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# # Add the parent directory to the sys.path
+# sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from PyPIC3D.fields import initialize_fields, solve_poisson, calculateE, update_E, update_B
 from PyPIC3D.utils import build_yee_grid
