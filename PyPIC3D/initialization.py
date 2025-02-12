@@ -90,6 +90,7 @@ def default_parameters():
         "verbose": False, # boolean for printing verbose output
         "GPUs": False, # boolean for using GPUs
         "ncpus": 1, # number of CPUs to use
+        "cfl"  : 1, # CFL condition number
         "NN" : False, # boolean for using neural networks
         "model_name": None, # neural network model name
     }
@@ -163,7 +164,7 @@ def initialize_simulation(toml_file):
 
     dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
     # compute the spatial resolution
-    courant_number = 1
+    courant_number = simulation_parameters['cfl']
     dt = courant_condition(courant_number, dx, dy, dz, simulation_parameters, constants)
     Nt     = int( t_wind / dt )
     # Nt for resolution
