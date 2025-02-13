@@ -22,7 +22,7 @@ from PyPIC3D.J import compute_current_density
 from PyPIC3D.cg import conjugated_gradients
 from PyPIC3D.sor import solve_poisson_sor
 from PyPIC3D.errors import compute_pe
-from PyPIC3D.utils import use_gpu_if_set
+from PyPIC3D.utils import use_gpu_if_set, if_verbose_print
 # import internal libraries
 
 def initialize_fields(Nx, Ny, Nz):
@@ -65,8 +65,8 @@ def initialize_fields(Nx, Ny, Nz):
 
     return Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho
 
-@partial(jit, static_argnums=(4, 5, 7))
-def solve_poisson(rho, constants, world, phi, solver, bc='periodic', M = None, GPUs = False):
+@partial(jit, static_argnums=(4, 5))
+def solve_poisson(rho, constants, world, phi, solver, bc='periodic', M = None):
     """
     Solve the Poisson equation for electrostatic potential.
 
@@ -104,39 +104,33 @@ def solve_poisson(rho, constants, world, phi, solver, bc='periodic', M = None, G
     return phi
 
 #@profile
-#@partial(jit, static_argnums=(9, 10, 11, 12, 13, 14))
-def calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, t, solver, bc, verbose, GPUs, electrostatic):
+@partial(jit, static_argnums=(9, 10, 11))
+#@jit
+def calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, solver, bc, verbose):
     """
-    Calculates the electric field components (Ex, Ey, Ez), electric potential (phi), and charge density (rho) based on the given parameters.
+    Calculate the electric field components (Ex, Ey, Ez) and electric potential (phi)
+    based on the given parameters.
 
     Parameters:
-    - electrons (object): Object containing information about the electrons.
-    - ions (object): Object containing information about the ions.
-    - dx (float): Grid spacing in the x-direction.
-    - dy (float): Grid spacing in the y-direction.
-    - dz (float): Grid spacing in the z-direction.
-    - q_e (float): Charge of an electron.
-    - q_i (float): Charge of an ion.
-    - rho (array-like): Initial charge density.
-    - eps (float): Permittivity of the medium.
-    - phi (array-like): Initial electric potential.
-    - t (int): Time step.
-    - M (array-like): Matrix for solving Poisson's equation.
-    - Nx (int): Number of grid points in the x-direction.
-    - Ny (int): Number of grid points in the y-direction.
-    - Nz (int): Number of grid points in the z-direction.
-    - bc (str): Boundary condition.
-    - verbose (bool): Whether to print additional information.
-    - GPUs (bool): Whether to use GPUs for Poisson solver.
-    - electrostatic (bool): Whether to use electrostatic solver.
+    Ex (array): Initial x-component of the electric field.
+    Ey (array): Initial y-component of the electric field.
+    Ez (array): Initial z-component of the electric field.
+    world (dict): Dictionary containing the simulation world parameters such as
+                  grid spacing (dx, dy, dz) and window dimensions (x_wind, y_wind, z_wind).
+    particles (array): Array containing particle positions and properties.
+    constants (dict): Dictionary containing physical constants such as permittivity (eps).
+    rho (array): Charge density array.
+    phi (array): Electric potential array.
+    M (int): Parameter for the solver.
+    solver (str): Type of solver to use ('spectral' or other).
+    bc (str): Boundary condition type.
+    verbose (bool): Flag to enable verbose output.
 
     Returns:
-    - Ex (array-like): x-component of the electric field.
-    - Ey (array-like): y-component of the electric field.
-    - Ez (array-like): z-component of the electric field.
-    - phi (array-like): Updated electric potential.
-    - rho (array-like): Updated charge density.
+    tuple: Updated electric field components (Ex, Ey, Ez), electric potential (phi), 
+           and charge density (rho).
     """
+
 
     dx = world['dx']
     dy = world['dy']
@@ -147,59 +141,30 @@ def calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, t, solver, 
 
     eps = constants['eps']
 
+    rho = compute_rho(particles, rho, world)
+    # calculate the charge density based on the particle positions
 
-    if solver == 'spectral':
+    #if_verbose_print(verbose, f"Calculating Charge Density, Max Value: {jnp.max(jnp.abs(rho))}" )
 
-        if electrostatic or t < 1:
-            rho = compute_rho(particles, rho, world, GPUs)
-            # calculate the charge density based on the particle positions
+    phi = phi.at[:,:,:].set(solve_poisson(rho, constants, world, phi=phi, solver=solver, bc=bc, M=M))
+    # solve the Poisson equation to get the electric potential
 
-            if verbose:
-                jax.debug.print("Calculating Charge Density, Max Value: {}", jnp.max(jnp.abs(rho)))
+    #if_verbose_print(verbose, f"Calculating Electric Potential, Max Value: {jnp.max(phi)}",  )
+    #if_verbose_print(verbose, f"Potential Error: {compute_pe(phi, rho, constants, world, solver, bc='periodic')}%", )
 
-            if t == 0:
-                phi = phi.at[:,:,:].set(solve_poisson(rho, constants, world, phi=rho, solver=solver, bc=bc, M=None, GPUs=GPUs))
-            else:
-                phi = phi.at[:,:,:].set(solve_poisson(rho, constants, world, phi=phi, solver=solver, bc=bc, M=M, GPUs=GPUs))
+    Ex, Ey, Ez = lax.cond(
+        solver == 'spectral',
+        lambda _: spectral_gradient(phi, world),
+        lambda _: centered_finite_difference_gradient(phi, dx, dy, dz, bc),
+        operand=None
+    )
 
-            if verbose:
-                jax.debug.print("Calculating Electric Potential, Max Value: {}", jnp.max(phi))
-                jax.debug.print("Potential Error: {}%", compute_pe(phi, rho, constants, world, solver, bc='periodic'))
+    # compute the gradient of the electric potential to get the electric field
+    Ex = -Ex
+    Ey = -Ey
+    Ez = -Ez
+    # multiply by -1 to get the correct direction of the electric field
 
-            Ex, Ey, Ez = spectral_gradient(phi, world)
-            # compute the gradient of the electric potential to get the electric field
-            Ex = -Ex
-            Ey = -Ey
-            Ez = -Ez
-            # multiply by -1 to get the correct direction of the electric field
-
-
-    elif solver == 'fdtd':
-
-        if electrostatic or t < 1:
-            rho = compute_rho(particles, rho, world, GPUs)
-            # calculate the charge density based on the particle positions
-
-            if verbose:
-                jax.debug.print("Calculating Charge Density, Max Value: {}", jnp.max(jnp.abs(rho)))
-
-            if t == 0:
-                phi = solve_poisson(rho, constants, world, phi=rho, solver=solver, bc=bc, M=None, GPUs=GPUs)
-            else:
-                phi = solve_poisson(rho, constants, world, phi=phi, solver=solver, bc=bc, M=M, GPUs=GPUs)
-
-            if verbose:
-                jax.debug.print("Calculating Electric Potential, Max Value: {}", jnp.max(phi))
-                jax.debug.print("Potential Error: {}%", compute_pe(phi, rho, constants, world, solver, bc='periodic'))
-
-            Ex, Ey, Ez = centered_finite_difference_gradient(phi, dx, dy, dz, bc)
-            Ex = -Ex
-            Ey = -Ey
-            Ez = -Ez
-            # multiply by -1 to get the correct direction of the electric field
-
-    #Ex, Ey, Ez = apply_friedman_filter((Ex, Ey, Ez), alpha=0.1)
-    # apply the Friedman filter to the electric field components
     return Ex, Ey, Ez, phi, rho
 
 
@@ -234,22 +199,8 @@ def update_E(grid, staggered_grid, E, B, J, world, constants, curl_func):
     eps = constants['eps']
     mu = constants['mu']
 
-    # jax.debug.print("dx: {}", dx)
-    # jax.debug.print("dy: {}", dy)
-    # jax.debug.print("dz: {}", dz)
-    # jax.debug.print("dt: {}", dt)
-    # jax.debug.print("C: {}", C)
-    # jax.debug.print("eps: {}", eps)
-    # jax.debug.print("mu: {}", mu)
-
     curlx, curly, curlz = curl_func(Bx, By, Bz)
-
     # calculate the curl of the magnetic field
-    # jax.debug.print("Curl B Mean Magnitude: {}", jnp.mean(jnp.sqrt(curlx**2 + curly**2 + curlz**2)))
-    # jax.debug.print("Current Density Mean Magnitude: {}", jnp.mean(jnp.sqrt(Jx**2 + Jy**2 + Jz**2)))
-
-    #jax.debug.print("Max Magnitude of J: {}", jnp.max(jnp.sqrt(Jx**2 + Jy**2 + Jz**2)))
-    #jax.debug.print("Max Magnitude of Curl B: {}", jnp.max(jnp.sqrt(curlx**2 + curly**2 + curlz**2)))
 
     Ex = Ex.at[:,:,:].add( ( C**2 * curlx - Jx / eps ) * dt )
     Ey = Ey.at[:,:,:].add( ( C**2 * curly - Jy / eps ) * dt )
@@ -285,38 +236,10 @@ def update_B(grid, staggered_grid, E, B, world, constants, curl_func):
     Bx, By, Bz = B
 
     curlx, curly, curlz = curl_func(Ex, Ey, Ez)
-    #jax.debug.print("Curl E Mean Magnitude: {}", jnp.max(jnp.sqrt(curlx**2 + curly**2 + curlz**2)))
     # calculate the curl of the electric field
+
     Bx = Bx.at[:,:,:].add(-1*dt*curlx)
     By = By.at[:,:,:].add(-1*dt*curly)
     Bz = Bz.at[:,:,:].add(-1*dt*curlz)
 
     return Bx, By, Bz
-
-@jit
-def apply_friedman_filter(E, alpha=0.1):
-    """
-    Apply the Friedman filter to the electric field components (Ex, Ey, Ez).
-
-    Parameters:
-    - E (tuple): A tuple containing the electric field components (Ex, Ey, Ez).
-    - alpha (float): The smoothing parameter for the Friedman filter.
-
-    Returns:
-    - tuple: Filtered electric field components (Ex, Ey, Ez).
-    """
-    Ex, Ey, Ez = E
-
-    def friedman_filter(field, alpha):
-        filtered_field = alpha * field + (1 - alpha) * (
-            (jnp.roll(field, 1, axis=0) + jnp.roll(field, -1, axis=0) +
-             jnp.roll(field, 1, axis=1) + jnp.roll(field, -1, axis=1) +
-             jnp.roll(field, 1, axis=2) + jnp.roll(field, -1, axis=2)) / 6
-        )
-        return filtered_field
-
-    Ex_filtered = friedman_filter(Ex, alpha)
-    Ey_filtered = friedman_filter(Ey, alpha)
-    Ez_filtered = friedman_filter(Ez, alpha)
-
-    return Ex_filtered, Ey_filtered, Ez_filtered
