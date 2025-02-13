@@ -15,8 +15,6 @@ from functools import partial
 from PyPIC3D.utils import use_gpu_if_set
 # import external libraries
 
-
-
 @jit
 def particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
     """
@@ -73,9 +71,8 @@ def particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
 
     return rho
 
-@use_gpu_if_set
 @jit
-def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_wind, y_wind, z_wind, rho, GPUs=False):
+def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_wind, y_wind, z_wind, rho):
     """
     Update the charge density (rho) based on the positions of particles.
     Parameters:
@@ -104,9 +101,8 @@ def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_win
 
     return jax.lax.fori_loop(0, Nparticles, addto_rho, rho )
 
-@use_gpu_if_set
 @jit
-def compute_rho(particles, rho, world, GPUs):
+def compute_rho(particles, rho, world):
     """
     Compute the charge density (rho) for a given set of particles in a simulation world.
     Parameters:
@@ -120,7 +116,6 @@ def compute_rho(particles, rho, world, GPUs):
                   - 'x_wind': Window size in the x-direction.
                   - 'y_wind': Window size in the y-direction.
                   - 'z_wind': Window size in the z-direction.
-    GPUs (bool): A flag indicating whether to use GPU acceleration for the computation.
     Returns:
     ndarray: The updated charge density array.
     """
@@ -139,5 +134,5 @@ def compute_rho(particles, rho, world, GPUs):
         charge = species.get_charge()
         if N_particles > 0:
             particle_x, particle_y, particle_z = species.get_position()
-            rho = update_rho(N_particles, particle_x, particle_y, particle_z, dx, dy, dz, charge, x_wind, y_wind, z_wind, rho, GPUs)
+            rho = update_rho(N_particles, particle_x, particle_y, particle_z, dx, dy, dz, charge, x_wind, y_wind, z_wind, rho)
     return rho

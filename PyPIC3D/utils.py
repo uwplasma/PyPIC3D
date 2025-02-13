@@ -23,6 +23,14 @@ from jax.tree_util import tree_map
 
 from PyPIC3D.particle import initial_particles, particle_species
 
+def if_verbose_print(verbose, string):
+    jax.lax.cond(
+        verbose,
+        lambda _: print(string),
+        lambda _: None,
+        operand=None
+    )
+
 def particle_sanity_check(particles):
     """
     Perform a sanity check on the particles to ensure consistency in their attributes.
