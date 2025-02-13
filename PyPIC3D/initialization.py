@@ -89,6 +89,7 @@ def default_parameters():
         "benchmark": False, # boolean for using the profiler
         "verbose": False, # boolean for printing verbose output
         "GPUs": False, # boolean for using GPUs
+        "ncores": 4, # number of cores to use
         "ncpus": 1, # number of CPUs to use
         "cfl"  : 1, # CFL condition number
         "NN" : False, # boolean for using neural networks
@@ -159,8 +160,12 @@ def initialize_simulation(toml_file):
     bc = simulation_parameters['bc']
     verbose = simulation_parameters['verbose']
     GPUs = simulation_parameters['GPUs']
+    ncores = simulation_parameters['ncores']
     ncpus = simulation_parameters['ncpus']
     # set the simulation parameters
+
+    os.environ["XLA_FLAGS"] = f'--xla_force_host_platform_device_count={ncores}'
+    # set the number of cores to use
 
     dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
     # compute the spatial resolution
