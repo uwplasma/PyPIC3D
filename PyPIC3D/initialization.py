@@ -5,8 +5,8 @@ from jax.experimental import mesh_utils, multihost_utils
 from jax.experimental.shard_map import shard_map
 from jax.sharding import Mesh, PartitionSpec, NamedSharding
 import os
-import time
 import functools
+from functools import partial
 import toml
 
 from PyPIC3D.particle import (
@@ -48,6 +48,10 @@ from PyPIC3D.laser import (
 
 from PyPIC3D.boundaryconditions import (
     load_material_surfaces_from_toml
+)
+
+from PyPIC3D.evolve import (
+    time_loop_electrodynamic, time_loop_electrostatic
 )
 
 def default_parameters():
@@ -102,7 +106,6 @@ def default_parameters():
         "mu" : 1.2566370613e-6, # permeability of free space
         "C": 3e8,  # Speed of light in m/s
         "kb": 1.380649e-23,  # Boltzmann's constant in J/K
-
     }
 
     return plotting_parameters, simulation_parameters, constants
@@ -111,37 +114,40 @@ def default_parameters():
 
 def initialize_simulation(toml_file):
     """
-    Initializes the simulation with the given configuration file.
+    Initializes the simulation environment based on the provided TOML configuration file.
 
-    Parameters:
-    toml_file (toml): The configuration file for the simulation.
+    Args:
+        toml_file (str): Path to the TOML configuration file. If None, default parameters are used.
 
     Returns:
-    tuple: A tuple containing the following elements:
-        - particles: Initialized particles.
-        - Ex, Ey, Ez: Electric field components.
-        - Bx, By, Bz: Magnetic field components.
-        - Jx, Jy, Jz: Current density components.
-        - phi: Electric potential.
-        - rho: Charge density.
-        - E_grid, B_grid: Yee grid for the fields.
-        - world: Dictionary containing world parameters.
-        - simulation_parameters: Dictionary containing simulation parameters.
-        - constants: Dictionary containing physical constants.
-        - plotting_parameters: Dictionary containing plotting parameters.
-        - M: Preconditioner matrix.
-        - solver: Solver type.
-        - bc: Boundary conditions.
-        - electrostatic: Boolean indicating if the simulation is electrostatic.
-        - verbose: Boolean indicating if verbose output is enabled.
-        - GPUs: Number of GPUs to use.
-        - start: Start time of the simulation.
-        - Nt: Number of time steps.
-        - debye: Debye length.
-        - theoretical_freq: Theoretical frequency.
-        - thermal_velocity: Thermal velocity.
-        - curl_func: Function for calculating the curl of the fields.
+        tuple: A tuple containing the following elements:
+            - evolve_loop (function): The function to evolve the simulation loop.
+            - particles (list): List of particle objects initialized from the configuration file.
+            - Ex, Ey, Ez (jax.numpy.ndarray): Electric field components.
+            - Bx, By, Bz (jax.numpy.ndarray): Magnetic field components.
+            - Jx, Jy, Jz (jax.numpy.ndarray): Current density components.
+            - phi (jax.numpy.ndarray): Electric potential.
+            - rho (jax.numpy.ndarray): Charge density.
+            - E_grid, B_grid (dict): Grids for electric and magnetic fields.
+            - world (dict): Dictionary containing world parameters such as spatial resolution and domain size.
+            - simulation_parameters (dict): Dictionary containing simulation parameters.
+            - constants (dict): Dictionary containing physical constants.
+            - plotting_parameters (dict): Dictionary containing parameters for plotting.
+            - plasma_parameters (dict): Dictionary containing plasma parameters.
+            - M (jax.numpy.ndarray or None): Preconditioner matrix, if neural network preconditioning is used.
+            - solver (str): Solver type, either "spectral" or "fdtd".
+            - bc (str): Boundary conditions.
+            - electrostatic (bool): Flag indicating if the simulation is electrostatic.
+            - verbose (bool): Flag indicating if verbose output is enabled.
+            - GPUs (int): Number of GPUs to use.
+            - start (float): Start time of the simulation initialization.
+            - Nt (int): Number of time steps.
+            - curl_func (function): Function to compute the curl of the fields.
+            - pecs (list): List of perfectly electrical conductor boundaries.
+            - lasers (list): List of laser objects initialized from the configuration file.
+            - surfaces (list): List of material surfaces initialized from the configuration file.
     """
+
     plotting_parameters, simulation_parameters, constants = default_parameters()
     # load the default parameters
 
@@ -149,8 +155,6 @@ def initialize_simulation(toml_file):
         simulation_parameters, plotting_parameters, constants = update_parameters_from_toml(toml_file, simulation_parameters, plotting_parameters, constants)
 
     print(f"Initializing Simulation: { simulation_parameters['name'] }")
-    start = time.time()
-    # start the timer
 
     x_wind, y_wind, z_wind = simulation_parameters['x_wind'], simulation_parameters['y_wind'], simulation_parameters['z_wind']
     Nx, Ny, Nz = simulation_parameters['Nx'], simulation_parameters['Ny'], simulation_parameters['Nz']
@@ -222,22 +226,8 @@ def initialize_simulation(toml_file):
     pecs = read_pec_boundaries_from_toml(toml_file, world)
     # read in perfectly electrical conductor boundaries
 
-    ##################################### Neural Network Preconditioner ################################################
-
-    key = jax.random.PRNGKey(0)
-    # define the random key
     M = None
-    if simulation_parameters['NN']:
-        model = PoissonPrecondition( Nx=Nx, Ny=Ny, Nz=Nz, hidden_dim=3000, key=key)
-        # define the model
-        model = eqx.tree_deserialise_leaves(simulation_parameters['model_name'], model)
-        # load the model from file
-    else: model = None
-
-    M = None # precondition( simulation_parameters['NN'], phi, rho, model)
-    # solve for the preconditioner using the neural network
-
-    ####################################################################################################################
+    # specify the preconditioner matrix
 
     lasers = load_lasers_from_toml(toml_file, constants, world, E_grid, B_grid)
     # load the lasers from the configuration file
@@ -250,11 +240,30 @@ def initialize_simulation(toml_file):
     elif solver == "fdtd":
         curl_func = functools.partial(centered_finite_difference_curl, dx=dx, dy=dy, dz=dz, bc=bc)
 
-
     # if not electrostatic:
     #     Bx, By, Bz = initialize_magnetic_field(particles, E_grid, B_grid, world, constants, GPUs)
     # # initialize the magnetic field
 
-    return particles, Ex, Ey, Ez, Ex_ext, Ey_ext, Ez_ext, Bx, By, Bz, Bx_ext, By_ext, Bz_ext, Jx, Jy, Jz, phi, \
+    Ex, Ey, Ez, phi, rho = calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, solver, bc, verbose)
+    # calculate the electric field using the Poisson equation
+
+    Ex = Ex + Ex_ext
+    Ey = Ey + Ey_ext
+    Ez = Ez + Ez_ext
+    # add the external fields to the electric field
+    Bx = Bx + Bx_ext
+    By = By + By_ext
+    Bz = Bz + Bz_ext
+    # add the external fields to the magnetic field
+
+    if electrostatic:
+        evolve_loop = partial(time_loop_electrostatic, E_grid=E_grid, B_grid=B_grid, world=world, constants=constants, pecs=pecs, lasers=lasers, surfaces=surfaces, \
+            curl_func=curl_func, M=M, solver=solver, bc=bc, verbose=verbose, GPUs=GPUs)
+
+    else:
+        evolve_loop = partial(time_loop_electrodynamic, E_grid=E_grid, B_grid=B_grid, world=world, constants=constants, pecs=pecs, lasers=lasers, surfaces=surfaces, \
+            curl_func=curl_func, M=M, solver=solver, bc=bc, verbose=verbose, GPUs=GPUs)
+
+    return evolve_loop, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, \
         rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, M, \
-            solver, bc, electrostatic, verbose, GPUs, start, Nt, curl_func, pecs, lasers, surfaces
+            solver, bc, electrostatic, verbose, GPUs, Nt, curl_func, pecs, lasers, surfaces

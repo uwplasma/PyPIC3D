@@ -26,10 +26,6 @@ from PyPIC3D.initialization import (
     initialize_simulation
 )
 
-from PyPIC3D.evolve import (
-    time_loop
-)
-
 from PyPIC3D.autodiff import (
     kinetic_energy_grad
 )
@@ -44,18 +40,14 @@ from PyPIC3D.plotting import (
 def run_PyPIC3D(config_file):
     ##################################### INITIALIZE SIMULATION ################################################
 
-    particles, Ex, Ey, Ez, Ex_ext, Ey_ext, Ez_ext, Bx, By, Bz, Bx_ext, By_ext, Bz_ext, Jx, Jy, Jz, \
+    loop, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, \
         phi, rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, \
-            plasma_parameters, M, solver, bc, electrostatic, verbose, GPUs, start, Nt, curl_func, \
+            plasma_parameters, M, solver, bc, electrostatic, verbose, GPUs, Nt, curl_func, \
                 pecs, lasers, surfaces = initialize_simulation(toml_file)
     # initialize the simulation
 
-
-    loop = partial(time_loop, Ex_ext=Ex_ext, Ey_ext=Ey_ext, Ez_ext=Ez_ext, Bx_ext=Bx_ext, By_ext=By_ext, Bz_ext=Bz_ext, E_grid=E_grid, \
-        B_grid=B_grid, world=world, constants=constants, pecs=pecs, lasers=lasers, surfaces=surfaces,                                                   \
-            curl_func=curl_func, M=M, solver=solver, bc=bc, electrostatic=electrostatic, verbose=verbose, GPUs=GPUs)
-    # partial function for the time loop
-
+    loop = jax.jit(loop)
+    # jit the loop function
     ############################################################################################################
 
 
@@ -66,7 +58,7 @@ def run_PyPIC3D(config_file):
     # jax.profiler.start_trace("/tmp/tensorboard")
 
     for t in tqdm(range(Nt)):
-        particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi = loop(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi)
+        particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi = loop(particles, (Ex, Ey, Ez), (Bx, By, Bz), (Jx, Jy, Jz), rho, phi)
         # time loop to update the particles and fields
         plotter(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters, solver, bc)
         # plot the data
