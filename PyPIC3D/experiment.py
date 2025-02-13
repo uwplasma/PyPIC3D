@@ -50,7 +50,7 @@ class PyPIC3DExperiment(epyc.Experiment):
             'world': world,
             'plotting_parameters': plotting_parameters,
         }
-    
+
 class ParameterScan(epyc.Lab):
     def __init__(self, name, run_dir, base_config, section, param_name, param_values):
         super().__init__()
@@ -66,7 +66,7 @@ class ParameterScan(epyc.Lab):
             config = self.base_config.copy()
             config[self.section][self.param_name] = value
             experiment_dir = f'{self.run_dir}/{self.name}/{self.param_name}_{value}'.replace(' ', '_')
-            
+
             if not os.path.exists(experiment_dir):
                 print(f'Creating directory {experiment_dir}')
                 os.makedirs(experiment_dir)
