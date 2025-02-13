@@ -7,7 +7,6 @@
 import time
 import jax
 import jax.numpy as jnp
-import argparse
 from functools import partial
 from tqdm import tqdm
 import numpy as np
@@ -19,7 +18,7 @@ from PyPIC3D.plotting import (
 )
 
 from PyPIC3D.utils import (
-    dump_parameters_to_toml
+    dump_parameters_to_toml, load_config_file
 )
 
 from PyPIC3D.initialization import (
@@ -101,16 +100,8 @@ if __name__ == "__main__":
     #jax.config.update("jax_disable_jit", True)
     ############################################################################################################
 
-    ############################ ARG PARSER ####################################################################
-    parser = argparse.ArgumentParser(description="3D PIC code using Jax")
-    parser.add_argument('--config', type=str, help='Path to the configuration file')
-    args = parser.parse_args()
-    # argument parser for the configuration file
-    config_file = args.config
-    # path to the configuration file
-    print(f"Using Configuration File: {config_file}")
-    toml_file = toml.load(config_file)
-    ############################################################################################################
+    toml_file = load_config_file()
+    # load the configuration file
 
     run_PyPIC3D(toml_file)
     # run the PyPIC3D simulation

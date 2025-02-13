@@ -5,6 +5,7 @@ import jax
 from jax import random
 from jax import jit
 from jax import lax
+import argparse
 from jax._src.scipy.sparse.linalg import _vdot_real_tree, _add, _sub, _mul
 from jax.tree_util import tree_leaves
 import jax.numpy as jnp
@@ -23,7 +24,42 @@ from jax.tree_util import tree_map
 
 from PyPIC3D.particle import initial_particles, particle_species
 
+
+def load_config_file():
+    """
+    Parses command-line arguments to get the path to a configuration file,
+    loads the configuration file in TOML format, and returns its contents.
+
+    Returns:
+        dict: The contents of the configuration file as a dictionary.
+
+    Raises:
+        SystemExit: If the command-line arguments are not provided correctly.
+        FileNotFoundError: If the specified configuration file does not exist.
+        toml.TomlDecodeError: If the configuration file is not a valid TOML file.
+    """
+    parser = argparse.ArgumentParser(description="3D PIC code using Jax")
+    parser.add_argument('--config', type=str, help='Path to the configuration file')
+    args = parser.parse_args()
+    # argument parser for the configuration file
+    config_file = args.config
+    # path to the configuration file
+    print(f"Using Configuration File: {config_file}")
+    toml_file = toml.load(config_file)
+    # load the configuration file
+    return toml_file
+
 def if_verbose_print(verbose, string):
+    """
+    Conditionally prints a string based on the verbosity flag.
+
+    Parameters:
+    verbose (bool): A flag indicating whether to print the string.
+    string (str): The string to be printed if verbose is True.
+
+    Returns:
+    None
+    """
     jax.lax.cond(
         verbose,
         lambda _: print(string),
