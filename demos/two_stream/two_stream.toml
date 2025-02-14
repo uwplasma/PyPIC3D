@@ -17,10 +17,7 @@ electrostatic = false
 [plotting]
 plot_errors = false
 phaseSpace  = true
-plotpositions = false
-plotKE = false
 plotfields = true
-plot_dispersion = false
 plotting_interval = 1000
 
 [particle1]
