@@ -218,28 +218,6 @@ def plot_velocity_histogram(species, t, output_dir, nbins=50):
     plt.savefig(f"{output_dir}/data/velocity_histograms/{species_name}/velocities.{t:09}.png", dpi=200)
     plt.close()
 
-def plot_KE(KE, t):
-    """
-    Plots the kinetic energy of the particles.
-
-    Parameters:
-    KE (array-like): The kinetic energy of the particles.
-    t (array-like): The time value.
-
-    Returns:
-    None
-    """
-    plt.plot(t, KE)
-    plt.xlabel("Time")
-    plt.ylabel("Kinetic Energy")
-    plt.title("Kinetic Energy vs. Time")
-
-    if not os.path.exists("plots"):
-        os.makedirs("plots")
-
-    plt.savefig("plots/KE.png", dpi=300)
-    plt.close()
-
 
 def plot_probe(probe, t, name, savename):
     """
@@ -373,19 +351,6 @@ def particles_phase_space(particles, world, t, name, path):
     plt.title(f"{name} Phase Space")
     plt.savefig(f"{path}/data/phase_space/z/{name}_phase_space.{t:09}.png", dpi=150)
     plt.close()
-
-    # idx = 0
-    # for species in particles:
-    #     x, y, z = species.get_position()
-    #     vx, vy, vz = species.get_velocity()
-    #     v_magnitude = jnp.sqrt(jnp.square(vx) + jnp.square(vy) + jnp.square(vz))
-    #     plt.scatter(x, v_magnitude, c=colors[idx])
-    #     idx += 1
-    # plt.xlabel("Position")
-    # plt.ylabel("Velocity Magnitude")
-    # plt.title(f"{name} Phase Space (Magnitude)")
-    # plt.savefig(f"plots/phase_space/magnitude/{name}_phase_space.{t:09}.png", dpi=150)
-    # plt.close()
 
 def center_of_mass(particles):
     """
@@ -542,27 +507,6 @@ def freq_probe(n, x, y, z, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
     return freq
 
 
-def totalfield_energy(Ex, Ey, Ez, Bx, By, Bz, mu, eps):
-    """
-    Calculate the total field energy of the electric and magnetic fields.
-
-    Parameters:
-    - Ex (ndarray): The x-component of the electric field.
-    - Ey (ndarray): The y-component of the electric field.
-    - Ez (ndarray): The z-component of the electric field.
-    - Bx (ndarray): The x-component of the magnetic field.
-    - By (ndarray): The y-component of the magnetic field.
-    - Bz (ndarray): The z-component of the magnetic field.
-
-    Returns:
-    - float: The total field energy.
-    """
-
-    total_magnetic_energy = (0.5/mu)*jnp.sum(Bx**2 + By**2 + Bz**2)
-    total_electric_energy = (0.5*eps)*jnp.sum(Ex**2 + Ey**2 + Ez**2)
-    return total_magnetic_energy + total_electric_energy
-
-
 def dominant_modes(field, direction, dx, dy, dz, num_modes=5):
     """
     Calculate the dominant wavenumber modes of a field along a specified direction.
@@ -708,32 +652,6 @@ def write_data(filename, time, data):
         f.write(f"{time}, {data}\n")
 
 
-def total_field_energy(fieldx, fieldy, fieldz, world, constants):
-    """
-    Calculate the total field energy from the given field components.
-    This function computes the energy of the electric field components along 
-    the x, y, and z axes using the trapezoidal rule for numerical integration.
-    Parameters:
-    fieldx (array-like): The electric field component along the x-axis.
-    fieldy (array-like): The electric field component along the y-axis.
-    fieldz (array-like): The electric field component along the z-axis.
-    dx (float): The spacing between points along the x-axis.
-    dy (float): The spacing between points along the y-axis.
-    dz (float): The spacing between points along the z-axis.
-    Returns:
-    float: The total energy of the electric field.
-    """
-
-    dx = world['dx']
-    dy = world['dy']
-    dz = world['dz']
-    # get the grid spacings
-    field2 = fieldx**2 + fieldy**2 + fieldz**2
-    # calculate the square of the field
-    integral = jnp.trapezoid(jnp.trapezoid(jnp.trapezoid(field2, dx=dz), dx=dy), dx=dx)
-    # integrate the square of the field along x, y, and z
-    return 0.5 * constants['eps'] * integral
-
 def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid, B_grid, plotting_parameters, world, constants, solver, bc, output_dir):
     dx = world['dx']
     dy = world['dy']
@@ -746,20 +664,37 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
     # select a slice of the E field along the y-axis
     #_ = plot_fft(Eline, dt, f"E along Tungsten {t}", output_dir)
 
-    E2_integral = jnp.trapezoid(jnp.trapezoid(jnp.trapezoid(Ex**2 + Ey**2 + Ez**2, dx=dz), dx=dy), dx=dx)
-    B2_integral = jnp.trapezoid(jnp.trapezoid(jnp.trapezoid(Bx**2 + By**2 + Bz**2, dx=dz), dx=dy), dx=dx)
-    field_energy = 0.5*constants['eps']*E2_integral + 0.5/constants['mu']*B2_integral
-    total_energy = sum(particle.kinetic_energy() for particle in particles) + field_energy
-    write_data(f"{output_dir}/data/total_energy.txt", t*dt, total_energy)
+    if plotting_parameters['plotenergy']:
+        E2_integral = jnp.trapezoid(jnp.trapezoid(jnp.trapezoid(Ex**2 + Ey**2 + Ez**2, dx=dz), dx=dy), dx=dx)
+        B2_integral = jnp.trapezoid(jnp.trapezoid(jnp.trapezoid(Bx**2 + By**2 + Bz**2, dx=dz), dx=dy), dx=dx)
+        #integral of E^2 and B^2 over the entire grid
+        e_energy = 0.5*constants['eps']*E2_integral
+        b_energy = 0.5/constants['mu']*B2_integral
+        #electric and magnetic field energy
+        kinetic_energy = sum(particle.kinetic_energy() for particle in particles)
+        #kinetic energy of the particles
+        write_data(f"{output_dir}/data/total_energy.txt", t*dt, e_energy + b_energy + kinetic_energy)
+        write_data(f"{output_dir}/data/electric_field_energy.txt", t*dt, e_energy)
+        write_data(f"{output_dir}/data/magnetic_field_energy.txt", t*dt, b_energy)
+        write_data(f"{output_dir}/data/kinetic_energy.txt", t*dt, kinetic_energy)
+        # write the total energy to a file
 
     if plotting_parameters['plotvelocities']:
         for species in particles:
             plot_velocity_histogram(species, t, output_dir, nbins=50)
 
+    if plotting_parameters['plotcurrent']:
+        write_data(f"{output_dir}/data/Jx_mean.txt", t*dt, jnp.mean(Jx))
+        write_data(f"{output_dir}/data/Jy_mean.txt", t*dt, jnp.mean(Jy))
+        write_data(f"{output_dir}/data/Jz_mean.txt", t*dt, jnp.mean(Jz))
+    # write the mean current corrections to a file
+
     if plotting_parameters['plotpositions']:
         plot_positions(particles, t, world['x_wind'], world['y_wind'], world['z_wind'], output_dir)
+
     if plotting_parameters['phaseSpace']:
         particles_phase_space([particles[0]], world, t, "Particles", output_dir)
+
     if plotting_parameters['plotfields']:
         # save_vector_field_as_vtk(Ex, Ey, Ez, E_grid, f"{output_dir}/fields/E_{t*dt:09}.vtr")
         # save_vector_field_as_vtk(Bx, By, Bz, B_grid, f"{output_dir}/fields/B_{t*dt:09}.vtr")
@@ -768,15 +703,9 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         write_data(f"{output_dir}/data/averageB.txt", t*dt, jnp.mean(jnp.sqrt(Bx**2 + By**2 + Bz**2)))
         write_data(f"{output_dir}/data/Eprobe.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx-1, Ny-1, Nz-1))
         write_data(f"{output_dir}/data/centerE.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx//2, Ny//2, Nz//2))
-        write_data(f"{output_dir}/data/electric_field_energy.txt", t*dt, 0.5*constants['eps']*E2_integral)
-        write_data(f"{output_dir}/data/magnetic_field_energy.txt", t*dt, 0.5/constants['mu']*B2_integral)
-        write_data(f"{output_dir}/data/Jx_probe.txt", t*dt, jnp.mean(Jx))
-        write_data(f"{output_dir}/data/Jy_probe.txt", t*dt, jnp.mean(Jy))
-        write_data(f"{output_dir}/data/Jz_probe.txt", t*dt, jnp.mean(Jz))
         plot_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], t, 'E', output_dir, world, dt)
         plot_slice(rho[:, :, int(Nz/2)], t, 'rho', output_dir, world, dt)
-    if plotting_parameters['plotKE']:
-        write_data(f"{output_dir}/data/kinetic_energy.txt", t*dt, sum(particle.kinetic_energy() for particle in particles))
+
     if plotting_parameters['plot_errors']:
         write_data(f"{output_dir}/data/electric_divergence_errors.txt", t*dt, compute_electric_divergence_error(Ex, Ey, Ez, rho, constants, world, solver, bc))
         write_data(f"{output_dir}/data/magnetic_divergence_errors.txt", t*dt, compute_magnetic_divergence_error(Bx, By, Bz, world, solver, bc))
