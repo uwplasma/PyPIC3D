@@ -1,6 +1,5 @@
 import epyc
 from PyPIC3D.initialization import initialize_simulation
-from PyPIC3D.evolve import time_loop
 from PyPIC3D.plotting import plotter
 from functools import partial
 import time
