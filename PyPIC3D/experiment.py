@@ -11,6 +11,23 @@ from jax import jit
 
 
 class PyPIC3DExperiment(epyc.Experiment):
+    """
+    A class to represent a 3D Particle-In-Cell (PIC) experiment using the PyPIC3D framework.
+    Attributes
+    ----------
+    config : dict
+        Configuration parameters for the experiment.
+    Methods
+    -------
+    __init__(self, config):
+        Initializes the experiment with the given configuration.
+    run(self):
+        Runs the simulation loop, updates particles and fields, and plots the data.
+        Returns a dictionary containing the duration of the simulation, final particles,
+        final fields, plasma parameters, simulation parameters, constants, world, and
+        plotting parameters.
+    """
+
     def __init__(self, config):
         super().__init__()
         self.config = config
@@ -52,6 +69,17 @@ class PyPIC3DExperiment(epyc.Experiment):
 
 class ParameterScan(epyc.Lab):
     def __init__(self, name, run_dir, base_config, section, param_name, param_values):
+        """
+        Initialize the experiment with the given parameters.
+        Args:
+            name (str): The name of the experiment.
+            run_dir (str): The directory where the experiment will be run.
+            base_config (dict): The base configuration for the experiment.
+            section (str): The section of the configuration to modify.
+            param_name (str): The name of the parameter to vary.
+            param_values (list): The values of the parameter to test.
+        """
+
         super().__init__()
         self.name = name
         self.run_dir = run_dir

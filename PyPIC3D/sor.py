@@ -10,15 +10,15 @@ def solve_poisson_sor(phi, rho, dx, dy, dz, eps, omega=1.5, tol=1e-6, max_iter=1
     """
     Solve Poisson's equation using Successive Over-Relaxation (SOR) method.
 
-    Parameters:
-    phi (jax.numpy.ndarray): Initial guess for the potential.
-    rho (jax.numpy.ndarray): Charge density.
-    omega (float): Relaxation factor.
-    tol (float): Tolerance for convergence.
-    max_iter (int): Maximum number of iterations.
+    Args:
+        phi (jax.numpy.ndarray): Initial guess for the potential.
+        rho (jax.numpy.ndarray): Charge density.
+        omega (float): Relaxation factor.
+        tol (float): Tolerance for convergence.
+        max_iter (int): Maximum number of iterations.
 
     Returns:
-    jax.numpy.ndarray: Solution for the potential.
+        jax.numpy.ndarray: Solution for the potential.
     """
     phi = jnp.array(phi)
     rho = jnp.array(rho)

@@ -9,17 +9,17 @@ def general_drift(particles, Fx, Fy, Fz, Bx, By, Bz):
     """
     Calculate the general drift velocity of particles in the presence of electric and magnetic fields.
 
-    Parameters:
-    particles (Particles): An object representing the particles, which must have methods to get and set charge and velocity.
-    Fx (float): The x-component of the electric field.
-    Fy (float): The y-component of the electric field.
-    Fz (float): The z-component of the electric field.
-    Bx (float): The x-component of the magnetic field.
-    By (float): The y-component of the magnetic field.
-    Bz (float): The z-component of the magnetic field.
+    Args:
+        particles (Particles): An object representing the particles, which must have methods to get and set charge and velocity.
+        Fx (float): The x-component of the electric field.
+        Fy (float): The y-component of the electric field.
+        Fz (float): The z-component of the electric field.
+        Bx (float): The x-component of the magnetic field.
+        By (float): The y-component of the magnetic field.
+        Bz (float): The z-component of the magnetic field.
 
     Returns:
-    Particles: An object representing the updated particles with new velocities
+        Particles: An object representing the updated particles with new velocities
     """
     q = particles.get_charge()
     # get the charge of the particles

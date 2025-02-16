@@ -22,16 +22,16 @@ def compute_current_density(particles, Jx, Jy, Jz, world, GPUs):
     """
     Computes the current density for a given set of particles in a simulation world.
 
-    Parameters:
-    particles (list): A list of particle species, each containing methods to get the number of particles,
-                      their positions, velocities, and charge.
-    Jx, Jy, Jz (numpy.ndarray): The current density arrays to be updated.
-    world (dict): A dictionary containing the simulation world parameters such as grid spacing (dx, dy, dz)
-                  and window dimensions (x_wind, y_wind, z_wind).
-    GPUs (bool): A flag indicating whether to use GPU acceleration for the computation.
+    Args:
+        particles (list): A list of particle species, each containing methods to get the number of particles,
+                        their positions, velocities, and charge.
+        Jx, Jy, Jz (numpy.ndarray): The current density arrays to be updated.
+        world (dict): A dictionary containing the simulation world parameters such as grid spacing (dx, dy, dz)
+                    and window dimensions (x_wind, y_wind, z_wind).
+        GPUs (bool): A flag indicating whether to use GPU acceleration for the computation.
 
     Returns:
-    tuple: The updated current density arrays (Jx, Jy, Jz).
+        tuple: The updated current density arrays (Jx, Jy, Jz).
     """
     dx = world['dx']
     dy = world['dy']
@@ -125,16 +125,19 @@ def update_current_density(Nparticles, particlex, particley, particlez, particle
 def VB_correction(particles, Jx, Jy, Jz):
     """
     Apply Villasenor-Buneman correction to ensure rigorous charge conservation for local electromagnetic field solvers.
-    Parameters:
-    particles (list): List of particle species, each with methods to get charge, subcell position, resolution, and index.
-    Nx (int): Number of grid points in the x-direction.
-    Ny (int): Number of grid points in the y-direction.
-    Nz (int): Number of grid points in the z-direction.
+
+    Args:
+        particles (list): List of particle species, each with methods to get charge, subcell position, resolution, and index.
+        Nx (int): Number of grid points in the x-direction.
+        Ny (int): Number of grid points in the y-direction.
+        Nz (int): Number of grid points in the z-direction.
+
     Returns:
-    tuple: Corrected current density arrays (Jx, Jy, Jz) for the x, y, and z directions respectively.
+        tuple: Corrected current density arrays (Jx, Jy, Jz) for the x, y, and z directions respectively.
+
     References:
-    Villasenor, J., & Buneman, O. (1992). Rigorous charge conservation for local electromagnetic field solvers.
-    Computer Physics Communications, 69(2-3), 306-316.
+        Villasenor, J., & Buneman, O. (1992). Rigorous charge conservation for local electromagnetic field solvers.
+        Computer Physics Communications, 69(2-3), 306-316.
     """
 
     Jx = Jx.at[:, :, :].set(0)
