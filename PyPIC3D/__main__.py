@@ -58,6 +58,15 @@ def run_PyPIC3D(config_file):
         plotter(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters, solver, bc)
         # plot the data
 
+    # def body_fn(carry, t):
+    #     particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi = carry
+    #     particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi = loop(particles, (Ex, Ey, Ez), (Bx, By, Bz), (Jx, Jy, Jz), rho, phi)
+    #     plotter(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters, solver, bc)
+    #     return (particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi), None
+
+    # carry = (particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi)
+    # carry, _ = jax.lax.scan(body_fn, carry, jnp.arange(Nt))
+    # loop the simulation
     # jax.profiler.stop_trace()
     # # stop the trace
 
