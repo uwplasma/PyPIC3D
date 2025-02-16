@@ -134,23 +134,41 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
             bc = config[toml_key]['bc']
         # set the boundary condition
         if 'initial_x' in config[toml_key]:
-            print(f"Loading initial_x from external source: {config[toml_key]['initial_x']}")
-            x = jnp.load(config[toml_key]['initial_x'])
+            if isinstance(config[toml_key]['initial_x'], str):
+                print(f"Loading initial_x from external source: {config[toml_key]['initial_x']}")
+                x = jnp.load(config[toml_key]['initial_x'])
+            else:
+                x = jnp.full(N_particles, config[toml_key]['initial_x'])
         if 'initial_y' in config[toml_key]:
-            print(f"Loading initial_y from external source: {config[toml_key]['initial_y']}")
-            y = jnp.load(config[toml_key]['initial_y'])
+            if isinstance(config[toml_key]['initial_y'], str):
+                print(f"Loading initial_y from external source: {config[toml_key]['initial_y']}")
+                y = jnp.load(config[toml_key]['initial_y'])
+            else:
+                y = jnp.full(N_particles, config[toml_key]['initial_y'])
         if 'initial_z' in config[toml_key]:
-            print(f"Loading initial_z from external source: {config[toml_key]['initial_z']}")
-            z = jnp.load(config[toml_key]['initial_z'])
+            if isinstance(config[toml_key]['initial_z'], str):
+                print(f"Loading initial_z from external source: {config[toml_key]['initial_z']}")
+                z = jnp.load(config[toml_key]['initial_z'])
+            else:
+                z = jnp.full(N_particles, config[toml_key]['initial_z'])
         if 'initial_vx' in config[toml_key]:
-            print(f"Loading initial_vx from external source: {config[toml_key]['initial_vx']}")
-            vx = jnp.load(config[toml_key]['initial_vx'])
+            if isinstance(config[toml_key]['initial_vx'], str):
+                print(f"Loading initial_vx from external source: {config[toml_key]['initial_vx']}")
+                vx = jnp.load(config[toml_key]['initial_vx'])
+            else:
+                vx = jnp.full(N_particles, config[toml_key]['initial_vx'])
         if 'initial_vy' in config[toml_key]:
-            print(f"Loading initial_vy from external source: {config[toml_key]['initial_vy']}")
-            vy = jnp.load(config[toml_key]['initial_vy'])
+            if isinstance(config[toml_key]['initial_vy'], str):
+                print(f"Loading initial_vy from external source: {config[toml_key]['initial_vy']}")
+                vy = jnp.load(config[toml_key]['initial_vy'])
+            else:
+                vy = jnp.full(N_particles, config[toml_key]['initial_vy'])
         if 'initial_vz' in config[toml_key]:
-            print(f"Loading initial_vz from external source: {config[toml_key]['initial_vz']}")
-            vz = jnp.load(config[toml_key]['initial_vz'])
+            if isinstance(config[toml_key]['initial_vz'], str):
+                print(f"Loading initial_vz from external source: {config[toml_key]['initial_vz']}")
+                vz = jnp.load(config[toml_key]['initial_vz'])
+            else:
+                vz = jnp.full(N_particles, config[toml_key]['initial_vz'])
         print('\n')
 
         update_pos = True
