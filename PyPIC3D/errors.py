@@ -22,17 +22,17 @@ def compute_pe(phi, rho, constants, world, solver, bc='periodic'):
     """
     Compute the relative percentage difference of the Poisson solver.
 
-    Parameters:
-    phi (ndarray): The potential field.
-    rho (ndarray): The charge density.
-    eps (float): The permittivity.
-    dx (float): The grid spacing in the x-direction.
-    dy (float): The grid spacing in the y-direction.
-    dz (float): The grid spacing in the z-direction.
-    bc (str): The boundary condition.
+    Args:
+        phi (ndarray): The potential field.
+        rho (ndarray): The charge density.
+        eps (float): The permittivity.
+        dx (float): The grid spacing in the x-direction.
+        dy (float): The grid spacing in the y-direction.
+        dz (float): The grid spacing in the z-direction.
+        bc (str): The boundary condition.
 
     Returns:
-    float: The relative percentage difference of the Poisson solver.
+        float: The relative percentage difference of the Poisson solver.
     """
     eps = constants['eps']
     dx = world['dx']
@@ -53,17 +53,17 @@ def compute_magnetic_divergence_error(Bx, By, Bz, world, solver, bc='periodic'):
     """
     Compute the error in the divergence of the magnetic field for different solvers.
 
-    Parameters:
-    Bx (ndarray): The x-component of the magnetic field.
-    By (ndarray): The y-component of the magnetic field.
-    Bz (ndarray): The z-component of the magnetic field.
-    dx (float): The grid spacing in the x-direction.
-    dy (float): The grid spacing in the y-direction.
-    dz (float): The grid spacing in the z-direction.
-    bc (str): The boundary condition.
+    Args:
+        Bx (ndarray): The x-component of the magnetic field.
+        By (ndarray): The y-component of the magnetic field.
+        Bz (ndarray): The z-component of the magnetic field.
+        dx (float): The grid spacing in the x-direction.
+        dy (float): The grid spacing in the y-direction.
+        dz (float): The grid spacing in the z-direction.
+        bc (str): The boundary condition.
 
     Returns:
-    float: The error in the divergence of the magnetic field.
+        float: The error in the divergence of the magnetic field.
     """
     dx = world['dx']
     dy = world['dy']
@@ -83,16 +83,16 @@ def compute_electric_divergence_error(Ex, Ey, Ez, rho, constants, world, solver,
     """
     Compute the error in the divergence of the electric field using the charge density and the components of the electric field.
 
-    Parameters:
-    Ex (ndarray): The x-component of the electric field.
-    Ey (ndarray): The y-component of the electric field.
-    Ez (ndarray): The z-component of the electric field.
-    rho (ndarray): The charge density.
-    eps (float): The permittivity.
-    dx (float): The grid spacing in the x-direction.
-    dy (float): The grid spacing in the y-direction.
-    dz (float): The grid spacing in the z-direction.
-    bc (str): The boundary condition.
+    Args:
+        Ex (ndarray): The x-component of the electric field.
+        Ey (ndarray): The y-component of the electric field.
+        Ez (ndarray): The z-component of the electric field.
+        rho (ndarray): The charge density.
+        eps (float): The permittivity.
+        dx (float): The grid spacing in the x-direction.
+        dy (float): The grid spacing in the y-direction.
+        dz (float): The grid spacing in the z-direction.
+        bc (str): The boundary condition.
 
     Returns:
     float: The error in the divergence of the electric field.

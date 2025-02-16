@@ -9,6 +9,7 @@ def grab_laser_keys(config):
     """
     Extracts and returns a list of keys from the given configuration dictionary
     that start with the prefix 'laser'.
+
     Args:
         config (dict): A dictionary containing configuration keys and values.
     Returns:
@@ -25,11 +26,11 @@ def load_lasers_from_toml(config, constants, world, grid, staggered_grid):
     """
     Load laser pulses from a TOML file.
 
-    Parameters:
-    - config (dict): Dictionary containing the configuration.
+    Args:
+        config (dict): Dictionary containing the configuration.
 
     Returns:
-    - list: List of LaserPulse objects.
+        list: List of LaserPulse objects.
     """
     laser_keys = grab_laser_keys(config)
     lasers = []
@@ -51,6 +52,26 @@ def load_lasers_from_toml(config, constants, world, grid, staggered_grid):
 class LaserPulse:
     def __init__(self, max_electric_field, k0, omega0, pulse_width, \
                   xstart, ystart, zstart, width, constants, world, grid, staggered_grid, points=40):
+        """
+        Initialize the Laser class.
+
+        Args:
+            max_electric_field (float): Maximum electric field of the laser pulse.
+            k0 (float): Wave number of the laser pulse.
+            omega0 (float): Angular frequency of the laser pulse.
+            pulse_width (float): Width of the laser pulse in time.
+            xstart (float): Starting x-coordinate of the laser pulse.
+            ystart (float): Starting y-coordinate of the laser pulse.
+            zstart (float): Starting z-coordinate of the laser pulse.
+            width (float): Spatial width of the laser pulse.
+            constants (dict): Physical constants used in the simulation.
+            world (dict): Dictionary containing spatial resolution in x, y, and z directions.
+            grid (object): Grid object for the simulation.
+            staggered_grid (object): Staggered grid object for the simulation.
+            points (int, optional): Number of points to inject the laser pulse. Default is 40.
+
+        """
+
         self.max_electric_field = max_electric_field
         self.k0 = k0
         self.omega0 = omega0
@@ -81,14 +102,14 @@ class LaserPulse:
         """
         Calculate the electric field of a laser pulse at a given time and position.
 
-        Parameters:
-        t (float): Time at which to evaluate the electric field.
-        x (float): x-coordinate at which to evaluate the electric field.
-        y (float): y-coordinate at which to evaluate the electric field.
-        z (float): z-coordinate at which to evaluate the electric field.
+        Args:
+            t (float): Time at which to evaluate the electric field.
+            x (float): x-coordinate at which to evaluate the electric field.
+            y (float): y-coordinate at which to evaluate the electric field.
+            z (float): z-coordinate at which to evaluate the electric field.
 
         Returns:
-        float: The electric field value at the specified time and position.
+            float: The electric field value at the specified time and position.
         """
         weight = 1.0
         time_window = jnp.exp(-((t - self.pulse_width / 2) ** 2) / (2 * (self.pulse_width / 8) ** 2))
@@ -101,14 +122,14 @@ class LaserPulse:
         """
         Calculate the magnetic field at a given point in space and time.
 
-        Parameters:
-        t (float): Time at which to evaluate the magnetic field.
-        x (float): X-coordinate of the point in space.
-        y (float): Y-coordinate of the point in space.
-        z (float): Z-coordinate of the point in space.
+        Args:
+            t (float): Time at which to evaluate the magnetic field.
+            x (float): X-coordinate of the point in space.
+            y (float): Y-coordinate of the point in space.
+            z (float): Z-coordinate of the point in space.
 
         Returns:
-        float: The magnetic field at the given point in space and time.
+            float: The magnetic field at the given point in space and time.
         """
         weight = 1.0
         time_window = jnp.exp(-((t - self.pulse_width / 2) ** 2) / (2 * (self.pulse_width / 8) ** 2))
@@ -123,26 +144,24 @@ class LaserPulse:
         """
         Injects the laser fields into the simulation grid.
 
-        Parameters:
-        -----------
-        Ex : ndarray
-            The x-component of the electric field.
-        Ey : ndarray
-            The y-component of the electric field.
-        Ez : ndarray
-            The z-component of the electric field.
-        Bx : ndarray
-            The x-component of the magnetic field.
-        By : ndarray
-            The y-component of the magnetic field.
-        Bz : ndarray
-            The z-component of the magnetic field.
-        t : float
-            The current time in the simulation.
+        Args:
+            Ex : ndarray
+                The x-component of the electric field.
+            Ey : ndarray
+                The y-component of the electric field.
+            Ez : ndarray
+                The z-component of the electric field.
+            Bx : ndarray
+                The x-component of the magnetic field.
+            By : ndarray
+                The y-component of the magnetic field.
+            Bz : ndarray
+                The z-component of the magnetic field.
+            t : float
+                The current time in the simulation.
 
         Returns:
-        --------
-        None
+            None
         """
         x_points = self.grid[0]
         y_points = self.grid[1]

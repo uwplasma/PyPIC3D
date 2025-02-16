@@ -24,16 +24,16 @@ def plot_rho(rho, t, name, dx, dy, dz):
     """
     Plot the density field.
 
-    Parameters:
-    - rho (ndarray): The density field.
-    - t (int): The time step.
-    - name (str): The name of the plot.
-    - dx (float): The spacing in the x-direction.
-    - dy (float): The spacing in the y-direction.
-    - dz (float): The spacing in the z-direction.
+    Args:
+        rho (ndarray): The density field.
+        t (int): The time step.
+        name (str): The name of the plot.
+        dx (float): The spacing in the x-direction.
+        dy (float): The spacing in the y-direction.
+        dz (float): The spacing in the z-direction.
 
     Returns:
-    None
+        None
     """
     Nx = rho.shape[0]
     Ny = rho.shape[1]
@@ -56,14 +56,16 @@ def plot_rho(rho, t, name, dx, dy, dz):
 def save_vector_field_as_vtk(fieldx, fieldy, fieldz, grid, file_path):
     """
     Save a 3D vector field as a VTK rectilinear grid file.
-    Parameters:
-    fieldx (numpy.ndarray): The x-component of the vector field.
-    fieldy (numpy.ndarray): The y-component of the vector field.
-    fieldz (numpy.ndarray): The z-component of the vector field.
-    grid (tuple of numpy.ndarray): A tuple containing the grid coordinates (x, y, z).
-    file_path (str): The file path where the VTK file will be saved.
+
+    Args:
+        fieldx (numpy.ndarray): The x-component of the vector field.
+        fieldy (numpy.ndarray): The y-component of the vector field.
+        fieldz (numpy.ndarray): The z-component of the vector field.
+        grid (tuple of numpy.ndarray): A tuple containing the grid coordinates (x, y, z).
+        file_path (str): The file path where the VTK file will be saved.
+
     Returns:
-    None
+        None
     """
 
     # Create a new vtkRectilinearGrid
@@ -95,18 +97,18 @@ def plot_fields(fieldx, fieldy, fieldz, t, name, dx, dy, dz):
     """
     Plot the fields in a 3D grid.
 
-    Parameters:
-    - fieldx (ndarray): Array representing the x-component of the field.
-    - fieldy (ndarray): Array representing the y-component of the field.
-    - fieldz (ndarray): Array representing the z-component of the field.
-    - t (float): Time value.
-    - name (str): Name of the field.
-    - dx (float): Spacing between grid points in the x-direction.
-    - dy (float): Spacing between grid points in the y-direction.
-    - dz (float): Spacing between grid points in the z-direction.
+    Args:
+        fieldx (ndarray): Array representing the x-component of the field.
+        fieldy (ndarray): Array representing the y-component of the field.
+        fieldz (ndarray): Array representing the z-component of the field.
+        t (float): Time value.
+        name (str): Name of the field.
+        dx (float): Spacing between grid points in the x-direction.
+        dy (float): Spacing between grid points in the y-direction.
+        dz (float): Spacing between grid points in the z-direction.
 
     Returns:
-    None
+        None
     """
     Nx = fieldx.shape[0]
     Ny = fieldx.shape[1]
@@ -129,12 +131,12 @@ def plot_1dposition(x, name, particle):
     """
     Plot the 1D position of a particle.
 
-    Parameters:
-    - x (ndarray): The x-coordinates of the particle.
-    - name (str): The name of the plot.
+    Args:
+        x (ndarray): The x-coordinates of the particle.
+        name (str): The name of the plot.
 
     Returns:
-    None
+        None
     """
     plt.plot(x)
     plt.title(f"{name} Position")
@@ -152,15 +154,15 @@ def plot_positions(particles, t, x_wind, y_wind, z_wind, path):
     """
     Makes an interactive 3D plot of the positions of the particles using Plotly.
 
-    Parameters:
-    particles (list): A list of ParticleSpecies objects containing positions.
-    t (float): The time value.
-    x_wind (float): The x-axis wind limit.
-    y_wind (float): The y-axis wind limit.
-    z_wind (float): The z-axis wind limit.
+    Args:
+        particles (list): A list of ParticleSpecies objects containing positions.
+        t (float): The time value.
+        x_wind (float): The x-axis wind limit.
+        y_wind (float): The y-axis wind limit.
+        z_wind (float): The z-axis wind limit.
 
     Returns:
-    None
+        None
     """
     fig = go.Figure()
 
@@ -195,14 +197,14 @@ def plot_velocity_histogram(species, t, output_dir, nbins=50):
     """
     Plots the histogram of the magnitudes of the velocities of the particles.
 
-    Parameters:
-    vx (array-like): The x-component of the velocities of the particles.
-    vy (array-like): The y-component of the velocities of the particles.
-    vz (array-like): The z-component of the velocities of the particles.
-    t (float): The time value.
+    Args:
+        vx (array-like): The x-component of the velocities of the particles.
+        vy (array-like): The y-component of the velocities of the particles.
+        vz (array-like): The z-component of the velocities of the particles.
+        t (float): The time value.
 
     Returns:
-    None
+        None
     """
     vx, vy, vz = species.get_velocity()
     species_name = species.get_name().replace(" ", "")
@@ -223,11 +225,11 @@ def plot_probe(probe, t, name, savename):
     """
     Plots a probe.
 
-    Parameters:
-    probe (array-like): The probe.
+    Args:
+        probe (array-like): The probe.
 
     Returns:
-    None
+        None
     """
     plt.plot(t, probe)
     plt.xlabel("Time")
@@ -244,16 +246,16 @@ def fft(signal, dt):
     """
     Perform a Fast Fourier Transform (FFT) on the given signal.
 
-    Parameters:
-    - signal: The input signal to be transformed. It can be a list or a numpy array.
-    - dt: The time interval between samples in the signal.
+    Args:
+        signal: The input signal to be transformed. It can be a list or a numpy array.
+        dt: The time interval between samples in the signal.
 
     Returns:
-    - xf: The frequency index for the FFT.
-    - yf: The transformed signal after FFT.
+        xf: The frequency index for the FFT.
+        yf: The transformed signal after FFT.
 
     Note:
-    - The input signal will be converted to a numpy array if it is a list.
+        The input signal will be converted to a numpy array if it is a list.
     """
     if type(signal) is list:
         signal = np.asarray(signal)
@@ -284,18 +286,54 @@ def plot_fft(signal, dt, name, path):
     return xf[ np.argmax(np.abs(yf)[1:]) ]
     # plot the fft of a signal
 
+def write_particles_phase_space(particles, t, path):
+    """
+    Write the phase space of the particles to a file.
+
+    Args:
+        particles (Particles): The particles to be written.
+        t (ndarray): The time values.
+        name (str): The name of the plot.
+
+    Returns:
+        None
+    """
+    if not os.path.exists(f"{path}/data/phase_space/x"):
+        os.makedirs(f"{path}/data/phase_space/x")
+    if not os.path.exists(f"{path}/data/phase_space/y"):
+        os.makedirs(f"{path}/data/phase_space/y")
+    if not os.path.exists(f"{path}/data/phase_space/z"):
+        os.makedirs(f"{path}/data/phase_space/z")
+    # Create directory if it doesn't exist
+
+    for species in particles:
+        x, y, z = species.get_position()
+        vx, vy, vz = species.get_velocity()
+        name = species.get_name().replace(" ", "")
+
+        x_phase_space = jnp.stack((x, vx), axis=-1)
+        y_phase_space = jnp.stack((y, vy), axis=-1)
+        z_phase_space = jnp.stack((z, vz), axis=-1)
+
+        jnp.save(f"{path}/data/phase_space/x/{name}_phase_space.{t:09}.npy", x_phase_space)
+        jnp.save(f"{path}/data/phase_space/y/{name}_phase_space.{t:09}.npy", y_phase_space)
+        jnp.save(f"{path}/data/phase_space/z/{name}_phase_space.{t:09}.npy", z_phase_space)
+
+
+
+    # write the phase space of the particles to a file
 
 def particles_phase_space(particles, world, t, name, path):
     """
     Plot the phase space of the particles.
 
-    Parameters:
-    - particles (Particles): The particles to be plotted.
-    - t (ndarray): The time values.
-    - name (str): The name of the plot.
+    Args:
+        particles (Particles): The particles to be plotted.
+        t (ndarray): The time values.
+        name (str): The name of the plot.
 
     Returns:
-    None
+        None
     """
 
     if not os.path.exists(f"{path}/data/phase_space/x"):
@@ -356,11 +394,11 @@ def center_of_mass(particles):
     """
     Calculate the center of mass of a particle species.
 
-    Parameters:
-    - particles (ParticleSpecies): The particle species object containing positions and masses.
+    Args:
+        particles (ParticleSpecies): The particle species object containing positions and masses.
 
     Returns:
-    - ndarray: The center of mass coordinates.
+        ndarray: The center of mass coordinates.
     """
     if particles.get_number_of_particles() == 0:
         return 0, 0, 0
@@ -378,18 +416,18 @@ def number_density(n, Nparticles, particlex, particley, particlez, dx, dy, dz, N
     """
     Calculate the number density of particles at each grid point.
 
-    Parameters:
-    - n (array-like): The initial number density array.
-    - Nparticles (int): The number of particles.
-    - particlex (array-like): The x-coordinates of the particles.
-    - particley (array-like): The y-coordinates of the particles.
-    - particlez (array-like): The z-coordinates of the particles.
-    - dx (float): The grid spacing in the x-direction.
-    - dy (float): The grid spacing in the y-direction.
-    - dz (float): The grid spacing in the z-direction.
+    Args:
+        n (array-like): The initial number density array.
+        Nparticles (int): The number of particles.
+        particlex (array-like): The x-coordinates of the particles.
+        particley (array-like): The y-coordinates of the particles.
+        particlez (array-like): The z-coordinates of the particles.
+        dx (float): The grid spacing in the x-direction.
+        dy (float): The grid spacing in the y-direction.
+        dz (float): The grid spacing in the z-direction.
 
     Returns:
-    - ndarray: The number density of particles at each grid point.
+        ndarray: The number density of particles at each grid point.
     """
     x_wind = (Nx * dx).astype(int)
     y_wind = (Ny * dy).astype(int)
@@ -402,16 +440,16 @@ def probe(fieldx, fieldy, fieldz, x, y, z):
     """
     Probe the value of a vector field at a given point.
 
-    Parameters:
-    - fieldx (ndarray): The x-component of the vector field.
-    - fieldy (ndarray): The y-component of the vector field.
-    - fieldz (ndarray): The z-component of the vector field.
-    - x (float): The x-coordinate of the point.
-    - y (float): The y-coordinate of the point.
-    - z (float): The z-coordinate of the point.
+    Args:
+        fieldx (ndarray): The x-component of the vector field.
+        fieldy (ndarray): The y-component of the vector field.
+        fieldz (ndarray): The z-component of the vector field.
+        x (float): The x-coordinate of the point.
+        y (float): The y-coordinate of the point.
+        z (float): The z-coordinate of the point.
 
     Returns:
-    - tuple: The value of the vector field at the given point.
+        tuple: The value of the vector field at the given point.
     """
     return fieldx.at[x, y, z].get(), fieldy.at[x, y, z].get(), fieldz.at[x, y, z].get()
 
@@ -420,16 +458,16 @@ def magnitude_probe(fieldx, fieldy, fieldz, x, y, z):
     """
     Probe the magnitude of a vector field at a given point.
 
-    Parameters:
-    - fieldx (ndarray): The x-component of the vector field.
-    - fieldy (ndarray): The y-component of the vector field.
-    - fieldz (ndarray): The z-component of the vector field.
-    - x (float): The x-coordinate of the point.
-    - y (float): The y-coordinate of the point.
-    - z (float): The z-coordinate of the point.
+    Args:
+        fieldx (ndarray): The x-component of the vector field.
+        fieldy (ndarray): The y-component of the vector field.
+        fieldz (ndarray): The z-component of the vector field.
+        x (float): The x-coordinate of the point.
+        y (float): The y-coordinate of the point.
+        z (float): The z-coordinate of the point.
 
     Returns:
-    - float: The magnitude of the vector field at the given point.
+        float: The magnitude of the vector field at the given point.
     """
     return jnp.sqrt(fieldx.at[x, y, z].get()**2 + fieldy.at[x, y, z].get()**2 + fieldz.at[x, y, z].get()**2)
 
@@ -437,20 +475,22 @@ def magnitude_probe(fieldx, fieldy, fieldz, x, y, z):
 def freq(n, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
     """
     Calculate the plasma frequency based on the given parameters.
-    Parameters:
-    n (array-like): Input array representing the electron distribution.
-    Nelectrons (int): Total number of electrons.
-    ex (float): Electric field component in the x-direction.
-    ey (float): Electric field component in the y-direction.
-    ez (float): Electric field component in the z-direction.
-    Nx (int): Number of grid points in the x-direction.
-    Ny (int): Number of grid points in the y-direction.
-    Nz (int): Number of grid points in the z-direction.
-    dx (float): Grid spacing in the x-direction.
-    dy (float): Grid spacing in the y-direction.
-    dz (float): Grid spacing in the z-direction.
+
+    Args:
+        n (array-like): Input array representing the electron distribution.
+        Nelectrons (int): Total number of electrons.
+        ex (float): Electric field component in the x-direction.
+        ey (float): Electric field component in the y-direction.
+        ez (float): Electric field component in the z-direction.
+        Nx (int): Number of grid points in the x-direction.
+        Ny (int): Number of grid points in the y-direction.
+        Nz (int): Number of grid points in the z-direction.
+        dx (float): Grid spacing in the x-direction.
+        dy (float): Grid spacing in the y-direction.
+        dz (float): Grid spacing in the z-direction.
+
     Returns:
-    float: The calculated plasma frequency.
+        float: The calculated plasma frequency.
     """
 
     ne = jnp.ravel(number_density(n, Nelectrons, ex, ey, ez, dx, dy, dz, Nx, Ny, Nz))
@@ -473,23 +513,25 @@ def freq(n, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
 def freq_probe(n, x, y, z, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
     """
     Calculate the plasma frequency at a given point in a 3D grid.
-    Parameters:
-    n (ndarray): The electron density array.
-    x (float): The x-coordinate of the probe point.
-    y (float): The y-coordinate of the probe point.
-    z (float): The z-coordinate of the probe point.
-    Nelectrons (int): The total number of electrons.
-    ex (float): The extent of the grid in the x-direction.
-    ey (float): The extent of the grid in the y-direction.
-    ez (float): The extent of the grid in the z-direction.
-    Nx (int): The number of grid points in the x-direction.
-    Ny (int): The number of grid points in the y-direction.
-    Nz (int): The number of grid points in the z-direction.
-    dx (float): The grid spacing in the x-direction.
-    dy (float): The grid spacing in the y-direction.
-    dz (float): The grid spacing in the z-direction.
+
+    Args:
+        n (ndarray): The electron density array.
+        x (float): The x-coordinate of the probe point.
+        y (float): The y-coordinate of the probe point.
+        z (float): The z-coordinate of the probe point.
+        Nelectrons (int): The total number of electrons.
+        ex (float): The extent of the grid in the x-direction.
+        ey (float): The extent of the grid in the y-direction.
+        ez (float): The extent of the grid in the z-direction.
+        Nx (int): The number of grid points in the x-direction.
+        Ny (int): The number of grid points in the y-direction.
+        Nz (int): The number of grid points in the z-direction.
+        dx (float): The grid spacing in the x-direction.
+        dy (float): The grid spacing in the y-direction.
+        dz (float): The grid spacing in the z-direction.
+
     Returns:
-    float: The plasma frequency at the specified point.
+        float: The plasma frequency at the specified point.
     """
 
     ne = number_density(n, Nelectrons, ex, ey, ez, dx, dy, dz, Nx, Ny, Nz)
@@ -511,16 +553,16 @@ def dominant_modes(field, direction, dx, dy, dz, num_modes=5):
     """
     Calculate the dominant wavenumber modes of a field along a specified direction.
 
-    Parameters:
-    - field (ndarray): The field to analyze.
-    - direction (str): The direction along which to calculate the wavenumber modes ('x', 'y', or 'z').
-    - dx (float): The grid spacing in the x-direction.
-    - dy (float): The grid spacing in the y-direction.
-    - dz (float): The grid spacing in the z-direction.
-    - num_modes (int): The number of dominant modes to return.
+    Args:
+        field (ndarray): The field to analyze.
+        direction (str): The direction along which to calculate the wavenumber modes ('x', 'y', or 'z').
+        dx (float): The grid spacing in the x-direction.
+        dy (float): The grid spacing in the y-direction.
+        dz (float): The grid spacing in the z-direction.
+        num_modes (int): The number of dominant modes to return.
 
     Returns:
-    - dominant_modes (ndarray): The dominant wavenumber modes.
+        dominant_modes (ndarray): The dominant wavenumber modes.
     """
     if direction == 'x':
         axis = 0
@@ -550,12 +592,13 @@ def plot_dominant_modes(dominant_modes, t, name, savename):
     """
     Plots the dominant wavenumber modes of a field.
 
-    Parameters:
-    - dominant_modes (ndarray): The dominant wavenumber modes to plot.
-    - t (int): The time value.
-    - name (str): The name of the field.
+    Args:
+        dominant_modes (ndarray): The dominant wavenumber modes to plot.
+        t (int): The time value.
+        name (str): The name of the field.
 
-    Saves the plot as a PNG file in the 'plots' directory with the filename format '{name}_dominant_modes.png'.
+    Returns:
+        None
     """
     for mode in range(dominant_modes.shape[1]):
         plt.plot(t, dominant_modes[:, mode], label=f"Mode {mode + 1}")
@@ -575,13 +618,13 @@ def write_probe(probe_data, t, filename):
     """
     Writes probe data and timestep to a file.
 
-    Parameters:
-    probe_data (any): The data collected by the probe to be written to the file.
-    t (int or float): The timestep at which the probe data was collected.
-    filename (str): The name of the file where the probe data will be written.
+    Args:
+        probe_data (any): The data collected by the probe to be written to the file.
+        t (int or float): The timestep at which the probe data was collected.
+        filename (str): The name of the file where the probe data will be written.
 
     Returns:
-    None
+        None
     """
     with open(filename, 'a') as file:
         file.write(f"{t}\t{probe_data}\n")
@@ -590,13 +633,13 @@ def plot_initial_KE(particles, path):
     """
     Plots the initial kinetic energy of the particles.
 
-    Parameters:
-    - particles (Particles): The particles to be plotted.
-    - t (ndarray): The time values.
-    - name (str): The name of the plot.
+    Args:
+        particles (Particles): The particles to be plotted.
+        t (ndarray): The time values.
+        name (str): The name of the plot.
 
     Returns:
-    None
+        None
     """
     for particle in particles:
         particle_name = particle.get_name().replace(" ", "")
@@ -614,15 +657,15 @@ def plot_slice(field_slice, t, name, path, world, dt):
     """
     Plots a 2D slice of a field and saves the plot as a PNG file.
 
-    Parameters:
-    field_slice (2D array): The 2D array representing the field slice to be plotted.
-    t (int): The time step index.
-    name (str): The name of the field being plotted.
-    world (dict): A dictionary containing the dimensions of the world with keys 'x_wind' and 'y_wind'.
-    dt (float): The time step duration.
+    Args:
+        field_slice (2D array): The 2D array representing the field slice to be plotted.
+        t (int): The time step index.
+        name (str): The name of the field being plotted.
+        world (dict): A dictionary containing the dimensions of the world with keys 'x_wind' and 'y_wind'.
+        dt (float): The time step duration.
 
     Returns:
-    None
+        None
     """
 
     if not os.path.exists(f"{path}/data/{name}_slice"):
@@ -640,13 +683,13 @@ def write_data(filename, time, data):
     """
     Write the given time and data to a file.
 
-    Parameters:
-    filename (str): The name of the file to write to.
-    time (float): The time value to write.
-    data (any): The data to write.
+    Args:
+        filename (str): The name of the file to write to.
+        time (float): The time value to write.
+        data (any): The data to write.
 
     Returns:
-    None
+        None
     """
     with open(filename, "a") as f:
         f.write(f"{time}, {data}\n")
@@ -693,7 +736,8 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         plot_positions(particles, t, world['x_wind'], world['y_wind'], world['z_wind'], output_dir)
 
     if plotting_parameters['phaseSpace']:
-        particles_phase_space([particles[0]], world, t, "Particles", output_dir)
+        #particles_phase_space([particles[0]], world, t, "Particles", output_dir)
+        write_particles_phase_space(particles, t, output_dir)
 
     if plotting_parameters['plotfields']:
         # save_vector_field_as_vtk(Ex, Ey, Ez, E_grid, f"{output_dir}/fields/E_{t*dt:09}.vtr")
@@ -703,8 +747,21 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         write_data(f"{output_dir}/data/averageB.txt", t*dt, jnp.mean(jnp.sqrt(Bx**2 + By**2 + Bz**2)))
         write_data(f"{output_dir}/data/Eprobe.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx-1, Ny-1, Nz-1))
         write_data(f"{output_dir}/data/centerE.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx//2, Ny//2, Nz//2))
-        plot_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], t, 'E', output_dir, world, dt)
-        plot_slice(rho[:, :, int(Nz/2)], t, 'rho', output_dir, world, dt)
+
+        # plot_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], t, 'E', output_dir, world, dt)
+        # plot_slice(rho[:, :, int(Nz/2)], t, 'rho', output_dir, world, dt)
+
+        if not os.path.exists(f"{output_dir}/data/E_slice"):
+            os.makedirs(f'{output_dir}/data/E_slice')
+        # Create directory if it doesn't exist
+
+        if not os.path.exists(f"{output_dir}/data/B_slice"):
+            os.makedirs(f'{output_dir}/data/B_slice')
+        # Create directory if it doesn't exist
+
+        jnp.save(f"{output_dir}/data/E_slice/E_{t:09}.npy", jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)])
+        jnp.save(f"{output_dir}/data/B_slice/B_{t:09}.npy", jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)])
+        #jnp.save(f"{output_dir}/data/rho_slice/rho_{t:09}.npy", rho[:, :, int(Nz/2)])
 
     if plotting_parameters['plot_errors']:
         write_data(f"{output_dir}/data/electric_divergence_errors.txt", t*dt, compute_electric_divergence_error(Ex, Ey, Ez, rho, constants, world, solver, bc))
@@ -733,16 +790,16 @@ def continuity_error(rho, old_rho, particles, world, divergence_func, GPUs):
     """
     Calculate the continuity error in a plasma simulation.
 
-    Parameters:
-    rho (array-like): Current charge density.
-    old_rho (array-like): Previous charge density.
-    particles (array-like): Particle data.
-    world (dict): Simulation world parameters, including time step 'dt'.
-    divergence_func (function): Function to compute the divergence of the current density.
-    GPUs (bool): Flag to indicate if GPUs are used for computation.
+    Args:
+        rho (array-like): Current charge density.
+        old_rho (array-like): Previous charge density.
+        particles (array-like): Particle data.
+        world (dict): Simulation world parameters, including time step 'dt'.
+        divergence_func (function): Function to compute the divergence of the current density.
+        GPUs (bool): Flag to indicate if GPUs are used for computation.
 
     Returns:
-    float: The mean absolute continuity error.
+        float: The mean absolute continuity error.
     """
 
     dpdt = (rho - old_rho) / world['dt']
@@ -760,25 +817,27 @@ def continuity_error(rho, old_rho, particles, world, divergence_func, GPUs):
 def plotter(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters, solver, bc):
     """
     Plots and saves various simulation data at specified intervals.
-    Parameters:
-    particles (list): List of particle objects in the simulation.
-    Ex, Ey, Ez (ndarray): Electric field components in the x, y, and z directions.
-    Bx, By, Bz (ndarray): Magnetic field components in the x, y, and z directions.
-    Jx, Jy, Jz (ndarray): Current density components in the x, y, and z directions.
-    rho (ndarray): Charge density.
-    phi (ndarray): Electric potential.
-    E_grid, B_grid (ndarray): Grids for electric and magnetic fields.
-    world (dict): Dictionary containing world parameters such as time step 'dt'.
-    constants (dict): Dictionary containing physical constants.
-    plotting_parameters (dict): Dictionary containing parameters for plotting, including 'plotting_interval'.
-    M (object): Mass matrix or related object.
-    solver (object): Solver object for the simulation.
-    bc (object): Boundary conditions object.
-    electrostatic (bool): Flag indicating if the simulation is electrostatic.
-    verbose (bool): Flag for verbose output.
-    GPUs (list): List of GPUs used in the simulation.
+
+    Args:
+        particles (list): List of particle objects in the simulation.
+        Ex, Ey, Ez (ndarray): Electric field components in the x, y, and z directions.
+        Bx, By, Bz (ndarray): Magnetic field components in the x, y, and z directions.
+        Jx, Jy, Jz (ndarray): Current density components in the x, y, and z directions.
+        rho (ndarray): Charge density.
+        phi (ndarray): Electric potential.
+        E_grid, B_grid (ndarray): Grids for electric and magnetic fields.
+        world (dict): Dictionary containing world parameters such as time step 'dt'.
+        constants (dict): Dictionary containing physical constants.
+        plotting_parameters (dict): Dictionary containing parameters for plotting, including 'plotting_interval'.
+        M (object): Mass matrix or related object.
+        solver (object): Solver object for the simulation.
+        bc (object): Boundary conditions object.
+        electrostatic (bool): Flag indicating if the simulation is electrostatic.
+        verbose (bool): Flag for verbose output.
+        GPUs (list): List of GPUs used in the simulation.
+
     Returns:
-    None
+        None
     """
 
     dt = world['dt']

@@ -20,7 +20,7 @@ def particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
     """
     Distribute the charge of a particle to the surrounding grid points.
 
-    Parameters:
+    Args:
         q (float): Charge of the particle.
         x (float): x-coordinate of the particle.
         y (float): y-coordinate of the particle.
@@ -75,21 +75,23 @@ def particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
 def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_wind, y_wind, z_wind, rho):
     """
     Update the charge density (rho) based on the positions of particles.
-    Parameters:
-    Nparticles (int): Number of particles.
-    particlex (array-like): Array containing the x-coordinates of particles.
-    particley (array-like): Array containing the y-coordinates of particles.
-    particlez (array-like): Array containing the z-coordinates of particles.
-    dx (float): Grid spacing in the x-direction.
-    dy (float): Grid spacing in the y-direction.
-    dz (float): Grid spacing in the z-direction.
-    q (float): Charge of a single particle.
-    x_wind (array-like): Window function in the x-direction.
-    y_wind (array-like): Window function in the y-direction.
-    z_wind (array-like): Window in the z-direction.
-    rho (array-like): Initial charge density array to be updated.
+
+    Args:
+        Nparticles (int): Number of particles.
+        particlex (array-like): Array containing the x-coordinates of particles.
+        particley (array-like): Array containing the y-coordinates of particles.
+        particlez (array-like): Array containing the z-coordinates of particles.
+        dx (float): Grid spacing in the x-direction.
+        dy (float): Grid spacing in the y-direction.
+        dz (float): Grid spacing in the z-direction.
+        q (float): Charge of a single particle.
+        x_wind (array-like): Window function in the x-direction.
+        y_wind (array-like): Window function in the y-direction.
+        z_wind (array-like): Window in the z-direction.
+        rho (array-like): Initial charge density array to be updated.
+
     Returns:
-    array-like: Updated charge density array.
+        array-like: Updated charge density array.
     """
 
     def addto_rho(particle, rho):
