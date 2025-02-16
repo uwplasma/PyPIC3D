@@ -18,11 +18,11 @@ def identity(x):
     """
     Return the input value unchanged.
 
-    Parameters:
-    x (any type): The input value to be returned.
+    Args:
+        x (any type): The input value to be returned.
 
     Returns:
-    any type: The same value that was passed as input.
+        any type: The same value that was passed as input.
     """
     return x
 
@@ -30,12 +30,12 @@ def dot(A, B):
     """
     Compute the dot product of two 3D arrays using Einstein summation convention.
 
-    Parameters:
-    A (array-like): First input array with shape (i, j, k).
-    B (array-like): Second input array with shape (i, j, k).
+    Args:
+        A (array-like): First input array with shape (i, j, k).
+        B (array-like): Second input array with shape (i, j, k).
 
     Returns:
-    float: The dot product of the input arrays.
+        float: The dot product of the input arrays.
     """
     return jnp.einsum('ijk,ijk->', A, B)
 
@@ -43,16 +43,16 @@ def conjugated_gradients(A, b, x0, tol=1e-6, maxiter=1000, M=identity):
     """
     Solve the linear system Ax = b using the Conjugate Gradient method.
 
-    Parameters:
-    A (function): A function that computes the matrix-vector product Ax.
-    b (array-like): The right-hand side vector of the linear system.
-    x0 (array-like): The initial guess for the solution.
-    tol (float, optional): The tolerance for the stopping criterion. Default is 1e-6.
-    maxiter (int, optional): The maximum number of iterations. Default is 1000.
-    M (function, optional): A function that applies the preconditioner. Default is the identity function.
+    Args:
+        A (function): A function that computes the matrix-vector product Ax.
+        b (array-like): The right-hand side vector of the linear system.
+        x0 (array-like): The initial guess for the solution.
+        tol (float, optional): The tolerance for the stopping criterion. Default is 1e-6.
+        maxiter (int, optional): The maximum number of iterations. Default is 1000.
+        M (function, optional): A function that applies the preconditioner. Default is the identity function.
 
     Returns:
-    array-like: The approximate solution to the linear system.
+        array-like: The approximate solution to the linear system.
     """
     g = A(x0) - b
     # compute the residual

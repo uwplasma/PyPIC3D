@@ -17,20 +17,20 @@ def check_nyquist_criterion(Ex, Ey, Ez, Bx, By, Bz, world):
     """
     Check if the E and B fields meet the Nyquist criterion.
 
-    Parameters:
-    Ex (ndarray): The electric field component in the x-direction.
-    Ey (ndarray): The electric field component in the y-direction.
-    Ez (ndarray): The electric field component in the z-direction.
-    Bx (ndarray): The magnetic field component in the x-direction.
-    By (ndarray): The magnetic field component in the y-direction.
-    Bz (ndarray): The magnetic field component in the z-direction.
-    world (dict): A dictionary containing the spatial resolution parameters.
-        - 'dx' (float): Spatial resolution in the x-direction.
-        - 'dy' (float): Spatial resolution in the y-direction.
-        - 'dz' (float): Spatial resolution in the z-direction.
+    Args:
+        Ex (ndarray): The electric field component in the x-direction.
+        Ey (ndarray): The electric field component in the y-direction.
+        Ez (ndarray): The electric field component in the z-direction.
+        Bx (ndarray): The magnetic field component in the x-direction.
+        By (ndarray): The magnetic field component in the y-direction.
+        Bz (ndarray): The magnetic field component in the z-direction.
+        world (dict): A dictionary containing the spatial resolution parameters.
+            - 'dx' (float): Spatial resolution in the x-direction.
+            - 'dy' (float): Spatial resolution in the y-direction.
+            - 'dz' (float): Spatial resolution in the z-direction.
 
     Returns:
-    bool: True if the fields meet the Nyquist criterion, False otherwise.
+        bool: True if the fields meet the Nyquist criterion, False otherwise.
     """
     dx, dy, dz = world['dx'], world['dy'], world['dz']
     nx, ny, nz = Ex.shape
@@ -59,12 +59,15 @@ def detect_gibbs_phenomenon(field, dx, dy, dz, threshold=0.1):
     """
     Detect the Gibbs phenomenon in a given field by checking for oscillations near discontinuities.
 
-    Parameters:
-    - field (ndarray): The input field to check for Gibbs phenomenon.
-    - threshold (float): The threshold value for detecting significant oscillations.
+    Args:
+        field (ndarray): The input field to check for Gibbs phenomenon.
+        dx (float): The grid spacing in the x-direction.
+        dy (float): The grid spacing in the y-direction.
+        dz (float): The grid spacing in the z-direction.
+        threshold (float): The threshold value for detecting significant oscillations.
 
     Returns:
-    - bool: True if Gibbs phenomenon is detected, False otherwise.
+        bool: True if Gibbs phenomenon is detected, False otherwise.
     """
     # Compute the gradient of the field
     grad = spectral_gradient(field, dx, dy, dz)
@@ -88,19 +91,19 @@ def spectral_divergence_correction(Ex, Ey, Ez, rho, world, constants):
     """
     Corrects the divergence of the electric field in Fourier space.
 
-    Parameters:
-    Ex (ndarray): Electric field component in the x-direction.
-    Ey (ndarray): Electric field component in the y-direction.
-    Ez (ndarray): Electric field component in the z-direction.
-    rho (ndarray): Charge density.
-    dx (float): Grid spacing in the x-direction.
-    dy (float): Grid spacing in the y-direction.
-    dz (float): Grid spacing in the z-direction.
-    dt (float): Time step.
-    constants (dict): Dictionary containing physical constants, including 'eps' (permittivity).
+    Args:
+        Ex (ndarray): Electric field component in the x-direction.
+        Ey (ndarray): Electric field component in the y-direction.
+        Ez (ndarray): Electric field component in the z-direction.
+        rho (ndarray): Charge density.
+        dx (float): Grid spacing in the x-direction.
+        dy (float): Grid spacing in the y-direction.
+        dz (float): Grid spacing in the z-direction.
+        dt (float): Time step.
+        constants (dict): Dictionary containing physical constants, including 'eps' (permittivity).
 
     Returns:
-    tuple: Corrected electric field components (Ex, Ey, Ez).
+        tuple: Corrected electric field components (Ex, Ey, Ez).
     """
 
     k = jaxdecomp.fft.fftfreq3d(Ex)
@@ -142,15 +145,15 @@ def spectral_poisson_solve(rho, constants, world):
     """
     Solve the Poisson equation for electrostatic potential using spectral method.
 
-    Parameters:
-    - rho (ndarray): Charge density.
-    - eps (float): Permittivity.
-    - dx (float): Grid spacing in the x-direction.
-    - dy (float): Grid spacing in the y-direction.
-    - dz (float): Grid spacing in the z-direction.
+    Args:
+        rho (ndarray): Charge density.
+        eps (float): Permittivity.
+        dx (float): Grid spacing in the x-direction.
+        dy (float): Grid spacing in the y-direction.
+        dz (float): Grid spacing in the z-direction.
 
     Returns:
-    - phi (ndarray): Solution to the Poisson equation.
+        phi (ndarray): Solution to the Poisson equation.
     """
     dx = world['dx']
     dy = world['dy']
@@ -180,16 +183,16 @@ def spectral_divergence(xfield, yfield, zfield, world):
     using the Fast Fourier Transform (FFT). The input fields are assumed to be 
     periodic in all three dimensions.
 
-    Parameters:
-    xfield (ndarray): The x-component of the vector field.
-    yfield (ndarray): The y-component of the vector field.
-    zfield (ndarray): The z-component of the vector field.
-    dx (float): The grid spacing in the x-direction.
-    dy (float): The grid spacing in the y-direction.
-    dz (float): The grid spacing in the z-direction.
+    Args:
+        xfield (ndarray): The x-component of the vector field.
+        yfield (ndarray): The y-component of the vector field.
+        zfield (ndarray): The z-component of the vector field.
+        dx (float): The grid spacing in the x-direction.
+        dy (float): The grid spacing in the y-direction.
+        dz (float): The grid spacing in the z-direction.
 
     Returns:
-    ndarray: The real part of the inverse FFT of the spectral divergence.
+        ndarray: The real part of the inverse FFT of the spectral divergence.
     """
 
     xfft = jaxdecomp.fft.pfft3d(xfield)
@@ -210,16 +213,16 @@ def spectral_curl(xfield, yfield, zfield, world):
     """
     Compute the curl of a 3D vector field using spectral methods.
 
-    Parameters:
-    xfield (ndarray): The x-component of the vector field.
-    yfield (ndarray): The y-component of the vector field.
-    zfield (ndarray): The z-component of the vector field.
-    dx (float): The grid spacing in the x-direction.
-    dy (float): The grid spacing in the y-direction.
-    dz (float): The grid spacing in the z-direction.
+    Args:
+        xfield (ndarray): The x-component of the vector field.
+        yfield (ndarray): The y-component of the vector field.
+        zfield (ndarray): The z-component of the vector field.
+        dx (float): The grid spacing in the x-direction.
+        dy (float): The grid spacing in the y-direction.
+        dz (float): The grid spacing in the z-direction.
 
     Returns:
-    tuple: A tuple containing the x, y, and z components of the curl of the vector field.
+        tuple: A tuple containing the x, y, and z components of the curl of the vector field.
     """
 
     xfft = jaxdecomp.fft.pfft3d(xfield)
@@ -242,14 +245,14 @@ def spectral_gradient(field, world):
     """
     Compute the gradient of a 3D scalar field using spectral methods.
 
-    Parameters:
-    field (ndarray): The input scalar field.
-    dx (float): The grid spacing in the x-direction.
-    dy (float): The grid spacing in the y-direction.
-    dz (float): The grid spacing in the z-direction.
+    Args:
+        field (ndarray): The input scalar field.
+        dx (float): The grid spacing in the x-direction.
+        dy (float): The grid spacing in the y-direction.
+        dz (float): The grid spacing in the z-direction.
 
     Returns:
-    tuple: A tuple containing the x, y, and z components of the gradient of the field.
+        tuple: A tuple containing the x, y, and z components of the gradient of the field.
     """
 
     field_fft = jaxdecomp.fft.pfft3d(field)
@@ -271,19 +274,19 @@ def spectral_laplacian(field, world):
     """
     Calculates the Laplacian of a given field using spectral method. Assumes periodic boundary conditions.
 
-    Parameters:
-    - field: numpy.ndarray
-        The input field.
-    - dx: float
-        The spacing between grid points in the x-direction.
-    - dy: float
-        The spacing between grid points in the y-direction.
-    - dz: float
-        The spacing between grid points in the z-direction.
+    Args:
+        field: numpy.ndarray
+            The input field.
+        dx: float
+            The spacing between grid points in the x-direction.
+        dy: float
+            The spacing between grid points in the y-direction.
+        dz: float
+            The spacing between grid points in the z-direction.
 
     Returns:
-    - numpy.ndarray
-        The Laplacian of the field.
+        numpy.ndarray
+            The Laplacian of the field.
     """
     field_fft = jaxdecomp.fft.pfft3d(field)
     # calculate the Fourier transform of the field
@@ -303,19 +306,19 @@ def solve_magnetic_vector_potential(Jx, Jy, Jz, dx, dy, dz, mu0):
     """
     Solve for the magnetic vector potential using the magnetostatic Laplacian equation in the Coulomb gauge.
 
-    Parameters:
-    - Jx (ndarray): The x-component of the current density.
-    - Jy (ndarray): The y-component of the current density.
-    - Jz (ndarray): The z-component of the current density.
-    - dx (float): The grid spacing in the x-direction.
-    - dy (float): The grid spacing in the y-direction.
-    - dz (float): The grid spacing in the z-direction.
-    - mu0 (float): The permeability of free space.
+    Args:
+        Jx (ndarray): The x-component of the current density.
+        Jy (ndarray): The y-component of the current density.
+        Jz (ndarray): The z-component of the current density.
+        dx (float): The grid spacing in the x-direction.
+        dy (float): The grid spacing in the y-direction.
+        dz (float): The grid spacing in the z-direction.
+        mu0 (float): The permeability of free space.
 
     Returns:
-    - Ax (ndarray): The x-component of the magnetic vector potential.
-    - Ay (ndarray): The y-component of the magnetic vector potential.
-    - Az (ndarray): The z-component of the magnetic vector potential.
+        Ax (ndarray): The x-component of the magnetic vector potential.
+        Ay (ndarray): The y-component of the magnetic vector potential.
+        Az (ndarray): The z-component of the magnetic vector potential.
     """
     Nx, Ny, Nz = Jx.shape
     k = jaxdecomp.fft.fftfreq3d(Jx)
@@ -352,17 +355,17 @@ def initialize_magnetic_field(particles, grid, staggered_grid, world, constants,
     """
     Initialize the magnetic field using the current density from the list of particles.
 
-    Parameters:
-    - particles (list): List of particle species.
-    - grid (Grid): The grid on which the fields are defined.
-    - staggered_grid (Grid): The staggered grid for field interpolation.
-    - world (dict): Dictionary containing the simulation world parameters.
-    - constants (dict): Dictionary containing physical constants, including 'mu0' (permeability).
+    Args:
+        particles (list): List of particle species.
+        grid (Grid): The grid on which the fields are defined.
+        staggered_grid (Grid): The staggered grid for field interpolation.
+        world (dict): Dictionary containing the simulation world parameters.
+        constants (dict): Dictionary containing physical constants, including 'mu0' (permeability).
 
     Returns:
-    - Bx (ndarray): The x-component of the magnetic field.
-    - By (ndarray): The y-component of the magnetic field.
-    - Bz (ndarray): The z-component of the magnetic field.
+        Bx (ndarray): The x-component of the magnetic field.
+        By (ndarray): The y-component of the magnetic field.
+        Bz (ndarray): The z-component of the magnetic field.
     """
     dx = world['dx']
     dy = world['dy']
@@ -393,15 +396,15 @@ def spectral_marder_correction(Ex, Ey, Ez, rho, world, constants):
     """
     Apply the Marder correction to the electric field to suppress numerical instabilities.
 
-    Parameters:
-    - E (ndarray): The electric field.
-    - rho (ndarray): The charge density.
-    - world (dict): Dictionary containing the simulation world parameters.
-    - constants (dict): Dictionary containing physical constants, including 'eps' (permittivity).
-    - d (float): The Marder damping parameter.
+    Args:
+        E (ndarray): The electric field.
+        rho (ndarray): The charge density.
+        world (dict): Dictionary containing the simulation world parameters.
+        constants (dict): Dictionary containing physical constants, including 'eps' (permittivity).
+        d (float): The Marder damping parameter.
 
     Returns:
-    - E_corrected (ndarray): The corrected electric field.
+        E_corrected (ndarray): The corrected electric field.
     """
     dx = world['dx']
     dy = world['dy']

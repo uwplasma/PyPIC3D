@@ -20,14 +20,14 @@ def apply_supergaussian_boundary_condition(field, boundary_thickness, order, str
     """
     Apply Super-Gaussian absorbing boundary conditions to the given field.
 
-    Parameters:
-    field (ndarray): The field to which the Super-Gaussian boundary condition is applied.
-    boundary_thickness (int): The thickness of the absorbing boundary layer.
-    order (int): The order of the Super-Gaussian function.
-    strength (float): The strength of the absorption.
+    Args:
+        field (ndarray): The field to which the Super-Gaussian boundary condition is applied.
+        boundary_thickness (int): The thickness of the absorbing boundary layer.
+        order (int): The order of the Super-Gaussian function.
+        strength (float): The strength of the absorption.
 
     Returns:
-    ndarray: The field with Super-Gaussian boundary conditions applied.
+        ndarray: The field with Super-Gaussian boundary conditions applied.
     """
     def supergaussian_factor(x, thickness, order, strength):
         return jnp.exp(-strength * (x / thickness)**order)
@@ -49,11 +49,11 @@ def apply_zero_boundary_condition(field):
     """
     Apply zero boundary conditions to the given field.
 
-    Parameters:
-    field (ndarray): The field to which the zero boundary condition is applied.
+    Args:
+        field (ndarray): The field to which the zero boundary condition is applied.
 
     Returns:
-    ndarray: The field with zero boundary conditions applied.
+        ndarray: The field with zero boundary conditions applied.
     """
     field = field.at[0, :, :].set(0)
     field = field.at[-1, :, :].set(0)
@@ -68,6 +68,7 @@ def get_material_surface_keys(config):
     """
     Extracts and returns a list of keys from the given configuration dictionary
     that start with the prefix 'surface'.
+
     Args:
         config (dict): A dictionary containing configuration keys and values.
     Returns:
@@ -83,11 +84,11 @@ def load_material_surfaces_from_toml(config):
     """
     Load material surfaces from a TOML file.
 
-    Parameters:
-    - config (dict): Dictionary containing the configuration.
+    Args:
+        config (dict): Dictionary containing the configuration.
 
     Returns:
-    - list: List of MaterialSurface objects.
+        list: List of MaterialSurface objects.
     """
     surface_keys = get_material_surface_keys(config)
     surfaces = []
@@ -124,12 +125,12 @@ class MaterialSurface:
         """
         Initialize a MaterialSurface object.
 
-        Parameters:
-        - name (str): Name of the material surface.
-        - material (str): Material of the surface.
-        - barrier_x (float): Work function in the x-direction.
-        - barrier_y (float): Work function in the y-direction.
-        - barrier_z (float): Work function in the z-direction.
+        Args:
+            name (str): Name of the material surface.
+            material (str): Material of the surface.
+            barrier_x (float): Work function in the x-direction.
+            barrier_y (float): Work function in the y-direction.
+            barrier_z (float): Work function in the z-direction.
         """
 
         print(f"Initializing material surface: {name}")

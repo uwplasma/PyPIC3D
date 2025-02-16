@@ -75,23 +75,23 @@ def boris(x, y, z, vx, vy, vz, q, m, E_interpolate, B_interpolate, grid, stagger
     """
     Perform the Boris push algorithm to update the velocity of a charged particle in an electromagnetic field.
 
-    Parameters:
-    x (float): x-coordinate of the particle position.
-    y (float): y-coordinate of the particle position.
-    z (float): z-coordinate of the particle position.
-    vx (float): x-component of the particle velocity.
-    vy (float): y-component of the particle velocity.
-    vz (float): z-component of the particle velocity.
-    q (float): Charge of the particle.
-    m (float): Mass of the particle.
-    E_interpolate (tuple of callables): Interpolators for the electric field components (Ex, Ey, Ez).
-    B_interpolate (tuple of callables): Interpolators for the magnetic field components (Bx, By, Bz).
-    grid (object): Grid object representing the simulation domain.
-    staggered_grid (object): Staggered grid object for field interpolation.
-    dt (float): Time step for the update.
+    Args:
+        x (float): x-coordinate of the particle position.
+        y (float): y-coordinate of the particle position.
+        z (float): z-coordinate of the particle position.
+        vx (float): x-component of the particle velocity.
+        vy (float): y-component of the particle velocity.
+        vz (float): z-component of the particle velocity.
+        q (float): Charge of the particle.
+        m (float): Mass of the particle.
+        E_interpolate (tuple of callables): Interpolators for the electric field components (Ex, Ey, Ez).
+        B_interpolate (tuple of callables): Interpolators for the magnetic field components (Bx, By, Bz).
+        grid (object): Grid object representing the simulation domain.
+        staggered_grid (object): Staggered grid object for field interpolation.
+        dt (float): Time step for the update.
 
     Returns:
-    tuple: Updated velocity components (newvx, newvy, newvz).
+        tuple: Updated velocity components (newvx, newvy, newvz).
     """
 
     Ex_interpolate, Ey_interpolate, Ez_interpolate = E_interpolate
@@ -143,24 +143,26 @@ def boris(x, y, z, vx, vy, vz, q, m, E_interpolate, B_interpolate, grid, stagger
 def modified_boris(q, m, x, y, z, vx, vy, vz, E_interpolate, B_interpolate, w, g, grid, staggered_grid, dt):
     """
     Perform a modified Boris algorithm to update the velocity of a charged particle in an electromagnetic field.
-    Parameters:
-    q (float): Charge of the particle.
-    m (float): Mass of the particle.
-    x (float): x-coordinate of the particle position.
-    y (float): y-coordinate of the particle position.
-    z (float): z-coordinate of the particle position.
-    vx (float): x-component of the particle velocity.
-    vy (float): y-component of the particle velocity.
-    vz (float): z-component of the particle velocity.
-    E_interpolate (tuple): Tuple of interpolating functions for the electric field components (Ex, Ey, Ez).
-    B_interpolate (tuple): Tuple of interpolating functions for the magnetic field components (Bx, By, Bz).
-    w (ndarray): Frequency matrix (3x3).
-    g (ndarray): Gyrofrequency matrix (3x3).
-    grid (ndarray): Grid for the field interpolation.
-    staggered_grid (ndarray): Staggered grid for the field interpolation.
-    dt (float): Time step for the integration.
+
+    Args:
+        q (float): Charge of the particle.
+        m (float): Mass of the particle.
+        x (float): x-coordinate of the particle position.
+        y (float): y-coordinate of the particle position.
+        z (float): z-coordinate of the particle position.
+        vx (float): x-component of the particle velocity.
+        vy (float): y-component of the particle velocity.
+        vz (float): z-component of the particle velocity.
+        E_interpolate (tuple): Tuple of interpolating functions for the electric field components (Ex, Ey, Ez).
+        B_interpolate (tuple): Tuple of interpolating functions for the magnetic field components (Bx, By, Bz).
+        w (ndarray): Frequency matrix (3x3).
+        g (ndarray): Gyrofrequency matrix (3x3).
+        grid (ndarray): Grid for the field interpolation.
+        staggered_grid (ndarray): Staggered grid for the field interpolation.
+        dt (float): Time step for the integration.
+
     Returns:
-    tuple: Updated velocity components (newvx, newvy, newvz).
+        tuple: Updated velocity components (newvx, newvy, newvz).
     """
 
     Ex_interpolate, Ey_interpolate, Ez_interpolate = E_interpolate

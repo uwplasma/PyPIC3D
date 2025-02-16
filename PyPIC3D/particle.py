@@ -19,8 +19,10 @@ def grab_particle_keys(config):
     """
     Extracts and returns a list of keys from the given configuration dictionary
     that start with the prefix 'particle'.
+
     Args:
         config (dict): A dictionary containing configuration keys and values.
+
     Returns:
         list: A list of keys from the configuration dictionary that start with 'particle'.
     """
@@ -40,6 +42,7 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         constants (dict): Dictionary containing constants such as 'kb'.
     Returns:
         list: A list of particle_species objects initialized with the data from the TOML file.
+
     The function reads particle configuration from the provided TOML file, initializes particle properties such as
     position, velocity, charge, mass, and temperature. It also handles loading initial positions and velocities from
     external sources if specified in the TOML file. The particles are then appended to a list and returned.
@@ -237,6 +240,7 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
 def fermi_dirac_distribution(energy, fermi_energy, T, kb):
     """
     Calculate the Fermi-Dirac distribution for a given energy, Fermi energy, temperature, and Boltzmann constant.
+
     Args:
         energy (float): The energy of the particle.
         fermi_energy (float): The Fermi energy of the particle.
@@ -244,7 +248,7 @@ def fermi_dirac_distribution(energy, fermi_energy, T, kb):
         kb (float): The Boltzmann constant.
     Returns:
         float: The value of the Fermi-Dirac distribution at the given energy.
-    The function calculates the Fermi-Dirac distribution for a given energy, Fermi energy, temperature, and Boltzmann constant.
+
     """
     return 1 / (jnp.exp( (energy-fermi_energy)/kb*T) + 1)
 
@@ -252,26 +256,27 @@ def initial_bound_particles(N_particles, minx, maxx, miny, maxy, minz, maxz, mas
     """
     Initializes the velocities and positions of the particles.
 
-    Parameters:
-    - N_particles (int): The number of particles.
-    - minx (float): The minimum value for the x-coordinate of the particles' positions.
-    - maxx (float): The maximum value for the x-coordinate of the particles' positions.
-    - miny (float): The minimum value for the y-coordinate of the particles' positions.
-    - maxy (float): The maximum value for the y-coordinate of the particles' positions.
-    - minz (float): The minimum value for the z-coordinate of the particles' positions.
-    - maxz (float): The maximum value for the z-coordinate of the particles' positions.
-    - mass (float): The mass of the particles.
-    - T (float): The temperature of the system.
-    - kb (float): The Boltzmann constant.
-    - key (jax.random.PRNGKey): The random key for generating random numbers.
+    Args:
+        N_particles (int): The number of particles.
+        minx (float): The minimum value for the x-coordinate of the particles' positions.
+        maxx (float): The maximum value for the x-coordinate of the particles' positions.
+        miny (float): The minimum value for the y-coordinate of the particles' positions.
+        maxy (float): The maximum value for the y-coordinate of the particles' positions.
+        minz (float): The minimum value for the z-coordinate of the particles' positions.
+        maxz (float): The maximum value for the z-coordinate of the particles' positions.
+        mass (float): The mass of the particles.
+        T (float): The temperature of the system.
+        kb (float): The Boltzmann constant.
+        key (jax.random.PRNGKey): The random key for generating random numbers.
 
     Returns:
-    - x (jax.numpy.ndarray): The x-coordinates of the particles' positions.
-    - y (jax.numpy.ndarray): The y-coordinates of the particles' positions.
-    - z (jax.numpy.ndarray): The z-coordinates of the particles' positions.
-    - v_x (numpy.ndarray): The x-component of the particles' velocities.
-    - v_y (numpy.ndarray): The y-component of the particles' velocities.
-    - v_z (numpy.ndarray): The z-component of the particles' velocities.
+        x (jax.numpy.ndarray): The x-coordinates of the particles' positions.
+        y (jax.numpy.ndarray): The y-coordinates of the particles' positions.
+        z (jax.numpy.ndarray): The z-coordinates of the particles' positions.
+        v_x (numpy.ndarray): The x-component of the particles' velocities.
+        v_y (numpy.ndarray): The y-component of the particles' velocities.
+        v_z (numpy.ndarray): The z-component of the particles' velocities.
+
     """
     x = jax.random.uniform(key1, shape = (N_particles,), minval=minx, maxval=maxx)
     y = jax.random.uniform(key2, shape = (N_particles,), minval=miny, maxval=maxy)
@@ -309,26 +314,26 @@ def initial_particles(N_particles, minx, maxx, miny, maxy, minz, maxz, mass, T, 
     """
     Initializes the velocities and positions of the particles.
 
-    Parameters:
-    - N_particles (int): The number of particles.
-    - minx (float): The minimum value for the x-coordinate of the particles' positions.
-    - maxx (float): The maximum value for the x-coordinate of the particles' positions.
-    - miny (float): The minimum value for the y-coordinate of the particles' positions.
-    - maxy (float): The maximum value for the y-coordinate of the particles' positions.
-    - minz (float): The minimum value for the z-coordinate of the particles' positions.
-    - maxz (float): The maximum value for the z-coordinate of the particles' positions.
-    - mass (float): The mass of the particles.
-    - T (float): The temperature of the system.
-    - kb (float): The Boltzmann constant.
-    - key (jax.random.PRNGKey): The random key for generating random numbers.
+    Args:
+        N_particles (int): The number of particles.
+        minx (float): The minimum value for the x-coordinate of the particles' positions.
+        maxx (float): The maximum value for the x-coordinate of the particles' positions.
+        miny (float): The minimum value for the y-coordinate of the particles' positions.
+        maxy (float): The maximum value for the y-coordinate of the particles' positions.
+        minz (float): The minimum value for the z-coordinate of the particles' positions.
+        maxz (float): The maximum value for the z-coordinate of the particles' positions.
+        mass (float): The mass of the particles.
+        T (float): The temperature of the system.
+        kb (float): The Boltzmann constant.
+        key (jax.random.PRNGKey): The random key for generating random numbers.
 
     Returns:
-    - x (jax.numpy.ndarray): The x-coordinates of the particles' positions.
-    - y (jax.numpy.ndarray): The y-coordinates of the particles' positions.
-    - z (jax.numpy.ndarray): The z-coordinates of the particles' positions.
-    - v_x (numpy.ndarray): The x-component of the particles' velocities.
-    - v_y (numpy.ndarray): The y-component of the particles' velocities.
-    - v_z (numpy.ndarray): The z-component of the particles' velocities.
+        x (jax.numpy.ndarray): The x-coordinates of the particles' positions.
+        y (jax.numpy.ndarray): The y-coordinates of the particles' positions.
+        z (jax.numpy.ndarray): The z-coordinates of the particles' positions.
+        v_x (numpy.ndarray): The x-component of the particles' velocities.
+        v_y (numpy.ndarray): The y-component of the particles' velocities.
+        v_z (numpy.ndarray): The z-component of the particles' velocities.
     """
     x = jax.random.uniform(key1, shape = (N_particles,), minval=minx, maxval=maxx)
     y = jax.random.uniform(key2, shape = (N_particles,), minval=miny, maxval=maxy)
@@ -347,11 +352,11 @@ def total_KE(particle_species_list):
     """
     Calculate the total kinetic energy of all particle species.
 
-    Parameters:
-    - particle_species_list (list): A list of particle_species objects.
+    Args:
+        particle_species_list (list): A list of particle_species objects.
 
     Returns:
-    - float: The total kinetic energy of all particle species.
+        float: The total kinetic energy of all particle species.
     """
     total_ke = 0.0
     for species in particle_species_list:
@@ -364,12 +369,12 @@ def total_momentum(m, vx, vy, vz):
     """
     Calculate the total momentum of the particles.
 
-    Parameters:
-    - m (float): The mass of the particle.
-    - v (jax.numpy.ndarray): The velocity of the particle.
+    Args:
+        m (float): The mass of the particle.
+        v (jax.numpy.ndarray): The velocity of the particle.
 
     Returns:
-    - float: The total momentum of the particle.
+        float: The total momentum of the particle.
     """
     return m * jnp.sum( jnp.sqrt( vx**2 + vy**2 + vz**2 ) )
 
@@ -378,12 +383,12 @@ def compute_index(x, dx, window):
     """
     Compute the index of a position in a discretized space.
 
-    Parameters:
-    x (float or ndarray): The position(s) to compute the index for.
-    dx (float): The discretization step size.
+    Args:
+        x (float or ndarray): The position(s) to compute the index for.
+        dx (float): The discretization step size.
 
     Returns:
-    int or ndarray: The computed index/indices as integer(s).
+        int or ndarray: The computed index/indices as integer(s).
     """
     scaled_x = x + window/2
     return jnp.floor( scaled_x / dx).astype(int)

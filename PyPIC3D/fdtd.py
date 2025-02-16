@@ -22,21 +22,21 @@ def centered_finite_difference_laplacian(field, dx, dy, dz, bc):
     """
     Calculates the Laplacian of a given field using centered finite difference and applies the specified boundary conditions.
 
-    Parameters:
-    - field: numpy.ndarray
-        The input field.
-    - dx: float
-        The spacing between grid points in the x-direction.
-    - dy: float
-        The spacing between grid points in the y-direction.
-    - dz: float
-        The spacing between grid points in the z-direction.
-    - boundary_condition: str
-        The type of boundary condition ('periodic', 'neumann', 'dirichlet').
+    Args:
+        field: numpy.ndarray
+            The input field.
+        dx: float
+            The spacing between grid points in the x-direction.
+        dy: float
+            The spacing between grid points in the y-direction.
+        dz: float
+            The spacing between grid points in the z-direction.
+        boundary_condition: str
+            The type of boundary condition ('periodic', 'neumann', 'dirichlet').
 
     Returns:
-    - numpy.ndarray
-        The Laplacian of the field with the specified boundary conditions applied.
+        numpy.ndarray
+            The Laplacian of the field with the specified boundary conditions applied.
     """
 
     if bc == 'dirichlet':
@@ -60,25 +60,25 @@ def centered_finite_difference_curl(field_x, field_y, field_z, dx, dy, dz, bc):
     """
     Computes the curl of a vector field using centered finite differencing and applies the specified boundary conditions.
 
-    Parameters:
-    - field_x: numpy.ndarray
-        The x-component of the vector field.
-    - field_y: numpy.ndarray
-        The y-component of the vector field.
-    - field_z: numpy.ndarray
-        The z-component of the vector field.
-    - dx: float
-        The spacing between grid points in the x-direction.
-    - dy: float
-        The spacing between grid points in the y-direction.
-    - dz: float
-        The spacing between grid points in the z-direction.
-    - bc: str
-        The type of boundary condition ('periodic', 'neumann', 'dirichlet').
+    Args:
+        field_x: numpy.ndarray
+            The x-component of the vector field.
+        field_y: numpy.ndarray
+            The y-component of the vector field.
+        field_z: numpy.ndarray
+            The z-component of the vector field.
+        dx: float
+            The spacing between grid points in the x-direction.
+        dy: float
+            The spacing between grid points in the y-direction.
+        dz: float
+            The spacing between grid points in the z-direction.
+        bc: str
+            The type of boundary condition ('periodic', 'neumann', 'dirichlet').
 
     Returns:
-    - tuple of numpy.ndarray
-        The curl components (curl_x, curl_y, curl_z) of the vector field with the specified boundary conditions applied.
+        tuple of numpy.ndarray
+            The curl components (curl_x, curl_y, curl_z) of the vector field with the specified boundary conditions applied.
     """
     if bc == 'dirichlet':
         field_x = apply_zero_boundary_condition(field_x)
@@ -112,21 +112,21 @@ def centered_finite_difference_gradient(field, dx, dy, dz, bc):
     """
     Computes the gradient of a scalar field using centered finite differencing and applies the specified boundary conditions.
 
-    Parameters:
-    - field: numpy.ndarray
-        The input scalar field.
-    - dx: float
-        The spacing between grid points in the x-direction.
-    - dy: float
-        The spacing between grid points in the y-direction.
-    - dz: float
-        The spacing between grid points in the z-direction.
-    - bc: str
-        The type of boundary condition ('periodic', 'neumann', 'dirichlet').
+    Args:
+        field: numpy.ndarray
+            The input scalar field.
+        dx: float
+            The spacing between grid points in the x-direction.
+        dy: float
+            The spacing between grid points in the y-direction.
+        dz: float
+            The spacing between grid points in the z-direction.
+        bc: str
+            The type of boundary condition ('periodic', 'neumann', 'dirichlet').
 
     Returns:
-    - tuple of numpy.ndarray
-        The gradient components (grad_x, grad_y, grad_z) of the scalar field with the specified boundary conditions applied.
+        tuple of numpy.ndarray
+            The gradient components (grad_x, grad_y, grad_z) of the scalar field with the specified boundary conditions applied.
     """
     if bc == 'dirichlet':
         field = apply_zero_boundary_condition(field)
@@ -147,25 +147,25 @@ def centered_finite_difference_divergence(field_x, field_y, field_z, dx, dy, dz,
     """
     Computes the divergence of a vector field using centered finite differencing and applies the specified boundary conditions.
 
-    Parameters:
-    - field_x: numpy.ndarray
-        The x-component of the vector field.
-    - field_y: numpy.ndarray
-        The y-component of the vector field.
-    - field_z: numpy.ndarray
-        The z-component of the vector field.
-    - dx: float
-        The spacing between grid points in the x-direction.
-    - dy: float
-        The spacing between grid points in the y-direction.
-    - dz: float
-        The spacing between grid points in the z-direction.
-    - bc: str
-        The type of boundary condition ('periodic', 'neumann', 'dirichlet').
+    Args:
+        field_x: numpy.ndarray
+            The x-component of the vector field.
+        field_y: numpy.ndarray
+            The y-component of the vector field.
+        field_z: numpy.ndarray
+            The z-component of the vector field.
+        dx: float
+            The spacing between grid points in the x-direction.
+        dy: float
+            The spacing between grid points in the y-direction.
+        dz: float
+            The spacing between grid points in the z-direction.
+        bc: str
+            The type of boundary condition ('periodic', 'neumann', 'dirichlet').
 
     Returns:
-    - numpy.ndarray
-        The divergence of the vector field with the specified boundary conditions applied.
+        numpy.ndarray
+            The divergence of the vector field with the specified boundary conditions applied.
     """
     if bc == 'dirichlet':
         field_x = apply_zero_boundary_condition(field_x)

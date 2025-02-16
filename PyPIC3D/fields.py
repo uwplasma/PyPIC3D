@@ -29,20 +29,20 @@ def initialize_fields(Nx, Ny, Nz):
     """
     Initializes the electric and magnetic field arrays, as well as the electric potential and charge density arrays.
 
-    Parameters:
-    - Nx (int): Number of grid points in the x-direction.
-    - Ny (int): Number of grid points in the y-direction.
-    - Nz (int): Number of grid points in the z-direction.
+    Args:
+        Nx (int): Number of grid points in the x-direction.
+        Ny (int): Number of grid points in the y-direction.
+        Nz (int): Number of grid points in the z-direction.
 
     Returns:
-    - Ex (ndarray): Electric field array in the x-direction.
-    - Ey (ndarray): Electric field array in the y-direction.
-    - Ez (ndarray): Electric field array in the z-direction.
-    - Bx (ndarray): Magnetic field array in the x-direction.
-    - By (ndarray): Magnetic field array in the y-direction.
-    - Bz (ndarray): Magnetic field array in the z-direction.
-    - phi (ndarray): Electric potential array.
-    - rho (ndarray): Charge density array.
+        Ex (ndarray): Electric field array in the x-direction.
+        Ey (ndarray): Electric field array in the y-direction.
+        Ez (ndarray): Electric field array in the z-direction.
+        Bx (ndarray): Magnetic field array in the x-direction.
+        By (ndarray): Magnetic field array in the y-direction.
+        Bz (ndarray): Magnetic field array in the z-direction.
+        phi (ndarray): Electric potential array.
+        rho (ndarray): Charge density array.
     """
     # get the number of grid points in each direction
     Ex = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
@@ -70,18 +70,18 @@ def solve_poisson(rho, constants, world, phi, solver, bc='periodic', M = None):
     """
     Solve the Poisson equation for electrostatic potential.
 
-    Parameters:
-    - rho (ndarray): Charge density.
-    - eps (float): Permittivity.
-    - dx (float): Grid spacing in the x-direction.
-    - dy (float): Grid spacing in the y-direction.
-    - dz (float): Grid spacing in the z-direction.
-    - phi (ndarray): Initial guess for the electrostatic potential.
-    - bc (str): Boundary condition.
-    - M (ndarray, optional): Preconditioner matrix for the conjugate gradient solver.
+    Args:
+        rho (ndarray): Charge density.
+        eps (float): Permittivity.
+        dx (float): Grid spacing in the x-direction.
+        dy (float): Grid spacing in the y-direction.
+        dz (float): Grid spacing in the z-direction.
+        phi (ndarray): Initial guess for the electrostatic potential.
+        bc (str): Boundary condition.
+        M (ndarray, optional): Preconditioner matrix for the conjugate gradient solver.
 
     Returns:
-    - phi (ndarray): Solution to the Poisson equation.
+        phi (ndarray): Solution to the Poisson equation.
     """
 
     if solver == 'spectral':
@@ -111,24 +111,24 @@ def calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, solver, bc,
     Calculate the electric field components (Ex, Ey, Ez) and electric potential (phi)
     based on the given parameters.
 
-    Parameters:
-    Ex (array): Initial x-component of the electric field.
-    Ey (array): Initial y-component of the electric field.
-    Ez (array): Initial z-component of the electric field.
-    world (dict): Dictionary containing the simulation world parameters such as
-                  grid spacing (dx, dy, dz) and window dimensions (x_wind, y_wind, z_wind).
-    particles (array): Array containing particle positions and properties.
-    constants (dict): Dictionary containing physical constants such as permittivity (eps).
-    rho (array): Charge density array.
-    phi (array): Electric potential array.
-    M (int): Parameter for the solver.
-    solver (str): Type of solver to use ('spectral' or other).
-    bc (str): Boundary condition type.
-    verbose (bool): Flag to enable verbose output.
+    Args:
+        Ex (array): Initial x-component of the electric field.
+        Ey (array): Initial y-component of the electric field.
+        Ez (array): Initial z-component of the electric field.
+        world (dict): Dictionary containing the simulation world parameters such as
+                    grid spacing (dx, dy, dz) and window dimensions (x_wind, y_wind, z_wind).
+        particles (array): Array containing particle positions and properties.
+        constants (dict): Dictionary containing physical constants such as permittivity (eps).
+        rho (array): Charge density array.
+        phi (array): Electric potential array.
+        M (int): Parameter for the solver.
+        solver (str): Type of solver to use ('spectral' or other).
+        bc (str): Boundary condition type.
+        verbose (bool): Flag to enable verbose output.
 
     Returns:
-    tuple: Updated electric field components (Ex, Ey, Ez), electric potential (phi), 
-           and charge density (rho).
+        tuple: Updated electric field components (Ex, Ey, Ez), electric potential (phi), 
+            and charge density (rho).
     """
 
 
@@ -173,18 +173,18 @@ def update_E(grid, staggered_grid, E, B, J, world, constants, curl_func):
     """
     Update the electric field components (Ex, Ey, Ez) based on the given parameters.
 
-    Parameters:
-    grid (object): The grid object containing the simulation grid.
-    staggered_grid (object): The staggered grid object for the simulation.
-    E (tuple): A tuple containing the electric field components (Ex, Ey, Ez).
-    B (tuple): A tuple containing the magnetic field components (Bx, By, Bz).
-    J (tuple): A tuple containing the current density components (Jx, Jy, Jz).
-    world (dict): A dictionary containing the world parameters such as 'dx', 'dy', 'dz', and 'dt'.
-    constants (dict): A dictionary containing the physical constants such as 'C' (speed of light) and 'eps' (permittivity).
-    curl_func (function): A function to calculate the curl of the magnetic field.
+    Args:
+        grid (object): The grid object containing the simulation grid.
+        staggered_grid (object): The staggered grid object for the simulation.
+        E (tuple): A tuple containing the electric field components (Ex, Ey, Ez).
+        B (tuple): A tuple containing the magnetic field components (Bx, By, Bz).
+        J (tuple): A tuple containing the current density components (Jx, Jy, Jz).
+        world (dict): A dictionary containing the world parameters such as 'dx', 'dy', 'dz', and 'dt'.
+        constants (dict): A dictionary containing the physical constants such as 'C' (speed of light) and 'eps' (permittivity).
+        curl_func (function): A function to calculate the curl of the magnetic field.
 
     Returns:
-    tuple: Updated electric field components (Ex, Ey, Ez).
+        tuple: Updated electric field components (Ex, Ey, Ez).
     """
 
     Ex, Ey, Ez = E
@@ -214,17 +214,17 @@ def update_B(grid, staggered_grid, E, B, world, constants, curl_func):
     """
     Update the magnetic field components (Bx, By, Bz) using the curl of the electric field.
 
-    Parameters:
-    grid (ndarray): The grid on which the fields are defined.
-    staggered_grid (ndarray): The staggered grid for field calculations.
-    E (tuple): The electric field components (Ex, Ey, Ez).
-    B (tuple): The magnetic field components (Bx, By, Bz).
-    world (dict): Dictionary containing simulation parameters such as 'dx', 'dy', 'dz', and 'dt'.
-    constants (dict): Dictionary containing physical constants.
-    curl_func (function): Function to calculate the curl of the electric field.
+    Args:
+        grid (ndarray): The grid on which the fields are defined.
+        staggered_grid (ndarray): The staggered grid for field calculations.
+        E (tuple): The electric field components (Ex, Ey, Ez).
+        B (tuple): The magnetic field components (Bx, By, Bz).
+        world (dict): Dictionary containing simulation parameters such as 'dx', 'dy', 'dz', and 'dt'.
+        constants (dict): Dictionary containing physical constants.
+        curl_func (function): Function to calculate the curl of the electric field.
 
     Returns:
-    tuple: Updated magnetic field components (Bx, By, Bz).
+        tuple: Updated magnetic field components (Bx, By, Bz).
     """
 
     dx = world['dx']

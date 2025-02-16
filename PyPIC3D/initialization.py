@@ -121,31 +121,31 @@ def initialize_simulation(toml_file):
 
     Returns:
         tuple: A tuple containing the following elements:
-            - evolve_loop (function): The function to evolve the simulation loop.
-            - particles (list): List of particle objects initialized from the configuration file.
-            - Ex, Ey, Ez (jax.numpy.ndarray): Electric field components.
-            - Bx, By, Bz (jax.numpy.ndarray): Magnetic field components.
-            - Jx, Jy, Jz (jax.numpy.ndarray): Current density components.
-            - phi (jax.numpy.ndarray): Electric potential.
-            - rho (jax.numpy.ndarray): Charge density.
-            - E_grid, B_grid (dict): Grids for electric and magnetic fields.
-            - world (dict): Dictionary containing world parameters such as spatial resolution and domain size.
-            - simulation_parameters (dict): Dictionary containing simulation parameters.
-            - constants (dict): Dictionary containing physical constants.
-            - plotting_parameters (dict): Dictionary containing parameters for plotting.
-            - plasma_parameters (dict): Dictionary containing plasma parameters.
-            - M (jax.numpy.ndarray or None): Preconditioner matrix, if neural network preconditioning is used.
-            - solver (str): Solver type, either "spectral" or "fdtd".
-            - bc (str): Boundary conditions.
-            - electrostatic (bool): Flag indicating if the simulation is electrostatic.
-            - verbose (bool): Flag indicating if verbose output is enabled.
-            - GPUs (int): Number of GPUs to use.
-            - start (float): Start time of the simulation initialization.
-            - Nt (int): Number of time steps.
-            - curl_func (function): Function to compute the curl of the fields.
-            - pecs (list): List of perfectly electrical conductor boundaries.
-            - lasers (list): List of laser objects initialized from the configuration file.
-            - surfaces (list): List of material surfaces initialized from the configuration file.
+            evolve_loop (function): The function to evolve the simulation loop.
+            particles (list): List of particle objects initialized from the configuration file.
+            Ex, Ey, Ez (jax.numpy.ndarray): Electric field components.
+            Bx, By, Bz (jax.numpy.ndarray): Magnetic field components.
+            Jx, Jy, Jz (jax.numpy.ndarray): Current density components.
+            phi (jax.numpy.ndarray): Electric potential.
+            rho (jax.numpy.ndarray): Charge density.
+            E_grid, B_grid (dict): Grids for electric and magnetic fields.
+            world (dict): Dictionary containing world parameters such as spatial resolution and domain size.
+            simulation_parameters (dict): Dictionary containing simulation parameters.
+            constants (dict): Dictionary containing physical constants.
+            plotting_parameters (dict): Dictionary containing parameters for plotting.
+            plasma_parameters (dict): Dictionary containing plasma parameters.
+            M (jax.numpy.ndarray or None): Preconditioner matrix, if neural network preconditioning is used.
+            solver (str): Solver type, either "spectral" or "fdtd".
+            bc (str): Boundary conditions.
+            electrostatic (bool): Flag indicating if the simulation is electrostatic.
+            verbose (bool): Flag indicating if verbose output is enabled.
+            GPUs (int): Number of GPUs to use.
+            start (float): Start time of the simulation initialization.
+            Nt (int): Number of time steps.
+            curl_func (function): Function to compute the curl of the fields.
+            pecs (list): List of perfectly electrical conductor boundaries.
+            lasers (list): List of laser objects initialized from the configuration file.
+            surfaces (list): List of material surfaces initialized from the configuration file.
     """
 
     plotting_parameters, simulation_parameters, constants = default_parameters()

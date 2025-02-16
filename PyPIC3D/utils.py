@@ -53,12 +53,12 @@ def if_verbose_print(verbose, string):
     """
     Conditionally prints a string based on the verbosity flag.
 
-    Parameters:
-    verbose (bool): A flag indicating whether to print the string.
-    string (str): The string to be printed if verbose is True.
+    Args:
+        verbose (bool): A flag indicating whether to print the string.
+        string (str): The string to be printed if verbose is True.
 
     Returns:
-    None
+        None
     """
     jax.lax.cond(
         verbose,
@@ -74,18 +74,18 @@ def particle_sanity_check(particles):
     This function iterates over each species in the particles list and checks that the 
     number of particles matches the shape of their position and velocity arrays.
 
-    Parameters:
-    particles (list): A list of species objects, where each species object must have 
-                      the following methods:
-                      - get_number_of_particles(): returns the number of particles (int)
-                      - get_position(): returns a tuple of numpy arrays (x, y, z) representing 
-                        the positions of the particles
-                      - get_velocity(): returns a tuple of numpy arrays (vx, vy, vz) representing 
-                        the velocities of the particles
+    Args:
+        particles (list): A list of species objects, where each species object must have 
+                        the following methods:
+                        - get_number_of_particles(): returns the number of particles (int)
+                        - get_position(): returns a tuple of numpy arrays (x, y, z) representing 
+                            the positions of the particles
+                        - get_velocity(): returns a tuple of numpy arrays (vx, vy, vz) representing 
+                            the velocities of the particles
 
     Raises:
-    AssertionError: If the shapes of the position and velocity arrays do not match the 
-                    number of particles.
+        AssertionError: If the shapes of the position and velocity arrays do not match the 
+                        number of particles.
     """
 
     for species in particles:
@@ -98,18 +98,20 @@ def particle_sanity_check(particles):
 def print_stats(world):
     """
     Print the statistics of the simulation world.
-    Parameters:
-    world (dict): A dictionary containing the following keys:
-        - 'Nt' (int): Number of time steps.
-        - 'dx' (float): Resolution in the x-direction.
-        - 'dy' (float): Resolution in the y-direction.
-        - 'dz' (float): Resolution in the z-direction.
-        - 'dt' (float): Time step size.
-        - 'x_wind' (float): Size of the window in the x-direction.
-        - 'y_wind' (float): Size of the window in the y-direction.
-        - 'z_wind' (float): Size of the window in the z-direction.
+    
+    Args:
+        world (dict): A dictionary containing the following keys:
+            - 'Nt' (int): Number of time steps.
+            - 'dx' (float): Resolution in the x-direction.
+            - 'dy' (float): Resolution in the y-direction.
+            - 'dz' (float): Resolution in the z-direction.
+            - 'dt' (float): Time step size.
+            - 'x_wind' (float): Size of the window in the x-direction.
+            - 'y_wind' (float): Size of the window in the y-direction.
+            - 'z_wind' (float): Size of the window in the z-direction.
+        
     Prints:
-    The time window, x window, y window, z window, and resolution details (dx, dy, dz, dt, Nt).
+        The time window, x window, y window, z window, and resolution details (dx, dy, dz, dt, Nt).
     """
 
     Nt = world['Nt']
@@ -136,24 +138,24 @@ def check_stability(plasma_parameters, dt):
     """
     Check the stability of the simulation based on various physical parameters.
 
-    Parameters:
-    plasma_parameters (dict): A dictionary containing various plasma parameters.
-        - "Theoretical Plasma Frequency" (float): Theoretical plasma frequency.
-        - "Debye Length" (float): Debye length.
-        - "Thermal Velocity" (float): Thermal velocity.
-        - "Number of Electrons" (int): Number of electrons.
-        - "Temperature of Electrons" (float): Temperature of electrons.
-        - "DebyePerDx" (float): Debye length per dx.
-        - "DebyePerDy" (float): Debye length per dy.
-        - "DebyePerDz" (float): Debye length per dz.
-    dt (float): Time step of the simulation.
+    Args:
+        plasma_parameters (dict): A dictionary containing various plasma parameters.
+            - "Theoretical Plasma Frequency" (float): Theoretical plasma frequency.
+            - "Debye Length" (float): Debye length.
+            - "Thermal Velocity" (float): Thermal velocity.
+            - "Number of Electrons" (int): Number of electrons.
+            - "Temperature of Electrons" (float): Temperature of electrons.
+            - "DebyePerDx" (float): Debye length per dx.
+            - "DebyePerDy" (float): Debye length per dy.
+            - "DebyePerDz" (float): Debye length per dz.
+        dt (float): Time step of the simulation.
 
     Prints:
-    - Warnings about numerical stability if the number of electrons is low or if the Debye length is less than the spatial resolution.
-    - Theoretical plasma frequency.
-    - Debye length.
-    - Thermal velocity.
-    - Number of electrons.
+        Warnings about numerical stability if the number of electrons is low or if the Debye length is less than the spatial resolution.
+        Theoretical plasma frequency.
+        Debye length.
+        Thermal velocity.
+        Number of electrons.
     """
     theoretical_freq = plasma_parameters["Theoretical Plasma Frequency"]
     debye = plasma_parameters["Debye Length"]
@@ -179,14 +181,14 @@ def build_plasma_parameters_dict(world, constants, electrons, dt):
     """
     Build a dictionary containing various plasma parameters.
 
-    Parameters:
-    world (dict): A dictionary containing the spatial resolution and wind parameters.
-    constants (dict): A dictionary containing physical constants.
-    electrons (object): An object representing the electrons in the simulation.
-    dt (float): Time step of the simulation.
+    Args:
+        world (dict): A dictionary containing the spatial resolution and wind parameters.
+        constants (dict): A dictionary containing physical constants.
+        electrons (object): An object representing the electrons in the simulation.
+        dt (float): Time step of the simulation.
 
     Returns:
-    dict: A dictionary containing the plasma parameters.
+        dict: A dictionary containing the plasma parameters.
     """
 
     me = electrons.get_mass()
@@ -215,11 +217,11 @@ def convert_to_jax_compatible(data):
     """
     Convert a dictionary to a JAX-compatible PyTree.
 
-    Parameters:
-    - data (dict): The dictionary to convert.
+    Args:
+        data (dict): The dictionary to convert.
 
     Returns:
-    - dict: The JAX-compatible PyTree.
+        dict: The JAX-compatible PyTree.
     """
     return tree_map(lambda x: jnp.array(x) if isinstance(x, (int, float, list, tuple)) else x, data)
 
@@ -227,12 +229,14 @@ def convert_to_jax_compatible(data):
 def load_rectilinear_grid(file_path):
     """
     Load a rectilinear grid from a VTK file and extract the vector field components.
-    Parameters:
-    file_path (str): The path to the VTK file containing the rectilinear grid.
+
+    Args:
+        file_path (str): The path to the VTK file containing the rectilinear grid.
+
     Returns:
-    tuple: A tuple containing three numpy arrays (field_x, field_y, field_z) representing
-           the x, y, and z components of the vector field, respectively. Each array is
-           reshaped to match the dimensions of the grid.
+        tuple: A tuple containing three numpy arrays (field_x, field_y, field_z) representing
+            the x, y, and z components of the vector field, respectively. Each array is
+            reshaped to match the dimensions of the grid.
     """
     reader = vtk.vtkRectilinearGridReader()
     reader.SetFileName(file_path)
@@ -253,11 +257,11 @@ def read_toml_to_dataframe(toml_file):
     """
     Reads a TOML file and converts it to a pandas DataFrame.
 
-    Parameters:
-    - toml_file (str): Path to the TOML file.
+    Args:
+        toml_file (str): Path to the TOML file.
 
     Returns:
-    - pd.DataFrame: DataFrame containing the TOML data.
+        pd.DataFrame: DataFrame containing the TOML data.
     """
     # Read the TOML file
     data = toml.load(toml_file)
@@ -272,18 +276,20 @@ def read_toml_to_dataframe(toml_file):
 def build_coallocated_grid(world):
     """
     Builds a co-allocated grid based on the provided world parameters.
-    Parameters:
-    world (dict): A dictionary containing the following keys:
-        - 'dx' (float): The grid spacing in the x-direction.
-        - 'dy' (float): The grid spacing in the y-direction.
-        - 'dz' (float): The grid spacing in the z-direction.
-        - 'x_wind' (float): The extent of the grid in the x-direction.
-        - 'y_wind' (float): The extent of the grid in the y-direction.
-        - 'z_wind' (float): The extent of the grid in the z-direction.
+
+    Args:
+        world (dict): A dictionary containing the following keys:
+            - 'dx' (float): The grid spacing in the x-direction.
+            - 'dy' (float): The grid spacing in the y-direction.
+            - 'dz' (float): The grid spacing in the z-direction.
+            - 'x_wind' (float): The extent of the grid in the x-direction.
+            - 'y_wind' (float): The extent of the grid in the y-direction.
+            - 'z_wind' (float): The extent of the grid in the z-direction.
+
     Returns:
-    tuple: A tuple containing two elements:
-        - grid (tuple): A tuple of three arrays representing the grid points in the x, y, and z directions.
-        - grid (tuple): A duplicate of the first grid tuple.
+        tuple: A tuple containing two elements:
+            - grid (tuple): A tuple of three arrays representing the grid points in the x, y, and z directions.
+            - grid (tuple): A duplicate of the first grid tuple.
     """
 
     dx = world['dx']
@@ -300,18 +306,20 @@ def build_coallocated_grid(world):
 def build_yee_grid(world):
     """
     Builds a Yee grid and a staggered Yee grid based on the provided world parameters.
-    Parameters:
-    world (dict): A dictionary containing the following keys:
-        - 'dx' (float): Grid spacing in the x-direction.
-        - 'dy' (float): Grid spacing in the y-direction.
-        - 'dz' (float): Grid spacing in the z-direction.
-        - 'x_wind' (float): Extent of the grid in the x-direction.
-        - 'y_wind' (float): Extent of the grid in the y-direction.
-        - 'z_wind' (float): Extent of the grid in the z-direction.
+
+    Args:
+        world (dict): A dictionary containing the following keys:
+            - 'dx' (float): Grid spacing in the x-direction.
+            - 'dy' (float): Grid spacing in the y-direction.
+            - 'dz' (float): Grid spacing in the z-direction.
+            - 'x_wind' (float): Extent of the grid in the x-direction.
+            - 'y_wind' (float): Extent of the grid in the y-direction.
+            - 'z_wind' (float): Extent of the grid in the z-direction.
+
     Returns:
-    tuple: A tuple containing two elements:
-        - grid (tuple of jnp.ndarray): The Yee grid with three arrays representing the x, y, and z coordinates.
-        - staggered_grid (tuple of jnp.ndarray): The staggered Yee grid with three arrays representing the x, y, and z coordinates.
+        tuple: A tuple containing two elements:
+            - grid (tuple of jnp.ndarray): The Yee grid with three arrays representing the x, y, and z coordinates.
+            - staggered_grid (tuple of jnp.ndarray): The staggered Yee grid with three arrays representing the x, y, and z coordinates.
     """
 
     dx = world['dx']
@@ -330,14 +338,14 @@ def precondition(NN, phi, rho, model=None):
     """
     Precondition the Poisson equation using a neural network model.
 
-    Parameters:
-    NN (callable): The neural network model to be used for preconditioning.
-    phi (ndarray): The potential field.
-    rho (ndarray): The charge density.
-    model (callable): The neural network model to be used for preconditioning.
+    Args:
+        NN (callable): The neural network model to be used for preconditioning.
+        phi (ndarray): The potential field.
+        rho (ndarray): The charge density.
+        model (callable): The neural network model to be used for preconditioning.
 
     Returns:
-    ndarray: The preconditioned potential field.
+        ndarray: The preconditioned potential field.
     """
     if model is None:
         return None
@@ -348,11 +356,11 @@ def use_gpu_if_set(func):
     """
     Decorator to run a function on GPU using JAX if the `GPUs` flag is set to True.
 
-    Parameters:
-    func (callable): The function to be decorated.
+    Args:
+        func (callable): The function to be decorated.
 
     Returns:
-    callable: The decorated function that runs on GPU if `GPUs` is True.
+        callable: The decorated function that runs on GPU if `GPUs` is True.
     """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
@@ -368,12 +376,12 @@ def fix_bc_and_jit_compile(func, bc_value):
     """
     Fixes the boundary condition argument of a function using functools.partial and then JIT compiles the new function.
 
-    Parameters:
-    func (callable): The original function that takes a boundary condition argument.
-    bc_value (any): The value to fix for the boundary condition argument.
+    Args:
+        func (callable): The original function that takes a boundary condition argument.
+        bc_value (any): The value to fix for the boundary condition argument.
 
     Returns:
-    callable: The JIT compiled function with the boundary condition argument fixed.
+        callable: The JIT compiled function with the boundary condition argument fixed.
     """
     fixed_bc_func = partial(func, bc=bc_value)
     jit_compiled_func = jit(fixed_bc_func)
@@ -384,6 +392,7 @@ def grab_field_keys(config):
     """
     Extracts and returns a list of keys from the given configuration dictionary
     that start with the prefix 'field'.
+
     Args:
         config (dict): A dictionary containing configuration keys and values.
     Returns:
@@ -399,12 +408,12 @@ def load_external_fields_from_toml(fields, config):
     """
     Load external fields from a TOML file.
 
-    Parameters:
-    - fields (dict): Dictionary containing the external fields.
-    - config (dict): Dictionary containing the configuration values.
+    Args:
+        fields (dict): Dictionary containing the external fields.
+        config (dict): Dictionary containing the configuration values.
 
     Returns:
-    - dict: Dictionary containing the external fields.
+        dict: Dictionary containing the external fields.
     """
 
     field_keys = grab_field_keys(config)
@@ -428,6 +437,9 @@ def debugprint(value):
 
     Args:
         value: The value to be printed. Can be of any type that is supported by JAX's debug print.
+
+    Returns:
+        None
     """
     jax.debug.print('{x}', x=value)
 
@@ -435,13 +447,13 @@ def update_parameters_from_toml(config, simulation_parameters, plotting_paramete
     """
     Update the simulation parameters with values from a TOML config file.
 
-    Parameters:
-    - config (dict): Dictionary containing the configuration values.
-    - simulation_parameters (dict): Dictionary of default simulation parameters.
-    - plotting_parameters (dict): Dictionary of default plotting parameters.
+    Args:
+        config (dict): Dictionary containing the configuration values.
+        simulation_parameters (dict): Dictionary of default simulation parameters.
+        plotting_parameters (dict): Dictionary of default plotting parameters.
 
     Returns:
-    - tuple: Updated simulation parameters and plotting parameters.
+        tuple: Updated simulation parameters and plotting parameters.
     """
 
     # Update the simulation parameters with values from the config file
@@ -464,12 +476,12 @@ def dump_parameters_to_toml(simulation_stats, simulation_parameters, plasma_para
     """
     Dump the simulation, plotting parameters, and particle species into an output TOML file.
 
-    Parameters:
-    - simulation_stats (dict): Dictionary of simulation statistics.
-    - simulation_parameters (dict): Dictionary of simulation parameters.
-    - plotting_parameters (dict): Dictionary of plotting parameters.
-    - constants (dict): Dictionary of constants.
-    - particles (list): List of particle species.
+    Args:
+        simulation_stats (dict): Dictionary of simulation statistics.
+        simulation_parameters (dict): Dictionary of simulation parameters.
+        plotting_parameters (dict): Dictionary of plotting parameters.
+        constants (dict): Dictionary of constants.
+        particles (list): List of particle species.
     """
 
     output_path = simulation_parameters["output_dir"]
@@ -504,12 +516,14 @@ def dump_parameters_to_toml(simulation_stats, simulation_parameters, plasma_para
 def interpolate_field(field, grid, x, y, z):
     """
     Interpolates the given field at the specified (x, y, z) coordinates using a regular grid interpolator.
+
     Args:
         field (array-like): The field values to be interpolated.
         grid (tuple of array-like): The grid points for each dimension (x, y, z).
         x (array-like): The x-coordinates where interpolation is desired.
         y (array-like): The y-coordinates where interpolation is desired.
         z (array-like): The z-coordinates where interpolation is desired.
+
     Returns:
         array-like: Interpolated values at the specified (x, y, z) coordinates.
     """
@@ -587,14 +601,14 @@ def courant_condition(courant_number, dx, dy, dz, simulation_parameters, constan
     The Courant condition is a stability criterion for numerical solutions of partial differential equations. 
     It ensures that the numerical domain of dependence contains the true domain of dependence.
 
-    Parameters:
-    dx (float): Grid spacing in the x-direction.
-    dy (float): Grid spacing in the y-direction.
-    dz (float): Grid spacing in the z-direction.
-    C (float): Wave speed or Courant number.
+    Args:
+        dx (float): Grid spacing in the x-direction.
+        dy (float): Grid spacing in the y-direction.
+        dz (float): Grid spacing in the z-direction.
+        C (float): Wave speed or Courant number.
 
     Returns:
-    float: The maximum allowable time step for stability.
+        float: The maximum allowable time step for stability.
     """
 
     solver = simulation_parameters['solver']
@@ -613,15 +627,15 @@ def modified_courant_condition(courant_number, world, constants, particles):
     The modified Courant condition is a stability criterion for numerical solutions of partial differential equations. 
     It ensures that the numerical domain of dependence contains the true domain of dependence.
 
-    Parameters:
-    courant_number (float): Courant number.
-    world (dict): A dictionary containing the spatial resolution and wind parameters.
-    constants (dict): A dictionary containing physical constants.
-    wb (ndarray): frequency of the bounded particles.
-    wp (float): plasma frequency of the bounded particles.
+    Args:
+        courant_number (float): Courant number.
+        world (dict): A dictionary containing the spatial resolution and wind parameters.
+        constants (dict): A dictionary containing physical constants.
+        wb (ndarray): frequency of the bounded particles.
+        wp (float): plasma frequency of the bounded particles.
 
     Returns:
-    float: The maximum allowable time step for stability.
+        float: The maximum allowable time step for stability.
     """
     dx = world['dx']
     dy = world['dy']
@@ -656,15 +670,15 @@ def plasma_frequency(electrons, world, constants):
     The plasma frequency is calculated using the properties of the electrons,
     the dimensions of the world, and physical constants.
 
-    Parameters:
-    electrons (object): An object representing the electrons, which should have
-                        methods get_charge(), get_number_of_particles(), and get_mass().
-    world (dict): A dictionary containing the dimensions of the world with keys:
-                  'x_wind', 'y_wind', and 'z_wind'.
-    constants (dict): A dictionary containing physical constants with key 'eps'.
+    Args:
+        electrons (object): An object representing the electrons, which should have
+                            methods get_charge(), get_number_of_particles(), and get_mass().
+        world (dict): A dictionary containing the dimensions of the world with keys:
+                    'x_wind', 'y_wind', and 'z_wind'.
+        constants (dict): A dictionary containing physical constants with key 'eps'.
 
     Returns:
-    float: The calculated plasma frequency.
+        float: The calculated plasma frequency.
     """
 
 
@@ -692,14 +706,14 @@ def debye_length(electrons, world, constants):
     """
     Calculate the Debye length of a system based on the given parameters.
 
-    Parameters:
-    eps (float): Permittivity of the medium.
-    T (float): Temperature of the system.
-    N_electrons (float): Number of electrons in the system.
-    q_e (float): Charge of an electron.
+    Args:
+        eps (float): Permittivity of the medium.
+        T (float): Temperature of the system.
+        N_electrons (float): Number of electrons in the system.
+        q_e (float): Charge of an electron.
 
     Returns:
-    float: Debye length of the system.
+        float: Debye length of the system.
     """
 
     q_e = electrons.get_charge()

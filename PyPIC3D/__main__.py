@@ -25,10 +25,6 @@ from PyPIC3D.initialization import (
     initialize_simulation
 )
 
-from PyPIC3D.autodiff import (
-    kinetic_energy_grad
-)
-
 from PyPIC3D.plotting import (
     write_data
 )

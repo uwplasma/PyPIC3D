@@ -68,14 +68,14 @@ class PEC:
         """
         Initialize a new PEC (Perfect Electric Conductor) object.
 
-        Parameters:
-        name (str): The name of the PEC object.
-        xmin (float): The minimum x-coordinate of the PEC boundary.
-        xmax (float): The maximum x-coordinate of the PEC boundary.
-        ymin (float): The minimum y-coordinate of the PEC boundary.
-        ymax (float): The maximum y-coordinate of the PEC boundary.
-        zmin (float): The minimum z-coordinate of the PEC boundary.
-        zmax (float): The maximum z-coordinate of the PEC boundary.
+        Args:
+            name (str): The name of the PEC object.
+            xmin (float): The minimum x-coordinate of the PEC boundary.
+            xmax (float): The maximum x-coordinate of the PEC boundary.
+            ymin (float): The minimum y-coordinate of the PEC boundary.
+            ymax (float): The maximum y-coordinate of the PEC boundary.
+            zmin (float): The minimum z-coordinate of the PEC boundary.
+            zmax (float): The maximum z-coordinate of the PEC boundary.
         """
         self.name = name
         self.xmin = xmin
@@ -92,13 +92,13 @@ class PEC:
         This method sets the electric field components (Ex, Ey, Ez) to zero at the boundaries
         defined by xmin, xmax, ymin, ymax, zmin, and zmax.
 
-        Parameters:
-        Ex (ndarray): The x-component of the electric field.
-        Ey (ndarray): The y-component of the electric field.
-        Ez (ndarray): The z-component of the electric field.
+        Args:
+            Ex (ndarray): The x-component of the electric field.
+            Ey (ndarray): The y-component of the electric field.
+            Ez (ndarray): The z-component of the electric field.
 
         Returns:
-        tuple: A tuple containing the modified electric field components (Ex, Ey, Ez) with PEC boundary conditions applied.
+            tuple: A tuple containing the modified electric field components (Ex, Ey, Ez) with PEC boundary conditions applied.
         """
         Ey = Ey.at[ [self.xmin, self.xmax], :, : ].set(0)
         Ez = Ez.at[ [self.xmin, self.xmax], :, : ].set(0)
