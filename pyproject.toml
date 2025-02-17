@@ -26,6 +26,8 @@ dependencies = [
     "epyc"
 ]
 
-
 [tool.setuptools]
 packages = ["PyPIC3D"]
+
+[project.scripts]
+PyPIC3D = "PyPIC3D.__main__:main"
