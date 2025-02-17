@@ -23,6 +23,12 @@ PyPIC3D can be install from the PyPI repository using PIP by running the followi
     pip install PyPIC3D
 ```
 
+PyPIC3D can also be installed from source by cloning the repository and running the following:
+```bash
+    cd PyPIC3D
+    pip install .
+```
+
 ### Getting Started
 To get started with PyPIC3D, follow the instructions in the read the docs to create a configuration file
 or use an existing demo.
