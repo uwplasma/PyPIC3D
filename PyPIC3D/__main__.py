@@ -93,8 +93,7 @@ def run_PyPIC3D(config_file):
     print(f"Time Per Iteration: {duration/Nt} s")
     ###############################################################################################################
 
-
-if __name__ == "__main__":
+def main():
     ###################### JAX SETTINGS ########################################################################
     #jax.config.update("jax_enable_x64", True)
     # set Jax to use 64 bit precision
@@ -110,3 +109,8 @@ if __name__ == "__main__":
 
     run_PyPIC3D(toml_file)
     # run the PyPIC3D simulation
+
+
+if __name__ == "__main__":
+    main()
+    # run the main function
