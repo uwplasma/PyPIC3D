@@ -20,6 +20,8 @@ from PyPIC3D.errors import (
 
 from PyPIC3D.J import compute_current_density
 
+from PyPIC3D.rho import compute_rho
+
 def plot_rho(rho, t, name, dx, dy, dz):
     """
     Plot the density field.
@@ -764,6 +766,8 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         #jnp.save(f"{output_dir}/data/rho_slice/rho_{t:09}.npy", rho[:, :, int(Nz/2)])
 
     if plotting_parameters['plot_errors']:
+        #rho_ = compute_rho(particles, rho, world)
+        #write_data(f"{output_dir}/data/mean_charge_density.txt", t*dt, jnp.mean(rho_))
         write_data(f"{output_dir}/data/electric_divergence_errors.txt", t*dt, compute_electric_divergence_error(Ex, Ey, Ez, rho, constants, world, solver, bc))
         write_data(f"{output_dir}/data/magnetic_divergence_errors.txt", t*dt, compute_magnetic_divergence_error(Bx, By, Bz, world, solver, bc))
 
