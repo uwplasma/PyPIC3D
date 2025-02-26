@@ -27,6 +27,7 @@ from PyPIC3D.boris import (
     particle_push
 )
 
+
 def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, pecs, lasers, surfaces, curl_func, M, solver, bc, verbose, GPUs):
     """
     Perform a time loop for an electrostatic simulation.
@@ -189,7 +190,6 @@ def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world
         # update the particle positions
 
         #if_verbose_print(verbose, f"Calculating {particles[i].get_name()} Positions, Mean Value: {jnp.mean(jnp.abs(particles[i].get_position()[0]))}")
-
 
     ################ FIELD UPDATE ################################################################################################
     Nx, Ny, Nz = world['Nx'], world['Ny'], world['Nz']

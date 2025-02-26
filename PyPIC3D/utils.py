@@ -22,8 +22,20 @@ import vtkmodules.util.numpy_support as vtknp
 from jax.tree_util import tree_map
 # import external libraries
 
-from PyPIC3D.particle import initial_particles, particle_species
 
+def vth_to_T(vth, m, kb):
+    """
+    Convert thermal velocity to temperature.
+
+    Args:
+        vth (float): Thermal velocity.
+        m (float): Mass of the particle.
+        kb (float): Boltzmann constant.
+
+    Returns:
+        float: Temperature.
+    """
+    return m * vth**2 / (2 * kb)
 
 def load_config_file():
     """
@@ -123,16 +135,10 @@ def print_stats(world):
     y_wind = world['y_wind']
     z_wind = world['z_wind']
     t_wind = Nt*dt
-    print(f'time window: {t_wind}')
-    print(f'x window: {x_wind}')
-    print(f'y window: {y_wind}')
-    print(f'z window: {z_wind}')
-    print(f"\nResolution")
-    print(f'dx: {dx}')
-    print(f'dy: {dy}')
-    print(f'dz: {dz}')
-    print(f'dt:          {dt}')
-    print(f'Nt:          {Nt}')
+    print(f'time window: {t_wind} s with {Nt} time steps of {dt} s')
+    print(f'x window: {x_wind} m with dx: {dx}')
+    print(f'y window: {y_wind} m with dy: {dy}')
+    print(f'z window: {z_wind} m with dz: {dz}\n')
 
 def check_stability(plasma_parameters, dt):
     """
