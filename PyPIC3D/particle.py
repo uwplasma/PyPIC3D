@@ -14,6 +14,7 @@ from functools import partial
 import toml
 import functools
 
+from PyPIC3D.utils import vth_to_T
 
 def grab_particle_keys(config):
     """
@@ -70,7 +71,16 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         N_particles=config[toml_key]['N_particles']
         charge=config[toml_key]['charge']
         mass=config[toml_key]['mass']
-        T=config[toml_key]['temperature']
+        #T=config[toml_key]['temperature']
+
+
+        if 'temperature' in config[toml_key]:
+            T=config[toml_key]['temperature']
+        elif 'vth' in config[toml_key]:
+            T = vth_to_T(config[toml_key]['vth'], mass, kb)
+        else:
+            T = 1.0
+        # set the temperature of the particle species
 
         w = jnp.zeros((3,3))
         g = jnp.zeros((3,3))

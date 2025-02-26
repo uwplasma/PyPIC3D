@@ -38,7 +38,7 @@ def run_PyPIC3D(config_file):
     loop, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, \
         phi, rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, \
             plasma_parameters, M, solver, bc, electrostatic, verbose, GPUs, Nt, curl_func, \
-                pecs, lasers, surfaces = initialize_simulation(toml_file)
+                pecs, lasers, surfaces = initialize_simulation(config_file)
     # initialize the simulation
 
     loop = jax.jit(loop)

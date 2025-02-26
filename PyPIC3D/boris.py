@@ -48,16 +48,29 @@ def particle_push(particles, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt, G
     Bx_interpolate = jax.scipy.interpolate.RegularGridInterpolator(staggered_grid, Bx, fill_value=0)
     By_interpolate = jax.scipy.interpolate.RegularGridInterpolator(staggered_grid, By, fill_value=0)
     Bz_interpolate = jax.scipy.interpolate.RegularGridInterpolator(staggered_grid, Bz, fill_value=0)
-    E_interpolate = (Ex_interpolate, Ey_interpolate, Ez_interpolate)
-    B_interpolate = (Bx_interpolate, By_interpolate, Bz_interpolate)
+    #E_interpolate = (Ex_interpolate, Ey_interpolate, Ez_interpolate)
+    #B_interpolate = (Bx_interpolate, By_interpolate, Bz_interpolate)
     # create interpolators for the electric and magnetic fields
 
     #boris_push = jax.vmap(partial(boris, q=q, m=m, E_interpolate=E_interpolate, B_interpolate=B_interpolate, grid=grid, staggered_grid=staggered_grid, dt=dt), in_axes=(0, 0, 0, 0, 0, 0))
     # use the boris algorithm to update the velocities
     #newvx, newvy, newvz = boris_push(x, y, z, vx, vy, vz)
 
-    newvx, newvy, newvz = boris(x, y, z, vx, vy, vz, q=q, m=m, E_interpolate=E_interpolate, B_interpolate=B_interpolate, grid=grid, staggered_grid=staggered_grid, dt=dt)
+    #newvx, newvy, newvz = boris(x, y, z, vx, vy, vz, q=q, m=m, E_interpolate=E_interpolate, B_interpolate=B_interpolate, grid=grid, staggered_grid=staggered_grid, dt=dt)
     # use the boris algorithm to update the velocities
+
+    points = jnp.stack([x, y, z], axis=-1)
+
+    efield_atx = Ex_interpolate(points)
+    efield_aty = Ey_interpolate(points)
+    efield_atz = Ez_interpolate(points)
+
+    bfield_atx = Bx_interpolate(points)
+    bfield_aty = By_interpolate(points)
+    bfield_atz = Bz_interpolate(points)
+
+    boris_vmap = jax.vmap(boris_single_particle, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None))
+    newvx, newvy, newvz = boris_vmap(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, q, m, dt)
 
     
     # w = jnp.zeros((3,3))
@@ -68,6 +81,49 @@ def particle_push(particles, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt, G
     particles.set_velocity(newvx, newvy, newvz)
     # set the new velocities of the particles
     return particles
+
+@jit
+def boris_single_particle(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, q, m, dt):
+    """
+    Updates the velocity of a single particle using the Boris algorithm.
+    Parameters:
+    x (float): Initial x position of the particle.
+    y (float): Initial y position of the particle.
+    z (float): Initial z position of the particle.
+    vx (float): Initial x component of the particle's velocity.
+    vy (float): Initial y component of the particle's velocity.
+    vz (float): Initial z component of the particle's velocity.
+    efield_atx (float): x component of the electric field at the particle's position.
+    efield_aty (float): y component of the electric field at the particle's position.
+    efield_atz (float): z component of the electric field at the particle's position.
+    bfield_atx (float): x component of the magnetic field at the particle's position.
+    bfield_aty (float): y component of the magnetic field at the particle's position.
+    bfield_atz (float): z component of the magnetic field at the particle's position.
+    q (float): Charge of the particle.
+    m (float): Mass of the particle.
+    dt (float): Time step for the update.
+    Returns:
+    tuple: Updated velocity components (vx, vy, vz) of the particle.
+    """
+
+    v = jnp.array([vx, vy, vz])
+
+    vminus = v + q*dt/(2*m)*jnp.array([efield_atx, efield_aty, efield_atz])
+    # get v minus vector
+
+    t = q*dt/(2*m)*jnp.array([bfield_atx, bfield_aty, bfield_atz])
+    # calculate the t vector
+    vprime = vminus + jnp.cross(vminus, t, axis=0)
+    # calculate the v prime vector
+
+    s = 2*t / (1 + t[0]**2 + t[1]**2 + t[2]**2)
+    # calculate the s vector
+    vplus = vminus + jnp.cross(vprime, s, axis=0)
+    # calculate the v plus vector
+
+    newv = vplus + q*dt/(2*m)*jnp.array([efield_atx, efield_aty, efield_atz])
+    # calculate the new velocity
+    return newv[0], newv[1], newv[2]
 
 
 @jit
