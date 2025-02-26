@@ -36,7 +36,7 @@ or use an existing demo.
 To run PyPIC3D on a configuration file, run the following command:
 
 ```bash
-python -m PyPIC3D --config filename.toml
+PyPIC3D --config filename.toml
 ```
 
 ### Code Structure
