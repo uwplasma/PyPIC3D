@@ -1,14 +1,12 @@
 import epyc
-from PyPIC3D.initialization import initialize_simulation
-from PyPIC3D.plotting import plotter
-from functools import partial
 import time
 from tqdm import tqdm
-import toml
-import argparse
 import os
-from jax import jit
+# import external libraries
 
+from PyPIC3D.initialization import initialize_simulation
+from PyPIC3D.plotting import plotter
+# import functions from the PyPIC3D package
 
 class PyPIC3DExperiment(epyc.Experiment):
     """

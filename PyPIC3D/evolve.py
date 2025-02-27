@@ -2,10 +2,7 @@
 # This contains the evolution loop for the 3D PIC code that calculates the electric and magnetic fields and updates the particles.
 
 #from memory_profiler import profile
-import jax
-from jax import jit
 import jax.numpy as jnp
-from functools import partial
 
 from PyPIC3D.fields import (
     calculateE, update_B, update_E
@@ -13,14 +10,6 @@ from PyPIC3D.fields import (
 
 from PyPIC3D.J import (
     VB_correction
-)
-
-from PyPIC3D.utils import (
-    dump_parameters_to_toml, if_verbose_print
-)
-
-from PyPIC3D.pstd import (
-     check_nyquist_criterion
 )
 
 from PyPIC3D.boris import (
