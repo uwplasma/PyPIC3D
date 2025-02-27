@@ -1,21 +1,11 @@
-import time
-import numpy as np
-import matplotlib.pyplot as plt
-import jax
-from jax import random
 from jax import jit
-from jax import lax
-from jax._src.scipy.sparse.linalg import _vdot_real_tree, _add, _sub, _mul
-from jax.tree_util import tree_leaves
 import jax.numpy as jnp
-import math
-from pyevtk.hl import gridToVTK
-import functools
 from functools import partial
 # import external libraries
 
 from PyPIC3D.pstd import spectral_laplacian, spectral_divergence
 from PyPIC3D.fdtd import centered_finite_difference_laplacian, centered_finite_difference_divergence
+# import functions from the PyPIC3D package
 
 @partial(jit, static_argnums=(4, 5))
 def compute_pe(phi, rho, constants, world, solver, bc='periodic'):

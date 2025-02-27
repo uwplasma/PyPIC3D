@@ -1,8 +1,5 @@
 import jax
-import jax.numpy as jnp
-from jax import random
-from jax.experimental import mesh_utils, multihost_utils
-from jax.experimental.shard_map import shard_map
+from jax.experimental import mesh_utils
 from jax.sharding import Mesh, PartitionSpec, NamedSharding
 import os
 import functools
@@ -16,10 +13,8 @@ from PyPIC3D.particle import (
 from PyPIC3D.utils import (
     courant_condition,
     update_parameters_from_toml,
-    precondition, build_coallocated_grid,
     build_yee_grid, convert_to_jax_compatible, load_external_fields_from_toml,
     check_stability, print_stats, particle_sanity_check, build_plasma_parameters_dict,
-    modified_courant_condition
 )
 
 from PyPIC3D.fields import (
@@ -27,7 +22,7 @@ from PyPIC3D.fields import (
 )
 
 from PyPIC3D.pstd import (
-    spectral_curl, initialize_magnetic_field
+    spectral_curl
 )
 
 from PyPIC3D.fdtd import (

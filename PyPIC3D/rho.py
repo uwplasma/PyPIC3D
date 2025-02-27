@@ -1,18 +1,6 @@
-import time
-import numpy as np
-import matplotlib.pyplot as plt
 import jax
-from jax import random
 from jax import jit
-from jax import lax
-from jax._src.scipy.sparse.linalg import _vdot_real_tree, _add, _sub, _mul
-from jax.tree_util import tree_leaves
 import jax.numpy as jnp
-import math
-from pyevtk.hl import gridToVTK
-import functools
-from functools import partial
-from PyPIC3D.utils import use_gpu_if_set
 # import external libraries
 
 @jit

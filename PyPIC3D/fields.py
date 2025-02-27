@@ -1,28 +1,15 @@
-import time
-import numpy as np
-import matplotlib.pyplot as plt
 import jax
-from jax import random
 from jax import jit
 from jax import lax
-from jax._src.scipy.sparse.linalg import _vdot_real_tree, _add, _sub, _mul
-from jax.tree_util import tree_leaves
-import jax.numpy as jnp
-import math
-from pyevtk.hl import gridToVTK
 import functools
 from functools import partial
 #from memory_profiler import profile
 # import external libraries
 
-from PyPIC3D.pstd import spectral_poisson_solve, spectral_laplacian, spectral_gradient, spectral_divergence
-from PyPIC3D.fdtd import centered_finite_difference_laplacian, centered_finite_difference_gradient, centered_finite_difference_divergence
-from PyPIC3D.rho import update_rho, compute_rho
-from PyPIC3D.J import compute_current_density
-from PyPIC3D.cg import conjugated_gradients
+from PyPIC3D.pstd import spectral_poisson_solve, spectral_gradient
+from PyPIC3D.fdtd import centered_finite_difference_gradient
+from PyPIC3D.rho import compute_rho
 from PyPIC3D.sor import solve_poisson_sor
-from PyPIC3D.errors import compute_pe
-from PyPIC3D.utils import use_gpu_if_set, if_verbose_print
 # import internal libraries
 
 def initialize_fields(Nx, Ny, Nz):

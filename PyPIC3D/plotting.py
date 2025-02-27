@@ -1,24 +1,15 @@
-import time
 import numpy as np
 import matplotlib.pyplot as plt
-import jax
-from jax import random
 from jax import jit
 import jax.numpy as jnp
-import math
 from pyevtk.hl import gridToVTK
-import scipy
 import os
 import plotly.graph_objects as go
 from PyPIC3D.rho import update_rho
-import vtk
-import vtk.util.numpy_support as vtknp
 
 from PyPIC3D.errors import (
     compute_electric_divergence_error, compute_magnetic_divergence_error
 )
-
-from PyPIC3D.J import compute_current_density
 
 from PyPIC3D.rho import compute_rho
 
@@ -55,45 +46,45 @@ def plot_rho(rho, t, name, dx, dy, dz):
             cellData = {f"{name}" : np.asarray(rho)})
 # plot the charge density in the vtk file format
 
-def save_vector_field_as_vtk(fieldx, fieldy, fieldz, grid, file_path):
-    """
-    Save a 3D vector field as a VTK rectilinear grid file.
+# def save_vector_field_as_vtk(fieldx, fieldy, fieldz, grid, file_path):
+#     """
+#     Save a 3D vector field as a VTK rectilinear grid file.
 
-    Args:
-        fieldx (numpy.ndarray): The x-component of the vector field.
-        fieldy (numpy.ndarray): The y-component of the vector field.
-        fieldz (numpy.ndarray): The z-component of the vector field.
-        grid (tuple of numpy.ndarray): A tuple containing the grid coordinates (x, y, z).
-        file_path (str): The file path where the VTK file will be saved.
+#     Args:
+#         fieldx (numpy.ndarray): The x-component of the vector field.
+#         fieldy (numpy.ndarray): The y-component of the vector field.
+#         fieldz (numpy.ndarray): The z-component of the vector field.
+#         grid (tuple of numpy.ndarray): A tuple containing the grid coordinates (x, y, z).
+#         file_path (str): The file path where the VTK file will be saved.
 
-    Returns:
-        None
-    """
+#     Returns:
+#         None
+#     """
 
-    # Create a new vtkRectilinearGrid
-    rectilinear_grid = vtk.vtkRectilinearGrid()
-    rectilinear_grid.SetDimensions(grid[0].size, grid[1].size, grid[2].size)
+#     # Create a new vtkRectilinearGrid
+#     rectilinear_grid = vtk.vtkRectilinearGrid()
+#     rectilinear_grid.SetDimensions(grid[0].size, grid[1].size, grid[2].size)
 
-    # Set the coordinates for the grid
-    rectilinear_grid.SetXCoordinates(vtknp.numpy_to_vtk(grid[0]))
-    rectilinear_grid.SetYCoordinates(vtknp.numpy_to_vtk(grid[1]))
-    rectilinear_grid.SetZCoordinates(vtknp.numpy_to_vtk(grid[2]))
+#     # Set the coordinates for the grid
+#     rectilinear_grid.SetXCoordinates(vtknp.numpy_to_vtk(grid[0]))
+#     rectilinear_grid.SetYCoordinates(vtknp.numpy_to_vtk(grid[1]))
+#     rectilinear_grid.SetZCoordinates(vtknp.numpy_to_vtk(grid[2]))
 
-    # Combine the components into a single vector field
-    vector_field = np.stack((fieldx, fieldy, fieldz), axis=-1)
+#     # Combine the components into a single vector field
+#     vector_field = np.stack((fieldx, fieldy, fieldz), axis=-1)
 
-    # Convert the numpy vector field to vtk format
-    vtk_vector_field = vtknp.numpy_to_vtk(vector_field.reshape(-1, 3), deep=True)
-    vtk_vector_field.SetName("VectorField")
+#     # Convert the numpy vector field to vtk format
+#     vtk_vector_field = vtknp.numpy_to_vtk(vector_field.reshape(-1, 3), deep=True)
+#     vtk_vector_field.SetName("VectorField")
 
-    # Add the vector field to the grid
-    rectilinear_grid.GetPointData().SetVectors(vtk_vector_field)
+#     # Add the vector field to the grid
+#     rectilinear_grid.GetPointData().SetVectors(vtk_vector_field)
 
-    # Write the grid to a file
-    writer = vtk.vtkRectilinearGridWriter()
-    writer.SetFileName(file_path)
-    writer.SetInputData(rectilinear_grid)
-    writer.Write()
+#     # Write the grid to a file
+#     writer = vtk.vtkRectilinearGridWriter()
+#     writer.SetFileName(file_path)
+#     writer.SetInputData(rectilinear_grid)
+#     writer.Write()
 
 def plot_fields(fieldx, fieldy, fieldz, t, name, dx, dy, dz):
     """
@@ -266,7 +257,7 @@ def fft(signal, dt):
     # get the total length of the signal
     yf = jnp.fft.fftn(signal)[:int(N/2)]
     # do a fast fourier transform
-    xf = scipy.fft.fftfreq(N, dt)[:int(N/2)]
+    xf = jnp.fft.fftfreq(N, dt)[:int(N/2)]
     # get the frequency index for the fast fourier transform
     return xf, yf
 
@@ -789,33 +780,6 @@ def save_total_momentum(t, dt, particles, output_dir):
     filename = os.path.join(output_dir, "data/total_momentum.txt")
     with open(filename, "a") as f_momentum:
         f_momentum.write(f"{t*dt}, {p0}\n")
-
-def continuity_error(rho, old_rho, particles, world, divergence_func, GPUs):
-    """
-    Calculate the continuity error in a plasma simulation.
-
-    Args:
-        rho (array-like): Current charge density.
-        old_rho (array-like): Previous charge density.
-        particles (array-like): Particle data.
-        world (dict): Simulation world parameters, including time step 'dt'.
-        divergence_func (function): Function to compute the divergence of the current density.
-        GPUs (bool): Flag to indicate if GPUs are used for computation.
-
-    Returns:
-        float: The mean absolute continuity error.
-    """
-
-    dpdt = (rho - old_rho) / world['dt']
-    # calculate the change in charge density over time
-    Jx, Jy, Jz = jnp.zeros_like(rho), jnp.zeros_like(rho), jnp.zeros_like(rho)
-    Jx, Jy, Jz = compute_current_density(particles, Jx, Jy, Jz, world, GPUs)
-    # calculate the current density
-    divJ = divergence_func(Jx, Jy, Jz)
-    # calculate the divergence of the current density
-    continuity_error = dpdt + divJ
-    # calculate the continuity error
-    return jnp.mean(jnp.abs(continuity_error))
 
 
 def plotter(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters, solver, bc):
