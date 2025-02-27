@@ -7,7 +7,6 @@ from functools import partial
 import toml
 import os
 import pandas as pd
-import vtkmodules.util.numpy_support as vtknp
 from jax.tree_util import tree_map
 # import external libraries
 
