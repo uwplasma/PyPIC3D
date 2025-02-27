@@ -1,6 +1,5 @@
 import jax
 import jax.numpy as jnp
-from functools import partial
 
 
 #### DISCLAIMER: I have not tested this method and I have a gut feeling that it will not work as intended.

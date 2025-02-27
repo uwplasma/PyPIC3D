@@ -6,11 +6,7 @@
 ########################################## IMPORT LIBRARIES #############################################
 import time
 import jax
-import jax.numpy as jnp
-from functools import partial
 from tqdm import tqdm
-import numpy as np
-import toml
 # Importing relevant libraries
 
 from PyPIC3D.plotting import (
@@ -25,9 +21,6 @@ from PyPIC3D.initialization import (
     initialize_simulation
 )
 
-from PyPIC3D.plotting import (
-    write_data
-)
 # Importing functions from the PyPIC3D package
 ############################################################################################################
 

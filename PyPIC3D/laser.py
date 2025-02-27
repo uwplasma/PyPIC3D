@@ -1,8 +1,6 @@
 import jax.numpy as jnp
-import toml
-from jax import jit
-from jax import tree_util
 from jax.tree_util import register_pytree_node_class
+# import external libraries
 
 
 def grab_laser_keys(config):

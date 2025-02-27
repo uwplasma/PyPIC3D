@@ -1,23 +1,12 @@
-import time
-import numpy as np
-import matplotlib.pyplot as plt
 import jax
-from jax import random
 from jax import jit
-from jax import lax
 import argparse
-from jax._src.scipy.sparse.linalg import _vdot_real_tree, _add, _sub, _mul
-from jax.tree_util import tree_leaves
 import jax.numpy as jnp
-import math
-from pyevtk.hl import gridToVTK
 import functools
 from functools import partial
 import toml
-import os, sys
-from scipy.interpolate import RegularGridInterpolator
+import os
 import pandas as pd
-import vtk
 import vtkmodules.util.numpy_support as vtknp
 from jax.tree_util import tree_map
 # import external libraries
@@ -232,30 +221,30 @@ def convert_to_jax_compatible(data):
     return tree_map(lambda x: jnp.array(x) if isinstance(x, (int, float, list, tuple)) else x, data)
 
 
-def load_rectilinear_grid(file_path):
-    """
-    Load a rectilinear grid from a VTK file and extract the vector field components.
+# def load_rectilinear_grid(file_path):
+#     """
+#     Load a rectilinear grid from a VTK file and extract the vector field components.
 
-    Args:
-        file_path (str): The path to the VTK file containing the rectilinear grid.
+#     Args:
+#         file_path (str): The path to the VTK file containing the rectilinear grid.
 
-    Returns:
-        tuple: A tuple containing three numpy arrays (field_x, field_y, field_z) representing
-            the x, y, and z components of the vector field, respectively. Each array is
-            reshaped to match the dimensions of the grid.
-    """
-    reader = vtk.vtkRectilinearGridReader()
-    reader.SetFileName(file_path)
-    reader.Update()
-    rectilinear_grid = reader.GetOutput()
-    x = vtknp.vtk_to_numpy(rectilinear_grid.GetXCoordinates())
-    y = vtknp.vtk_to_numpy(rectilinear_grid.GetYCoordinates())
-    z = vtknp.vtk_to_numpy(rectilinear_grid.GetZCoordinates())
-    data = vtknp.vtk_to_numpy(rectilinear_grid.GetPointData().GetVectors())
-    field_x = data[:, 0].reshape(len(x), len(y), len(z))
-    field_y = data[:, 1].reshape(len(x), len(y), len(z))
-    field_z = data[:, 2].reshape(len(x), len(y), len(z))
-    return field_x, field_y, field_z
+#     Returns:
+#         tuple: A tuple containing three numpy arrays (field_x, field_y, field_z) representing
+#             the x, y, and z components of the vector field, respectively. Each array is
+#             reshaped to match the dimensions of the grid.
+#     """
+#     reader = vtk.vtkRectilinearGridReader()
+#     reader.SetFileName(file_path)
+#     reader.Update()
+#     rectilinear_grid = reader.GetOutput()
+#     x = vtknp.vtk_to_numpy(rectilinear_grid.GetXCoordinates())
+#     y = vtknp.vtk_to_numpy(rectilinear_grid.GetYCoordinates())
+#     z = vtknp.vtk_to_numpy(rectilinear_grid.GetZCoordinates())
+#     data = vtknp.vtk_to_numpy(rectilinear_grid.GetPointData().GetVectors())
+#     field_x = data[:, 0].reshape(len(x), len(y), len(z))
+#     field_y = data[:, 1].reshape(len(x), len(y), len(z))
+#     field_z = data[:, 2].reshape(len(x), len(y), len(z))
+#     return field_x, field_y, field_z
 
 
 # Define the function to read the TOML file and convert it to a DataFrame

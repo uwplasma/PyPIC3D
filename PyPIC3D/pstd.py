@@ -1,14 +1,9 @@
-import jax
-from jax import random
 from jax import jit
-from jax import lax
 import jax.numpy as jnp
-import functools
 from functools import partial
 import jaxdecomp
 # import external libraries
 
-from PyPIC3D.particle import particle_species
 from PyPIC3D.J import compute_current_density
 # import internal libraries
 

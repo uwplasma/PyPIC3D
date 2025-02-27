@@ -1,18 +1,8 @@
-import time
 import numpy as np
-import matplotlib.pyplot as plt
 import jax
-from jax import random
 from jax import jit
 import jax.numpy as jnp
-from jax.experimental import checkify
-import math
-from pyevtk.hl import gridToVTK
-from jax import tree_util
 from jax.tree_util import register_pytree_node_class
-from functools import partial
-import toml
-import functools
 
 from PyPIC3D.utils import vth_to_T
 

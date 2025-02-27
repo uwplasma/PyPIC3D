@@ -1,5 +1,3 @@
-import toml
-
 # Christopher Woolford
 # Dec 30, 2024
 # This script contains my implementation of perfectly electrical conducting (PEC) boundary conditions for the 3D PIC code.

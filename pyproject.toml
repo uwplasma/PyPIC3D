@@ -18,11 +18,8 @@ dependencies = [
     "numpy",
     "pandas",
     "plotly",
-    "pyevtk",
-    "scipy",
     "toml",
     "tqdm",
-    "vtk",
     "epyc"
 ]
 
