@@ -20,7 +20,8 @@ dependencies = [
     "plotly",
     "toml",
     "tqdm",
-    "epyc"
+    "epyc",
+    "pyevtk"
 ]
 
 [tool.setuptools]
