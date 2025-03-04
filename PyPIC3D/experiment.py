@@ -2,6 +2,7 @@ import epyc
 import time
 from tqdm import tqdm
 import os
+import jax
 # import external libraries
 
 from PyPIC3D.initialization import initialize_simulation
@@ -35,7 +36,7 @@ class PyPIC3DExperiment(epyc.Experiment):
         loop, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, \
             phi, rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, \
                 plasma_parameters, M, solver, bc, electrostatic, verbose, GPUs, Nt, curl_func, \
-                    pecs, lasers, surfaces = initialize_simulation(toml_file)
+                    pecs, lasers, surfaces = initialize_simulation(self.config)
         # initialize the simulation
 
         loop = jax.jit(loop)

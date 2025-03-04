@@ -68,6 +68,7 @@ def default_parameters():
     "phaseSpace": False,
     "plot_errors": False,
     "plot_dispersion": False,
+    'plot_chargeconservation': False,
     "plotting_interval": 10
     }
     # dictionary for plotting/saving data
@@ -239,7 +240,7 @@ def initialize_simulation(toml_file):
     #     Bx, By, Bz = initialize_magnetic_field(particles, E_grid, B_grid, world, constants, GPUs)
     # # initialize the magnetic field
 
-    Ex, Ey, Ez, phi, rho = calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, solver, bc, verbose)
+    Ex, Ey, Ez, phi, rho = calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, solver, bc)
     # calculate the electric field using the Poisson equation
 
     Ex = Ex + Ex_ext

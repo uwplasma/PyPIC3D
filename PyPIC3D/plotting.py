@@ -756,6 +756,10 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         jnp.save(f"{output_dir}/data/B_slice/B_{t:09}.npy", jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)])
         #jnp.save(f"{output_dir}/data/rho_slice/rho_{t:09}.npy", rho[:, :, int(Nz/2)])
 
+    if plotting_parameters['plot_chargeconservation']:
+        rho_ = compute_rho(particles, rho, world)
+        write_data(f"{output_dir}/data/mean_charge_density.txt", t*dt, jnp.mean(rho_))
+
     if plotting_parameters['plot_errors']:
         #rho_ = compute_rho(particles, rho, world)
         #write_data(f"{output_dir}/data/mean_charge_density.txt", t*dt, jnp.mean(rho_))
