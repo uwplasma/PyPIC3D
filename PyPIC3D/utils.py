@@ -1,4 +1,8 @@
 import jax
+import jaxdecomp
+import plotly
+import tqdm
+import pyevtk
 from jax import jit
 import argparse
 import jax.numpy as jnp
@@ -6,8 +10,10 @@ import functools
 from functools import partial
 import toml
 import os
-import pandas as pd
+#import pandas as pd
 from jax.tree_util import tree_map
+from datetime import datetime
+import importlib.metadata
 # import external libraries
 
 
@@ -247,24 +253,24 @@ def convert_to_jax_compatible(data):
 
 
 # Define the function to read the TOML file and convert it to a DataFrame
-def read_toml_to_dataframe(toml_file):
-    """
-    Reads a TOML file and converts it to a pandas DataFrame.
+# def read_toml_to_dataframe(toml_file):
+#     """
+#     Reads a TOML file and converts it to a pandas DataFrame.
 
-    Args:
-        toml_file (str): Path to the TOML file.
+#     Args:
+#         toml_file (str): Path to the TOML file.
 
-    Returns:
-        pd.DataFrame: DataFrame containing the TOML data.
-    """
-    # Read the TOML file
-    data = toml.load(toml_file)
+#     Returns:
+#         pd.DataFrame: DataFrame containing the TOML data.
+#     """
+#     # Read the TOML file
+#     data = toml.load(toml_file)
 
-    # Convert the TOML data to a pandas DataFrame
-    df = pd.json_normalize(data, sep='_')
-    # Transpose the DataFrame to swap rows and columns
-    df = df.transpose()
-    return df
+#     # Convert the TOML data to a pandas DataFrame
+#     df = pd.json_normalize(data, sep='_')
+#     # Transpose the DataFrame to swap rows and columns
+#     df = df.transpose()
+#     return df
 
 
 def build_coallocated_grid(world):
@@ -501,6 +507,23 @@ def dump_parameters_to_toml(simulation_stats, simulation_parameters, plasma_para
             "update_v": particle.update_v
         }
         config["particles"].append(particle_dict)
+
+    config["version"] = {
+        "PyPIC3D_version": importlib.metadata.version('PyPIC3D'),
+        "date": datetime.now().strftime("%Y-%m-%d")
+    }
+
+    # Get the versions of all the packages being imported
+    package_versions = {
+        "jax": jax.__version__,
+        "jaxdecomp" : jaxdecomp.__version__,
+        "toml": toml.__version__,
+        "plotly": plotly.__version__,
+        "tqdm": tqdm.__version__,
+        "pyevtk": pyevtk.__version__,
+    }
+
+    config["package_versions"] = package_versions
 
     with open(output_file, 'w') as f:
         toml.dump(config, f)

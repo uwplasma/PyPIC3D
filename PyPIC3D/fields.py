@@ -91,9 +91,9 @@ def solve_poisson(rho, constants, world, phi, solver, bc='periodic', M = None):
     return phi
 
 #@profile
-@partial(jit, static_argnums=(9, 10, 11))
+@partial(jit, static_argnums=(9, 10))
 #@jit
-def calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, solver, bc, verbose):
+def calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, solver, bc):
     """
     Calculate the electric field components (Ex, Ey, Ez) and electric potential (phi)
     based on the given parameters.
@@ -122,11 +122,6 @@ def calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, solver, bc,
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
-    x_wind = world['x_wind']
-    y_wind = world['y_wind']
-    z_wind = world['z_wind']
-
-    eps = constants['eps']
 
     rho = compute_rho(particles, rho, world)
     # calculate the charge density based on the particle positions
