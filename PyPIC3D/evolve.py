@@ -96,7 +96,7 @@ def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world,
         #if_verbose_print(verbose, f"Calculating {particles[i].get_name()} Positions, Mean Value: {jnp.mean(jnp.abs(particles[i].get_position()[0]))}")
 
     ############### SOLVE E FIELD ############################################################################################
-    Ex, Ey, Ez, phi, rho = calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, solver, bc, verbose)
+    Ex, Ey, Ez, phi, rho = calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, solver, bc)
     # calculate the electric field using the Poisson equation
 
     return particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho

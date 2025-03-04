@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "PyPIC3D"
-version = "0.2.0"
+version = "0.1.1"
 description = "A 3D Particle-In-Cell simulation package"
 authors = [
     { name = "Christopher Woolford", email = "clwoolford@wisc.edu" }
@@ -15,8 +15,6 @@ dependencies = [
     "jax",
     "jaxdecomp",
     "matplotlib",
-    "numpy",
-    "pandas",
     "plotly",
     "toml",
     "tqdm",
