@@ -147,7 +147,7 @@ def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world
 
     for laser in lasers:
         Ex, Ey, Ez, Bx, By, Bz = laser.inject_incident_fields(Ex, Ey, Ez, Bx, By, Bz, t)
-        # inject any laser pulses into the electric and magnetic fields
+        #inject any laser pulses into the electric and magnetic fields
 
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
@@ -182,7 +182,7 @@ def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world
 
     ################ FIELD UPDATE ################################################################################################
     Nx, Ny, Nz = world['Nx'], world['Ny'], world['Nz']
-    Jx, Jy, Jz = VB_correction(particles, Jx, Jy, Jz)
+    Jx, Jy, Jz = VB_correction(particles, Jx, Jy, Jz, constants)
     # calculate the corrections for charge conservation using villasenor buneamn 1991
 
     #if_verbose_print(verbose, f"Calculating Current Density, Max Value: {jnp.max(jnp.sqrt(Jx**2 + Jy**2 + Jz**2))}")
