@@ -22,7 +22,7 @@ from PyPIC3D.fields import (
 )
 
 from PyPIC3D.pstd import (
-    spectral_curl
+    spectral_curl, # initialize_magnetic_field
 )
 
 from PyPIC3D.fdtd import (
@@ -47,6 +47,10 @@ from PyPIC3D.boundaryconditions import (
 
 from PyPIC3D.evolve import (
     time_loop_electrodynamic, time_loop_electrostatic
+)
+
+from PyPIC3D.J import (
+    compute_current_density
 )
 
 def default_parameters():

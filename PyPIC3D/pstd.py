@@ -4,8 +4,8 @@ from functools import partial
 import jaxdecomp
 # import external libraries
 
-from PyPIC3D.J import compute_current_density
-# import internal libraries
+# from PyPIC3D.J import compute_current_density
+# # import internal libraries
 
 
 def check_nyquist_criterion(Ex, Ey, Ez, Bx, By, Bz, world):
@@ -161,9 +161,9 @@ def spectral_poisson_solve(rho, constants, world):
     # get the wavenumbers
     k2 = k[0]**2 + k[1]**2 + k[2]**2
     # calculate the squared wavenumber
-    k2 = k2.at[0, 0, 0].set(1.0)
+    k2 = k2.at[0, 0, 0].set(1e-6)
     phi = -1 * krho / (eps*k2)
-    phi = phi.at[0, 0, 0].set(0)
+    #phi = phi.at[0, 0, 0].set(0)
     # set the DC component to zero
     phi = jaxdecomp.fft.pifft3d(phi).real
     # calculate the inverse Fourier transform to obtain the electric potential
@@ -296,131 +296,126 @@ def spectral_laplacian(field, world):
 
 
 #@partial(jit, static_argnums=(3, 4, 5, 6))
-@jit
-def solve_magnetic_vector_potential(Jx, Jy, Jz, dx, dy, dz, mu0):
-    """
-    Solve for the magnetic vector potential using the magnetostatic Laplacian equation in the Coulomb gauge.
+# @jit
+# def solve_magnetic_vector_potential(Jx, Jy, Jz, dx, dy, dz, mu0):
+#     """
+#     Solve for the magnetic vector potential using the magnetostatic Laplacian equation in the Coulomb gauge.
 
-    Args:
-        Jx (ndarray): The x-component of the current density.
-        Jy (ndarray): The y-component of the current density.
-        Jz (ndarray): The z-component of the current density.
-        dx (float): The grid spacing in the x-direction.
-        dy (float): The grid spacing in the y-direction.
-        dz (float): The grid spacing in the z-direction.
-        mu0 (float): The permeability of free space.
+#     Args:
+#         Jx (ndarray): The x-component of the current density.
+#         Jy (ndarray): The y-component of the current density.
+#         Jz (ndarray): The z-component of the current density.
+#         dx (float): The grid spacing in the x-direction.
+#         dy (float): The grid spacing in the y-direction.
+#         dz (float): The grid spacing in the z-direction.
+#         mu0 (float): The permeability of free space.
 
-    Returns:
-        Ax (ndarray): The x-component of the magnetic vector potential.
-        Ay (ndarray): The y-component of the magnetic vector potential.
-        Az (ndarray): The z-component of the magnetic vector potential.
-    """
-    Nx, Ny, Nz = Jx.shape
-    k = jaxdecomp.fft.fftfreq3d(Jx)
-    # get the wavevector
+#     Returns:
+#         Ax (ndarray): The x-component of the magnetic vector potential.
+#         Ay (ndarray): The y-component of the magnetic vector potential.
+#         Az (ndarray): The z-component of the magnetic vector potential.
+#     """
+#     Nx, Ny, Nz = Jx.shape
+#     Jx = Jx.astype(jnp.complex64)
+#     Jy = Jy.astype(jnp.complex64)
+#     Jz = Jz.astype(jnp.complex64)
+#     k = jaxdecomp.fft.fftfreq3d(Jx)
+#     # get the wavevector
 
-    k2 = k[0]**2 + k[1]**2 + k[2]**2
-    k2 = k2.at[0, 0, 0].set(1.0)
-    # avoid division by zero
+#     k2 = k[0]**2 + k[1]**2 + k[2]**2
+#     k2 = k2.at[0, 0, 0].set(1e-6)
+#     # avoid division by zero
 
-    Jx_fft = jaxdecomp.fft.pfft3d(Jx)
-    Jy_fft = jaxdecomp.fft.pfft3d(Jy)
-    Jz_fft = jaxdecomp.fft.pfft3d(Jz)
-    # calculate the Fourier transform of the current density
+#     Jx_fft = jaxdecomp.fft.pfft3d(Jx)
+#     Jy_fft = jaxdecomp.fft.pfft3d(Jy)
+#     Jz_fft = jaxdecomp.fft.pfft3d(Jz)
+#     # calculate the Fourier transform of the current density
 
-    Ax_fft = mu0 * Jx_fft / k2
-    Ay_fft = mu0 * Jy_fft / k2
-    Az_fft = mu0 * Jz_fft / k2
-    # solve for the magnetic vector potential in Fourier space
+#     Ax_fft = mu0 * Jx_fft / k2
+#     Ay_fft = mu0 * Jy_fft / k2
+#     Az_fft = mu0 * Jz_fft / k2
+#     # solve for the magnetic vector potential in Fourier space
 
-    Ax_fft = Ax_fft.at[0, 0, 0].set(0)
-    Ay_fft = Ay_fft.at[0, 0, 0].set(0)
-    Az_fft = Az_fft.at[0, 0, 0].set(0)
-    # set the DC component to zero
+#     # Ax_fft = Ax_fft.at[0, 0, 0].set(0)
+#     # Ay_fft = Ay_fft.at[0, 0, 0].set(0)
+#     # Az_fft = Az_fft.at[0, 0, 0].set(0)
+#     # # set the DC component to zero
 
-    Ax = jaxdecomp.fft.pifft3d(Ax_fft).real
-    Ay = jaxdecomp.fft.pifft3d(Ay_fft).real
-    Az = jaxdecomp.fft.pifft3d(Az_fft).real
-    # calculate the inverse Fourier transform to obtain the magnetic vector potential
+#     Ax = jaxdecomp.fft.pifft3d(Ax_fft).real
+#     Ay = jaxdecomp.fft.pifft3d(Ay_fft).real
+#     Az = jaxdecomp.fft.pifft3d(Az_fft).real
+#     # calculate the inverse Fourier transform to obtain the magnetic vector potential
 
-    return Ax, Ay, Az
+#     return Ax, Ay, Az
 
-@partial(jit, static_argnums=(5))
-def initialize_magnetic_field(particles, grid, staggered_grid, world, constants, GPUs):
-    """
-    Initialize the magnetic field using the current density from the list of particles.
+# @partial(jit, static_argnums=(8))
+# def initialize_magnetic_field(particles, Jx, Jy, Jz, grid, staggered_grid, world, constants, GPUs):
+#     """
+#     Initialize the magnetic field using the current density from the list of particles.
 
-    Args:
-        particles (list): List of particle species.
-        grid (Grid): The grid on which the fields are defined.
-        staggered_grid (Grid): The staggered grid for field interpolation.
-        world (dict): Dictionary containing the simulation world parameters.
-        constants (dict): Dictionary containing physical constants, including 'mu0' (permeability).
+#     Args:
+#         particles (list): List of particle species.
+#         grid (Grid): The grid on which the fields are defined.
+#         staggered_grid (Grid): The staggered grid for field interpolation.
+#         world (dict): Dictionary containing the simulation world parameters.
+#         constants (dict): Dictionary containing physical constants, including 'mu0' (permeability).
 
-    Returns:
-        Bx (ndarray): The x-component of the magnetic field.
-        By (ndarray): The y-component of the magnetic field.
-        Bz (ndarray): The z-component of the magnetic field.
-    """
-    dx = world['dx']
-    dy = world['dy']
-    dz = world['dz']
-    mu0 = constants['mu']
+#     Returns:
+#         Bx (ndarray): The x-component of the magnetic field.
+#         By (ndarray): The y-component of the magnetic field.
+#         Bz (ndarray): The z-component of the magnetic field.
+#     """
+#     dx = world['dx']
+#     dy = world['dy']
+#     dz = world['dz']
+#     mu0 = constants['mu']
 
-    # Initialize current density arrays
-    Nx = grid[0].shape[0]
-    Ny = grid[1].shape[0]
-    Nz = grid[2].shape[0]
-    Jx = jnp.zeros((Nx, Ny, Nz))
-    Jy = jnp.zeros((Nx, Ny, Nz))
-    Jz = jnp.zeros((Nx, Ny, Nz))
+#     # Compute the current density from the particles
+#     Jx, Jy, Jz = compute_current_density(particles, Jx, Jy, Jz, world, GPUs)
 
-    # Compute the current density from the particles
-    Jx, Jy, Jz = compute_current_density(particles, Jx, Jy, Jz, world, GPUs)
+#     # Solve for the magnetic vector potential
+#     Ax, Ay, Az = solve_magnetic_vector_potential(Jx, Jy, Jz, dx, dy, dz, mu0)
 
-    # Solve for the magnetic vector potential
-    Ax, Ay, Az = solve_magnetic_vector_potential(Jx, Jy, Jz, dx, dy, dz, mu0)
+#     # Compute the magnetic field from the vector potential
+#     Bx, By, Bz = spectral_curl(Ax, Ay, Az, world)
 
-    # Compute the magnetic field from the vector potential
-    Bx, By, Bz = spectral_curl(Ax, Ay, Az, world)
+#     return Bx, By, Bz
 
-    return Bx, By, Bz
+# @jit
+# def spectral_marder_correction(Ex, Ey, Ez, rho, world, constants):
+#     """
+#     Apply the Marder correction to the electric field to suppress numerical instabilities.
 
-@jit
-def spectral_marder_correction(Ex, Ey, Ez, rho, world, constants):
-    """
-    Apply the Marder correction to the electric field to suppress numerical instabilities.
+#     Args:
+#         E (ndarray): The electric field.
+#         rho (ndarray): The charge density.
+#         world (dict): Dictionary containing the simulation world parameters.
+#         constants (dict): Dictionary containing physical constants, including 'eps' (permittivity).
+#         d (float): The Marder damping parameter.
 
-    Args:
-        E (ndarray): The electric field.
-        rho (ndarray): The charge density.
-        world (dict): Dictionary containing the simulation world parameters.
-        constants (dict): Dictionary containing physical constants, including 'eps' (permittivity).
-        d (float): The Marder damping parameter.
+#     Returns:
+#         E_corrected (ndarray): The corrected electric field.
+#     """
+#     dx = world['dx']
+#     dy = world['dy']
+#     dz = world['dz']
+#     dt = world['dt']
+#     eps = constants['eps']
 
-    Returns:
-        E_corrected (ndarray): The corrected electric field.
-    """
-    dx = world['dx']
-    dy = world['dy']
-    dz = world['dz']
-    dt = world['dt']
-    eps = constants['eps']
+#     # Compute the spectral divergence of the electric field
+#     divE = spectral_divergence(Ex, Ey, Ez, world)
 
-    # Compute the spectral divergence of the electric field
-    divE = spectral_divergence(Ex, Ey, Ez, world)
+#     d = 1/(2*dt) * (dx**2 * dy**2 * dz**2) / (dx**2 + dy**2 + dz**2)
+#     # compute the diffusion parameter
 
-    d = 1/(2*dt) * (dx**2 * dy**2 * dz**2) / (dx**2 + dy**2 + dz**2)
-    # compute the diffusion parameter
+#     correction = d * (divE - rho/eps)
+#     # Compute the correction term
 
-    correction = d * (divE - rho/eps)
-    # Compute the correction term
+#     gradx, grady, gradz = spectral_gradient( correction, world)
+#     # Compute the gradient of the correction term
+#     Ex_corrected = Ex + dt*gradx
+#     Ey_corrected = Ey + dt*grady
+#     Ez_corrected = Ez + dt*gradz
+#     # Apply the correction to the electric field
 
-    gradx, grady, gradz = spectral_gradient( correction, world)
-    # Compute the gradient of the correction term
-    Ex_corrected = Ex + dt*gradx
-    Ey_corrected = Ey + dt*grady
-    Ez_corrected = Ez + dt*gradz
-    # Apply the correction to the electric field
-
-    return Ex_corrected, Ey_corrected, Ez_corrected
+#     return Ex_corrected, Ey_corrected, Ez_corrected

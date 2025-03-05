@@ -63,6 +63,7 @@ class TestParticleMethods(unittest.TestCase):
             key1, key2, key3: Keys for random number generation.
         """
         x, y, z, vx, vy, vz = initial_particles(
+            N_per_cell=0.1,
             N_particles=self.N_particles,
             minx=-self.x_wind/2,
             maxx=self.x_wind/2,

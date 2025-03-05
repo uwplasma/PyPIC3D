@@ -4,11 +4,8 @@ import jax.numpy as jnp
 from functools import partial
 # import external libraries
 
-from PyPIC3D.utils import use_gpu_if_set
-# import functions from the PyPIC3D package
 
 @partial(jit, static_argnums=(5))
-@use_gpu_if_set
 def compute_current_density(particles, Jx, Jy, Jz, world, GPUs):
     """
     Computes the current density for a given set of particles in a simulation world.
@@ -44,7 +41,6 @@ def compute_current_density(particles, Jx, Jy, Jz, world, GPUs):
             Jx, Jy, Jz = update_current_density(N_particles, particle_x, particle_y, particle_z, particle_vx, particle_vy, particle_vz, dx, dy, dz, charge, x_wind, y_wind, z_wind, Jx, Jy, Jz, GPUs)
     return Jx, Jy, Jz
 
-@use_gpu_if_set
 @jit
 def update_current_density(Nparticles, particlex, particley, particlez, particlevx, particlevy, particlevz, dx, dy, dz, q, x_wind, y_wind, z_wind, Jx, Jy, Jz, GPUs=False):
 
@@ -113,7 +109,7 @@ def update_current_density(Nparticles, particlex, particley, particlez, particle
     return jax.lax.fori_loop(0, Nparticles-1, addto_J, (Jx, Jy, Jz))
 
 #@partial(jit, static_argnums=(1, 2, 3))
-def VB_correction(particles, Jx, Jy, Jz):
+def VB_correction(particles, Jx, Jy, Jz, constants):
     """
     Apply Villasenor-Buneman correction to ensure rigorous charge conservation for local electromagnetic field solvers.
 
@@ -135,6 +131,10 @@ def VB_correction(particles, Jx, Jy, Jz):
     Jy = Jy.at[:, :, :].set(0)
     Jz = Jz.at[:, :, :].set(0)
     # initialize the current arrays as 0
+
+    C = constants['C']
+    # speed of light
+
     for species in particles:
         q = species.get_charge()
         # get the charge of the species
@@ -142,6 +142,10 @@ def VB_correction(particles, Jx, Jy, Jz):
         # get the particle positions
 
         dx, dy, dz = species.get_resolution()
+        # get the resolution of the species
+
+        vx, vy, vz = species.get_velocity()
+        # get the velocity of the species
 
         deltax = zeta2 - zeta1
         deltay = eta2 - eta1
@@ -155,32 +159,43 @@ def VB_correction(particles, Jx, Jy, Jz):
         ix, iy, iz = species.get_index()
         # get the index of the species
 
-        Jx = Jx.at[ix, iy+1, iz+1].add( q*(deltax*zetabar*xibar + deltax*deltay*deltaz/12))
+        dq = q/dx/dy/dz
+        # charge differential
+
+        djx = dq*vx
+        djy = dq*vy
+        djz = dq*vz
+        # current differential
+
+        Jx = Jx.at[ix, iy+1, iz+1].add( djx*(deltax*zetabar*xibar + deltax*deltay*deltaz/12))
         # compute the first x correction for charge conservation along i+1/2, j, k
-        Jx = Jx.at[ix, iy, iz+1].add( q*(deltax*(1-etabar)*xibar - deltax*deltay*deltaz/12))
+        Jx = Jx.at[ix, iy, iz+1].add( djx*(deltax*(1-etabar)*xibar - deltax*deltay*deltaz/12))
         # compute the second x correction for charge conservation along i+1/2, j, k+1
-        Jx = Jx.at[ix, iy+1, iz].add( q*(deltax*etabar*(1-xibar) - deltax*deltay*deltaz/12))
+        Jx = Jx.at[ix, iy+1, iz].add( djx*(deltax*etabar*(1-xibar) - deltax*deltay*deltaz/12))
         # compute the third x correction for charge conservation along i+1/2, j+1, k
-        Jx = Jx.at[ix, iy, iz].add( q*(deltax*(1-etabar)*(1-xibar) + deltax*deltay*deltaz/12))
+        Jx = Jx.at[ix, iy, iz].add( djx*(deltax*(1-etabar)*(1-xibar) + deltax*deltay*deltaz/12))
         # compute the fourth x correction for charge conservation along i+1/2, j, k
 
-        Jy = Jy.at[ix+1, iy, iz+1].add( q*(deltay*zetabar*xibar + deltax*deltay*deltaz/12))
+        Jy = Jy.at[ix+1, iy, iz+1].add( djy*(deltay*zetabar*xibar + deltax*deltay*deltaz/12))
         # compute the first y correction for charge conservation along i, j+1/2, k
-        Jy = Jy.at[ix+1, iy, iz].add( q*(deltay*(1-zetabar)*xibar - deltax*deltay*deltaz/12))
+        Jy = Jy.at[ix+1, iy, iz].add( djy*(deltay*(1-zetabar)*xibar - deltax*deltay*deltaz/12))
         # compute the second y correction for charge conservation along i+1, j+1/2, k
-        Jy = Jy.at[ix, iy, iz+1].add( q*(deltay*zetabar*(1-xibar) - deltax*deltay*deltaz/12))
+        Jy = Jy.at[ix, iy, iz+1].add( djy*(deltay*zetabar*(1-xibar) - deltax*deltay*deltaz/12))
         # compute the third y correction for charge conservation along i, j+1/2, k+1
-        Jy = Jy.at[ix, iy, iz].add( q*(deltay*(1-zetabar)*(1-xibar) + deltax*deltay*deltaz/12))
+        Jy = Jy.at[ix, iy, iz].add( djy*(deltay*(1-zetabar)*(1-xibar) + deltax*deltay*deltaz/12))
         # compute the fourth y correction for charge conservation along i, j+1/2, k
 
-        Jz = Jz.at[ix+1, iy+1, iz].add( q*(deltaz*(1-zetabar)*etabar + deltax*deltay*deltaz/12))
+        Jz = Jz.at[ix+1, iy+1, iz].add( djz*(deltaz*(1-zetabar)*etabar + deltax*deltay*deltaz/12))
         # compute the first z correction for charge conservation along i+1, j+1, k+1/2
-        Jz = Jz.at[ix, iy+1, iz].add( q*(deltaz*(1-zetabar)*(1-etabar) - deltax*deltay*deltaz/12))
+        Jz = Jz.at[ix, iy+1, iz].add( djz*(deltaz*(1-zetabar)*(1-etabar) - deltax*deltay*deltaz/12))
         # compute the second z correction for charge conservation along i, j+1, k+1/2
-        Jz = Jz.at[ix+1, iy, iz].add( q*(deltaz*zetabar*(1-etabar) - deltax*deltay*deltaz/12))
+        Jz = Jz.at[ix+1, iy, iz].add( djz*(deltaz*zetabar*(1-etabar) - deltax*deltay*deltaz/12))
         # compute the third z correction for charge conservation along i+1, j, k+1/2
-        Jz = Jz.at[ix, iy, iz].add( q*(deltaz*(1-zetabar)*(1-etabar) + deltax*deltay*deltaz/12))
+        Jz = Jz.at[ix, iy, iz].add( djz*(deltaz*(1-zetabar)*(1-etabar) + deltax*deltay*deltaz/12))
         # compute the fourth z correction for charge conservation along i, j, k+1/2
 
     return Jx, Jy, Jz
     # return the current corrections
+
+
+# def EZ_current_deposition(particles, Jx, Jy, Jz, world):
