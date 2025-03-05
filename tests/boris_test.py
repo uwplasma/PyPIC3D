@@ -4,10 +4,8 @@ import jax.numpy as jnp
 import sys
 import os
 
-# # Add the parent directory to the sys.path
-# sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from PyPIC3D.boris import boris, boris_single_particle
+from PyPIC3D.boris import boris_single_particle
 
 jax.config.update("jax_enable_x64", True)
 
