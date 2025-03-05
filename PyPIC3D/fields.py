@@ -184,9 +184,27 @@ def update_E(grid, staggered_grid, E, B, J, world, constants, curl_func):
     curlx, curly, curlz = curl_func(Bx, By, Bz)
     # calculate the curl of the magnetic field
 
-    Ex = Ex.at[:,:,:].add( ( C**2 * curlx - Jx / eps ) * dt )
-    Ey = Ey.at[:,:,:].add( ( C**2 * curly - Jy / eps ) * dt )
-    Ez = Ez.at[:,:,:].add( ( C**2 * curlz - Jz / eps ) * dt )
+    # Ex = Ex.at[:,:,:].add( ( C**2 * curlx - Jx / eps ) * dt )
+    # Ey = Ey.at[:,:,:].add( ( C**2 * curly - Jy / eps ) * dt )
+    # Ez = Ez.at[:,:,:].add( ( C**2 * curlz - Jz / eps ) * dt )
+    # jax.debug.print("Mean Curl B Magnitude: {}", jax.numpy.mean(jax.numpy.sqrt(curlx**2 + curly**2 + curlz**2)))
+    # jax.debug.print("Mean Current Density Magnitude: {}", jax.numpy.mean(jax.numpy.sqrt(Jx**2 + Jy**2 + Jz**2)))
+
+    # jax.debug.print("Speed of light**2 (C): {}", C**2)
+    # jax.debug.print("Permittivity (eps): {}", eps)
+    # jax.debug.print("curl x: {}", jax.numpy.mean( jax.numpy.abs(curlx)))
+    # jax.debug.print("dt factor: {}", dt)
+
+    # jax.debug.print("Jx: {}", jax.numpy.mean( jax.numpy.abs(Jx)))
+    # jax.debug.print("Jx/eps: {}", jax.numpy.mean( jax.numpy.abs(Jx/eps)))
+
+    # jax.debug.print("E update factor1: {}", jax.numpy.mean( jax.numpy.abs( ( C**2 * curlx ) * dt) ) )
+    # jax.debug.print("E update factor2: {}", jax.numpy.mean( jax.numpy.abs( ( Jx / eps ) * dt) ) )
+    # jax.debug.print("E update factor: {}", jax.numpy.mean( jax.numpy.abs( ( C**2 * curlx - Jx / eps ) * dt) ) )
+
+    Ex = Ex + ( C**2 * curlx - Jx / eps ) * dt
+    Ey = Ey + ( C**2 * curly - Jy / eps ) * dt
+    Ez = Ez + ( C**2 * curlz - Jz / eps ) * dt
 
     return Ex, Ey, Ez
 
@@ -220,8 +238,17 @@ def update_B(grid, staggered_grid, E, B, world, constants, curl_func):
     curlx, curly, curlz = curl_func(Ex, Ey, Ez)
     # calculate the curl of the electric field
 
-    Bx = Bx.at[:,:,:].add(-1*dt*curlx)
-    By = By.at[:,:,:].add(-1*dt*curly)
-    Bz = Bz.at[:,:,:].add(-1*dt*curlz)
+    # Bx = Bx.at[:,:,:].add(-1*dt*curlx)
+    # By = By.at[:,:,:].add(-1*dt*curly)
+    # Bz = Bz.at[:,:,:].add(-1*dt*curlz)
+
+    # curl_magnitude = jax.numpy.sqrt(curlx**2 + curly**2 + curlz**2)
+    # jax.debug.print("Mean Curl E Magnitude: {}", jax.numpy.mean(curl_magnitude))
+
+    # jax.debug.print("B update factor: {}", jax.numpy.mean( jax.numpy.abs(-1*dt*curlx)) )
+
+    Bx = Bx - dt*curlx
+    By = By - dt*curly
+    Bz = Bz - dt*curlz
 
     return Bx, By, Bz
