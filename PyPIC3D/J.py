@@ -162,36 +162,31 @@ def VB_correction(particles, Jx, Jy, Jz, constants):
         dq = q/dx/dy/dz
         # charge differential
 
-        djx = dq*vx
-        djy = dq*vy
-        djz = dq*vz
-        # current differential
-
-        Jx = Jx.at[ix, iy+1, iz+1].add( djx*(deltax*zetabar*xibar + deltax*deltay*deltaz/12))
+        Jx = Jx.at[ix, iy+1, iz+1].add( dq*C*(deltax*zetabar*xibar + deltax*deltay*deltaz/12))
         # compute the first x correction for charge conservation along i+1/2, j, k
-        Jx = Jx.at[ix, iy, iz+1].add( djx*(deltax*(1-etabar)*xibar - deltax*deltay*deltaz/12))
+        Jx = Jx.at[ix, iy, iz+1].add( dq*C*(deltax*(1-etabar)*xibar - deltax*deltay*deltaz/12))
         # compute the second x correction for charge conservation along i+1/2, j, k+1
-        Jx = Jx.at[ix, iy+1, iz].add( djx*(deltax*etabar*(1-xibar) - deltax*deltay*deltaz/12))
+        Jx = Jx.at[ix, iy+1, iz].add( dq*C*(deltax*etabar*(1-xibar) - deltax*deltay*deltaz/12))
         # compute the third x correction for charge conservation along i+1/2, j+1, k
-        Jx = Jx.at[ix, iy, iz].add( djx*(deltax*(1-etabar)*(1-xibar) + deltax*deltay*deltaz/12))
+        Jx = Jx.at[ix, iy, iz].add( dq*C*(deltax*(1-etabar)*(1-xibar) + deltax*deltay*deltaz/12))
         # compute the fourth x correction for charge conservation along i+1/2, j, k
 
-        Jy = Jy.at[ix+1, iy, iz+1].add( djy*(deltay*zetabar*xibar + deltax*deltay*deltaz/12))
+        Jy = Jy.at[ix+1, iy, iz+1].add( dq*C*(deltay*zetabar*xibar + deltax*deltay*deltaz/12))
         # compute the first y correction for charge conservation along i, j+1/2, k
-        Jy = Jy.at[ix+1, iy, iz].add( djy*(deltay*(1-zetabar)*xibar - deltax*deltay*deltaz/12))
+        Jy = Jy.at[ix+1, iy, iz].add( dq*C*(deltay*(1-zetabar)*xibar - deltax*deltay*deltaz/12))
         # compute the second y correction for charge conservation along i+1, j+1/2, k
-        Jy = Jy.at[ix, iy, iz+1].add( djy*(deltay*zetabar*(1-xibar) - deltax*deltay*deltaz/12))
+        Jy = Jy.at[ix, iy, iz+1].add( dq*C*(deltay*zetabar*(1-xibar) - deltax*deltay*deltaz/12))
         # compute the third y correction for charge conservation along i, j+1/2, k+1
-        Jy = Jy.at[ix, iy, iz].add( djy*(deltay*(1-zetabar)*(1-xibar) + deltax*deltay*deltaz/12))
+        Jy = Jy.at[ix, iy, iz].add( dq*C*(deltay*(1-zetabar)*(1-xibar) + deltax*deltay*deltaz/12))
         # compute the fourth y correction for charge conservation along i, j+1/2, k
 
-        Jz = Jz.at[ix+1, iy+1, iz].add( djz*(deltaz*(1-zetabar)*etabar + deltax*deltay*deltaz/12))
+        Jz = Jz.at[ix+1, iy+1, iz].add(dq*C*(deltaz*(1-zetabar)*etabar + deltax*deltay*deltaz/12))
         # compute the first z correction for charge conservation along i+1, j+1, k+1/2
-        Jz = Jz.at[ix, iy+1, iz].add( djz*(deltaz*(1-zetabar)*(1-etabar) - deltax*deltay*deltaz/12))
+        Jz = Jz.at[ix, iy+1, iz].add(dq*C*(deltaz*(1-zetabar)*(1-etabar) - deltax*deltay*deltaz/12))
         # compute the second z correction for charge conservation along i, j+1, k+1/2
-        Jz = Jz.at[ix+1, iy, iz].add( djz*(deltaz*zetabar*(1-etabar) - deltax*deltay*deltaz/12))
+        Jz = Jz.at[ix+1, iy, iz].add(dq*C*(deltaz*zetabar*(1-etabar) - deltax*deltay*deltaz/12))
         # compute the third z correction for charge conservation along i+1, j, k+1/2
-        Jz = Jz.at[ix, iy, iz].add( djz*(deltaz*(1-zetabar)*(1-etabar) + deltax*deltay*deltaz/12))
+        Jz = Jz.at[ix, iy, iz].add(dq*C*(deltaz*(1-zetabar)*(1-etabar) + deltax*deltay*deltaz/12))
         # compute the fourth z correction for charge conservation along i, j, k+1/2
 
     return Jx, Jy, Jz

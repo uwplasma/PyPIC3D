@@ -195,8 +195,10 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         update_z   = True
 
         weight = 1.0
-        if weight in config[toml_key]:
+        if "weight" in config[toml_key]:
             weight = config[toml_key]['weight']
+
+        print(f"Particle Weight: {weight}")
 
         if 'update_pos' in config[toml_key]:
             update_pos = config[toml_key]['update_pos']
@@ -266,6 +268,8 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
             g=g,
         )
         particles.append(particle)
+
+        print(f"Particle Kinetic Energy: {particle.kinetic_energy()}")
 
     return particles
 
