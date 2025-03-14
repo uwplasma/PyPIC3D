@@ -31,6 +31,20 @@ def vth_to_T(vth, m, kb):
     """
     return m * vth**2 / (2 * kb)
 
+def T_to_vth(T, m, kb):
+    """
+    Convert temperature to thermal velocity.
+
+    Args:
+        T (float): Temperature.
+        m (float): Mass of the particle.
+        kb (float): Boltzmann constant.
+
+    Returns:
+        float: Thermal velocity.
+    """
+    return jnp.sqrt(2 * kb * T / m)
+
 def load_config_file():
     """
     Parses command-line arguments to get the path to a configuration file,
@@ -129,7 +143,7 @@ def print_stats(world):
     y_wind = world['y_wind']
     z_wind = world['z_wind']
     t_wind = Nt*dt
-    print(f'time window: {t_wind} s with {Nt} time steps of {dt} s')
+    print(f'\ntime window: {t_wind} s with {Nt} time steps of {dt} s')
     print(f'x window: {x_wind} m with dx: {dx}')
     print(f'y window: {y_wind} m with dy: {dy}')
     print(f'z window: {z_wind} m with dz: {dz}\n')
@@ -680,7 +694,7 @@ def modified_courant_condition(courant_number, world, constants, particles):
     dt = 1 / jnp.sqrt( 0.25*(wb2 + wp2) + C**2 * ( (1/dx)**2 + (1/dy)**2 + (1/dz)**2 ) )
     return courant_number * dt
 
-def plasma_frequency(electrons, world, constants):
+def plasma_frequency(particle_species, world, constants):
     """
     Calculate the plasma frequency.
 
@@ -688,8 +702,12 @@ def plasma_frequency(electrons, world, constants):
     the dimensions of the world, and physical constants.
 
     Args:
-        electrons (object): An object representing the electrons, which should have
-                            methods get_charge(), get_number_of_particles(), and get_mass().
+        particle_species (object): An object representing the particle species
+                    with the following methods:
+                    - get_charge(): returns the charge of the particle.
+                    - get_number_of_particles(): returns the number of particles.
+                    - get_mass(): returns the mass of the particle.
+                    - get_temperature(): returns the temperature of the particle.
         world (dict): A dictionary containing the dimensions of the world with keys:
                     'x_wind', 'y_wind', and 'z_wind'.
         constants (dict): A dictionary containing physical constants with key 'eps'.
@@ -702,44 +720,48 @@ def plasma_frequency(electrons, world, constants):
     x_wind = world['x_wind']
     y_wind = world['y_wind']
     z_wind = world['z_wind']
-    q_e = electrons.get_charge()
-    N_electrons = electrons.get_number_of_particles()
-    me = electrons.get_mass()
+    q = particle_species.get_charge()
+    N = particle_species.get_number_of_particles()
+    m = particle_species.get_mass()
     eps = constants['eps']
 
     # these values are so small that I was having issues calculating
     # the plasma frequency with floating point precision so I had to
     # break it down into smaller parts
     sqrt_dv = jnp.sqrt( x_wind * y_wind * z_wind )
-    sqrt_ne = jnp.sqrt( N_electrons ) / sqrt_dv
+    sqrt_ne = jnp.sqrt( N ) / sqrt_dv
     sqrt_eps = jnp.sqrt( eps )
-    sqrt_me = jnp.sqrt( me )
-    pf = sqrt_ne * jnp.abs(q_e) / (sqrt_eps * sqrt_me)
+    sqrt_me = jnp.sqrt( m )
+    pf = sqrt_ne * jnp.abs(q) / (sqrt_eps * sqrt_me)
 
     return pf
 # calculate the expected plasma frequency from analytical theory
 
-def debye_length(electrons, world, constants):
+def debye_length(particle_species, world, constants):
     """
     Calculate the Debye length of a system based on the given parameters.
 
     Args:
-        eps (float): Permittivity of the medium.
-        T (float): Temperature of the system.
-        N_electrons (float): Number of electrons in the system.
-        q_e (float): Charge of an electron.
+        particle_species (object): An object representing the particle species
+                    with the following methods:
+                    - get_charge(): returns the charge of the particle.
+                    - get_number_of_particles(): returns the number of particles.
+                    - get_temperature(): returns the temperature of the particle.
+        world (dict): A dictionary containing the dimensions of the world with keys:
+                    'x_wind', 'y_wind', and 'z_wind'.
+        constants (dict): A dictionary containing physical constants with keys 'eps' and 'kb'.
 
     Returns:
         float: Debye length of the system.
     """
 
-    q_e = electrons.get_charge()
-    N_electrons = electrons.get_number_of_particles()
-    Te = electrons.get_temperature()
+    q = particle_species.get_charge()
+    N_particles = particle_species.get_number_of_particles()
+    T = particle_species.get_temperature()
     eps = constants['eps']
     kb = constants['kb']
     x_wind = world['x_wind']
     y_wind = world['y_wind']
     z_wind = world['z_wind']
-    ne = N_electrons / (x_wind*y_wind*z_wind)
-    return jnp.sqrt( eps * kb * Te / (ne * q_e**2) )
+    n = N_particles / (x_wind * y_wind * z_wind)
+    return jnp.sqrt(eps * kb * T / (n * q**2))

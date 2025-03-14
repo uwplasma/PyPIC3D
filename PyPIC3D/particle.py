@@ -4,7 +4,7 @@ from jax import jit
 import jax.numpy as jnp
 from jax.tree_util import register_pytree_node_class
 
-from PyPIC3D.utils import vth_to_T
+from PyPIC3D.utils import vth_to_T, plasma_frequency, debye_length, T_to_vth
 
 def grab_particle_keys(config):
     """
@@ -73,10 +73,13 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
 
         if 'temperature' in config[toml_key]:
             T=config[toml_key]['temperature']
+            vth = T_to_vth(T, mass, kb)
         elif 'vth' in config[toml_key]:
-            T = vth_to_T(config[toml_key]['vth'], mass, kb)
+            vth = config[toml_key]['vth']
+            T = vth_to_T(vth, mass, kb)
         else:
             T = 1.0
+            vth = T_to_vth(T, mass, kb)
         # set the temperature of the particle species
 
         print(f"\nInitializing particle species: {particle_name}")
@@ -85,6 +88,7 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         print(f"Charge: {charge}")
         print(f"Mass: {mass}")
         print(f"Temperature: {T}")
+        print(f"Thermal Velocity: {vth}")
 
 
         w = jnp.zeros((3,3))
@@ -270,6 +274,11 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         particles.append(particle)
 
         print(f"Particle Kinetic Energy: {particle.kinetic_energy()}")
+        print(f"Particle Species Plasma Frequency: {plasma_frequency(particle, world, constants)}")
+        print(f"Particle Species Debye Length: {debye_length(particle, world, constants)}")
+        print(f"Dx per Debye Length: {debye_length(particle, world, constants) / dx}")
+        print(f"Dy per Debye Length: {debye_length(particle, world, constants) / dy}")
+        print(f"Dz per Debye Length: {debye_length(particle, world, constants) / dz}")
 
     return particles
 
