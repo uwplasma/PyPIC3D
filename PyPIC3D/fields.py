@@ -91,17 +91,15 @@ def solve_poisson(rho, constants, world, phi, solver, bc='periodic', M = None):
     return phi
 
 #@profile
-@partial(jit, static_argnums=(9, 10))
+@partial(jit, static_argnums=(6, 7))
 #@jit
-def calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, solver, bc):
+def calculateE(world, particles, constants, rho, phi, M, solver, bc):
     """
     Calculate the electric field components (Ex, Ey, Ez) and electric potential (phi)
     based on the given parameters.
 
     Args:
-        Ex (array): Initial x-component of the electric field.
-        Ey (array): Initial y-component of the electric field.
-        Ez (array): Initial z-component of the electric field.
+        E (tuple): Tuple containing the electric field components (Ex, Ey, Ez).
         world (dict): Dictionary containing the simulation world parameters such as
                     grid spacing (dx, dy, dz) and window dimensions (x_wind, y_wind, z_wind).
         particles (array): Array containing particle positions and properties.
@@ -147,7 +145,7 @@ def calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, solver, bc)
     Ez = -Ez
     # multiply by -1 to get the correct direction of the electric field
 
-    return Ex, Ey, Ez, phi, rho
+    return (Ex, Ey, Ez), phi, rho
 
 
 @partial(jit, static_argnums=(7))
@@ -206,7 +204,7 @@ def update_E(grid, staggered_grid, E, B, J, world, constants, curl_func):
     Ey = Ey + ( C**2 * curly - Jy / eps ) * dt
     Ez = Ez + ( C**2 * curlz - Jz / eps ) * dt
 
-    return Ex, Ey, Ez
+    return (Ex, Ey, Ez)
 
 
 @partial(jit, static_argnums=(6))
@@ -251,4 +249,4 @@ def update_B(grid, staggered_grid, E, B, world, constants, curl_func):
     By = By - dt*curly
     Bz = Bz - dt*curlz
 
-    return Bx, By, Bz
+    return (Bx, By, Bz)

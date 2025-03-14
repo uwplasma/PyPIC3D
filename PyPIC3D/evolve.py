@@ -50,19 +50,18 @@ def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world,
 
     Ex, Ey, Ez = E
     Bx, By, Bz = B
-    Jx, Jy, Jz = J
     # unpack the electric and magnetic fields
 
     #if_verbose_print(verbose, f"Calculating Electric Field, Max Value: {jnp.max(jnp.sqrt(Ex**2 + Ey**2 + Ez**2))}")
     #if_verbose_print(verbose, f"Calculating Magnetic Field, Max Value: {jnp.max(jnp.sqrt(Bx**2 + By**2 + Bz**2))}")
 
-    for pec in pecs:
-        Ex, Ey, Ez = pec.apply_pec(Ex, Ey, Ez)
-        # apply any PEC boundary conditions to the electric field
+    # for pec in pecs:
+    #     Ex, Ey, Ez = pec.apply_pec(Ex, Ey, Ez)
+    #     # apply any PEC boundary conditions to the electric field
 
-    for laser in lasers:
-        Ex, Ey, Ez = laser.inject_incident_fields(Ex, Ey, Ez, t)
-        # inject any laser pulses into the electric field
+    # for laser in lasers:
+    #     Ex, Ey, Ez = laser.inject_incident_fields(Ex, Ey, Ez, t)
+    #     # inject any laser pulses into the electric field
 
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
@@ -70,10 +69,10 @@ def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world,
         barrier_x = jnp.zeros_like(Ex)
         barrier_y = jnp.zeros_like(Ey)
         barrier_z = jnp.zeros_like(Ez)
-        for surface in surfaces:
-            barrier_x += surface.get_barrier_x()
-            barrier_y += surface.get_barrier_y()
-            barrier_z += surface.get_barrier_z()
+        # for surface in surfaces:
+        #     barrier_x += surface.get_barrier_x()
+        #     barrier_y += surface.get_barrier_y()
+        #     barrier_z += surface.get_barrier_z()
             # get the boundaries of the material surfaces
 
         total_Ex = Ex + barrier_x
@@ -96,10 +95,10 @@ def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world,
         #if_verbose_print(verbose, f"Calculating {particles[i].get_name()} Positions, Mean Value: {jnp.mean(jnp.abs(particles[i].get_position()[0]))}")
 
     ############### SOLVE E FIELD ############################################################################################
-    Ex, Ey, Ez, phi, rho = calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, solver, bc)
+    E, phi, rho = calculateE(world, particles, constants, rho, phi, M, solver, bc)
     # calculate the electric field using the Poisson equation
 
-    return particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho
+    return particles, E, B, J, phi, rho
 
 
 def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, pecs, lasers, surfaces, curl_func, M, solver, bc, verbose, GPUs):
@@ -141,13 +140,13 @@ def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world
     #if_verbose_print(verbose, f"Calculating Magnetic Field, Max Value: {jnp.max(jnp.sqrt(Bx**2 + By**2 + Bz**2))}")
     # print the maximum value of the electric and magnetic fields
 
-    for pec in pecs:
-        Ex, Ey, Ez = pec.apply_pec(Ex, Ey, Ez)
-        # apply any PEC boundary conditions to the electric field
+    # for pec in pecs:
+    #     Ex, Ey, Ez = pec.apply_pec(Ex, Ey, Ez)
+    #     # apply any PEC boundary conditions to the electric field
 
-    for laser in lasers:
-        Ex, Ey, Ez, Bx, By, Bz = laser.inject_incident_fields(Ex, Ey, Ez, Bx, By, Bz, t)
-        #inject any laser pulses into the electric and magnetic fields
+    # for laser in lasers:
+    #     Ex, Ey, Ez, Bx, By, Bz = laser.inject_incident_fields(Ex, Ey, Ez, Bx, By, Bz, t)
+    #     #inject any laser pulses into the electric and magnetic fields
 
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
@@ -155,10 +154,10 @@ def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world
         barrier_x = jnp.zeros_like(Ex)
         barrier_y = jnp.zeros_like(Ey)
         barrier_z = jnp.zeros_like(Ez)
-        for surface in surfaces:
-            barrier_x += surface.get_barrier_x()
-            barrier_y += surface.get_barrier_y()
-            barrier_z += surface.get_barrier_z()
+        # for surface in surfaces:
+        #     barrier_x += surface.get_barrier_x()
+        #     barrier_y += surface.get_barrier_y()
+        #     barrier_z += surface.get_barrier_z()
             # get the boundaries of the material surfaces
 
         total_Ex = Ex + barrier_x
@@ -181,15 +180,14 @@ def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world
         #if_verbose_print(verbose, f"Calculating {particles[i].get_name()} Positions, Mean Value: {jnp.mean(jnp.abs(particles[i].get_position()[0]))}")
 
     ################ FIELD UPDATE ################################################################################################
-    Nx, Ny, Nz = world['Nx'], world['Ny'], world['Nz']
     Jx, Jy, Jz = VB_correction(particles, Jx, Jy, Jz, constants)
     # calculate the corrections for charge conservation using villasenor buneamn 1991
 
     #if_verbose_print(verbose, f"Calculating Current Density, Max Value: {jnp.max(jnp.sqrt(Jx**2 + Jy**2 + Jz**2))}")
 
-    Ex, Ey, Ez = update_E(E_grid, B_grid, (Ex, Ey, Ez), (Bx, By, Bz), (Jx, Jy, Jz), world, constants, curl_func)
+    E = update_E(E_grid, B_grid, (Ex, Ey, Ez), (Bx, By, Bz), (Jx, Jy, Jz), world, constants, curl_func)
     # update the electric field using the curl of the magnetic field
-    Bx, By, Bz = update_B(E_grid, B_grid, (Ex, Ey, Ez), (Bx, By, Bz), world, constants, curl_func)
+    B = update_B(E_grid, B_grid, (Ex, Ey, Ez), (Bx, By, Bz), world, constants, curl_func)
     # update the magnetic field using the curl of the electric field
 
-    return particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho
+    return particles, E, B, (Jx, Jy, Jz), phi, rho

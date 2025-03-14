@@ -173,8 +173,12 @@ def initialize_simulation(toml_file):
 
     dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
     # compute the spatial resolution
-    courant_number = simulation_parameters['cfl']
-    dt = courant_condition(courant_number, dx, dy, dz, simulation_parameters, constants)
+    if 'dt' in simulation_parameters:
+        dt = simulation_parameters['dt']
+    else:
+        courant_number = simulation_parameters['cfl']
+        dt = courant_condition(courant_number, dx, dy, dz, simulation_parameters, constants)
+    # compute the time step
     Nt     = int( t_wind / dt )
     # Nt for resolution
     world = {'dt': dt, 'Nt': Nt, 'dx': dx, 'dy': dy, 'dz': dz, 'Nx': Nx, 'Ny': Ny, 'Nz': Nz, 'x_wind': x_wind, 'y_wind': y_wind, 'z_wind': z_wind}
@@ -208,20 +212,27 @@ def initialize_simulation(toml_file):
     particle_sanity_check(particles)
     # ensure the arrays for the particles are of the correct shape
 
-    check_stability(plasma_parameters, dt)
+    #check_stability(plasma_parameters, dt)
     # check the stability of the simulation
 
-    devices = mesh_utils.create_device_mesh((ncpus,))
-    mesh = Mesh(devices, ('data',))
-    sharding = NamedSharding(mesh, PartitionSpec('data',))
-    init_fields = jax.jit(initialize_fields, out_shardings=sharding, static_argnums=(0,1,2))
-    # create the mesh for the fields
+    # devices = mesh_utils.create_device_mesh((ncpus,))
+    # mesh = Mesh(devices, ('data',))
+    # sharding = NamedSharding(mesh, PartitionSpec('data',))
+    # init_fields = jax.jit(initialize_fields, out_shardings=sharding, static_argnums=(0,1,2))
+    # # create the mesh for the fields
 
-    Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho = init_fields(Nx, Ny, Nz)
+    # Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho = init_fields(Nx, Ny, Nz)
+    # initialize the electric and magnetic fields
+    Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho = initialize_fields(Nx, Ny, Nz)
     # initialize the electric and magnetic fields
 
-    Ex_ext, Ey_ext, Ez_ext, Bx_ext, By_ext, Bz_ext = load_external_fields_from_toml([Ex, Ey, Ez, Bx, By, Bz], toml_file)
+
+    Ex, Ey, Ez, Bx, By, Bz = load_external_fields_from_toml([Ex, Ey, Ez, Bx, By, Bz], toml_file)
     # add any external fields to the simulation
+        
+    E = (Ex, Ey, Ez)
+    B = (Bx, By, Bz)
+    J = (Jx, Jy, Jz)
 
     pecs = read_pec_boundaries_from_toml(toml_file, world)
     # read in perfectly electrical conductor boundaries
@@ -244,17 +255,8 @@ def initialize_simulation(toml_file):
     #     Bx, By, Bz = initialize_magnetic_field(particles, E_grid, B_grid, world, constants, GPUs)
     # # initialize the magnetic field
 
-    Ex, Ey, Ez, phi, rho = calculateE(Ex, Ey, Ez, world, particles, constants, rho, phi, M, solver, bc)
+    E, phi, rho = calculateE(world, particles, constants, rho, phi, M, solver, bc)
     # calculate the electric field using the Poisson equation
-
-    Ex = Ex + Ex_ext
-    Ey = Ey + Ey_ext
-    Ez = Ez + Ez_ext
-    # add the external fields to the electric field
-    Bx = Bx + Bx_ext
-    By = By + By_ext
-    Bz = Bz + Bz_ext
-    # add the external fields to the magnetic field
 
     if electrostatic:
         evolve_loop = partial(time_loop_electrostatic, E_grid=E_grid, B_grid=B_grid, world=world, constants=constants, pecs=pecs, lasers=lasers, surfaces=surfaces, \
@@ -264,6 +266,6 @@ def initialize_simulation(toml_file):
         evolve_loop = partial(time_loop_electrodynamic, E_grid=E_grid, B_grid=B_grid, world=world, constants=constants, pecs=pecs, lasers=lasers, surfaces=surfaces, \
             curl_func=curl_func, M=M, solver=solver, bc=bc, verbose=verbose, GPUs=GPUs)
 
-    return evolve_loop, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, \
+    return evolve_loop, particles, E, B, J, phi, \
         rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, M, \
             solver, bc, electrostatic, verbose, GPUs, Nt, curl_func, pecs, lasers, surfaces

@@ -28,7 +28,7 @@ from PyPIC3D.initialization import (
 def run_PyPIC3D(config_file):
     ##################################### INITIALIZE SIMULATION ################################################
 
-    loop, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, \
+    loop, particles, E, B, J, \
         phi, rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, \
             plasma_parameters, M, solver, bc, electrostatic, verbose, GPUs, Nt, curl_func, \
                 pecs, lasers, surfaces = initialize_simulation(config_file)
@@ -46,10 +46,11 @@ def run_PyPIC3D(config_file):
     # jax.profiler.start_trace("/tmp/tensorboard")
 
     for t in tqdm(range(Nt)):
-        particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi = loop(particles, (Ex, Ey, Ez), (Bx, By, Bz), (Jx, Jy, Jz), rho, phi)
-        # time loop to update the particles and fields
-        plotter(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters, solver, bc)
+        plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters, solver, bc)
         # plot the data
+        particles, E, B, J, rho, phi = loop(particles, E, B, J, rho, phi)
+        # time loop to update the particles and fields
+
 
     # def body_fn(carry, t):
     #     particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi = carry

@@ -646,31 +646,54 @@ def plot_initial_KE(particles, path):
         plt.savefig(f"{path}/data/{particle_name}_initialKE.png", dpi=300)
         plt.close()
 
-def plot_slice(field_slice, t, name, path, world, dt):
-    """
-    Plots a 2D slice of a field and saves the plot as a PNG file.
+# def plot_slice(field_slice, t, name, path, world, dt):
+#     """
+#     Plots a 2D slice of a field and saves the plot as a PNG file.
 
-    Args:
-        field_slice (2D array): The 2D array representing the field slice to be plotted.
-        t (int): The time step index.
-        name (str): The name of the field being plotted.
-        world (dict): A dictionary containing the dimensions of the world with keys 'x_wind' and 'y_wind'.
-        dt (float): The time step duration.
+#     Args:
+#         field_slice (2D array): The 2D array representing the field slice to be plotted.
+#         t (int): The time step index.
+#         name (str): The name of the field being plotted.
+#         world (dict): A dictionary containing the dimensions of the world with keys 'x_wind' and 'y_wind'.
+#         dt (float): The time step duration.
 
-    Returns:
-        None
-    """
+#     Returns:
+#         None
+#     """
 
-    if not os.path.exists(f"{path}/data/{name}_slice"):
-        os.makedirs(f'{path}/data/{name}_slice')
-    # Create directory if it doesn't exist
+#     if not os.path.exists(f"{path}/data/{name}_slice"):
+#         os.makedirs(f'{path}/data/{name}_slice')
+#     # Create directory if it doesn't exist
     
-    plt.title(f'{name} at t={t*dt:.2e}s')
-    plt.imshow(field_slice, origin='lower', extent=[-world['x_wind']/2, world['x_wind']/2, -world['y_wind']/2, world['y_wind']/2])
-    plt.colorbar(label=name)
-    plt.tight_layout()
-    plt.savefig(f'{path}/data/{name}_slice/{name}_slice_{t:09}.png', dpi=300)
-    plt.close()
+#     plt.title(f'{name} at t={t*dt:.2e}s')
+#     plt.imshow(field_slice, origin='lower', extent=[-world['x_wind']/2, world['x_wind']/2, -world['y_wind']/2, world['y_wind']/2])
+#     plt.colorbar(label=name)
+#     plt.tight_layout()
+#     plt.savefig(f'{path}/data/{name}_slice/{name}_slice_{t:09}.png', dpi=300)
+#     plt.close()
+
+def write_slice(field_slice, x1, x2, t, name, path, dt):
+    """
+    Plots a slice of a field and saves it in VTK format.
+    Parameters:
+    field_slice (numpy.ndarray): The 2D slice of the field to be plotted.
+    x1 (numpy.ndarray): The x-coordinates of the field slice.
+    x2 (numpy.ndarray): The y-coordinates of the field slice.
+    t (int): The time step or index for the slice.
+    name (str): The name of the field or slice.
+    path (str): The directory path where the VTK file will be saved.
+    dt (float): The time step size (not used in the function but included in parameters).
+    Returns:
+    None
+    """
+
+    x3 = np.zeros(1)
+
+    field_slice = np.asarray(field_slice)[:, :, np.newaxis]
+
+    gridToVTK(f"{path}/data/{name}_slice/{name}_slice_{t:09}", x1, x2, x3,  \
+            cellData = {f"{name}" : field_slice})
+    # plot the slice of the field in the vtk file format
 
 def write_data(filename, time, data):
     """
@@ -752,8 +775,11 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
             os.makedirs(f'{output_dir}/data/B_slice')
         # Create directory if it doesn't exist
 
-        jnp.save(f"{output_dir}/data/E_slice/E_{t:09}.npy", jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)])
-        jnp.save(f"{output_dir}/data/B_slice/B_{t:09}.npy", jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)])
+        write_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], np.asarray(E_grid[0]), np.asarray(E_grid[1]), t, 'E', output_dir, dt)
+        write_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], np.asarray(B_grid[0]), np.asarray(B_grid[1]), t, 'B', output_dir, dt)
+
+        #jnp.save(f"{output_dir}/data/E_slice/E_{t:09}.npy", jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)])
+        #jnp.save(f"{output_dir}/data/B_slice/B_{t:09}.npy", jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)])
         #jnp.save(f"{output_dir}/data/rho_slice/rho_{t:09}.npy", rho[:, :, int(Nz/2)])
 
     if plotting_parameters['plot_chargeconservation']:
@@ -786,31 +812,34 @@ def save_total_momentum(t, dt, particles, output_dir):
         f_momentum.write(f"{t*dt}, {p0}\n")
 
 
-def plotter(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters, solver, bc):
+def plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters, solver, bc):
     """
     Plots and saves various simulation data at specified intervals.
 
-    Args:
-        particles (list): List of particle objects in the simulation.
-        Ex, Ey, Ez (ndarray): Electric field components in the x, y, and z directions.
-        Bx, By, Bz (ndarray): Magnetic field components in the x, y, and z directions.
-        Jx, Jy, Jz (ndarray): Current density components in the x, y, and z directions.
-        rho (ndarray): Charge density.
-        phi (ndarray): Electric potential.
-        E_grid, B_grid (ndarray): Grids for electric and magnetic fields.
-        world (dict): Dictionary containing world parameters such as time step 'dt'.
-        constants (dict): Dictionary containing physical constants.
-        plotting_parameters (dict): Dictionary containing parameters for plotting, including 'plotting_interval'.
-        M (object): Mass matrix or related object.
-        solver (object): Solver object for the simulation.
-        bc (object): Boundary conditions object.
-        electrostatic (bool): Flag indicating if the simulation is electrostatic.
-        verbose (bool): Flag for verbose output.
-        GPUs (list): List of GPUs used in the simulation.
+    Parameters:
+    t (int): Current time step.
+    particles (list): List of particles in the simulation.
+    Ex, Ey, Ez (ndarray): Electric field components.
+    Bx, By, Bz (ndarray): Magnetic field components.
+    Jx, Jy, Jz (ndarray): Current density components.
+    rho (ndarray): Charge density.
+    phi (ndarray): Electric potential.
+    E_grid (ndarray): Electric field grid.
+    B_grid (ndarray): Magnetic field grid.
+    world (dict): Dictionary containing world parameters.
+    constants (dict): Dictionary containing physical constants.
+    plotting_parameters (dict): Dictionary containing plotting parameters.
+    simulation_parameters (dict): Dictionary containing simulation parameters.
+    solver (object): Solver object used in the simulation.
+    bc (object): Boundary conditions object.
 
     Returns:
-        None
+    None
     """
+
+    Ex, Ey, Ez = E
+    Bx, By, Bz = B
+    Jx, Jy, Jz = J
 
     dt = world['dt']
     output_dir = simulation_parameters['output_dir']

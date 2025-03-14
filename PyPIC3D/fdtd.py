@@ -4,6 +4,9 @@ import jax.numpy as jnp
 from PyPIC3D.utils import interpolate_field, use_gpu_if_set
 from PyPIC3D.boundaryconditions import apply_zero_boundary_condition
 
+import jax.numpy as jnp
+#from lineax import Diagonal, Identity, Sum, Scale, Shift
+
 #@partial(jit, static_argnums=(1, 2, 3, 4))
 def centered_finite_difference_laplacian(field, dx, dy, dz, bc):
     """
@@ -169,3 +172,66 @@ def centered_finite_difference_divergence(field_x, field_y, field_z, dx, dy, dz,
         div_z = apply_zero_boundary_condition(div_z)
 
     return div_x + div_y + div_z
+
+
+# def finite_difference_laplacian_3d(Nx, Ny, Nz, dx, dy, dz, bc='dirichlet'):
+#     """
+#     Constructs the Laplacian operator in 3D dimensions using finite differencing.
+
+#     Args:
+#         Nx (int): Number of grid points in the x-direction.
+#         Ny (int): Number of grid points in the y-direction.
+#         Nz (int): Number of grid points in the z-direction.
+#         dx (float): Grid spacing in the x-direction.
+#         dy (float): Grid spacing in the y-direction.
+#         dz (float): Grid spacing in the z-direction.
+#         bc (str): Boundary condition type ('dirichlet' or 'neumann').
+
+#     Returns:
+#         LinearOperator: The Laplacian operator.
+#     """
+#     # Define the finite difference coefficients
+#     coeff_x = -2.0 / (dx * dx)
+#     coeff_y = -2.0 / (dy * dy)
+#     coeff_z = -2.0 / (dz * dz)
+#     coeff_xy = 1.0 / (dx * dx)
+#     coeff_yz = 1.0 / (dy * dy)
+#     coeff_zx = 1.0 / (dz * dz)
+
+#     # Construct the Laplacian operator
+#     laplacian = Sum([
+#         Scale(coeff_x, Identity((Nx, Ny, Nz))),
+#         Scale(coeff_y, Identity((Nx, Ny, Nz))),
+#         Scale(coeff_z, Identity((Nx, Ny, Nz))),
+#         Scale(coeff_xy, Shift((Nx, Ny, Nz), (1, 0, 0))),
+#         Scale(coeff_xy, Shift((Nx, Ny, Nz), (-1, 0, 0))),
+#         Scale(coeff_yz, Shift((Nx, Ny, Nz), (0, 1, 0))),
+#         Scale(coeff_yz, Shift((Nx, Ny, Nz), (0, -1, 0))),
+#         Scale(coeff_zx, Shift((Nx, Ny, Nz), (0, 0, 1))),
+#         Scale(coeff_zx, Shift((Nx, Ny, Nz), (0, 0, -1))),
+#     ])
+
+#     # Apply boundary conditions
+#     if bc == 'dirichlet':
+#         # Apply Dirichlet boundary conditions (zero at the boundaries)
+#         mask = jnp.ones((Nx, Ny, Nz))
+#         mask = mask.at[0, :, :].set(0)
+#         mask = mask.at[-1, :, :].set(0)
+#         mask = mask.at[:, 0, :].set(0)
+#         mask = mask.at[:, -1, :].set(0)
+#         mask = mask.at[:, :, 0].set(0)
+#         mask = mask.at[:, :, -1].set(0)
+#         return Diagonal(mask) @ laplacian @ Diagonal(mask)
+    
+#     elif bc == 'neumann':
+#         # Apply Neumann boundary conditions (zero gradient at the boundaries)
+#         mask = jnp.ones((Nx, Ny, Nz))
+#         mask = mask.at[0, :, :].set(0)
+#         mask = mask.at[-1, :, :].set(0)
+#         mask = mask.at[:, 0, :].set(0)
+#         mask = mask.at[:, -1, :].set(0)
+#         mask = mask.at[:, :, 0].set(0)
+#         mask = mask.at[:, :, -1].set(0)
+#         return Diagonal(mask) @ laplacian
+
+#     return laplacian
