@@ -738,6 +738,14 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         write_data(f"{output_dir}/data/kinetic_energy.txt", t*dt, kinetic_energy)
         # write the total energy to a file
 
+        Ex_integral = jnp.trapezoid(jnp.trapezoid(jnp.trapezoid(Ex**2, dx=dz), dx=dy), dx=dx)
+        Ey_integral = jnp.trapezoid(jnp.trapezoid(jnp.trapezoid(Ey**2, dx=dz), dx=dy), dx=dx)
+        Ez_integral = jnp.trapezoid(jnp.trapezoid(jnp.trapezoid(Ez**2, dx=dz), dx=dy), dx=dx)
+        write_data(f"{output_dir}/data/Ex_energy.txt", t*dt, 0.5*constants['eps']*Ex_integral)
+        write_data(f"{output_dir}/data/Ey_energy.txt", t*dt, 0.5*constants['eps']*Ey_integral)
+        write_data(f"{output_dir}/data/Ez_energy.txt", t*dt, 0.5*constants['eps']*Ez_integral)
+        # write the energy of the electric field to a file
+
     if plotting_parameters['plotvelocities']:
         for species in particles:
             plot_velocity_histogram(species, t, output_dir, nbins=50)
@@ -759,6 +767,12 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         # save_vector_field_as_vtk(Ex, Ey, Ez, E_grid, f"{output_dir}/fields/E_{t*dt:09}.vtr")
         # save_vector_field_as_vtk(Bx, By, Bz, B_grid, f"{output_dir}/fields/B_{t*dt:09}.vtr")
         # plot_rho(rho, t, "rho", dx, dy, dz)
+        write_data(f"{output_dir}/data/averageEx.txt", t*dt, jnp.mean( jnp.abs(Ex) ) )
+        write_data(f"{output_dir}/data/averageEy.txt", t*dt, jnp.mean( jnp.abs(Ey) ) )
+        write_data(f"{output_dir}/data/averageEz.txt", t*dt, jnp.mean( jnp.abs(Ez) ) )
+        write_data(f"{output_dir}/data/averageBx.txt", t*dt, jnp.mean( jnp.abs(Bx) ) )
+        write_data(f"{output_dir}/data/averageBy.txt", t*dt, jnp.mean( jnp.abs(By) ) )
+        write_data(f"{output_dir}/data/averageBz.txt", t*dt, jnp.mean( jnp.abs(Bz) ) )
         write_data(f"{output_dir}/data/averageE.txt", t*dt, jnp.mean(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)))
         write_data(f"{output_dir}/data/averageB.txt", t*dt, jnp.mean(jnp.sqrt(Bx**2 + By**2 + Bz**2)))
         write_data(f"{output_dir}/data/Eprobe.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx-1, Ny-1, Nz-1))
@@ -775,8 +789,35 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
             os.makedirs(f'{output_dir}/data/B_slice')
         # Create directory if it doesn't exist
 
-        write_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], np.asarray(E_grid[0]), np.asarray(E_grid[1]), t, 'E', output_dir, dt)
-        write_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], np.asarray(B_grid[0]), np.asarray(B_grid[1]), t, 'B', output_dir, dt)
+        if not os.path.exists(f"{output_dir}/data/Exy_slice"):
+            os.makedirs(f'{output_dir}/data/Exy_slice')
+        # Create directory if it doesn't exist
+        
+        if not os.path.exists(f"{output_dir}/data/Exz_slice"):
+            os.makedirs(f'{output_dir}/data/Exz_slice')
+        # Create directory if it doesn't exist
+        if not os.path.exists(f"{output_dir}/data/Eyz_slice"):
+            os.makedirs(f'{output_dir}/data/Eyz_slice')
+        # Create directory if it doesn't exist
+
+        if not os.path.exists(f"{output_dir}/data/Bxy_slice"):
+            os.makedirs(f'{output_dir}/data/Bxy_slice')
+        # Create directory if it doesn't exist
+
+        if not os.path.exists(f"{output_dir}/data/Bxz_slice"):
+            os.makedirs(f'{output_dir}/data/Bxz_slice')
+        # Create directory if it doesn't exist
+
+        if not os.path.exists(f"{output_dir}/data/Byz_slice"):
+            os.makedirs(f'{output_dir}/data/Byz_slice')
+        # Create directory if it doesn't exist
+
+        write_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], np.asarray(E_grid[0]), np.asarray(E_grid[1]), t, 'Exy', output_dir, dt)
+        write_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], np.asarray(E_grid[0]), np.asarray(E_grid[1]), t, 'Exz', output_dir, dt)
+        write_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], np.asarray(E_grid[0]), np.asarray(E_grid[1]), t, 'Eyz', output_dir, dt)
+        write_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], np.asarray(B_grid[0]), np.asarray(B_grid[1]), t, 'Bxy', output_dir, dt)
+        write_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], np.asarray(B_grid[0]), np.asarray(B_grid[1]), t, 'Bxz', output_dir, dt)
+        write_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], np.asarray(B_grid[0]), np.asarray(B_grid[1]), t, 'Byz', output_dir, dt)
 
         #jnp.save(f"{output_dir}/data/E_slice/E_{t:09}.npy", jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)])
         #jnp.save(f"{output_dir}/data/B_slice/B_{t:09}.npy", jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)])
