@@ -120,13 +120,16 @@ def calculateE(world, particles, constants, rho, phi, M, solver, bc):
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
+    eps = constants['eps']
 
     rho = compute_rho(particles, rho, world)
     # calculate the charge density based on the particle positions
 
     #if_verbose_print(verbose, f"Calculating Charge Density, Max Value: {jnp.max(jnp.abs(rho))}" )
+    # sor = functools.partial(solve_poisson_sor, dx=dx, dy=dy, dz=dz, eps=eps, omega=0.15, tol=1e-12, max_iter=30000)
+    # phi = sor(phi, rho)
 
-    phi = phi.at[:,:,:].set(solve_poisson(rho, constants, world, phi=phi, solver=solver, bc=bc, M=M))
+    phi = solve_poisson(rho, constants, world, phi=phi, solver=solver, bc=bc, M=M)
     # solve the Poisson equation to get the electric potential
 
     #if_verbose_print(verbose, f"Calculating Electric Potential, Max Value: {jnp.max(phi)}",  )

@@ -5,6 +5,7 @@ import os
 import functools
 from functools import partial
 import toml
+import matplotlib.pyplot as plt
 
 from PyPIC3D.particle import (
     load_particles_from_toml
@@ -257,6 +258,7 @@ def initialize_simulation(toml_file):
 
     E, phi, rho = calculateE(world, particles, constants, rho, phi, M, solver, bc)
     # calculate the electric field using the Poisson equation
+    
 
     if electrostatic:
         evolve_loop = partial(time_loop_electrostatic, E_grid=E_grid, B_grid=B_grid, world=world, constants=constants, pecs=pecs, lasers=lasers, surfaces=surfaces, \
