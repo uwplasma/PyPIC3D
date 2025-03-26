@@ -49,13 +49,13 @@ def particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
 
     # Distribute the charge of the particle to the surrounding grid points
     rho = rho.at[x0, y0, z0].add((q / dv) * (1 - wx) * (1 - wy) * (1 - wz), mode='drop')
-    rho = rho.at[x1, y0, z0].add((q / dv) * wx * (1 - wy) * (1 - wz), mode='drop')
-    rho = rho.at[x0, y1, z0].add((q / dv) * (1 - wx) * wy * (1 - wz), mode='drop')
-    rho = rho.at[x0, y0, z1].add((q / dv) * (1 - wx) * (1 - wy) * wz, mode='drop')
-    rho = rho.at[x1, y1, z0].add((q / dv) * wx * wy * (1 - wz), mode='drop')
-    rho = rho.at[x1, y0, z1].add((q / dv) * wx * (1 - wy) * wz, mode='drop')
-    rho = rho.at[x0, y1, z1].add((q / dv) * (1 - wx) * wy * wz, mode='drop')
-    rho = rho.at[x1, y1, z1].add((q / dv) * wx * wy * wz, mode='drop')
+    rho = rho.at[x1, y0, z0].add((q / dv) *      wx  * (1 - wy) * (1 - wz), mode='drop')
+    rho = rho.at[x0, y1, z0].add((q / dv) * (1 - wx) *      wy  * (1 - wz), mode='drop')
+    rho = rho.at[x0, y0, z1].add((q / dv) * (1 - wx) * (1 - wy) *      wz, mode='drop')
+    rho = rho.at[x1, y1, z0].add((q / dv) *      wx  *      wy  * (1 - wz), mode='drop')
+    rho = rho.at[x1, y0, z1].add((q / dv) *      wx  * (1 - wy) *      wz, mode='drop')
+    rho = rho.at[x0, y1, z1].add((q / dv) * (1 - wx) *      wy  *      wz, mode='drop')
+    rho = rho.at[x1, y1, z1].add((q / dv) *      wx  *      wy  *      wz, mode='drop')
 
     return rho
 
@@ -91,7 +91,7 @@ def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_win
 
     return jax.lax.fori_loop(0, Nparticles, addto_rho, rho )
 
-@jit
+#@jit
 def compute_rho(particles, rho, world):
     """
     Compute the charge density (rho) for a given set of particles in a simulation world.
@@ -122,7 +122,10 @@ def compute_rho(particles, rho, world):
     for species in particles:
         N_particles = species.get_number_of_particles()
         charge = species.get_charge()
-        if N_particles > 0:
-            particle_x, particle_y, particle_z = species.get_position()
-            rho = update_rho(N_particles, particle_x, particle_y, particle_z, dx, dy, dz, charge, x_wind, y_wind, z_wind, rho)
+        # print("hello")
+        particle_x, particle_y, particle_z = species.get_position()
+            # print(f'particle_x: {particle_x}')
+            # print(f'particle_y: {particle_y}')
+            # print(f'particle_z: {particle_z}')
+        rho = update_rho(N_particles, particle_x, particle_y, particle_z, dx, dy, dz, charge, x_wind, y_wind, z_wind, rho)
     return rho
