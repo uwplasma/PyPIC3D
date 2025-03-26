@@ -16,6 +16,51 @@ from datetime import datetime
 import importlib.metadata
 # import external libraries
 
+def simpsons_rule_3d(f, dx, dy, dz):
+    """
+    Integrate a 3D array using Simpson's rule over the entire volume.
+
+    Args:
+        f (ndarray): 3D array to be integrated.
+        dx (float): Grid spacing in the x-direction.
+        dy (float): Grid spacing in the y-direction.
+        dz (float): Grid spacing in the z-direction.
+
+    Returns:
+        float: The integral of the 3D array over the entire volume.
+    """
+    nx, ny, nz = f.shape
+    integral = 0.0
+
+    for i in range(0, nx, 2):
+        for j in range(0, ny, 2):
+            for k in range(0, nz, 2):
+                coeff = 1
+                if i == 0 or i == nx - 1:
+                    coeff *= 1
+                elif i % 2 == 0:
+                    coeff *= 2
+                else:
+                    coeff *= 4
+
+                if j == 0 or j == ny - 1:
+                    coeff *= 1
+                elif j % 2 == 0:
+                    coeff *= 2
+                else:
+                    coeff *= 4
+
+                if k == 0 or k == nz - 1:
+                    coeff *= 1
+                elif k % 2 == 0:
+                    coeff *= 2
+                else:
+                    coeff *= 4
+
+                integral += coeff * f[i, j, k]
+
+    integral *= dx * dy * dz / 27.0
+    return integral
 
 def vth_to_T(vth, m, kb):
     """

@@ -6,12 +6,17 @@ from pyevtk.hl import gridToVTK
 import os
 import plotly.graph_objects as go
 from PyPIC3D.rho import update_rho
+import jax
 
 from PyPIC3D.errors import (
     compute_electric_divergence_error, compute_magnetic_divergence_error
 )
 
 from PyPIC3D.rho import compute_rho
+
+from PyPIC3D.utils import (
+    simpsons_rule_3d
+)
 
 def plot_rho(rho, t, name, dx, dy, dz):
     """
@@ -646,31 +651,31 @@ def plot_initial_KE(particles, path):
         plt.savefig(f"{path}/data/{particle_name}_initialKE.png", dpi=300)
         plt.close()
 
-# def plot_slice(field_slice, t, name, path, world, dt):
-#     """
-#     Plots a 2D slice of a field and saves the plot as a PNG file.
+def plot_slice(field_slice, t, name, path, world, dt):
+    """
+    Plots a 2D slice of a field and saves the plot as a PNG file.
 
-#     Args:
-#         field_slice (2D array): The 2D array representing the field slice to be plotted.
-#         t (int): The time step index.
-#         name (str): The name of the field being plotted.
-#         world (dict): A dictionary containing the dimensions of the world with keys 'x_wind' and 'y_wind'.
-#         dt (float): The time step duration.
+    Args:
+        field_slice (2D array): The 2D array representing the field slice to be plotted.
+        t (int): The time step index.
+        name (str): The name of the field being plotted.
+        world (dict): A dictionary containing the dimensions of the world with keys 'x_wind' and 'y_wind'.
+        dt (float): The time step duration.
 
-#     Returns:
-#         None
-#     """
+    Returns:
+        None
+    """
 
-#     if not os.path.exists(f"{path}/data/{name}_slice"):
-#         os.makedirs(f'{path}/data/{name}_slice')
-#     # Create directory if it doesn't exist
+    if not os.path.exists(f"{path}/data/{name}_slice"):
+        os.makedirs(f'{path}/data/{name}_slice')
+    # Create directory if it doesn't exist
     
-#     plt.title(f'{name} at t={t*dt:.2e}s')
-#     plt.imshow(field_slice, origin='lower', extent=[-world['x_wind']/2, world['x_wind']/2, -world['y_wind']/2, world['y_wind']/2])
-#     plt.colorbar(label=name)
-#     plt.tight_layout()
-#     plt.savefig(f'{path}/data/{name}_slice/{name}_slice_{t:09}.png', dpi=300)
-#     plt.close()
+    plt.title(f'{name} at t={t*dt:.2e}s')
+    plt.imshow(jnp.swapaxes(field_slice, 0, 1), origin='lower', extent=[-world['x_wind']/2, world['x_wind']/2, -world['y_wind']/2, world['y_wind']/2])
+    plt.colorbar(label=name)
+    plt.tight_layout()
+    plt.savefig(f'{path}/data/{name}_slice/{name}_slice_{t:09}.png', dpi=300)
+    plt.close()
 
 def write_slice(field_slice, x1, x2, t, name, path, dt):
     """
@@ -723,9 +728,21 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
     # select a slice of the E field along the y-axis
     #_ = plot_fft(Eline, dt, f"E along Tungsten {t}", output_dir)
 
+    # def integrate(y, dx): return 0.5 * (jnp.asarray(dx) * (y[..., 1:] + y[..., :-1])).sum(-1)
+
     if plotting_parameters['plotenergy']:
+        # E2_integral = jnp.sum( jnp.trapezoid(Ex**2 + Ey**2 + Ez**2, axis=0, dx=dx), axis=(0,1) )
+        # B2_integral = jnp.sum( jnp.trapezoid(Bx**2 + By**2 + Bz**2, axis=0, dx=dx), axis=(0,1) )
+        #E2_integral = simpsons_rule_3d(Ex**2 + Ey**2 + Ez**2, dx, dy, dz)
+        #B2_integral = simpsons_rule_3d(Bx**2 + By**2 + Bz**2, dx, dy, dz)
+        #integral of E^2 and B^2 over the entire grid
         E2_integral = jnp.trapezoid(jnp.trapezoid(jnp.trapezoid(Ex**2 + Ey**2 + Ez**2, dx=dz), dx=dy), dx=dx)
         B2_integral = jnp.trapezoid(jnp.trapezoid(jnp.trapezoid(Bx**2 + By**2 + Bz**2, dx=dz), dx=dy), dx=dx)
+        # abs_E_squared              = jnp.sum(Ex**2 + Ey**2 + Ez**2, axis=-1)
+        # abs_B_squared              = jnp.sum(Bx**2 + By**2 + Bz**2, axis=-1)
+
+        # E2_integral = integrate(abs_E_squared, dx)
+        # B2_integral = integrate(abs_B_squared, dx)
         #integral of E^2 and B^2 over the entire grid
         e_energy = 0.5*constants['eps']*E2_integral
         b_energy = 0.5/constants['mu']*B2_integral
@@ -778,9 +795,6 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         write_data(f"{output_dir}/data/Eprobe.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx-1, Ny-1, Nz-1))
         write_data(f"{output_dir}/data/centerE.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx//2, Ny//2, Nz//2))
 
-        # plot_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], t, 'E', output_dir, world, dt)
-        # plot_slice(rho[:, :, int(Nz/2)], t, 'rho', output_dir, world, dt)
-
         if not os.path.exists(f"{output_dir}/data/E_slice"):
             os.makedirs(f'{output_dir}/data/E_slice')
         # Create directory if it doesn't exist
@@ -788,6 +802,9 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         if not os.path.exists(f"{output_dir}/data/B_slice"):
             os.makedirs(f'{output_dir}/data/B_slice')
         # Create directory if it doesn't exist
+
+
+        # plot_slice(rho[:, :, int(Nz/2)], t, 'rho', output_dir, world, dt)
 
         if not os.path.exists(f"{output_dir}/data/Exy_slice"):
             os.makedirs(f'{output_dir}/data/Exy_slice')
@@ -812,12 +829,72 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
             os.makedirs(f'{output_dir}/data/Byz_slice')
         # Create directory if it doesn't exist
 
-        write_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], np.asarray(E_grid[0]), np.asarray(E_grid[1]), t, 'Exy', output_dir, dt)
-        write_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], np.asarray(E_grid[0]), np.asarray(E_grid[1]), t, 'Exz', output_dir, dt)
-        write_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], np.asarray(E_grid[0]), np.asarray(E_grid[1]), t, 'Eyz', output_dir, dt)
-        write_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], np.asarray(B_grid[0]), np.asarray(B_grid[1]), t, 'Bxy', output_dir, dt)
-        write_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], np.asarray(B_grid[0]), np.asarray(B_grid[1]), t, 'Bxz', output_dir, dt)
-        write_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], np.asarray(B_grid[0]), np.asarray(B_grid[1]), t, 'Byz', output_dir, dt)
+        plot_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], t, 'E', output_dir, world, dt)
+
+
+        if not os.path.exists(f"{output_dir}/data/E_slice"):
+            os.makedirs(f'{output_dir}/data/E_slice')
+        # Create directory if it doesn't exist
+        if not os.path.exists(f"{output_dir}/data/rho_slice"):
+            os.makedirs(f'{output_dir}/data/rho_slice')
+        
+        # plt.title(f'E at t={t*dt:.2e}s')
+        # plt.matshow(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], origin='lower', extent=[-world['x_wind']/2, world['x_wind']/2, -world['y_wind']/2, world['y_wind']/2])
+        # x,y,z = particles[0].get_position()
+        # plt.scatter(x, y, c='r', s=1)
+        # plt.colorbar(label='E')
+        # #plt.tight_layout()
+        # plt.savefig(f'{output_dir}/data/E_slice/E_slice_{t:09}.png', dpi=300)
+        # plt.close()
+
+
+        # plt.title(f'rho at t={t*dt:.2e}s')
+        # #plotrho = jnp.swapaxes(rho, 0, 1)[:,:,int(Nz/2)]
+        # plt.matshow(rho[:,:,int(Nz/2)], origin='lower', extent=[-world['x_wind']/2, world['x_wind']/2, -world['y_wind']/2, world['y_wind']/2])
+        # x,y,z = particles[0].get_position()
+        # plt.scatter(x, y, c='r', s=3)
+        # plt.colorbar(label='rho')
+        # #plt.tight_layout()
+        # plt.savefig(f'{output_dir}/data/rho_slice/rho_slicexy_{t:09}.png', dpi=300)
+        # plt.close()
+
+
+        # plt.title(f'rho at t={t*dt:.2e}s')
+        # #plotrho = jnp.swapaxes(rho, 0, 1)[:,:,int(Nz/2)]
+        # plt.matshow(rho[int(Nx/2),:,:], origin='lower', extent=[-world['x_wind']/2, world['x_wind']/2, -world['y_wind']/2, world['y_wind']/2])
+        # x,y,z = particles[0].get_position()
+        # plt.scatter(y, z, c='r', s=3)
+        # plt.colorbar(label='rho')
+        # #plt.tight_layout()
+        # plt.savefig(f'{output_dir}/data/rho_slice/rho_sliceyz_{t:09}.png', dpi=300)
+        # plt.close()
+
+
+        # max_rhox = jnp.argmax(rho[:, int(Ny/2), int(Nz/2)]) * dx - world['x_wind']/2
+        # max_rhoy = jnp.argmax(rho[int(Nx/2), :, int(Nz/2)]) * dy - world['y_wind']/2
+        # max_rhoz = jnp.argmax(rho[int(Nx/2), int(Ny/2), :]) * dz - world['z_wind']/2
+        # real_x, real_y, real_z = particles[0].get_position()
+        # jax.debug.print("Max rho x: {}", max_rhox)
+        # jax.debug.print("Real x: {}", real_x)
+        # jax.debug.print("Max rho y: {}", max_rhoy)
+        # jax.debug.print("Real y: {}", real_y)
+        # jax.debug.print("Max rho z: {}", max_rhoz)
+        # jax.debug.print("Real z: {}", real_z)
+
+        plot_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], t, 'Exy', output_dir, world, dt)
+        plot_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, int(Ny/2), :], t, 'Exz', output_dir, world, dt)
+        plot_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[int(Nx/2), :, :], t, 'Eyz', output_dir, world, dt)
+        plot_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], t, 'Bxy', output_dir, world, dt)
+        plot_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, int(Ny/2), :], t, 'Bxz', output_dir, world, dt)
+        plot_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[int(Nx/2), :, :], t, 'Byz', output_dir, world, dt)
+
+
+        # write_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], np.asarray(E_grid[0]), np.asarray(E_grid[1]), t, 'Exy', output_dir, dt)
+        # write_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], np.asarray(E_grid[0]), np.asarray(E_grid[1]), t, 'Exz', output_dir, dt)
+        # write_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], np.asarray(E_grid[0]), np.asarray(E_grid[1]), t, 'Eyz', output_dir, dt)
+        # write_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], np.asarray(B_grid[0]), np.asarray(B_grid[1]), t, 'Bxy', output_dir, dt)
+        # write_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], np.asarray(B_grid[0]), np.asarray(B_grid[1]), t, 'Bxz', output_dir, dt)
+        # write_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], np.asarray(B_grid[0]), np.asarray(B_grid[1]), t, 'Byz', output_dir, dt)
 
         #jnp.save(f"{output_dir}/data/E_slice/E_{t:09}.npy", jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)])
         #jnp.save(f"{output_dir}/data/B_slice/B_{t:09}.npy", jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)])
