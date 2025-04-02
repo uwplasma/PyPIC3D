@@ -610,6 +610,47 @@ def interpolate_field(field, grid, x, y, z):
     return interpolate(points)
 
 
+
+def create_trilinear_interpolator(field, grid):
+    """
+    Create a trilinear interpolation function for a given 3D field and grid.
+
+    Args:
+        field (ndarray): The 3D field to interpolate.
+        grid (tuple): A tuple of three arrays representing the grid points in the x, y, and z directions.
+
+    Returns:
+        function: A function that takes (x, y, z) coordinates and returns the interpolated values.
+    """
+    x_grid, y_grid, z_grid = grid
+
+    @jit
+    def interpolator(x, y, z):
+        x_idx = jnp.clip(jnp.searchsorted(x_grid, x) - 1, 0, len(x_grid) - 2)
+        y_idx = jnp.clip(jnp.searchsorted(y_grid, y) - 1, 0, len(y_grid) - 2)
+        z_idx = jnp.clip(jnp.searchsorted(z_grid, z) - 1, 0, len(z_grid) - 2)
+
+        x0, x1 = x_grid[x_idx], x_grid[x_idx + 1]
+        y0, y1 = y_grid[y_idx], y_grid[y_idx + 1]
+        z0, z1 = z_grid[z_idx], z_grid[z_idx + 1]
+
+        xd = (x - x0) / (x1 - x0)
+        yd = (y - y0) / (y1 - y0)
+        zd = (z - z0) / (z1 - z0)
+
+        c00 = field[x_idx, y_idx, z_idx] * (1 - xd) + field[x_idx + 1, y_idx, z_idx] * xd
+        c01 = field[x_idx, y_idx, z_idx + 1] * (1 - xd) + field[x_idx + 1, y_idx, z_idx + 1] * xd
+        c10 = field[x_idx, y_idx + 1, z_idx] * (1 - xd) + field[x_idx + 1, y_idx + 1, z_idx] * xd
+        c11 = field[x_idx, y_idx + 1, z_idx + 1] * (1 - xd) + field[x_idx + 1, y_idx + 1, z_idx + 1] * xd
+
+        c0 = c00 * (1 - yd) + c10 * yd
+        c1 = c01 * (1 - yd) + c11 * yd
+
+        return c0 * (1 - zd) + c1 * zd
+
+    return interpolator
+
+
 # def trilinear_interpolation(field, grid, x, y, z):
 #     """
 #     Perform trilinear interpolation on a 3D field at given (x, y, z) coordinates.
