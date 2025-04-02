@@ -2,7 +2,7 @@ import jax
 from jax import jit
 import jax.numpy as jnp
 
-from PyPIC3D.utils import use_gpu_if_set
+from PyPIC3D.utils import create_trilinear_interpolator
 
 @jit
 def particle_push(particles, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt, GPUs):
@@ -31,12 +31,12 @@ def particle_push(particles, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt, G
     # get the charge, mass, position, and velocity of the particles
     #newvx, newvy, newvz = boris(x, y, z, vx, vy, vz, q, m, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt)
 
-    Ex_interpolate = jax.scipy.interpolate.RegularGridInterpolator(grid, Ex, fill_value=0)
-    Ey_interpolate = jax.scipy.interpolate.RegularGridInterpolator(grid, Ey, fill_value=0)
-    Ez_interpolate = jax.scipy.interpolate.RegularGridInterpolator(grid, Ez, fill_value=0)
-    Bx_interpolate = jax.scipy.interpolate.RegularGridInterpolator(staggered_grid, Bx, fill_value=0)
-    By_interpolate = jax.scipy.interpolate.RegularGridInterpolator(staggered_grid, By, fill_value=0)
-    Bz_interpolate = jax.scipy.interpolate.RegularGridInterpolator(staggered_grid, Bz, fill_value=0)
+    # Ex_interpolate = jax.scipy.interpolate.RegularGridInterpolator(grid, Ex)
+    # Ey_interpolate = jax.scipy.interpolate.RegularGridInterpolator(grid, Ey)
+    # Ez_interpolate = jax.scipy.interpolate.RegularGridInterpolator(grid, Ez)
+    # Bx_interpolate = jax.scipy.interpolate.RegularGridInterpolator(staggered_grid, Bx)
+    # By_interpolate = jax.scipy.interpolate.RegularGridInterpolator(staggered_grid, By)
+    # Bz_interpolate = jax.scipy.interpolate.RegularGridInterpolator(staggered_grid, Bz)
     #E_interpolate = (Ex_interpolate, Ey_interpolate, Ez_interpolate)
     #B_interpolate = (Bx_interpolate, By_interpolate, Bz_interpolate)
     # create interpolators for the electric and magnetic fields
@@ -48,15 +48,33 @@ def particle_push(particles, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt, G
     #newvx, newvy, newvz = boris(x, y, z, vx, vy, vz, q=q, m=m, E_interpolate=E_interpolate, B_interpolate=B_interpolate, grid=grid, staggered_grid=staggered_grid, dt=dt)
     # use the boris algorithm to update the velocities
 
-    points = jnp.stack([x, y, z], axis=-1)
+    Ex_interpolate = create_trilinear_interpolator(Ex, grid)
+    Ey_interpolate = create_trilinear_interpolator(Ey, grid)
+    Ez_interpolate = create_trilinear_interpolator(Ez, grid)
+    Bx_interpolate = create_trilinear_interpolator(Bx, staggered_grid)
+    By_interpolate = create_trilinear_interpolator(By, staggered_grid)
+    Bz_interpolate = create_trilinear_interpolator(Bz, staggered_grid)
+    # create interpolators for the electric and magnetic fields
 
-    efield_atx = Ex_interpolate(points)
-    efield_aty = Ey_interpolate(points)
-    efield_atz = Ez_interpolate(points)
+    efield_atx = Ex_interpolate(x, y, z)
+    efield_aty = Ey_interpolate(x, y, z)
+    efield_atz = Ez_interpolate(x, y, z)
+    # calculate the electric field at the particle positions
+    bfield_atx = Bx_interpolate(x, y, z)
+    bfield_aty = By_interpolate(x, y, z)
+    bfield_atz = Bz_interpolate(x, y, z)
+    # calculate the magnetic field at the particle positions
 
-    bfield_atx = Bx_interpolate(points)
-    bfield_aty = By_interpolate(points)
-    bfield_atz = Bz_interpolate(points)
+    # points = (x, y, z)
+    # points = jnp.stack(points, axis=-1)
+
+    # efield_atx = Ex_interpolate(points)
+    # efield_aty = Ey_interpolate(points)
+    # efield_atz = Ez_interpolate(points)
+
+    # bfield_atx = Bx_interpolate(points)
+    # bfield_aty = By_interpolate(points)
+    # bfield_atz = Bz_interpolate(points)
 
     boris_vmap = jax.vmap(boris_single_particle, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None))
     newvx, newvy, newvz = boris_vmap(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, q, m, dt)
@@ -67,6 +85,8 @@ def particle_push(particles, Ex, Ey, Ez, Bx, By, Bz, grid, staggered_grid, dt, G
     # # w and g are not used in the boris algorithm, but are required as arguments for the modified boris algorithm
     # newvx, newvy, newvz = modified_boris(q=q, m=m, x=x, y=y, z=z, vx=vx, vy=vy, vz=vz, E_interpolate=E_interpolate, B_interpolate=B_interpolate, w=w, g=g, grid=grid, staggered_grid=staggered_grid, dt=dt)
     
+    #print(newvx, newvy, newvz)
+
     particles.set_velocity(newvx, newvy, newvz)
     # set the new velocities of the particles
     return particles
