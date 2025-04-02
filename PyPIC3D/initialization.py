@@ -261,12 +261,14 @@ def initialize_simulation(toml_file):
     
 
     if electrostatic:
-        evolve_loop = partial(time_loop_electrostatic, E_grid=E_grid, B_grid=B_grid, world=world, constants=constants, pecs=pecs, lasers=lasers, surfaces=surfaces, \
-            curl_func=curl_func, M=M, solver=solver, bc=bc, verbose=verbose, GPUs=GPUs)
+        evolve_loop = time_loop_electrostatic
+        # partial(time_loop_electrostatic, E_grid=E_grid, B_grid=B_grid, world=world, constants=constants, pecs=pecs, lasers=lasers, surfaces=surfaces, \
+        #     curl_func=curl_func, M=M, solver=solver, bc=bc, verbose=verbose, GPUs=GPUs)
 
     else:
-        evolve_loop = partial(time_loop_electrodynamic, E_grid=E_grid, B_grid=B_grid, world=world, constants=constants, pecs=pecs, lasers=lasers, surfaces=surfaces, \
-            curl_func=curl_func, M=M, solver=solver, bc=bc, verbose=verbose, GPUs=GPUs)
+        evolve_loop = time_loop_electrodynamic
+        # partial(time_loop_electrodynamic, E_grid=E_grid, B_grid=B_grid, world=world, constants=constants, pecs=pecs, lasers=lasers, surfaces=surfaces, \
+        #     curl_func=curl_func, M=M, solver=solver, bc=bc, verbose=verbose, GPUs=GPUs)
 
     return evolve_loop, particles, E, B, J, phi, \
         rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, M, \
