@@ -812,7 +812,7 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         # Create directory if it doesn't exist
 
 
-        # plot_slice(rho[:, :, int(Nz/2)], t, 'rho', output_dir, world, dt)
+        plot_slice(rho[:, :, int(Nz/2)], t, 'rho', output_dir, world, dt)
 
         if not os.path.exists(f"{output_dir}/data/Exy_slice"):
             os.makedirs(f'{output_dir}/data/Exy_slice')
