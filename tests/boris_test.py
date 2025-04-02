@@ -6,6 +6,7 @@ import os
 
 
 from PyPIC3D.boris import boris_single_particle
+from PyPIC3D.utils import create_trilinear_interpolator
 
 jax.config.update("jax_enable_x64", True)
 
@@ -39,23 +40,40 @@ class TestBorisMethods(unittest.TestCase):
 
     def test_boris(self):
 
-        Ex_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.grid, self.Ex, fill_value=0)
-        Ey_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.grid, self.Ey, fill_value=0)
-        Ez_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.grid, self.Ez, fill_value=0)
+        # Ex_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.grid, self.Ex, fill_value=0)
+        # Ey_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.grid, self.Ey, fill_value=0)
+        # Ez_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.grid, self.Ez, fill_value=0)
 
-        Bx_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.staggered_grid, self.Bx, fill_value=0)
-        By_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.staggered_grid, self.By, fill_value=0)
-        Bz_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.staggered_grid, self.Bz, fill_value=0)
+        # Bx_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.staggered_grid, self.Bx, fill_value=0)
+        # By_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.staggered_grid, self.By, fill_value=0)
+        # Bz_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.staggered_grid, self.Bz, fill_value=0)
 
-        points = jnp.stack([self.x, self.y, self.z], axis=-1)
+        # points = jnp.stack([self.x, self.y, self.z], axis=-1)
 
-        efield_atx = Ex_interpolate(points)
-        efield_aty = Ey_interpolate(points)
-        efield_atz = Ez_interpolate(points)
+        # efield_atx = Ex_interpolate(points)
+        # efield_aty = Ey_interpolate(points)
+        # efield_atz = Ez_interpolate(points)
 
-        bfield_atx = Bx_interpolate(points)
-        bfield_aty = By_interpolate(points)
-        bfield_atz = Bz_interpolate(points)
+        # bfield_atx = Bx_interpolate(points)
+        # bfield_aty = By_interpolate(points)
+        # bfield_atz = Bz_interpolate(points)
+
+
+        Ex_interpolate = create_trilinear_interpolator(self.Ex, self.grid)
+        Ey_interpolate = create_trilinear_interpolator(self.Ey, self.grid)
+        Ez_interpolate = create_trilinear_interpolator(self.Ez, self.grid)
+        Bx_interpolate = create_trilinear_interpolator(self.Bx, self.staggered_grid)
+        By_interpolate = create_trilinear_interpolator(self.By, self.staggered_grid)
+        Bz_interpolate = create_trilinear_interpolator(self.Bz, self.staggered_grid)
+        # create interpolators for the electric and magnetic fields
+
+        efield_atx = Ex_interpolate(self.x, self.y, self.z)
+        efield_aty = Ey_interpolate(self.x, self.y, self.z)
+        efield_atz = Ez_interpolate(self.x, self.y, self.z)
+        # calculate the electric field at the particle positions
+        bfield_atx = Bx_interpolate(self.x, self.y, self.z)
+        bfield_aty = By_interpolate(self.x, self.y, self.z)
+        bfield_atz = Bz_interpolate(self.x, self.y, self.z)
 
         boris_vmap = jax.vmap(boris_single_particle, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None))
         newvx, newvy, newvz = boris_vmap(self.vx, self.vy, self.vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, self.q, self.m, self.dt)

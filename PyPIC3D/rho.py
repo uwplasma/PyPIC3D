@@ -3,7 +3,7 @@ from jax import jit
 import jax.numpy as jnp
 # import external libraries
 
-@jit
+#@jit
 def particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
     """
     Distribute the charge of a particle to the surrounding grid points.
@@ -47,6 +47,8 @@ def particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
     # Calculate the volume of each grid point
     dv = dx * dy * dz
 
+    #jax.debug.print('{}', q/dv)
+
     # Distribute the charge of the particle to the surrounding grid points
     rho = rho.at[x0, y0, z0].add((q / dv) * (1 - wx) * (1 - wy) * (1 - wz), mode='drop')
     rho = rho.at[x1, y0, z0].add((q / dv) *      wx  * (1 - wy) * (1 - wz), mode='drop')
@@ -59,7 +61,7 @@ def particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
 
     return rho
 
-@jit
+#@jit
 def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_wind, y_wind, z_wind, rho):
     """
     Update the charge density (rho) based on the positions of particles.
@@ -116,7 +118,7 @@ def compute_rho(particles, rho, world):
     y_wind = world['y_wind']
     z_wind = world['z_wind']
 
-    rho = rho.at[:,:,:].set(0)
+    new_rho = jnp.zeros(rho.shape)
     # reset rho to zero
 
     for species in particles:
@@ -127,5 +129,6 @@ def compute_rho(particles, rho, world):
             # print(f'particle_x: {particle_x}')
             # print(f'particle_y: {particle_y}')
             # print(f'particle_z: {particle_z}')
-        rho = update_rho(N_particles, particle_x, particle_y, particle_z, dx, dy, dz, charge, x_wind, y_wind, z_wind, rho)
-    return rho
+        new_rho = update_rho(N_particles, particle_x, particle_y, particle_z, dx, dy, dz, charge, x_wind, y_wind, z_wind, new_rho)
+    #jax.debug.print("Max value of rho: {}", jnp.max(new_rho))
+    return new_rho

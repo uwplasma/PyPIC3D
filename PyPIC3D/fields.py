@@ -52,7 +52,7 @@ def initialize_fields(Nx, Ny, Nz):
 
     return Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho
 
-@partial(jit, static_argnums=(4, 5))
+#@partial(jit, static_argnums=(4, 5))
 def solve_poisson(rho, constants, world, phi, solver, bc='periodic', M = None):
     """
     Solve the Poisson equation for electrostatic potential.
@@ -91,7 +91,7 @@ def solve_poisson(rho, constants, world, phi, solver, bc='periodic', M = None):
     return phi
 
 #@profile
-@partial(jit, static_argnums=(6, 7))
+#@partial(jit, static_argnums=(6, 7))
 #@jit
 def calculateE(world, particles, constants, rho, phi, M, solver, bc):
     """
@@ -129,7 +129,7 @@ def calculateE(world, particles, constants, rho, phi, M, solver, bc):
     # sor = functools.partial(solve_poisson_sor, dx=dx, dy=dy, dz=dz, eps=eps, omega=0.15, tol=1e-12, max_iter=30000)
     # phi = sor(phi, rho)
 
-    phi = solve_poisson(rho, constants, world, phi=phi, solver=solver, bc=bc, M=M)
+    phi = solve_poisson(rho=rho, constants=constants, world=world, phi=phi, solver=solver, bc=bc, M=M)
     # solve the Poisson equation to get the electric potential
 
     #if_verbose_print(verbose, f"Calculating Electric Potential, Max Value: {jnp.max(phi)}",  )

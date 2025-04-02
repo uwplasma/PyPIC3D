@@ -122,12 +122,12 @@ def boris_single_particle(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield
 
     t = q*dt/(2*m)*jnp.array([bfield_atx, bfield_aty, bfield_atz])
     # calculate the t vector
-    vprime = vminus + jnp.cross(vminus, t, axis=0)
+    vprime = vminus + jnp.cross(vminus, t)
     # calculate the v prime vector
 
     s = 2*t / (1 + t[0]**2 + t[1]**2 + t[2]**2)
     # calculate the s vector
-    vplus = vminus + jnp.cross(vprime, s, axis=0)
+    vplus = vminus + jnp.cross(vprime, s)
     # calculate the v plus vector
 
     newv = vplus + q*dt/(2*m)*jnp.array([efield_atx, efield_aty, efield_atz])
