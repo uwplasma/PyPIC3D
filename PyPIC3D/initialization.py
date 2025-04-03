@@ -42,9 +42,9 @@ from PyPIC3D.laser import (
     load_lasers_from_toml
 )
 
-from PyPIC3D.boundaryconditions import (
-    load_material_surfaces_from_toml
-)
+# from PyPIC3D.boundaryconditions import (
+#     load_material_surfaces_from_toml
+# )
 
 from PyPIC3D.evolve import (
     time_loop_electrodynamic, time_loop_electrostatic
@@ -245,8 +245,9 @@ def initialize_simulation(toml_file):
     lasers = load_lasers_from_toml(toml_file, constants, world, E_grid, B_grid)
     # load the lasers from the configuration file
 
-    surfaces = load_material_surfaces_from_toml(toml_file)
-    # load the material surfaces from the configuration file
+    # surfaces = load_material_surfaces_from_toml(toml_file)
+    surfaces = None
+    # # load the material surfaces from the configuration file
 
     if solver == "spectral":
         curl_func = functools.partial(spectral_curl, world=world)
