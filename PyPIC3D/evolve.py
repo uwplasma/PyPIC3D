@@ -49,9 +49,6 @@ def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world,
             current density components (Jx, Jy, Jz), electric potential (phi), and charge density (rho).
     """
 
-    #if_verbose_print(verbose, f"Calculating Electric Field, Max Value: {jnp.max(jnp.sqrt(Ex**2 + Ey**2 + Ez**2))}")
-    #if_verbose_print(verbose, f"Calculating Magnetic Field, Max Value: {jnp.max(jnp.sqrt(Bx**2 + By**2 + Bz**2))}")
-
     # for pec in pecs:
     #     Ex, Ey, Ez = pec.apply_pec(Ex, Ey, Ez)
     #     # apply any PEC boundary conditions to the electric field
@@ -78,18 +75,12 @@ def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world,
         # add the boundaries as background fields
         ########################################################################################
 
-        #if_verbose_print(verbose, f'Updating {particles[i].get_name()}')
-
         particles[i] = particle_push(particles[i], E, B, E_grid, B_grid, world['dt'])
         # use boris push for particle velocities
-
-        #if_verbose_print(verbose, f"Calculating {particles[i].get_name()} Velocities, Mean Value: {jnp.mean(jnp.abs(particles[i].get_velocity()[0]))}")
 
         x_wind, y_wind, z_wind = world['x_wind'], world['y_wind'], world['z_wind']
         particles[i].update_position(world['dt'], x_wind, y_wind, z_wind)
         # update the particle positions
-
-        #if_verbose_print(verbose, f"Calculating {particles[i].get_name()} Positions, Mean Value: {jnp.mean(jnp.abs(particles[i].get_position()[0]))}")
 
     ############### SOLVE E FIELD ############################################################################################
     #jax.debug.print("Max value of rho before calc E: {}", jnp.max(rho))
@@ -133,12 +124,6 @@ def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world
             current density components (Jx, Jy, Jz), electric potential (phi), and charge density (rho).
     """
 
-    Jx, Jy, Jz = J
-
-    #if_verbose_print(verbose, f"Calculating Electric Field, Max Value: {jnp.max(jnp.sqrt(Ex**2 + Ey**2 + Ez**2))}")
-    #if_verbose_print(verbose, f"Calculating Magnetic Field, Max Value: {jnp.max(jnp.sqrt(Bx**2 + By**2 + Bz**2))}")
-    # print the maximum value of the electric and magnetic fields
-
     # for pec in pecs:
     #     Ex, Ey, Ez = pec.apply_pec(Ex, Ey, Ez)
     #     # apply any PEC boundary conditions to the electric field
@@ -165,28 +150,19 @@ def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world
         # add the boundaries as background fields
         ########################################################################################
 
-        #if_verbose_print(verbose, f'Updating {particles[i].get_name()}')
-
         particles[i] = particle_push(particles[i], E, B, E_grid, B_grid, world['dt'])
         # use boris push for particle velocities
-
-        #if_verbose_print(verbose, f"Calculating {particles[i].get_name()} Velocities, Mean Value: {jnp.mean(jnp.abs(particles[i].get_velocity()[0]))}")
 
         x_wind, y_wind, z_wind = world['x_wind'], world['y_wind'], world['z_wind']
         particles[i].update_position(world['dt'], x_wind, y_wind, z_wind)
         # update the particle positions
 
-        #if_verbose_print(verbose, f"Calculating {particles[i].get_name()} Positions, Mean Value: {jnp.mean(jnp.abs(particles[i].get_position()[0]))}")
-
     ################ FIELD UPDATE ################################################################################################
-    Jx, Jy, Jz = VB_correction(particles, Jx, Jy, Jz, constants)
+    J = VB_correction(particles, J, constants)
     # calculate the corrections for charge conservation using villasenor buneamn 1991
-
-    #if_verbose_print(verbose, f"Calculating Current Density, Max Value: {jnp.max(jnp.sqrt(Jx**2 + Jy**2 + Jz**2))}")
-
-    E = update_E(E_grid, B_grid, E, B, (Jx, Jy, Jz), world, constants, curl_func)
+    E = update_E(E_grid, B_grid, E, B, J, world, constants, curl_func)
     # update the electric field using the curl of the magnetic field
     B = update_B(E_grid, B_grid, E, B, world, constants, curl_func)
     # update the magnetic field using the curl of the electric field
 
-    return particles, E, B, (Jx, Jy, Jz), phi, rho
+    return particles, E, B, J, phi, rho
