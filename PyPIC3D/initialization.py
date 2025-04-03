@@ -38,9 +38,9 @@ from PyPIC3D.plotting import (
     plot_initial_KE
 )
 
-from PyPIC3D.laser import (
-    load_lasers_from_toml
-)
+# from PyPIC3D.laser import (
+#     load_lasers_from_toml
+# )
 
 # from PyPIC3D.boundaryconditions import (
 #     load_material_surfaces_from_toml
@@ -50,9 +50,9 @@ from PyPIC3D.evolve import (
     time_loop_electrodynamic, time_loop_electrostatic
 )
 
-from PyPIC3D.J import (
-    compute_current_density
-)
+# from PyPIC3D.J import (
+#     compute_current_density
+# )
 
 def default_parameters():
     """
