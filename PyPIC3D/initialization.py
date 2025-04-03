@@ -225,16 +225,16 @@ def initialize_simulation(toml_file):
 
     # Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho = init_fields(Nx, Ny, Nz)
     # initialize the electric and magnetic fields
-    Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho = initialize_fields(Nx, Ny, Nz)
+    E, B, J, phi, rho = initialize_fields(Nx, Ny, Nz)
     # initialize the electric and magnetic fields
 
-
-    Ex, Ey, Ez, Bx, By, Bz = load_external_fields_from_toml([Ex, Ey, Ez, Bx, By, Bz], toml_file)
+    # load any external fields
+    fields = [component for field in [E, B, J] for component in field]
+    # convert the E, B, and J tuples into one big list
+    fields = load_external_fields_from_toml(fields, toml_file)
     # add any external fields to the simulation
-        
-    E = (Ex, Ey, Ez)
-    B = (Bx, By, Bz)
-    J = (Jx, Jy, Jz)
+    E, B, J = fields[:3], fields[3:6], fields[6:9]
+    # convert the fields list back into tuples
 
     pecs = None
     #read_pec_boundaries_from_toml(toml_file, world)
