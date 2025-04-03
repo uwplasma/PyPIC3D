@@ -21,6 +21,10 @@ from PyPIC3D.initialization import (
     initialize_simulation
 )
 
+from PyPIC3D.evolve import (
+    time_loop_electrostatic
+)
+
 # Importing functions from the PyPIC3D package
 ############################################################################################################
 
@@ -34,7 +38,7 @@ def run_PyPIC3D(config_file):
                 pecs, lasers, surfaces = initialize_simulation(config_file)
     # initialize the simulation
 
-    loop = jax.jit(loop)
+    #loop = jax.jit(loop)
     # jit the loop function
     ############################################################################################################
 
@@ -48,7 +52,9 @@ def run_PyPIC3D(config_file):
     for t in tqdm(range(Nt)):
         plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters, solver, bc)
         # plot the data
-        particles, E, B, J, rho, phi = loop(particles, E, B, J, rho, phi)
+
+        particles, E, B, J, phi, rho = loop(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, pecs, lasers, surfaces, curl_func, M, solver, bc, verbose, GPUs)
+        #particles, E, B, J, rho, phi = loop(particles=particles, E=E, B=B, J=J, rho=rho, phi=phi)
         # time loop to update the particles and fields
 
 
@@ -91,7 +97,7 @@ def main():
     ###################### JAX SETTINGS ########################################################################
     jax.config.update("jax_enable_x64", True)
     # set Jax to use 64 bit precision
-    #jax.config.update("jax_debug_nans", True)
+    jax.config.update("jax_debug_nans", True)
     # debugging for nans
     #jax.config.update('jax_platform_name', 'cpu')
     # set Jax to use CPUs
