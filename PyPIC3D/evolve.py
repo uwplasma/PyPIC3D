@@ -49,10 +49,6 @@ def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world,
             current density components (Jx, Jy, Jz), electric potential (phi), and charge density (rho).
     """
 
-    Ex, Ey, Ez = E
-    Bx, By, Bz = B
-    # unpack the electric and magnetic fields
-
     #if_verbose_print(verbose, f"Calculating Electric Field, Max Value: {jnp.max(jnp.sqrt(Ex**2 + Ey**2 + Ez**2))}")
     #if_verbose_print(verbose, f"Calculating Magnetic Field, Max Value: {jnp.max(jnp.sqrt(Bx**2 + By**2 + Bz**2))}")
 
@@ -84,7 +80,7 @@ def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world,
 
         #if_verbose_print(verbose, f'Updating {particles[i].get_name()}')
 
-        particles[i] = particle_push(particles[i], Ex, Ey, Ez, Bx, By, Bz, E_grid, B_grid, world['dt'], GPUs)
+        particles[i] = particle_push(particles[i], E, B, E_grid, B_grid, world['dt'])
         # use boris push for particle velocities
 
         #if_verbose_print(verbose, f"Calculating {particles[i].get_name()} Velocities, Mean Value: {jnp.mean(jnp.abs(particles[i].get_velocity()[0]))}")
@@ -137,8 +133,6 @@ def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world
             current density components (Jx, Jy, Jz), electric potential (phi), and charge density (rho).
     """
 
-    Ex, Ey, Ez = E
-    Bx, By, Bz = B
     Jx, Jy, Jz = J
 
     #if_verbose_print(verbose, f"Calculating Electric Field, Max Value: {jnp.max(jnp.sqrt(Ex**2 + Ey**2 + Ez**2))}")
@@ -173,7 +167,7 @@ def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world
 
         #if_verbose_print(verbose, f'Updating {particles[i].get_name()}')
 
-        particles[i] = particle_push(particles[i], Ex, Ey, Ez, Bx, By, Bz, E_grid, B_grid, world['dt'], GPUs)
+        particles[i] = particle_push(particles[i], E, B, E_grid, B_grid, world['dt'])
         # use boris push for particle velocities
 
         #if_verbose_print(verbose, f"Calculating {particles[i].get_name()} Velocities, Mean Value: {jnp.mean(jnp.abs(particles[i].get_velocity()[0]))}")
@@ -190,9 +184,9 @@ def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world
 
     #if_verbose_print(verbose, f"Calculating Current Density, Max Value: {jnp.max(jnp.sqrt(Jx**2 + Jy**2 + Jz**2))}")
 
-    E = update_E(E_grid, B_grid, (Ex, Ey, Ez), (Bx, By, Bz), (Jx, Jy, Jz), world, constants, curl_func)
+    E = update_E(E_grid, B_grid, E, B, (Jx, Jy, Jz), world, constants, curl_func)
     # update the electric field using the curl of the magnetic field
-    B = update_B(E_grid, B_grid, (Ex, Ey, Ez), (Bx, By, Bz), world, constants, curl_func)
+    B = update_B(E_grid, B_grid, E, B, world, constants, curl_func)
     # update the magnetic field using the curl of the electric field
 
     return particles, E, B, (Jx, Jy, Jz), phi, rho
