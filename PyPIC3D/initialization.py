@@ -236,13 +236,15 @@ def initialize_simulation(toml_file):
     B = (Bx, By, Bz)
     J = (Jx, Jy, Jz)
 
-    pecs = read_pec_boundaries_from_toml(toml_file, world)
+    pecs = None
+    #read_pec_boundaries_from_toml(toml_file, world)
     # read in perfectly electrical conductor boundaries
 
     M = None
     # specify the preconditioner matrix
 
-    lasers = load_lasers_from_toml(toml_file, constants, world, E_grid, B_grid)
+    lasers = None
+    #load_lasers_from_toml(toml_file, constants, world, E_grid, B_grid)
     # load the lasers from the configuration file
 
     # surfaces = load_material_surfaces_from_toml(toml_file)
