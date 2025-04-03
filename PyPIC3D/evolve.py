@@ -67,24 +67,24 @@ def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world,
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
         ######################### Material Surfaces ############################################
-        barrier_x = jnp.zeros_like(Ex)
-        barrier_y = jnp.zeros_like(Ey)
-        barrier_z = jnp.zeros_like(Ez)
+        # barrier_x = jnp.zeros_like(Ex)
+        # barrier_y = jnp.zeros_like(Ey)
+        # barrier_z = jnp.zeros_like(Ez)
         # for surface in surfaces:
         #     barrier_x += surface.get_barrier_x()
         #     barrier_y += surface.get_barrier_y()
         #     barrier_z += surface.get_barrier_z()
             # get the boundaries of the material surfaces
 
-        total_Ex = Ex + barrier_x
-        total_Ey = Ey + barrier_y
-        total_Ez = Ez + barrier_z
+        # total_Ex = Ex + barrier_x
+        # total_Ey = Ey + barrier_y
+        # total_Ez = Ez + barrier_z
         # add the boundaries as background fields
         ########################################################################################
 
         #if_verbose_print(verbose, f'Updating {particles[i].get_name()}')
 
-        particles[i] = particle_push(particles[i], total_Ex, total_Ey, total_Ez, Bx, By, Bz, E_grid, B_grid, world['dt'], GPUs)
+        particles[i] = particle_push(particles[i], Ex, Ey, Ez, Bx, By, Bz, E_grid, B_grid, world['dt'], GPUs)
         # use boris push for particle velocities
 
         #if_verbose_print(verbose, f"Calculating {particles[i].get_name()} Velocities, Mean Value: {jnp.mean(jnp.abs(particles[i].get_velocity()[0]))}")
@@ -156,24 +156,24 @@ def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
         ######################### Material Surfaces ############################################
-        barrier_x = jnp.zeros_like(Ex)
-        barrier_y = jnp.zeros_like(Ey)
-        barrier_z = jnp.zeros_like(Ez)
-        # for surface in surfaces:
-        #     barrier_x += surface.get_barrier_x()
-        #     barrier_y += surface.get_barrier_y()
-        #     barrier_z += surface.get_barrier_z()
-            # get the boundaries of the material surfaces
+        # barrier_x = jnp.zeros_like(Ex)
+        # barrier_y = jnp.zeros_like(Ey)
+        # barrier_z = jnp.zeros_like(Ez)
+        # # for surface in surfaces:
+        # #     barrier_x += surface.get_barrier_x()
+        # #     barrier_y += surface.get_barrier_y()
+        # #     barrier_z += surface.get_barrier_z()
+        #     # get the boundaries of the material surfaces
 
-        total_Ex = Ex + barrier_x
-        total_Ey = Ey + barrier_y
-        total_Ez = Ez + barrier_z
+        # total_Ex = Ex + barrier_x
+        # total_Ey = Ey + barrier_y
+        # total_Ez = Ez + barrier_z
         # add the boundaries as background fields
         ########################################################################################
 
         #if_verbose_print(verbose, f'Updating {particles[i].get_name()}')
 
-        particles[i] = particle_push(particles[i], total_Ex, total_Ey, total_Ez, Bx, By, Bz, E_grid, B_grid, world['dt'], GPUs)
+        particles[i] = particle_push(particles[i], Ex, Ey, Ez, Bx, By, Bz, E_grid, B_grid, world['dt'], GPUs)
         # use boris push for particle velocities
 
         #if_verbose_print(verbose, f"Calculating {particles[i].get_name()} Velocities, Mean Value: {jnp.mean(jnp.abs(particles[i].get_velocity()[0]))}")
