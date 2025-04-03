@@ -544,7 +544,7 @@ def dump_parameters_to_toml(simulation_stats, simulation_parameters, plasma_para
     """
 
     output_path = simulation_parameters["output_dir"]
-    output_file = os.path.join(output_path, "output.toml")
+    output_file = os.path.join(output_path, "data/output.toml")
 
     config = {
         "simulation_stats": simulation_stats,
