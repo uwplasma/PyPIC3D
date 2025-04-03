@@ -1,9 +1,11 @@
 # Christopher Woolford Dec 5, 2024
 # This contains the evolution loop for the 3D PIC code that calculates the electric and magnetic fields and updates the particles.
 
-#from memory_profiler import profile
+from memory_profiler import profile
 import jax.numpy as jnp
 import jax
+from jax import jit
+from functools import partial
 
 from PyPIC3D.fields import (
     calculateE, update_B, update_E
@@ -17,8 +19,10 @@ from PyPIC3D.boris import (
     particle_push
 )
 
+#@profile
 
-def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, pecs, lasers, surfaces, curl_func, M, solver, bc, verbose, GPUs):
+@partial(jit, static_argnums=(13, 15, 16))
+def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, pecs, lasers, surfaces, curl_func, M, solver, bc):
     """
     Perform a time loop for an electrostatic simulation.
 
@@ -55,8 +59,7 @@ def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world,
         particles[i] = particle_push(particles[i], E, B, E_grid, B_grid, world['dt'])
         # use boris push for particle velocities
 
-        x_wind, y_wind, z_wind = world['x_wind'], world['y_wind'], world['z_wind']
-        particles[i].update_position(world['dt'], x_wind, y_wind, z_wind)
+        particles[i].update_position(world['dt'])
         # update the particle positions
 
     ############### SOLVE E FIELD ############################################################################################
@@ -65,8 +68,8 @@ def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world,
 
     return particles, E, B, J, phi, rho
 
-
-def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, pecs, lasers, surfaces, curl_func, M, solver, bc, verbose, GPUs):
+@partial(jit, static_argnums=(13, 15, 16))
+def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, pecs, lasers, surfaces, curl_func, M, solver, bc):
     """
     Perform a time loop for electrodynamic simulation.
 
@@ -99,12 +102,11 @@ def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world
 
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
-        
+
         particles[i] = particle_push(particles[i], E, B, E_grid, B_grid, world['dt'])
         # use boris push for particle velocities
 
-        x_wind, y_wind, z_wind = world['x_wind'], world['y_wind'], world['z_wind']
-        particles[i].update_position(world['dt'], x_wind, y_wind, z_wind)
+        particles[i].update_position(world['dt'])
         # update the particle positions
 
     ################ FIELD UPDATE ################################################################################################

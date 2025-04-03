@@ -379,6 +379,7 @@ def initial_particles(N_per_cell, N_particles, minx, maxx, miny, maxy, minz, max
         v_y (numpy.ndarray): The y-component of the particles' velocities.
         v_z (numpy.ndarray): The z-component of the particles' velocities.
     """
+
     if N_per_cell < 1:
         x = jax.random.uniform(key1, shape = (N_particles,), minval=minx, maxval=maxx)
         y = jax.random.uniform(key2, shape = (N_particles,), minval=miny, maxval=maxy)
@@ -703,7 +704,7 @@ class particle_species:
         self.x3 = jnp.where(self.x3 < -z_wind/2, -z_wind/2, self.x3)
 
 
-    def update_position(self, dt, x_wind, y_wind, z_wind):
+    def update_position(self, dt):
         if self.update_pos:
             if self.update_x:
                 self.x1 = self.x1 + self.v1 * dt
@@ -714,10 +715,10 @@ class particle_species:
             # update the position of the particles
             if self.bc == 'periodic':
                 #print('Using periodic boundary conditions')
-                self.periodic_boundary_condition(x_wind, y_wind, z_wind)
+                self.periodic_boundary_condition(self.x_wind, self.y_wind, self.z_wind)
             elif self.bc == 'reflecting':
                 #print('Using reflecting boundary conditions')
-                self.reflecting_boundary_condition(x_wind, y_wind, z_wind)
+                self.reflecting_boundary_condition(self.x_wind, self.y_wind, self.z_wind)
             # self.x1, self.x2, self.x3, self.v1, self.v2, self.v3 = self.boundary_condition()
             # apply boundary conditions
 

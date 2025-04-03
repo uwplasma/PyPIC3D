@@ -7,6 +7,7 @@ import os
 import plotly.graph_objects as go
 from PyPIC3D.rho import update_rho
 import jax
+from memory_profiler import profile
 
 from PyPIC3D.errors import (
     compute_electric_divergence_error, compute_magnetic_divergence_error
@@ -651,6 +652,7 @@ def plot_initial_KE(particles, path):
         plt.savefig(f"{path}/data/{particle_name}_initialKE.png", dpi=300)
         plt.close()
 
+
 def plot_slice(field_slice, t, name, path, world, dt):
     """
     Plots a 2D slice of a field and saves the plot as a PNG file.
@@ -675,7 +677,8 @@ def plot_slice(field_slice, t, name, path, world, dt):
     plt.colorbar(label=name)
     plt.tight_layout()
     plt.savefig(f'{path}/data/{name}_slice/{name}_slice_{t:09}.png', dpi=300)
-    plt.close()
+    plt.clf()  # Clear the current figure
+    plt.close('all')  # Close all figures to free up memory
 
 def write_slice(field_slice, x1, x2, t, name, path, dt):
     """
@@ -716,6 +719,7 @@ def write_data(filename, time, data):
         f.write(f"{time}, {data}\n")
 
 
+#@profile
 def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid, B_grid, plotting_parameters, world, constants, solver, bc, output_dir):
     dx = world['dx']
     dy = world['dy']
@@ -812,7 +816,7 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         # Create directory if it doesn't exist
 
 
-        plot_slice(rho[:, :, int(Nz/2)], t, 'rho', output_dir, world, dt)
+        #plot_slice(rho[:, :, int(Nz/2)], t, 'rho', output_dir, world, dt)
 
         if not os.path.exists(f"{output_dir}/data/Exy_slice"):
             os.makedirs(f'{output_dir}/data/Exy_slice')
@@ -848,16 +852,17 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
 
         #plot_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], t, 'E', output_dir, world, dt)
         
-        plt.title(f'E at t={t*dt:.2e}s')
-        plt.matshow(jnp.swapaxes(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], 0, 1), origin='lower', extent=[-world['x_wind']/2, world['x_wind']/2, -world['y_wind']/2, world['y_wind']/2])
-        x1,y1,z1 = particles[0].get_position()
-        x2,y2,z2 = particles[1].get_position()
-        plt.scatter(x1, y1, c='r', s=1)
-        plt.scatter(x2, y2, c='b', s=1)
-        plt.colorbar(label='E')
-        #plt.tight_layout()
-        plt.savefig(f'{output_dir}/data/E_slice/E_slice_{t:09}.png', dpi=300)
-        plt.close()
+        # plt.title(f'E at t={t*dt:.2e}s')
+        # plt.matshow(jnp.swapaxes(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], 0, 1), origin='lower', extent=[-world['x_wind']/2, world['x_wind']/2, -world['y_wind']/2, world['y_wind']/2])
+        # x1,y1,z1 = particles[0].get_position()
+        # x2,y2,z2 = particles[1].get_position()
+        # plt.scatter(x1, y1, c='r', s=1)
+        # plt.scatter(x2, y2, c='b', s=1)
+        # plt.colorbar(label='E')
+        # #plt.tight_layout()
+        # plt.savefig(f'{output_dir}/data/E_slice/E_slice_{t:09}.png', dpi=300)
+        # plt.clf()
+        # plt.close()
 
 
         # plt.title(f'rho at t={t*dt:.2e}s')
@@ -893,13 +898,14 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         # jax.debug.print("Max rho z: {}", max_rhoz)
         # jax.debug.print("Real z: {}", real_z)
 
-        plot_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], t, 'Exy', output_dir, world, dt)
+        #plot_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], t, 'Exy', output_dir, world, dt)
         #plot_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, int(Ny/2), :], t, 'Exz', output_dir, world, dt)
-        plot_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[int(Nx/2), :, :], t, 'Eyz', output_dir, world, dt)
+        #plot_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[int(Nx/2), :, :], t, 'Eyz', output_dir, world, dt)
         # plot_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], t, 'Bxy', output_dir, world, dt)
         # plot_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, int(Ny/2), :], t, 'Bxz', output_dir, world, dt)
         # plot_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[int(Nx/2), :, :], t, 'Byz', output_dir, world, dt)
-
+        #plt.close('all')
+        # close all figures to free up memory
 
         # write_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], np.asarray(E_grid[0]), np.asarray(E_grid[1]), t, 'Exy', output_dir, dt)
         # write_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], np.asarray(E_grid[0]), np.asarray(E_grid[1]), t, 'Exz', output_dir, dt)
@@ -942,6 +948,7 @@ def save_total_momentum(t, dt, particles, output_dir):
         f_momentum.write(f"{t*dt}, {p0}\n")
 
 
+#@profile
 def plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters, solver, bc):
     """
     Plots and saves various simulation data at specified intervals.

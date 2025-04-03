@@ -6,6 +6,7 @@ import functools
 from functools import partial
 import toml
 import matplotlib.pyplot as plt
+from memory_profiler import profile
 
 from PyPIC3D.particle import (
     load_particles_from_toml
@@ -112,7 +113,7 @@ def default_parameters():
     return plotting_parameters, simulation_parameters, constants
     # return the dictionaries
 
-
+#@profile
 def initialize_simulation(toml_file):
     """
     Initializes the simulation environment based on the provided TOML configuration file.
@@ -205,8 +206,9 @@ def initialize_simulation(toml_file):
     print_stats(world)
     # print the statistics of the simulation
 
-    plot_initial_KE(particles, path=simulation_parameters['output_dir'])
+    #plot_initial_KE(particles, path=simulation_parameters['output_dir'])
     # plot the initial kinetic energy of the particles
+    # disabling this because call it allocates 82 MiB of memory and it won't let of it!
 
     plasma_parameters = build_plasma_parameters_dict(world, constants, particles[0], dt)
     # build the plasma parameters dictionary
