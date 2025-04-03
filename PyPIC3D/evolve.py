@@ -49,31 +49,8 @@ def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world,
             current density components (Jx, Jy, Jz), electric potential (phi), and charge density (rho).
     """
 
-    # for pec in pecs:
-    #     Ex, Ey, Ez = pec.apply_pec(Ex, Ey, Ez)
-    #     # apply any PEC boundary conditions to the electric field
-
-    # for laser in lasers:
-    #     Ex, Ey, Ez = laser.inject_incident_fields(Ex, Ey, Ez, t)
-    #     # inject any laser pulses into the electric field
-
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
-        ######################### Material Surfaces ############################################
-        # barrier_x = jnp.zeros_like(Ex)
-        # barrier_y = jnp.zeros_like(Ey)
-        # barrier_z = jnp.zeros_like(Ez)
-        # for surface in surfaces:
-        #     barrier_x += surface.get_barrier_x()
-        #     barrier_y += surface.get_barrier_y()
-        #     barrier_z += surface.get_barrier_z()
-            # get the boundaries of the material surfaces
-
-        # total_Ex = Ex + barrier_x
-        # total_Ey = Ey + barrier_y
-        # total_Ez = Ez + barrier_z
-        # add the boundaries as background fields
-        ########################################################################################
 
         particles[i] = particle_push(particles[i], E, B, E_grid, B_grid, world['dt'])
         # use boris push for particle velocities
@@ -83,12 +60,8 @@ def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world,
         # update the particle positions
 
     ############### SOLVE E FIELD ############################################################################################
-    #jax.debug.print("Max value of rho before calc E: {}", jnp.max(rho))
-
     E, phi, rho = calculateE(world, particles, constants, rho, phi, M, solver, bc)
     # calculate the electric field using the Poisson equation
-    
-    #jax.debug.print("Max value of rho after calc E: {}", jnp.max(rho))
 
     return particles, E, B, J, phi, rho
 
@@ -124,32 +97,9 @@ def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world
             current density components (Jx, Jy, Jz), electric potential (phi), and charge density (rho).
     """
 
-    # for pec in pecs:
-    #     Ex, Ey, Ez = pec.apply_pec(Ex, Ey, Ez)
-    #     # apply any PEC boundary conditions to the electric field
-
-    # for laser in lasers:
-    #     Ex, Ey, Ez, Bx, By, Bz = laser.inject_incident_fields(Ex, Ey, Ez, Bx, By, Bz, t)
-    #     #inject any laser pulses into the electric and magnetic fields
-
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
-        ######################### Material Surfaces ############################################
-        # barrier_x = jnp.zeros_like(Ex)
-        # barrier_y = jnp.zeros_like(Ey)
-        # barrier_z = jnp.zeros_like(Ez)
-        # # for surface in surfaces:
-        # #     barrier_x += surface.get_barrier_x()
-        # #     barrier_y += surface.get_barrier_y()
-        # #     barrier_z += surface.get_barrier_z()
-        #     # get the boundaries of the material surfaces
-
-        # total_Ex = Ex + barrier_x
-        # total_Ey = Ey + barrier_y
-        # total_Ez = Ez + barrier_z
-        # add the boundaries as background fields
-        ########################################################################################
-
+        
         particles[i] = particle_push(particles[i], E, B, E_grid, B_grid, world['dt'])
         # use boris push for particle velocities
 
@@ -160,9 +110,9 @@ def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world
     ################ FIELD UPDATE ################################################################################################
     J = VB_correction(particles, J, constants)
     # calculate the corrections for charge conservation using villasenor buneamn 1991
-    E = update_E(E_grid, B_grid, E, B, J, world, constants, curl_func)
+    E = update_E(E, B, J, world, constants, curl_func)
     # update the electric field using the curl of the magnetic field
-    B = update_B(E_grid, B_grid, E, B, world, constants, curl_func)
+    B = update_B(E, B, world, constants, curl_func)
     # update the magnetic field using the curl of the electric field
 
     return particles, E, B, J, phi, rho

@@ -78,16 +78,9 @@ def solve_poisson(rho, constants, world, phi, solver, bc='periodic', M = None):
         dx = world['dx']
         dy = world['dy']
         dz = world['dz']
-        # lapl = functools.partial(centered_finite_difference_laplacian, dx=dx, dy=dy, dz=dz, bc=bc)
-        # lapl = jit(lapl)
-        # #define the laplacian operator using finite difference method
-        # #phi = conjugate_grad(lapl, -rho/eps, phi, tol=1e-9, maxiter=5000, M=M)
-
-        # phi = conjugated_gradients(lapl, -rho/eps, phi, tol=1e-9, maxiter=1000)
         sor = functools.partial(solve_poisson_sor, dx=dx, dy=dy, dz=dz, eps=eps, omega=0.15, tol=1e-12, max_iter=15000)
         phi = sor(phi, rho)
-        #phi = jax.scipy.sparse.linalg.cg(lapl, -rho/eps, x0=phi, tol=1e-6, maxiter=40000, M=M)[0]
-        #phi = solve_poisson_sor(phi, rho, dx, dy, dz, eps, omega=0.25, tol=1e-6, max_iter=100000)
+ 
     return phi
 
 #@profile
@@ -120,39 +113,27 @@ def calculateE(world, particles, constants, rho, phi, M, solver, bc):
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
-    eps = constants['eps']
+    # get resolution
 
     rho = compute_rho(particles, rho, world)
     # calculate the charge density based on the particle positions
 
-    #if_verbose_print(verbose, f"Calculating Charge Density, Max Value: {jnp.max(jnp.abs(rho))}" )
-    # sor = functools.partial(solve_poisson_sor, dx=dx, dy=dy, dz=dz, eps=eps, omega=0.15, tol=1e-12, max_iter=30000)
-    # phi = sor(phi, rho)
-
     phi = solve_poisson(rho=rho, constants=constants, world=world, phi=phi, solver=solver, bc=bc, M=M)
     # solve the Poisson equation to get the electric potential
 
-    #if_verbose_print(verbose, f"Calculating Electric Potential, Max Value: {jnp.max(phi)}",  )
-    #if_verbose_print(verbose, f"Potential Error: {compute_pe(phi, rho, constants, world, solver, bc='periodic')}%", )
-
     Ex, Ey, Ez = lax.cond(
         solver == 'spectral',
-        lambda _: spectral_gradient(phi, world),
-        lambda _: centered_finite_difference_gradient(phi, dx, dy, dz, bc),
+        lambda _: spectral_gradient(-1*phi, world),
+        lambda _: centered_finite_difference_gradient(-1*phi, dx, dy, dz, bc),
         operand=None
     )
-
     # compute the gradient of the electric potential to get the electric field
-    Ex = -Ex
-    Ey = -Ey
-    Ez = -Ez
-    # multiply by -1 to get the correct direction of the electric field
 
     return (Ex, Ey, Ez), phi, rho
 
 
-@partial(jit, static_argnums=(7))
-def update_E(grid, staggered_grid, E, B, J, world, constants, curl_func):
+@partial(jit, static_argnums=(5))
+def update_E(E, B, J, world, constants, curl_func):
     """
     Update the electric field components (Ex, Ey, Ez) based on the given parameters.
 
@@ -173,45 +154,26 @@ def update_E(grid, staggered_grid, E, B, J, world, constants, curl_func):
     Ex, Ey, Ez = E
     Bx, By, Bz = B
     Jx, Jy, Jz = J
+    # unpack the E, B, and J fields
 
-    dx = world['dx']
-    dy = world['dy']
-    dz = world['dz']
     dt = world['dt']
     C = constants['C']
     eps = constants['eps']
-    mu = constants['mu']
+    # get the time resolution and necessary constants
 
     curlx, curly, curlz = curl_func(Bx, By, Bz)
     # calculate the curl of the magnetic field
 
-    # Ex = Ex.at[:,:,:].add( ( C**2 * curlx - Jx / eps ) * dt )
-    # Ey = Ey.at[:,:,:].add( ( C**2 * curly - Jy / eps ) * dt )
-    # Ez = Ez.at[:,:,:].add( ( C**2 * curlz - Jz / eps ) * dt )
-    # jax.debug.print("Mean Curl B Magnitude: {}", jax.numpy.mean(jax.numpy.sqrt(curlx**2 + curly**2 + curlz**2)))
-    # jax.debug.print("Mean Current Density Magnitude: {}", jax.numpy.mean(jax.numpy.sqrt(Jx**2 + Jy**2 + Jz**2)))
-
-    # jax.debug.print("Speed of light**2 (C): {}", C**2)
-    # jax.debug.print("Permittivity (eps): {}", eps)
-    # jax.debug.print("curl x: {}", jax.numpy.mean( jax.numpy.abs(curlx)))
-    # jax.debug.print("dt factor: {}", dt)
-
-    # jax.debug.print("Jx: {}", jax.numpy.mean( jax.numpy.abs(Jx)))
-    # jax.debug.print("Jx/eps: {}", jax.numpy.mean( jax.numpy.abs(Jx/eps)))
-
-    # jax.debug.print("E update factor1: {}", jax.numpy.mean( jax.numpy.abs( ( C**2 * curlx ) * dt) ) )
-    # jax.debug.print("E update factor2: {}", jax.numpy.mean( jax.numpy.abs( ( Jx / eps ) * dt) ) )
-    # jax.debug.print("E update factor: {}", jax.numpy.mean( jax.numpy.abs( ( C**2 * curlx - Jx / eps ) * dt) ) )
-
     Ex = Ex + ( C**2 * curlx - Jx / eps ) * dt
     Ey = Ey + ( C**2 * curly - Jy / eps ) * dt
     Ez = Ez + ( C**2 * curlz - Jz / eps ) * dt
+    # update the electric field from Maxwell's equations
 
     return (Ex, Ey, Ez)
 
 
-@partial(jit, static_argnums=(6))
-def update_B(grid, staggered_grid, E, B, world, constants, curl_func):
+@partial(jit, static_argnums=(4))
+def update_B(E, B, world, constants, curl_func):
     """
     Update the magnetic field components (Bx, By, Bz) using the curl of the electric field.
 
@@ -228,28 +190,19 @@ def update_B(grid, staggered_grid, E, B, world, constants, curl_func):
         tuple: Updated magnetic field components (Bx, By, Bz).
     """
 
-    dx = world['dx']
-    dy = world['dy']
-    dz = world['dz']
     dt = world['dt']
+    # get the time resolution
 
     Ex, Ey, Ez = E
     Bx, By, Bz = B
+    # unpack the E and B fields
 
     curlx, curly, curlz = curl_func(Ex, Ey, Ez)
     # calculate the curl of the electric field
 
-    # Bx = Bx.at[:,:,:].add(-1*dt*curlx)
-    # By = By.at[:,:,:].add(-1*dt*curly)
-    # Bz = Bz.at[:,:,:].add(-1*dt*curlz)
-
-    # curl_magnitude = jax.numpy.sqrt(curlx**2 + curly**2 + curlz**2)
-    # jax.debug.print("Mean Curl E Magnitude: {}", jax.numpy.mean(curl_magnitude))
-
-    # jax.debug.print("B update factor: {}", jax.numpy.mean( jax.numpy.abs(-1*dt*curlx)) )
-
     Bx = Bx - dt*curlx
     By = By - dt*curly
     Bz = Bz - dt*curlz
+    # update the magnetic field from Maxwell's equations
 
     return (Bx, By, Bz)
