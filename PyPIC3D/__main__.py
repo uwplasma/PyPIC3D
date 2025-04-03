@@ -7,6 +7,7 @@
 import time
 import jax
 from tqdm import tqdm
+from memory_profiler import profile
 # Importing relevant libraries
 
 from PyPIC3D.plotting import (
@@ -53,7 +54,7 @@ def run_PyPIC3D(config_file):
         plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters, solver, bc)
         # plot the data
 
-        particles, E, B, J, phi, rho = loop(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, pecs, lasers, surfaces, curl_func, M, solver, bc, verbose, GPUs)
+        particles, E, B, J, phi, rho = loop(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, pecs, lasers, surfaces, curl_func, M, solver, bc)
         #particles, E, B, J, rho, phi = loop(particles=particles, E=E, B=B, J=J, rho=rho, phi=phi)
         # time loop to update the particles and fields
 
@@ -99,7 +100,7 @@ def main():
     # set Jax to use 64 bit precision
     jax.config.update("jax_debug_nans", True)
     # debugging for nans
-    #jax.config.update('jax_platform_name', 'cpu')
+    jax.config.update('jax_platform_name', 'cpu')
     # set Jax to use CPUs
     #jax.config.update("jax_disable_jit", True)
     ############################################################################################################
