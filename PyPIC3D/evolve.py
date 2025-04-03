@@ -3,6 +3,7 @@
 
 #from memory_profiler import profile
 import jax.numpy as jnp
+import jax
 
 from PyPIC3D.fields import (
     calculateE, update_B, update_E
@@ -95,8 +96,12 @@ def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world,
         #if_verbose_print(verbose, f"Calculating {particles[i].get_name()} Positions, Mean Value: {jnp.mean(jnp.abs(particles[i].get_position()[0]))}")
 
     ############### SOLVE E FIELD ############################################################################################
+    #jax.debug.print("Max value of rho before calc E: {}", jnp.max(rho))
+
     E, phi, rho = calculateE(world, particles, constants, rho, phi, M, solver, bc)
     # calculate the electric field using the Poisson equation
+    
+    #jax.debug.print("Max value of rho after calc E: {}", jnp.max(rho))
 
     return particles, E, B, J, phi, rho
 
