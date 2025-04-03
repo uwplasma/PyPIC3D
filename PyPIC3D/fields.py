@@ -3,7 +3,7 @@ from jax import jit
 from jax import lax
 import functools
 from functools import partial
-#from memory_profiler import profile
+from memory_profiler import profile
 # import external libraries
 
 from PyPIC3D.pstd import spectral_poisson_solve, spectral_gradient
@@ -52,7 +52,7 @@ def initialize_fields(Nx, Ny, Nz):
 
     return (Ex, Ey, Ez), (Bx, By, Bz), (Jx, Jy, Jz), phi, rho
 
-#@partial(jit, static_argnums=(4, 5))
+@partial(jit, static_argnums=(4, 5))
 def solve_poisson(rho, constants, world, phi, solver, bc='periodic', M = None):
     """
     Solve the Poisson equation for electrostatic potential.
@@ -71,21 +71,36 @@ def solve_poisson(rho, constants, world, phi, solver, bc='periodic', M = None):
         phi (ndarray): Solution to the Poisson equation.
     """
 
-    if solver == 'spectral':
-        phi = spectral_poisson_solve(rho, constants, world)
-    elif solver == 'fdtd':
-        eps = constants['eps']
-        dx = world['dx']
-        dy = world['dy']
-        dz = world['dz']
-        sor = functools.partial(solve_poisson_sor, dx=dx, dy=dy, dz=dz, eps=eps, omega=0.15, tol=1e-12, max_iter=15000)
-        phi = sor(phi, rho)
+    # if solver == 'spectral':
+    #     phi = spectral_poisson_solve(rho, constants, world)
+    # elif solver == 'fdtd':
+    #     eps = constants['eps']
+    #     dx = world['dx']
+    #     dy = world['dy']
+    #     dz = world['dz']
+    #     sor = functools.partial(solve_poisson_sor, dx=dx, dy=dy, dz=dz, eps=eps, omega=0.15, tol=1e-12, max_iter=15000)
+    #     phi = sor(phi, rho)
+
+    phi = lax.cond(
+        solver == 'spectral',
+        lambda _: spectral_poisson_solve(rho, constants, world),
+        lambda _: functools.partial(
+            solve_poisson_sor,
+            dx=world['dx'],
+            dy=world['dy'],
+            dz=world['dz'],
+            eps=constants['eps'],
+            omega=0.15,
+            tol=1e-12,
+            max_iter=15000
+        )(phi, rho),
+        operand=None
+    )
  
     return phi
 
 #@profile
-#@partial(jit, static_argnums=(6, 7))
-#@jit
+@partial(jit, static_argnums=(6, 7))
 def calculateE(world, particles, constants, rho, phi, M, solver, bc):
     """
     Calculate the electric field components (Ex, Ey, Ez) and electric potential (phi)

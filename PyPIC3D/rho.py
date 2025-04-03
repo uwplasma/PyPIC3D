@@ -1,9 +1,10 @@
 import jax
 from jax import jit
 import jax.numpy as jnp
+from memory_profiler import profile
 # import external libraries
 
-#@jit
+@jit
 def particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
     """
     Distribute the charge of a particle to the surrounding grid points.
@@ -61,7 +62,7 @@ def particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
 
     return rho
 
-#@jit
+@jit
 def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_wind, y_wind, z_wind, rho):
     """
     Update the charge density (rho) based on the positions of particles.
@@ -91,9 +92,10 @@ def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_win
         rho = particle_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind)
         return rho
 
-    return jax.lax.fori_loop(0, Nparticles, addto_rho, rho )
+    rho = jax.lax.fori_loop(0, Nparticles, addto_rho, rho )
+    return rho
 
-#@jit
+@jit
 def compute_rho(particles, rho, world):
     """
     Compute the charge density (rho) for a given set of particles in a simulation world.
@@ -118,17 +120,14 @@ def compute_rho(particles, rho, world):
     y_wind = world['y_wind']
     z_wind = world['z_wind']
 
-    new_rho = jnp.zeros(rho.shape)
+    rho = jnp.zeros_like(rho)
     # reset rho to zero
 
     for species in particles:
         N_particles = species.get_number_of_particles()
         charge = species.get_charge()
-        # print("hello")
         particle_x, particle_y, particle_z = species.get_position()
-            # print(f'particle_x: {particle_x}')
-            # print(f'particle_y: {particle_y}')
-            # print(f'particle_z: {particle_z}')
-        new_rho = update_rho(N_particles, particle_x, particle_y, particle_z, dx, dy, dz, charge, x_wind, y_wind, z_wind, new_rho)
-    #jax.debug.print("Max value of rho: {}", jnp.max(new_rho))
-    return new_rho
+        rho = update_rho(N_particles, particle_x, particle_y, particle_z, dx, dy, dz, charge, x_wind, y_wind, z_wind, rho)
+        # add the particle species to the charge density array
+
+    return rho
