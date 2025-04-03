@@ -50,7 +50,7 @@ def initialize_fields(Nx, Ny, Nz):
     rho = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
     # initialize the electric potential and charge density arrays as 0
 
-    return Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho
+    return (Ex, Ey, Ez), (Bx, By, Bz), (Jx, Jy, Jz), phi, rho
 
 #@partial(jit, static_argnums=(4, 5))
 def solve_poisson(rho, constants, world, phi, solver, bc='periodic', M = None):
