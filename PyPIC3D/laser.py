@@ -207,69 +207,69 @@ class LaserPulse:
             points=points
         )
 
-# Example usage
-if __name__ == "__main__":
-    max_electric_field = 1e9
-    # maximum electric field
-    k0 = 2 * jnp.pi / 800e-9
-    # wave number
-    omega0 = 2 * jnp.pi * 3e8 / 800e-9
-    print(omega0)
-    print(k0)
-    # angular frequency
-    pulse_width = 10e-15
-    # pulse width
-    C = 3e8
-    constants = {'C': C}
-    # speed of light
-    xstart = 0
-    # x start
-    ystart = 15
-    # y start
-    zstart = 15
-    # z start
-    width = 2
-    # width of the laser pulse
-    world = {'dx': 1, 'dy': 1, 'dz': 1, 'Nx': 32, 'Ny': 32, 'Nz': 32, 'x_wind': 32, 'y_wind': 32, 'z_wind': 32}
-    # world parameters
-    grid = (jnp.arange(0, 32, 1), jnp.arange(0, 32, 1), jnp.arange(0, 32, 1))
-    # grid points
-    staggered_grid = (jnp.arange(0.5, 32.5, 1), jnp.arange(0.5, 32.5, 1), jnp.arange(0.5, 32.5, 1))
-    # staggered grid points
-    laser = LaserPulse(max_electric_field, k0, omega0, pulse_width, xstart, ystart, zstart, width, constants, world, grid, staggered_grid)
-    # create a laser pulse object
-    Ex = jnp.zeros((32, 32, 32))
-    Ey = jnp.zeros((32, 32, 32))
-    Ez = jnp.zeros((32, 32, 32))
-    Bx = jnp.zeros((32, 32, 32))
-    By = jnp.zeros((32, 32, 32))
-    Bz = jnp.zeros((32, 32, 32))
-    # initialize the fields
-    t = 0
-    # time
-    Ex, Ey, Ez, Bx, By, Bz = laser.inject_laser(Ex, Ey, Ez, Bx, By, Bz, t)
-    # inject the laser pulse into the fields
+# # Example usage
+# if __name__ == "__main__":
+#     max_electric_field = 1e9
+#     # maximum electric field
+#     k0 = 2 * jnp.pi / 800e-9
+#     # wave number
+#     omega0 = 2 * jnp.pi * 3e8 / 800e-9
+#     print(omega0)
+#     print(k0)
+#     # angular frequency
+#     pulse_width = 10e-15
+#     # pulse width
+#     C = 3e8
+#     constants = {'C': C}
+#     # speed of light
+#     xstart = 0
+#     # x start
+#     ystart = 15
+#     # y start
+#     zstart = 15
+#     # z start
+#     width = 2
+#     # width of the laser pulse
+#     world = {'dx': 1, 'dy': 1, 'dz': 1, 'Nx': 32, 'Ny': 32, 'Nz': 32, 'x_wind': 32, 'y_wind': 32, 'z_wind': 32}
+#     # world parameters
+#     grid = (jnp.arange(0, 32, 1), jnp.arange(0, 32, 1), jnp.arange(0, 32, 1))
+#     # grid points
+#     staggered_grid = (jnp.arange(0.5, 32.5, 1), jnp.arange(0.5, 32.5, 1), jnp.arange(0.5, 32.5, 1))
+#     # staggered grid points
+#     laser = LaserPulse(max_electric_field, k0, omega0, pulse_width, xstart, ystart, zstart, width, constants, world, grid, staggered_grid)
+#     # create a laser pulse object
+#     Ex = jnp.zeros((32, 32, 32))
+#     Ey = jnp.zeros((32, 32, 32))
+#     Ez = jnp.zeros((32, 32, 32))
+#     Bx = jnp.zeros((32, 32, 32))
+#     By = jnp.zeros((32, 32, 32))
+#     Bz = jnp.zeros((32, 32, 32))
+#     # initialize the fields
+#     t = 0
+#     # time
+#     Ex, Ey, Ez, Bx, By, Bz = laser.inject_laser(Ex, Ey, Ez, Bx, By, Bz, t)
+#     # inject the laser pulse into the fields
     
-    import matplotlib.pyplot as plt
+#     import matplotlib.pyplot as plt
 
-    # Plotting function
-    def plot_field_slices(field, title):
-        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-        slices = [field[16, :, :], field[:, 16, :], field[:, :, 16]]
-        slice_titles = ['XY Slice', 'XZ Slice', 'YZ Slice']
+#     # Plotting function
+#     def plot_field_slices(field, title):
+#         fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+#         slices = [field[16, :, :], field[:, 16, :], field[:, :, 16]]
+#         slice_titles = ['XY Slice', 'XZ Slice', 'YZ Slice']
         
-        for ax, slice, slice_title in zip(axes, slices, slice_titles):
-            cax = ax.imshow(slice, origin='lower')
-            ax.set_title(slice_title)
-            fig.colorbar(cax, ax=ax)
+#         for ax, slice, slice_title in zip(axes, slices, slice_titles):
+#             cax = ax.imshow(slice, origin='lower')
+#             ax.set_title(slice_title)
+#             fig.colorbar(cax, ax=ax)
         
-        fig.suptitle(title)
-        plt.show()
+#         fig.suptitle(title)
+#         plt.show()
 
-    # Plot different slices of the electric and magnetic fields
-    plot_field_slices(Ex, 'Ex Field Slices')
-    plot_field_slices(Ey, 'Ey Field Slices')
-    plot_field_slices(Ez, 'Ez Field Slices')
-    plot_field_slices(Bx, 'Bx Field Slices')
-    plot_field_slices(By, 'By Field Slices')
-    plot_field_slices(Bz, 'Bz Field Slices')
+#     # Plot different slices of the electric and magnetic fields
+#     plot_field_slices(Ex, 'Ex Field Slices')
+#     plot_field_slices(Ey, 'Ey Field Slices')
+#     plot_field_slices(Ez, 'Ez Field Slices')
+#     plot_field_slices(Bx, 'Bx Field Slices')
+#     plot_field_slices(By, 'By Field Slices')
+#     plot_field_slices(Bz, 'Bz Field Slices')
