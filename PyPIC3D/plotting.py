@@ -746,7 +746,39 @@ def write_data(filename, time, data):
 #@profile
 @partial(jax.jit, static_argnums=(18) )
 def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid, B_grid, plotting_parameters, world, constants, output_dir):
-    
+    """
+    Save and process simulation data, including energy, field, and current density information.
+
+    It uses conditional logic to determine which data to process and save based on the provided
+    plotting parameters.
+
+    Args:
+        t (int): Current time step.
+        dt (float): Time step size.
+        particles (list): List of particle objects, each containing methods for computing properties like kinetic energy.
+        Ex, Ey, Ez (ndarray): Electric field components on the grid.
+        Bx, By, Bz (ndarray): Magnetic field components on the grid.
+        rho (ndarray): Charge density on the grid.
+        Jx, Jy, Jz (ndarray): Current density components on the grid.
+        E_grid (tuple): Electric field grid dimensions.
+        B_grid (tuple): Magnetic field grid dimensions.
+        plotting_parameters (dict): Dictionary of flags controlling which data to process and save.
+            Keys include:
+            - 'plotenergy': Whether to compute and save energy data.
+            - 'plotfields': Whether to compute and save field-related data.
+            - 'plotcurrent': Whether to compute and save current density data.
+        world (dict): Dictionary containing simulation world parameters, including:
+            - 'dx', 'dy', 'dz': Grid spacings in x, y, and z directions.
+            - 'Nx', 'Ny', 'Nz': Number of grid points in x, y, and z directions.
+        constants (dict): Dictionary of physical constants, including:
+            - 'eps': Permittivity of free space.
+            - 'mu': Permeability of free space.
+        output_dir (str): Directory where output data files will be saved.
+
+    Returns:
+        None
+    """
+
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
@@ -921,13 +953,14 @@ def plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, p
 
     jax.lax.cond(
         plotting_parameters['plotting'],
-        
+
         lambda _: jax.lax.cond(
             t % plotting_parameters['plotting_interval'] == 0,
             lambda _: save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid, B_grid, plotting_parameters, world, constants, output_dir),
             lambda _: None,
             operand=None
         ),
+
         lambda _: None,
         operand=None
     )
