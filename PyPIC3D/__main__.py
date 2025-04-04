@@ -51,7 +51,7 @@ def run_PyPIC3D(config_file):
     # jax.profiler.start_trace("/tmp/tensorboard")
 
     for t in tqdm(range(Nt)):
-        plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters, solver, bc)
+        plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters)
         # plot the data
 
         particles, E, B, J, phi, rho = loop(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, pecs, lasers, surfaces, curl_func, M, solver, bc)
