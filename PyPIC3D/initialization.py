@@ -17,6 +17,7 @@ from PyPIC3D.utils import (
     update_parameters_from_toml,
     build_yee_grid, convert_to_jax_compatible, load_external_fields_from_toml,
     check_stability, print_stats, particle_sanity_check, build_plasma_parameters_dict,
+    make_dir
 )
 
 from PyPIC3D.fields import (
@@ -113,6 +114,31 @@ def default_parameters():
     return plotting_parameters, simulation_parameters, constants
     # return the dictionaries
 
+
+def setup_write_dir(simulation_parameters, plotting_parameters):
+        output_dir = simulation_parameters['output_dir']
+        # get the output directory from the simulation parameters
+        make_dir(f'{output_dir}/data')
+        # make the directory for the data
+        if plotting_parameters['plotfields']:
+            make_dir( f"{output_dir}/data/E_slice" )
+            # make the directory for the electric field slices
+            make_dir( f"{output_dir}/data/B_slice" )
+            # make the directory for the magnetic field slices
+            make_dir( f"{output_dir}/data/Exy_slice" )
+            # make the directory for the electric field xy slices
+            make_dir( f"{output_dir}/data/Exz_slice" )
+            # make the directory for the electric field xz slices
+            make_dir( f"{output_dir}/data/Eyz_slice" )
+            # make the directory for the electric field yz slices
+            make_dir( f"{output_dir}/data/Bxy_slice" )
+            # make the directory for the magnetic field xy slices
+            make_dir( f"{output_dir}/data/Bxz_slice" )
+            # make the directory for the magnetic field xz slices
+            make_dir( f"{output_dir}/data/Byz_slice" )
+            # make the directory for the magnetic field yz slices
+
+
 #@profile
 def initialize_simulation(toml_file):
     """
@@ -174,6 +200,9 @@ def initialize_simulation(toml_file):
         os.environ["XLA_FLAGS"] = f'--xla_force_host_platform_device_count={simulation_parameters['ncores']}'
     # set the number of cores to use
 
+    setup_write_dir(simulation_parameters, plotting_parameters)
+    # setup the write directory
+
     dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
     # compute the spatial resolution
     if 'dt' in simulation_parameters:
@@ -189,6 +218,8 @@ def initialize_simulation(toml_file):
 
     world = convert_to_jax_compatible(world)
     constants = convert_to_jax_compatible(constants)
+    simulation_parameters = convert_to_jax_compatible(simulation_parameters)
+    plotting_parameters = convert_to_jax_compatible(plotting_parameters)
     # convert the world parameters to jax compatible format
 
     E_grid, B_grid = build_yee_grid(world)

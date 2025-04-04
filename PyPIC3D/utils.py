@@ -16,6 +16,16 @@ from datetime import datetime
 import importlib.metadata
 # import external libraries
 
+def make_dir(path):
+    """
+    Create a directory if it does not exist.
+    Args:
+        path (str): The path to the directory to be created.
+    """
+    
+    if not os.path.exists(path):
+        os.makedirs(path)
+
 def simpsons_rule_3d(f, dx, dy, dz):
     """
     Integrate a 3D array using Simpson's rule over the entire volume.
