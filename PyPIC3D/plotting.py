@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 from PyPIC3D.rho import update_rho
 import jax
 from memory_profiler import profile
+from functools import partial
 
 from PyPIC3D.errors import (
     compute_electric_divergence_error, compute_magnetic_divergence_error
@@ -703,9 +704,26 @@ def write_slice(field_slice, x1, x2, t, name, path, dt):
             cellData = {f"{name}" : field_slice})
     # plot the slice of the field in the vtk file format
 
+# def write_data(filename, time, data):
+#     """
+#     Write the given time and data to a file.
+
+#     Args:
+#         filename (str): The name of the file to write to.
+#         time (float): The time value to write.
+#         data (any): The data to write.
+
+#     Returns:
+#         None
+#     """
+#     with open(filename, "a") as f:
+#         f.write(f"{time}, {data}\n")
+
+@partial(jax.jit, static_argnums=(0))
 def write_data(filename, time, data):
     """
-    Write the given time and data to a file.
+    Write the given time and data to a file using JAX's callback mechanism.
+    This function is designed to be used with JAX's just-in-time compilation (jit) to optimize performance.
 
     Args:
         filename (str): The name of the file to write to.
@@ -715,241 +733,161 @@ def write_data(filename, time, data):
     Returns:
         None
     """
-    with open(filename, "a") as f:
-        f.write(f"{time}, {data}\n")
+
+    def write_to_file(filename, time, data):
+        with open(filename, "a") as f:
+            f.write(f"{time}, {data}\n")
+    # Open the file in append mode
+    # Write the time and data to the file
+    # Close the file
+    return jax.debug.callback(write_to_file, filename, time, data, ordered=True)
 
 
 #@profile
-def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid, B_grid, plotting_parameters, world, constants, solver, bc, output_dir):
+@partial(jax.jit, static_argnums=(18) )
+def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid, B_grid, plotting_parameters, world, constants, output_dir):
+    
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
     Nx = world['Nx']
     Ny = world['Ny']
     Nz = world['Nz']
+    # Get the grid dimensions
 
-    #Eline = jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[175, :, 0]
-    # select a slice of the E field along the y-axis
-    #_ = plot_fft(Eline, dt, f"E along Tungsten {t}", output_dir)
 
-    # def integrate(y, dx): return 0.5 * (jnp.asarray(dx) * (y[..., 1:] + y[..., :-1])).sum(-1)
-
-    if plotting_parameters['plotenergy']:
-        # E2_integral = jnp.sum( jnp.trapezoid(Ex**2 + Ey**2 + Ez**2, axis=0, dx=dx), axis=(0,1) )
-        # B2_integral = jnp.sum( jnp.trapezoid(Bx**2 + By**2 + Bz**2, axis=0, dx=dx), axis=(0,1) )
-        #E2_integral = simpsons_rule_3d(Ex**2 + Ey**2 + Ez**2, dx, dy, dz)
-        #B2_integral = simpsons_rule_3d(Bx**2 + By**2 + Bz**2, dx, dy, dz)
-        #integral of E^2 and B^2 over the entire grid
+    ##########################################################################################################
+    def compute_and_write_energy():
         E2_integral = jnp.trapezoid(jnp.trapezoid(jnp.trapezoid(Ex**2 + Ey**2 + Ez**2, dx=dz), dx=dy), dx=dx)
         B2_integral = jnp.trapezoid(jnp.trapezoid(jnp.trapezoid(Bx**2 + By**2 + Bz**2, dx=dz), dx=dy), dx=dx)
-        # abs_E_squared              = jnp.sum(Ex**2 + Ey**2 + Ez**2, axis=-1)
-        # abs_B_squared              = jnp.sum(Bx**2 + By**2 + Bz**2, axis=-1)
+        # Integral of E^2 and B^2 over the entire grid
+        e_energy = 0.5 * constants['eps'] * E2_integral
+        b_energy = 0.5 / constants['mu'] * B2_integral
+        # Electric and magnetic field energy
+        kinetic_energy = sum(particle.kinetic_energy() for particle in particles)
+        # Kinetic energy of the particles
+        write_data(f"{output_dir}/data/total_energy.txt", t * dt, e_energy + b_energy + kinetic_energy)
+        write_data(f"{output_dir}/data/electric_field_energy.txt", t * dt, e_energy)
+        write_data(f"{output_dir}/data/magnetic_field_energy.txt", t * dt, b_energy)
+        write_data(f"{output_dir}/data/kinetic_energy.txt", t * dt, kinetic_energy)
+        # Write the total energy to a file
 
-        # E2_integral = integrate(abs_E_squared, dx)
-        # B2_integral = integrate(abs_B_squared, dx)
-        #integral of E^2 and B^2 over the entire grid
-        e_energy = 0.5*constants['eps']*E2_integral
-        b_energy = 0.5/constants['mu']*B2_integral
-        #electric and magnetic field energy
-        kinetic_energy = 0
-        for particle in particles:
-            kinetic_energy += particle.kinetic_energy()
-        #kinetic_energy = sum(particle.kinetic_energy() for particle in particles)
-        #kinetic energy of the particles
-        write_data(f"{output_dir}/data/total_energy.txt", t*dt, e_energy + b_energy + kinetic_energy)
-        write_data(f"{output_dir}/data/electric_field_energy.txt", t*dt, e_energy)
-        write_data(f"{output_dir}/data/magnetic_field_energy.txt", t*dt, b_energy)
-        write_data(f"{output_dir}/data/kinetic_energy.txt", t*dt, kinetic_energy)
-        # write the total energy to a file
+    jax.lax.cond(
+        plotting_parameters['plotenergy'],
+        lambda _: compute_and_write_energy(),
+        lambda _: None,
+        operand=None
+    )
+    # Compute and write the energy of the system
 
-        Ex_integral = jnp.trapezoid(jnp.trapezoid(jnp.trapezoid(Ex**2, dx=dz), dx=dy), dx=dx)
-        Ey_integral = jnp.trapezoid(jnp.trapezoid(jnp.trapezoid(Ey**2, dx=dz), dx=dy), dx=dx)
-        Ez_integral = jnp.trapezoid(jnp.trapezoid(jnp.trapezoid(Ez**2, dx=dz), dx=dy), dx=dx)
-        write_data(f"{output_dir}/data/Ex_energy.txt", t*dt, 0.5*constants['eps']*Ex_integral)
-        write_data(f"{output_dir}/data/Ey_energy.txt", t*dt, 0.5*constants['eps']*Ey_integral)
-        write_data(f"{output_dir}/data/Ez_energy.txt", t*dt, 0.5*constants['eps']*Ez_integral)
-        # write the energy of the electric field to a file
+    ##########################################################################################################
+    def plot_energy(t, dt, Ex, Ey, Ez, Bx, By, Bz, Nx, Ny, Nz, output_dir):
+        """
+        Plot and save energy-related data.
 
-    if plotting_parameters['plotvelocities']:
-        for species in particles:
-            plot_velocity_histogram(species, t, output_dir, nbins=50)
+        Args:
+            t (int): Current time step.
+            dt (float): Time step size.
+            Ex, Ey, Ez (ndarray): Electric field components.
+            Bx, By, Bz (ndarray): Magnetic field components.
+            Nx, Ny, Nz (int): Grid dimensions.
+            output_dir (str): Directory to save the data.
 
-    if plotting_parameters['plotcurrent']:
-        write_data(f"{output_dir}/data/Jx_mean.txt", t*dt, jnp.mean(Jx))
-        write_data(f"{output_dir}/data/Jy_mean.txt", t*dt, jnp.mean(Jy))
-        write_data(f"{output_dir}/data/Jz_mean.txt", t*dt, jnp.mean(Jz))
-    # write the mean current corrections to a file
-
-    if plotting_parameters['plotpositions']:
-        plot_positions(particles, t, world['x_wind'], world['y_wind'], world['z_wind'], output_dir)
-
-    if plotting_parameters['phaseSpace']:
-        #particles_phase_space([particles[0]], world, t, "Particles", output_dir)
-        write_particles_phase_space(particles, t, output_dir)
-
-    if plotting_parameters['plotfields']:
-        # save_vector_field_as_vtk(Ex, Ey, Ez, E_grid, f"{output_dir}/fields/E_{t*dt:09}.vtr")
-        # save_vector_field_as_vtk(Bx, By, Bz, B_grid, f"{output_dir}/fields/B_{t*dt:09}.vtr")
-        # plot_rho(rho, t, "rho", dx, dy, dz)
-        write_data(f"{output_dir}/data/averageEx.txt", t*dt, jnp.mean( jnp.abs(Ex) ) )
-        write_data(f"{output_dir}/data/averageEy.txt", t*dt, jnp.mean( jnp.abs(Ey) ) )
-        write_data(f"{output_dir}/data/averageEz.txt", t*dt, jnp.mean( jnp.abs(Ez) ) )
-        write_data(f"{output_dir}/data/averageBx.txt", t*dt, jnp.mean( jnp.abs(Bx) ) )
-        write_data(f"{output_dir}/data/averageBy.txt", t*dt, jnp.mean( jnp.abs(By) ) )
-        write_data(f"{output_dir}/data/averageBz.txt", t*dt, jnp.mean( jnp.abs(Bz) ) )
+        Returns:
+            None
+        """
+        write_data(f"{output_dir}/data/averageEx.txt", t*dt, jnp.mean(jnp.abs(Ex)))
+        write_data(f"{output_dir}/data/averageEy.txt", t*dt, jnp.mean(jnp.abs(Ey)))
+        write_data(f"{output_dir}/data/averageEz.txt", t*dt, jnp.mean(jnp.abs(Ez)))
+        write_data(f"{output_dir}/data/averageBx.txt", t*dt, jnp.mean(jnp.abs(Bx)))
+        write_data(f"{output_dir}/data/averageBy.txt", t*dt, jnp.mean(jnp.abs(By)))
+        write_data(f"{output_dir}/data/averageBz.txt", t*dt, jnp.mean(jnp.abs(Bz)))
         write_data(f"{output_dir}/data/averageE.txt", t*dt, jnp.mean(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)))
         write_data(f"{output_dir}/data/averageB.txt", t*dt, jnp.mean(jnp.sqrt(Bx**2 + By**2 + Bz**2)))
         write_data(f"{output_dir}/data/Eprobe.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx-1, Ny-1, Nz-1))
         write_data(f"{output_dir}/data/centerE.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx//2, Ny//2, Nz//2))
-
-        vx, vy, vz = particles[0].get_velocity()
-        write_data(f"{output_dir}/data/vx.txt", t*dt, jnp.mean(vx))
-        write_data(f"{output_dir}/data/vy.txt", t*dt, jnp.mean(vy))
-        write_data(f"{output_dir}/data/vz.txt", t*dt, jnp.mean(vz))
-
-        if not os.path.exists(f"{output_dir}/data/E_slice"):
-            os.makedirs(f'{output_dir}/data/E_slice')
-        # Create directory if it doesn't exist
-
-        if not os.path.exists(f"{output_dir}/data/B_slice"):
-            os.makedirs(f'{output_dir}/data/B_slice')
-        # Create directory if it doesn't exist
+#     # write_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], np.asarray(E_grid[0]), np.asarray(E_grid[1]), t, 'Exy', output_dir, dt)
+#     # write_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], np.asarray(E_grid[0]), np.asarray(E_grid[1]), t, 'Exz', output_dir, dt)
+#     # write_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], np.asarray(E_grid[0]), np.asarray(E_grid[1]), t, 'Eyz', output_dir, dt)
+#     # write_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], np.asarray(B_grid[0]), np.asarray(B_grid[1]), t, 'Bxy', output_dir, dt)
+#     # write_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], np.asarray(B_grid[0]), np.asarray(B_grid[1]), t, 'Bxz', output_dir, dt)
+#     # write_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], np.asarray(B_grid[0]), np.asarray(B_grid[1]), t, 'Byz', output_dir, dt)
 
 
-        #plot_slice(rho[:, :, int(Nz/2)], t, 'rho', output_dir, world, dt)
-
-        if not os.path.exists(f"{output_dir}/data/Exy_slice"):
-            os.makedirs(f'{output_dir}/data/Exy_slice')
-        # Create directory if it doesn't exist
-        
-        if not os.path.exists(f"{output_dir}/data/Exz_slice"):
-            os.makedirs(f'{output_dir}/data/Exz_slice')
-        # Create directory if it doesn't exist
-        if not os.path.exists(f"{output_dir}/data/Eyz_slice"):
-            os.makedirs(f'{output_dir}/data/Eyz_slice')
-        # Create directory if it doesn't exist
-
-        if not os.path.exists(f"{output_dir}/data/Bxy_slice"):
-            os.makedirs(f'{output_dir}/data/Bxy_slice')
-        # Create directory if it doesn't exist
-
-        if not os.path.exists(f"{output_dir}/data/Bxz_slice"):
-            os.makedirs(f'{output_dir}/data/Bxz_slice')
-        # Create directory if it doesn't exist
-
-        if not os.path.exists(f"{output_dir}/data/Byz_slice"):
-            os.makedirs(f'{output_dir}/data/Byz_slice')
-        # Create directory if it doesn't exist
+    jax.lax.cond(
+        plotting_parameters['plotfields'],
+        lambda _: plot_energy(t, dt, Ex, Ey, Ez, Bx, By, Bz, Nx, Ny, Nz, output_dir),
+        lambda _: None,
+        operand=None
+    )
+    # Plot and save energy-related data
 
 
+    ##############################################################################################################################
+    def write_current_data(t, dt, Jx, Jy, Jz, output_dir):
+        """
+        Write the mean current density components to files.
+
+        Args:
+            t (int): Current time step.
+            dt (float): Time step size.
+            Jx, Jy, Jz (ndarray): Current density components.
+            output_dir (str): Directory to save the data.
+
+        Returns:
+            None
+        """
+        write_data(f"{output_dir}/data/Jx_mean.txt", t*dt, jnp.mean(Jx))
+        write_data(f"{output_dir}/data/Jy_mean.txt", t*dt, jnp.mean(Jy))
+        write_data(f"{output_dir}/data/Jz_mean.txt", t*dt, jnp.mean(Jz))
+
+    jax.lax.cond(
+        plotting_parameters['plotcurrent'],
+        lambda _: write_current_data(t, dt, Jx, Jy, Jz, output_dir),
+        lambda _: None,
+        operand=None
+    )
+    # Write the mean current density components to files
+    ##############################################################################################################################
 
 
-        if not os.path.exists(f"{output_dir}/data/E_slice"):
-            os.makedirs(f'{output_dir}/data/E_slice')
-        # Create directory if it doesn't exist
-        if not os.path.exists(f"{output_dir}/data/rho_slice"):
-            os.makedirs(f'{output_dir}/data/rho_slice')
+    # if plotting_parameters['plotvelocities']:
+    #     for species in particles:
+    #         plot_velocity_histogram(species, t, output_dir, nbins=50)
 
-        #plot_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], t, 'E', output_dir, world, dt)
-        
-        # plt.title(f'E at t={t*dt:.2e}s')
-        # plt.matshow(jnp.swapaxes(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], 0, 1), origin='lower', extent=[-world['x_wind']/2, world['x_wind']/2, -world['y_wind']/2, world['y_wind']/2])
-        # x1,y1,z1 = particles[0].get_position()
-        # x2,y2,z2 = particles[1].get_position()
-        # plt.scatter(x1, y1, c='r', s=1)
-        # plt.scatter(x2, y2, c='b', s=1)
-        # plt.colorbar(label='E')
-        # #plt.tight_layout()
-        # plt.savefig(f'{output_dir}/data/E_slice/E_slice_{t:09}.png', dpi=300)
-        # plt.clf()
-        # plt.close()
+    # if plotting_parameters['plotpositions']:
+    #     plot_positions(particles, t, world['x_wind'], world['y_wind'], world['z_wind'], output_dir)
 
+    # if plotting_parameters['phaseSpace']:
+    #     #particles_phase_space([particles[0]], world, t, "Particles", output_dir)
+    #     write_particles_phase_space(particles, t, output_dir)
 
-        # plt.title(f'rho at t={t*dt:.2e}s')
-        # #plotrho = jnp.swapaxes(rho, 0, 1)[:,:,int(Nz/2)]
-        # plt.matshow(rho[:,:,int(Nz/2)], origin='lower', extent=[-world['x_wind']/2, world['x_wind']/2, -world['y_wind']/2, world['y_wind']/2])
-        # x,y,z = particles[0].get_position()
-        # plt.scatter(x, y, c='r', s=3)
-        # plt.colorbar(label='rho')
-        # #plt.tight_layout()
-        # plt.savefig(f'{output_dir}/data/rho_slice/rho_slicexy_{t:09}.png', dpi=300)
-        # plt.close()
+    # if plotting_parameters['plot_chargeconservation']:
+    #     rho_ = compute_rho(particles, rho, world)
+    #     write_data(f"{output_dir}/data/mean_charge_density.txt", t*dt, jnp.mean(rho_))
 
+    # if plotting_parameters['plot_errors']:
+    #     write_data(f"{output_dir}/data/electric_divergence_errors.txt", t*dt, compute_electric_divergence_error(Ex, Ey, Ez, rho, constants, world, solver, bc))
+    #     write_data(f"{output_dir}/data/magnetic_divergence_errors.txt", t*dt, compute_magnetic_divergence_error(Bx, By, Bz, world, solver, bc))
 
-        # plt.title(f'rho at t={t*dt:.2e}s')
-        # #plotrho = jnp.swapaxes(rho, 0, 1)[:,:,int(Nz/2)]
-        # plt.matshow(rho[int(Nx/2),:,:], origin='lower', extent=[-world['x_wind']/2, world['x_wind']/2, -world['y_wind']/2, world['y_wind']/2])
-        # x,y,z = particles[0].get_position()
-        # plt.scatter(y, z, c='r', s=3)
-        # plt.colorbar(label='rho')
-        # #plt.tight_layout()
-        # plt.savefig(f'{output_dir}/data/rho_slice/rho_sliceyz_{t:09}.png', dpi=300)
-        # plt.close()
+# def save_avg_positions(t, dt, particles, output_dir):
+#     avg_x_path = os.path.join(output_dir, "data/avg_x.txt")
+#     avg_y_path = os.path.join(output_dir, "data/avg_y.txt")
+#     avg_z_path = os.path.join(output_dir, "data/avg_z.txt")
 
-
-        # max_rhox = jnp.argmax(rho[:, int(Ny/2), int(Nz/2)]) * dx - world['x_wind']/2
-        # max_rhoy = jnp.argmax(rho[int(Nx/2), :, int(Nz/2)]) * dy - world['y_wind']/2
-        # max_rhoz = jnp.argmax(rho[int(Nx/2), int(Ny/2), :]) * dz - world['z_wind']/2
-        # real_x, real_y, real_z = particles[0].get_position()
-        # jax.debug.print("Max rho x: {}", max_rhox)
-        # jax.debug.print("Real x: {}", real_x)
-        # jax.debug.print("Max rho y: {}", max_rhoy)
-        # jax.debug.print("Real y: {}", real_y)
-        # jax.debug.print("Max rho z: {}", max_rhoz)
-        # jax.debug.print("Real z: {}", real_z)
-
-        #plot_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], t, 'Exy', output_dir, world, dt)
-        #plot_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, int(Ny/2), :], t, 'Exz', output_dir, world, dt)
-        #plot_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[int(Nx/2), :, :], t, 'Eyz', output_dir, world, dt)
-        # plot_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], t, 'Bxy', output_dir, world, dt)
-        # plot_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, int(Ny/2), :], t, 'Bxz', output_dir, world, dt)
-        # plot_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[int(Nx/2), :, :], t, 'Byz', output_dir, world, dt)
-        #plt.close('all')
-        # close all figures to free up memory
-
-        # write_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], np.asarray(E_grid[0]), np.asarray(E_grid[1]), t, 'Exy', output_dir, dt)
-        # write_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], np.asarray(E_grid[0]), np.asarray(E_grid[1]), t, 'Exz', output_dir, dt)
-        # write_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], np.asarray(E_grid[0]), np.asarray(E_grid[1]), t, 'Eyz', output_dir, dt)
-        # write_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], np.asarray(B_grid[0]), np.asarray(B_grid[1]), t, 'Bxy', output_dir, dt)
-        # write_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], np.asarray(B_grid[0]), np.asarray(B_grid[1]), t, 'Bxz', output_dir, dt)
-        # write_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], np.asarray(B_grid[0]), np.asarray(B_grid[1]), t, 'Byz', output_dir, dt)
-
-        #jnp.save(f"{output_dir}/data/E_slice/E_{t:09}.npy", jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)])
-        #jnp.save(f"{output_dir}/data/B_slice/B_{t:09}.npy", jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)])
-        #jnp.save(f"{output_dir}/data/rho_slice/rho_{t:09}.npy", rho[:, :, int(Nz/2)])
-
-    if plotting_parameters['plot_chargeconservation']:
-        rho_ = compute_rho(particles, rho, world)
-        write_data(f"{output_dir}/data/mean_charge_density.txt", t*dt, jnp.mean(rho_))
-
-    if plotting_parameters['plot_errors']:
-        #rho_ = compute_rho(particles, rho, world)
-        #write_data(f"{output_dir}/data/mean_charge_density.txt", t*dt, jnp.mean(rho_))
-        write_data(f"{output_dir}/data/electric_divergence_errors.txt", t*dt, compute_electric_divergence_error(Ex, Ey, Ez, rho, constants, world, solver, bc))
-        write_data(f"{output_dir}/data/magnetic_divergence_errors.txt", t*dt, compute_magnetic_divergence_error(Bx, By, Bz, world, solver, bc))
-
-def save_avg_positions(t, dt, particles, output_dir):
-    avg_x_path = os.path.join(output_dir, "data/avg_x.txt")
-    avg_y_path = os.path.join(output_dir, "data/avg_y.txt")
-    avg_z_path = os.path.join(output_dir, "data/avg_z.txt")
-
-    xcom, ycom, zcom = center_of_mass(particles[0])
-    with open(avg_x_path, "a") as f_avg_x:
-        f_avg_x.write(f"{t*dt}, {  xcom  }\n")
-    with open(avg_y_path, "a") as f_avg_y:
-        f_avg_y.write(f"{t*dt}, {  ycom }\n")
-    with open(avg_z_path, "a") as f_avg_z:
-        f_avg_z.write(f"{t*dt}, {  zcom }\n")
-
-def save_total_momentum(t, dt, particles, output_dir):
-    p0 = sum(particle.momentum() for particle in particles)
-    filename = os.path.join(output_dir, "data/total_momentum.txt")
-    with open(filename, "a") as f_momentum:
-        f_momentum.write(f"{t*dt}, {p0}\n")
+#     xcom, ycom, zcom = center_of_mass(particles[0])
+#     with open(avg_x_path, "a") as f_avg_x:
+#         f_avg_x.write(f"{t*dt}, {  xcom  }\n")
+#     with open(avg_y_path, "a") as f_avg_y:
+#         f_avg_y.write(f"{t*dt}, {  ycom }\n")
+#     with open(avg_z_path, "a") as f_avg_z:
+#         f_avg_z.write(f"{t*dt}, {  zcom }\n")
 
 
 #@profile
-def plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters, solver, bc):
+# @partial(jax.jit, static_argnums=(12))
+#@jit
+def plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters):
     """
     Plots and saves various simulation data at specified intervals.
 
@@ -979,10 +917,21 @@ def plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, p
     Jx, Jy, Jz = J
 
     dt = world['dt']
-    output_dir = simulation_parameters['output_dir']
+    output_dir = "/home/christopherwoolford/Documents/Research/PICsims/pypic3d_v0.1.1/dummy_test"
 
-    if plotting_parameters['plotting']:
-        if t % plotting_parameters['plotting_interval'] == 0:
-            save_avg_positions(t, dt, particles, output_dir)
-            save_total_momentum(t, dt, particles, output_dir)
-            save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid, B_grid, plotting_parameters, world, constants, solver, bc, output_dir)
+    jax.lax.cond(
+        plotting_parameters['plotting'],
+        
+        lambda _: jax.lax.cond(
+            t % plotting_parameters['plotting_interval'] == 0,
+            lambda _: save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid, B_grid, plotting_parameters, world, constants, output_dir),
+            lambda _: None,
+            operand=None
+        ),
+        lambda _: None,
+        operand=None
+    )
+    # if plotting_parameters['plotting']:
+    #     if t % plotting_parameters['plotting_interval'] == 0:
+    #         save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid, B_grid, plotting_parameters, world, constants, output_dir)
+ 
