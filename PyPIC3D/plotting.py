@@ -654,14 +654,46 @@ def plot_initial_KE(particles, path):
         plt.close()
 
 
+# def plot_slice(field_slice, t, name, path, world, dt):
+#     """
+#     Plots a 2D slice of a field and saves the plot as a PNG file.
+
+#     Args:
+#         field_slice (2D array): The 2D array representing the field slice to be plotted.
+#         t (int): The time step index.
+#         name (str): The name of the field being plotted.
+#         world (dict): A dictionary containing the dimensions of the world with keys 'x_wind' and 'y_wind'.
+#         dt (float): The time step duration.
+
+#     Returns:
+#         None
+#     """
+
+#     if not os.path.exists(f"{path}/data/{name}_slice"):
+#         os.makedirs(f'{path}/data/{name}_slice')
+#     # Create directory if it doesn't exist
+    
+#     plt.title(f'{name} at t={t*dt:.2e}s')
+#     plt.imshow(jnp.swapaxes(field_slice, 0, 1), origin='lower', extent=[-world['x_wind']/2, world['x_wind']/2, -world['y_wind']/2, world['y_wind']/2])
+#     plt.colorbar(label=name)
+#     plt.tight_layout()
+#     plt.savefig(f'{path}/data/{name}_slice/{name}_slice_{t:09}.png', dpi=300)
+#     plt.clf()  # Clear the current figure
+#     plt.close('all')  # Close all figures to free up memory
+
+
+
+
+@partial(jax.jit, static_argnums=(2, 3))
 def plot_slice(field_slice, t, name, path, world, dt):
     """
-    Plots a 2D slice of a field and saves the plot as a PNG file.
+    Plots a 2D slice of a field and saves the plot as a PNG file using JAX's debug callback.
 
     Args:
         field_slice (2D array): The 2D array representing the field slice to be plotted.
         t (int): The time step index.
         name (str): The name of the field being plotted.
+        path (str): The directory path where the plot will be saved.
         world (dict): A dictionary containing the dimensions of the world with keys 'x_wind' and 'y_wind'.
         dt (float): The time step duration.
 
@@ -669,17 +701,26 @@ def plot_slice(field_slice, t, name, path, world, dt):
         None
     """
 
-    if not os.path.exists(f"{path}/data/{name}_slice"):
-        os.makedirs(f'{path}/data/{name}_slice')
-    # Create directory if it doesn't exist
-    
-    plt.title(f'{name} at t={t*dt:.2e}s')
-    plt.imshow(jnp.swapaxes(field_slice, 0, 1), origin='lower', extent=[-world['x_wind']/2, world['x_wind']/2, -world['y_wind']/2, world['y_wind']/2])
-    plt.colorbar(label=name)
-    plt.tight_layout()
-    plt.savefig(f'{path}/data/{name}_slice/{name}_slice_{t:09}.png', dpi=300)
-    plt.clf()  # Clear the current figure
-    plt.close('all')  # Close all figures to free up memory
+    def plot_and_save(field_slice, t, name, path, world, dt):
+        if not os.path.exists(f"{path}/data/{name}_slice"):
+            os.makedirs(f"{path}/data/{name}_slice")
+        # Create directory if it doesn't exist
+
+        plt.title(f'{name} at t={t*dt:.2e}s')
+        plt.imshow(jnp.swapaxes(field_slice, 0, 1), origin='lower', 
+                   extent=[-world['x_wind']/2, world['x_wind']/2, 
+                           -world['y_wind']/2, world['y_wind']/2])
+        plt.colorbar(label=name)
+        plt.tight_layout()
+        plt.savefig(f'{path}/data/{name}_slice/{name}_slice_{t:09}.png', dpi=300)
+        plt.clf()  # Clear the current figure
+        plt.close('all')  # Close all figures to free up memory
+
+    # Use JAX debug callback to execute the plotting function
+    return jax.debug.callback(plot_and_save, field_slice, t, name, path, world, dt, ordered=True)
+
+
+
 
 def write_slice(field_slice, x1, x2, t, name, path, dt):
     """
@@ -813,9 +854,9 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
     # Compute and write the energy of the system
 
     ##########################################################################################################
-    def plot_energy(t, dt, Ex, Ey, Ez, Bx, By, Bz, Nx, Ny, Nz, output_dir):
+    def plot_fields(t, dt, Ex, Ey, Ez, Bx, By, Bz, Nx, Ny, Nz, output_dir):
         """
-        Plot and save energy-related data.
+        Plot and save the electric and magnetic fields, as well as their averages.
 
         Args:
             t (int): Current time step.
@@ -845,10 +886,14 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
 #     # write_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], np.asarray(B_grid[0]), np.asarray(B_grid[1]), t, 'Bxz', output_dir, dt)
 #     # write_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], np.asarray(B_grid[0]), np.asarray(B_grid[1]), t, 'Byz', output_dir, dt)
 
+        plot_slice(Ex[:,:,Nz//2], t, 'Ex', output_dir, world, dt)
+        plot_slice(Ey[:,:,Nz//2], t, 'Ey', output_dir, world, dt)
+        plot_slice(Ez[:,:,Nz//2], t, 'Ez', output_dir, world, dt)
+
 
     jax.lax.cond(
         plotting_parameters['plotfields'],
-        lambda _: plot_energy(t, dt, Ex, Ey, Ez, Bx, By, Bz, Nx, Ny, Nz, output_dir),
+        lambda _: plot_fields(t, dt, Ex, Ey, Ez, Bx, By, Bz, Nx, Ny, Nz, output_dir),
         lambda _: None,
         operand=None
     )
@@ -949,7 +994,7 @@ def plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, p
     Jx, Jy, Jz = J
 
     dt = world['dt']
-    output_dir = "/home/christopherwoolford/Documents/Research/PICsims/pypic3d_v0.1.1/dummy_test"
+    output_dir = simulation_parameters['output_dir']
 
     jax.lax.cond(
         plotting_parameters['plotting'],
@@ -964,6 +1009,14 @@ def plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, p
         lambda _: None,
         operand=None
     )
+
+
+    if t % plotting_parameters['plotting_interval'] == 0:
+        if plotting_parameters['phaseSpace']:
+                #particles_phase_space([particles[0]], world, t, "Particles", output_dir)
+                write_particles_phase_space(particles, t, output_dir)
+    # Really need to make this jit compatible
+
     # if plotting_parameters['plotting']:
     #     if t % plotting_parameters['plotting_interval'] == 0:
     #         save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid, B_grid, plotting_parameters, world, constants, output_dir)
