@@ -276,10 +276,11 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         print(f"Particle Kinetic Energy: {particle.kinetic_energy()}")
         print(f"Particle Species Plasma Frequency: {plasma_frequency(particle, world, constants)}")
         print(f"Particle Species Debye Length: {debye_length(particle, world, constants)}")
-        print(f"Dx per Debye Length: {debye_length(particle, world, constants) / dx}")
-        print(f"Dy per Debye Length: {debye_length(particle, world, constants) / dy}")
-        print(f"Dz per Debye Length: {debye_length(particle, world, constants) / dz}")
-
+        print(f"Dx per Debye Length: {dx / debye_length(particle, world, constants) }")
+        print(f"Dy per Debye Length: {dy / debye_length(particle, world, constants) }")
+        print(f"Dz per Debye Length: {dz / debye_length(particle, world, constants) }")
+        print(f"Particle Species Scaled Charge: {particle.get_charge()}")
+        print(f"Particle Species Scaled Mass: {particle.get_mass()}")
     return particles
 
 def fermi_dirac_distribution(energy, fermi_energy, T, kb):
@@ -380,15 +381,15 @@ def initial_particles(N_per_cell, N_particles, minx, maxx, miny, maxy, minz, max
         v_z (numpy.ndarray): The z-component of the particles' velocities.
     """
 
-    if N_per_cell < 1:
-        x = jax.random.uniform(key1, shape = (N_particles,), minval=minx, maxval=maxx)
-        y = jax.random.uniform(key2, shape = (N_particles,), minval=miny, maxval=maxy)
-        z = jax.random.uniform(key3, shape = (N_particles,), minval=minz, maxval=maxz)
+    # if N_per_cell < 1:
+    x = jax.random.uniform(key1, shape = (N_particles,), minval=minx, maxval=maxx)
+    y = jax.random.uniform(key2, shape = (N_particles,), minval=miny, maxval=maxy)
+    z = jax.random.uniform(key3, shape = (N_particles,), minval=minz, maxval=maxz)
         # initialize the positions of the particles
-    else:
-        x = jnp.repeat(jax.random.uniform(key1, shape=(N_particles // N_per_cell,), minval=minx, maxval=maxx), N_per_cell)
-        y = jnp.repeat(jax.random.uniform(key2, shape=(N_particles // N_per_cell,), minval=miny, maxval=maxy), N_per_cell)
-        z = jnp.repeat(jax.random.uniform(key3, shape=(N_particles // N_per_cell,), minval=minz, maxval=maxz), N_per_cell)
+    # else:
+        # x = jnp.repeat(jax.random.uniform(key1, shape=(N_particles // N_per_cell,), minval=minx, maxval=maxx), N_per_cell)
+        # y = jnp.repeat(jax.random.uniform(key2, shape=(N_particles // N_per_cell,), minval=miny, maxval=maxy), N_per_cell)
+        # z = jnp.repeat(jax.random.uniform(key3, shape=(N_particles // N_per_cell,), minval=minz, maxval=maxz), N_per_cell)
         # initialize the positions of the particles, giving every N_per_cell particles the same position
     std = kb * T / mass
     v_x = np.random.normal(0, std, N_particles)
@@ -676,7 +677,7 @@ class particle_species:
         return newzeta, neweta, newxi
 
     def kinetic_energy(self):
-        return 0.5 * self.weight * self.mass * jnp.sum(self.v1**2 + self.v2**2 + self.v3**2)
+        return 0.5 * self.weight * self.mass *  (  jnp.abs( jnp.sum( self.v1**2)) + jnp.abs( jnp.sum( self.v2**2)) + jnp.abs( jnp.sum( self.v3**2)) )
 
     def momentum(self):
         return self.mass * self.weight * jnp.sum(jnp.sqrt(self.v1**2 + self.v2**2 + self.v3**2))

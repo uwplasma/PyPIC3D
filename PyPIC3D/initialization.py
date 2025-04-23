@@ -37,7 +37,7 @@ from PyPIC3D.pec import (
 )
 
 from PyPIC3D.plotting import (
-    plot_initial_KE
+    plot_initial_KE, plot_initial_histograms
 )
 
 # from PyPIC3D.laser import (
@@ -233,6 +233,15 @@ def initialize_simulation(toml_file):
 
     particles = load_particles_from_toml(toml_file, simulation_parameters, world, constants)
     # load the particles from the configuration file
+
+    for species in particles:
+        name = species.get_name()
+        name = name.replace(" ", "_")
+        # replace spaces with underscores in the name
+        plot_initial_histograms(species, world, path=f"{simulation_parameters['output_dir']}/data", name=name)
+        # plot the initial histograms of the particles
+
+
 
     print_stats(world)
     # print the statistics of the simulation
