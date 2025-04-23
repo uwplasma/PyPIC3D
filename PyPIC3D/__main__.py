@@ -6,6 +6,7 @@
 ########################################## IMPORT LIBRARIES #############################################
 import time
 import jax
+from jax import block_until_ready
 from tqdm import tqdm
 from memory_profiler import profile
 # Importing relevant libraries
@@ -45,7 +46,7 @@ def run_PyPIC3D(config_file):
 
 
     ###################################################### SIMULATION LOOP #####################################
-    start = time.time()
+    # start = time.time()
     # start the timer
 
     # jax.profiler.start_trace("/tmp/tensorboard")
@@ -71,11 +72,54 @@ def run_PyPIC3D(config_file):
     # jax.profiler.stop_trace()
     # # stop the trace
 
-    end = time.time()
+    # end = time.time()
     # end the timer
     #############################################################################################################
 
     ####################################### DUMP PARAMETERS TO TOML #############################################
+
+    # duration = end - start
+    # # calculate the total simulation time
+
+    # simulation_stats = {
+    #     "total_time": duration,
+    #     "total_iterations": Nt,
+    #     "time_per_iteration": duration / Nt
+    # }
+
+    # dump_parameters_to_toml(simulation_stats, simulation_parameters, plasma_parameters, plotting_parameters, constants, particles)
+    # # save the parameters to an output file
+
+    # print(f"\nSimulation Complete")
+    # print(f"Total Simulation Time: {duration} s")
+    # print(f"Time Per Iteration: {duration/Nt} s")
+    ###############################################################################################################
+
+    return Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles
+
+def main():
+    ###################### JAX SETTINGS ########################################################################
+    jax.config.update("jax_enable_x64", True)
+    # set Jax to use 64 bit precision
+    jax.config.update("jax_debug_nans", True)
+    # debugging for nans
+    jax.config.update('jax_platform_name', 'cpu')
+    # set Jax to use CPUs
+    #jax.config.update("jax_disable_jit", True)
+    ############################################################################################################
+
+    toml_file = load_config_file()
+    # load the configuration file
+
+    start = time.time()
+    # start the timer
+
+    Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles =  block_until_ready(run_PyPIC3D(toml_file))
+    # run the PyPIC3D simulation
+
+    end = time.time()
+    # end the timer
+
 
     duration = end - start
     # calculate the total simulation time
@@ -92,24 +136,6 @@ def run_PyPIC3D(config_file):
     print(f"\nSimulation Complete")
     print(f"Total Simulation Time: {duration} s")
     print(f"Time Per Iteration: {duration/Nt} s")
-    ###############################################################################################################
-
-def main():
-    ###################### JAX SETTINGS ########################################################################
-    jax.config.update("jax_enable_x64", True)
-    # set Jax to use 64 bit precision
-    jax.config.update("jax_debug_nans", True)
-    # debugging for nans
-    jax.config.update('jax_platform_name', 'cpu')
-    # set Jax to use CPUs
-    #jax.config.update("jax_disable_jit", True)
-    ############################################################################################################
-
-    toml_file = load_config_file()
-    # load the configuration file
-
-    run_PyPIC3D(toml_file)
-    # run the PyPIC3D simulation
 
 
 if __name__ == "__main__":
