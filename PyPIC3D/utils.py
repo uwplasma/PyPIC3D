@@ -569,9 +569,12 @@ def dump_parameters_to_toml(simulation_stats, simulation_parameters, plasma_para
         particle_dict = {
             "name": particle.name,
             "N_particles": particle.N_particles,
+            "weight": particle.weight,
             "charge": particle.charge,
             "mass": particle.mass,
             "temperature": particle.T,
+            "scaled mass": particle.get_mass(),
+            "scaled charge": particle.get_charge(),
             "update_pos": particle.update_pos,
             "update_v": particle.update_v
         }
@@ -859,5 +862,5 @@ def debye_length(particle_species, world, constants):
     x_wind = world['x_wind']
     y_wind = world['y_wind']
     z_wind = world['z_wind']
-    n = N_particles / (x_wind * y_wind * z_wind)
+    n = particle_species.weight * N_particles / (x_wind * y_wind * z_wind)
     return jnp.sqrt(eps * kb * T / (n * q**2))

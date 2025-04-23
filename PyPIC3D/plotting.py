@@ -22,6 +22,8 @@ from PyPIC3D.utils import (
     simpsons_rule_3d
 )
 
+from PyPIC3D.particle import total_KE
+
 def plot_rho(rho, t, name, dx, dy, dz):
     """
     Plot the density field.
@@ -338,13 +340,6 @@ def particles_phase_space(particles, world, t, name, path):
         None
     """
 
-    if not os.path.exists(f"{path}/data/phase_space/x"):
-        os.makedirs(f"{path}/data/phase_space/x")
-    if not os.path.exists(f"{path}/data/phase_space/y"):
-        os.makedirs(f"{path}/data/phase_space/y")
-    if not os.path.exists(f"{path}/data/phase_space/z"):
-        os.makedirs(f"{path}/data/phase_space/z")
-
     x_wind = world['x_wind']
     y_wind = world['y_wind']
     z_wind = world['z_wind']
@@ -391,6 +386,63 @@ def particles_phase_space(particles, world, t, name, path):
     plt.title(f"{name} Phase Space")
     plt.savefig(f"{path}/data/phase_space/z/{name}_phase_space.{t:09}.png", dpi=150)
     plt.close()
+
+
+def plot_initial_histograms(particle_species, world, name, path):
+
+    x, y, z = particle_species.get_position()
+    vx, vy, vz = particle_species.get_velocity()
+
+    x_wind = world['x_wind']
+    y_wind = world['y_wind']
+    z_wind = world['z_wind']
+
+
+    plt.hist(x, bins=50)
+    plt.xlabel("X")
+    plt.ylabel("Number of Particles")
+    plt.xlim(-(2/3)*x_wind, (2/3)*x_wind)
+    plt.title(f"{name} Initial X Position Histogram")
+    plt.savefig(f"{path}/{name}_initial_x_histogram.png", dpi=150)
+    plt.close()
+
+    plt.hist(y, bins=50)
+    plt.xlabel("Y")
+    plt.ylabel("Number of Particles")
+    plt.xlim(-(2/3)*y_wind, (2/3)*y_wind)
+    plt.title(f"{name} Initial Y Position Histogram")
+    plt.savefig(f"{path}/{name}_initial_y_histogram.png", dpi=150)
+    plt.close()
+
+    plt.hist(z, bins=50)
+    plt.xlabel("Z")
+    plt.ylabel("Number of Particles")
+    plt.xlim(-(2/3)*z_wind, (2/3)*z_wind)
+    plt.title(f"{name} Initial Z Position Histogram")
+    plt.savefig(f"{path}/{name}_initial_z_histogram.png", dpi=150)
+    plt.close()
+
+    plt.hist(vx, bins=50)
+    plt.xlabel("X Velocity")
+    plt.ylabel("Number of Particles")
+    plt.title(f"{name} Initial X Velocity Histogram")
+    plt.savefig(f"{path}/{name}_initial_x_velocity_histogram.png", dpi=150)
+    plt.close()
+
+    plt.hist(vy, bins=50)
+    plt.xlabel("Y Velocity")
+    plt.ylabel("Number of Particles")
+    plt.title(f"{name} Initial Y Velocity Histogram")
+    plt.savefig(f"{path}/{name}_initial_y_velocity_histogram.png", dpi=150)
+    plt.close()
+
+    plt.hist(vz, bins=50)
+    plt.xlabel("Z Velocity")
+    plt.ylabel("Number of Particles")
+    plt.title(f"{name} Initial Z Velocity Histogram")
+    plt.savefig(f"{path}/{name}_initial_z_velocity_histogram.png", dpi=150)
+    plt.close()
+
 
 def center_of_mass(particles):
     """
@@ -839,7 +891,44 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         e_energy = 0.5 * constants['eps'] * E2_integral
         b_energy = 0.5 / constants['mu'] * B2_integral
         # Electric and magnetic field energy
+
+        # jax.debug.print("eps: {}", constants['eps'])
+        # jax.debug.print("mu: {}", constants['mu'])
+
         kinetic_energy = sum(particle.kinetic_energy() for particle in particles)
+
+        # jax.debug.print("Original Kinetic Energy Calculation: {}", kinetic_energy)
+        # # Calculate the kinetic energy of the particles
+
+        # new_kinetic_energy = total_KE(particles)
+        # jax.debug.print("New Kinetic Energy Calculation: {}", new_kinetic_energy)
+
+        # vx, vy, vz = particles[0].get_velocity()
+        # v2 = jnp.sum(vx**2 + vy**2 + vz**2)
+        # mass = particles[0].get_mass()
+        # jax.debug.print("Mass: {}", mass)
+        # kinetic_energy = 0.5 * mass * v2
+        # jax.debug.print("Velocity Squared: {}", v2)
+        # jax.debug.print("kinetic energy: {}", kinetic_energy)
+        # # Calculate the kinetic energy of the particles
+
+        # vx, vy, vz = particles[1].get_velocity()
+        # v2 = jnp.sum(vx**2 + vy**2 + vz**2)
+        # mass = particles[1].get_mass()
+        # jax.debug.print("Mass: {}", mass)
+        # kinetic_energy = 0.5 * mass * v2
+        # jax.debug.print("Velocity Squared: {}", v2)
+        # jax.debug.print("kinetic energy: {}", kinetic_energy)
+        # # Calculate the kinetic energy of the particles
+
+        # jax.debug.print("Electric Field Energy: {}", e_energy)
+        # jax.debug.print("Total Energy: {}", e_energy + b_energy + kinetic_energy)
+
+
+        # jax.debug.print("\n")
+
+
+
         # Kinetic energy of the particles
         write_data(f"{output_dir}/data/total_energy.txt", t * dt, e_energy + b_energy + kinetic_energy)
         write_data(f"{output_dir}/data/electric_field_energy.txt", t * dt, e_energy)
