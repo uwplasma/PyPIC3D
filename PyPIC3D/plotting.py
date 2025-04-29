@@ -9,7 +9,7 @@ import os
 import plotly.graph_objects as go
 from PyPIC3D.rho import update_rho
 import jax
-from memory_profiler import profile
+#from memory_profiler import profile
 from functools import partial
 
 from PyPIC3D.errors import (

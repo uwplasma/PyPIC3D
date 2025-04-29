@@ -6,7 +6,7 @@ import functools
 from functools import partial
 import toml
 import matplotlib.pyplot as plt
-from memory_profiler import profile
+#from memory_profiler import profile
 
 from PyPIC3D.particle import (
     load_particles_from_toml
