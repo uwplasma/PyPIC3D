@@ -8,7 +8,7 @@ import time
 import jax
 from jax import block_until_ready
 from tqdm import tqdm
-from memory_profiler import profile
+#from memory_profiler import profile
 # Importing relevant libraries
 
 from PyPIC3D.plotting import (

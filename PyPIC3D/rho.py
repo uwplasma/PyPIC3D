@@ -1,7 +1,7 @@
 import jax
 from jax import jit
 import jax.numpy as jnp
-from memory_profiler import profile
+#from memory_profiler import profile
 # import external libraries
 
 @jit
