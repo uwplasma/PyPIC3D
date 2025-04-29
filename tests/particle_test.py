@@ -173,7 +173,7 @@ class TestParticleMethods(unittest.TestCase):
             zwind=self.z_wind,
             subcells=(x1, x1, x2, x2, x3, x3),
         )
-        species.update_position(self.dt, self.x_wind, self.y_wind, self.z_wind)
+        species.update_position(self.dt)
         x, y, z = species.get_position()
         self.assertTrue(jnp.allclose(x, jnp.array([1.1, 2.2, 3.3])))
         self.assertTrue(jnp.allclose(y, jnp.array([1.1, 2.2, 3.3])))
