@@ -17,3 +17,4 @@ PyPIC3D.egg-info/
 dist/
 build/
 *.agr
+.vscode/
