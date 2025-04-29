@@ -39,8 +39,6 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
     external sources if specified in the TOML file. The particles are then appended to a list and returned.
     """
 
-
-
     x_wind = world['x_wind']
     y_wind = world['y_wind']
     z_wind = world['z_wind']
@@ -105,48 +103,48 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         # set the default bounds for the particle species
 
         bounded = False
-        if 'bounded' in config[toml_key]:
-            bounded = config[toml_key]['bounded']
-        # check if the particle species is bounded or not
-        if bounded:
-            #print(f"Initializing bounded particle species: {particle_name}")
-            w = jnp.array(config[toml_key]['w']) * jnp.identity(3)
-            g = jnp.array(config[toml_key]['g']) * jnp.identity(3)
-            #print(f"Using w:\n {w}")
-            #print(f"Using g:\n {g}")
-            try:
-                xmin = config[toml_key]['xmin']
-                xmax = config[toml_key]['xmax']
-                ymin = config[toml_key]['ymin']
-                ymax = config[toml_key]['ymax']
-                zmin = config[toml_key]['zmin']
-                zmax = config[toml_key]['zmax']
-            except:
-                print(f"Error: Bounded particle species {particle_name} requires xmin, xmax, ymin, ymax, zmin, zmax")
-                exit(1)
-            if "fermi_energy" in config[toml_key]:
-                fermi_energy = config[toml_key]['fermi_energy']
-            else:
-                fermi_energy = 1.0
+        # if 'bounded' in config[toml_key]:
+        #     bounded = config[toml_key]['bounded']
+        # # check if the particle species is bounded or not
+        # if bounded:
+        #     #print(f"Initializing bounded particle species: {particle_name}")
+        #     w = jnp.array(config[toml_key]['w']) * jnp.identity(3)
+        #     g = jnp.array(config[toml_key]['g']) * jnp.identity(3)
+        #     #print(f"Using w:\n {w}")
+        #     #print(f"Using g:\n {g}")
+        #     try:
+        #         xmin = config[toml_key]['xmin']
+        #         xmax = config[toml_key]['xmax']
+        #         ymin = config[toml_key]['ymin']
+        #         ymax = config[toml_key]['ymax']
+        #         zmin = config[toml_key]['zmin']
+        #         zmax = config[toml_key]['zmax']
+        #     except:
+        #         print(f"Error: Bounded particle species {particle_name} requires xmin, xmax, ymin, ymax, zmin, zmax")
+        #         exit(1)
+        #     if "fermi_energy" in config[toml_key]:
+        #         fermi_energy = config[toml_key]['fermi_energy']
+        #     else:
+        #         fermi_energy = 1.0
             
-            x, y, z, vx, vy, vz = initial_bound_particles(N_particles, xmin, xmax, ymin, ymax, zmin, zmax, mass, T, fermi_energy, kb, key1, key2, key3)
-        else:
-            #print(f"Initializing unbounded particle species: {particle_name}")
-            if 'xmin' in config[toml_key]:
-                xmin = config[toml_key]['xmin']
-            if 'xmax' in config[toml_key]:
-                xmax = config[toml_key]['xmax']
-            if 'ymin' in config[toml_key]:
-                ymin = config[toml_key]['ymin']
-            if 'ymax' in config[toml_key]:
-                ymax = config[toml_key]['ymax']
-            if 'zmin' in config[toml_key]:
-                zmin = config[toml_key]['zmin']
-            if 'zmax' in config[toml_key]:
-                zmax = config[toml_key]['zmax']
-            # set the bounds for the particle species if specified
-            x, y, z, vx, vy, vz = initial_particles(N_per_cell, N_particles, xmin, xmax, ymin, ymax, zmin, zmax, mass, T, kb, key1, key2, key3)
-        # initialize the positions and velocities of the particles
+        #     x, y, z, vx, vy, vz = initial_bound_particles(N_particles, xmin, xmax, ymin, ymax, zmin, zmax, mass, T, fermi_energy, kb, key1, key2, key3)
+        # else:
+        #     #print(f"Initializing unbounded particle species: {particle_name}")
+        if 'xmin' in config[toml_key]:
+            xmin = config[toml_key]['xmin']
+        if 'xmax' in config[toml_key]:
+            xmax = config[toml_key]['xmax']
+        if 'ymin' in config[toml_key]:
+            ymin = config[toml_key]['ymin']
+        if 'ymax' in config[toml_key]:
+            ymax = config[toml_key]['ymax']
+        if 'zmin' in config[toml_key]:
+            zmin = config[toml_key]['zmin']
+        if 'zmax' in config[toml_key]:
+            zmax = config[toml_key]['zmax']
+        # set the bounds for the particle species if specified
+        x, y, z, vx, vy, vz = initial_particles(N_per_cell, N_particles, xmin, xmax, ymin, ymax, zmin, zmax, mass, T, kb, key1, key2, key3)
+    # initialize the positions and velocities of the particles
 
         bc = 'periodic'
         if 'bc' in config[toml_key]:
@@ -175,19 +173,19 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
                 print(f"Loading initial_vx from external source: {config[toml_key]['initial_vx']}")
                 vx = jnp.load(config[toml_key]['initial_vx'])
             else:
-                vx = jnp.full(N_particles, config[toml_key]['initial_vx'])
+                vx = vx + jnp.full(N_particles, config[toml_key]['initial_vx'])
         if 'initial_vy' in config[toml_key]:
             if isinstance(config[toml_key]['initial_vy'], str):
                 print(f"Loading initial_vy from external source: {config[toml_key]['initial_vy']}")
                 vy = jnp.load(config[toml_key]['initial_vy'])
             else:
-                vy = jnp.full(N_particles, config[toml_key]['initial_vy'])
+                vy = vy + jnp.full(N_particles, config[toml_key]['initial_vy'])
         if 'initial_vz' in config[toml_key]:
             if isinstance(config[toml_key]['initial_vz'], str):
                 print(f"Loading initial_vz from external source: {config[toml_key]['initial_vz']}")
                 vz = jnp.load(config[toml_key]['initial_vz'])
             else:
-                vz = jnp.full(N_particles, config[toml_key]['initial_vz'])
+                vz = vz + jnp.full(N_particles, config[toml_key]['initial_vz'])
 
         update_pos = True
         update_v   = True
