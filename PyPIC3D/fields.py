@@ -3,7 +3,7 @@ from jax import jit
 from jax import lax
 import functools
 from functools import partial
-from memory_profiler import profile
+#from memory_profiler import profile
 # import external libraries
 
 from PyPIC3D.pstd import spectral_poisson_solve, spectral_gradient
