@@ -37,8 +37,14 @@ class TestFieldsMethods(unittest.TestCase):
         Nx = self.world['Nx']
         Ny = self.world['Ny']
         Nz = self.world['Nz']
-        self.Ex, self.Ey, self.Ez, self.Bx, self.By, self.Bz, self.Jx, self.Jy, self.Jz, self.phi, self.rho = initialize_fields(Nx, Ny, Nz)
-        # build initial fields
+
+        E, B, J, phi, rho = initialize_fields(Nx, Ny, Nz)
+        self.Ex, self.Ey, self.Ez = E
+        self.Bx, self.By, self.Bz = B
+        self.Jx, self.Jy, self.Jz = J
+        self.phi = phi
+        self.rho = rho
+        # create a grid for the fields
 
         x = jnp.linspace(0, 1, 10)
         y = jnp.linspace(0, 1, 10)
@@ -92,7 +98,8 @@ class TestFieldsMethods(unittest.TestCase):
         E = (self.Ex, self.Ey, self.Ez)
         B = (self.Bx, self.By, self.Bz)
         J = (self.Jx, self.Jy, self.Jz)
-        Ex, Ey, Ez = update_E(self.grid, self.staggered_grid, E, B, J, self.world, self.constants, lambda x, y, z: (x, y, z))
+        Ex, Ey, Ez = update_E(E, B, J, self.world, self.constants, lambda x, y, z: (x, y, z))
+        # Update the electric field using the update_E function
         self.assertEqual(Ex.shape, (10, 10, 10))
         self.assertEqual(Ey.shape, (10, 10, 10))
         self.assertEqual(Ez.shape, (10, 10, 10))
@@ -100,7 +107,8 @@ class TestFieldsMethods(unittest.TestCase):
     def test_update_B(self):
         E = (self.Ex, self.Ey, self.Ez)
         B = (self.Bx, self.By, self.Bz)
-        Bx, By, Bz = update_B(self.grid, self.staggered_grid, E, B, self.world, self.constants, lambda x, y, z: (x, y, z))
+        Bx, By, Bz = update_B(E, B, self.world, self.constants, lambda x, y, z: (x, y, z))
+        # Update the magnetic field using the update_B function
         self.assertEqual(Bx.shape, (10, 10, 10))
         self.assertEqual(By.shape, (10, 10, 10))
         self.assertEqual(Bz.shape, (10, 10, 10))
