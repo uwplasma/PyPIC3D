@@ -53,7 +53,7 @@ def initialize_fields(Nx, Ny, Nz):
     return (Ex, Ey, Ez), (Bx, By, Bz), (Jx, Jy, Jz), phi, rho
 
 @partial(jit, static_argnums=(4, 5))
-def solve_poisson(rho, constants, world, phi, solver, bc='periodic', M = None):
+def solve_poisson(rho, constants, world, phi, solver, bc='periodic'):
     """
     Solve the Poisson equation for electrostatic potential.
 
@@ -98,8 +98,8 @@ def solve_poisson(rho, constants, world, phi, solver, bc='periodic', M = None):
 
     return phi
 
-@partial(jit, static_argnums=(6, 7))
-def calculateE(world, particles, constants, rho, phi, M, solver, bc):
+@partial(jit, static_argnums=(5, 6))
+def calculateE(world, particles, constants, rho, phi, solver, bc):
     """
     Calculate the electric field components (Ex, Ey, Ez) and electric potential (phi)
     based on the given parameters.
@@ -130,7 +130,7 @@ def calculateE(world, particles, constants, rho, phi, M, solver, bc):
     rho = compute_rho(particles, rho, world)
     # calculate the charge density based on the particle positions
 
-    phi = solve_poisson(rho=rho, constants=constants, world=world, phi=phi, solver=solver, bc=bc, M=M)
+    phi = solve_poisson(rho=rho, constants=constants, world=world, phi=phi, solver=solver, bc=bc)
     # solve the Poisson equation to get the electric potential
 
     Ex, Ey, Ez = lax.cond(

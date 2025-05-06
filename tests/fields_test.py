@@ -83,12 +83,12 @@ class TestFieldsMethods(unittest.TestCase):
 
     def test_calculateE(self):
         particles = []  # Add appropriate particle initialization
-        E, phi, rho = calculateE(self.world, particles, self.constants, self.rho, self.phi, None, 'fdtd', 'periodic')
+        E, phi, rho = calculateE(self.world, particles, self.constants, self.rho, self.phi, 'fdtd', 'periodic')
         Ex, Ey, Ez = E
         self.assertEqual(Ex.shape, (10, 10, 10))
         self.assertEqual(Ey.shape, (10, 10, 10))
         self.assertEqual(Ez.shape, (10, 10, 10))
-        E, phi, rho = calculateE(self.world, particles, self.constants, self.rho, self.phi, None, 'spectral', 'periodic')
+        E, phi, rho = calculateE(self.world, particles, self.constants, self.rho, self.phi, 'spectral', 'periodic')
         Ex, Ey, Ez = E
         self.assertEqual(Ex.shape, (10, 10, 10))
         self.assertEqual(Ey.shape, (10, 10, 10))
