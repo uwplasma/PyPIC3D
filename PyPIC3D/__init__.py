@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 
 #jax.config.update('jax_platform_name', 'cpu')
 
-from . import cg
 from . import errors
 from . import fields
 from . import boundaryconditions
@@ -18,9 +17,6 @@ from . import plotting
 from . import utils
 from . import pstd
 from . import fdtd
-from . import sor
 from . import boris
 from . import rho
 from . import evolve
-from . import pec
-from . import laser

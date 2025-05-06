@@ -46,6 +46,7 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
+    dt = world['dt']
 
     i = 0
     particles = []
@@ -272,11 +273,17 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         particles.append(particle)
 
         print(f"Particle Kinetic Energy: {particle.kinetic_energy()}")
-        print(f"Particle Species Plasma Frequency: {plasma_frequency(particle, world, constants)}")
-        print(f"Particle Species Debye Length: {debye_length(particle, world, constants)}")
-        print(f"Dx per Debye Length: {dx / debye_length(particle, world, constants) }")
-        print(f"Dy per Debye Length: {dy / debye_length(particle, world, constants) }")
-        print(f"Dz per Debye Length: {dz / debye_length(particle, world, constants) }")
+        pf = plasma_frequency(particle, world, constants)
+        dl = debye_length(particle, world, constants)
+        dx_dl = dl / dx
+        dy_dl = dl / dy
+        dz_dl = dl / dz
+        print(f"Particle Species Plasma Frequency: {pf}")
+        print(f"Time Steps Per Plasma Period: {(1 / (dt * pf) )}")
+        print(f"Particle Species Debye Length: {dl}")
+        print(f"Dx per Debye Length: {dx_dl}")
+        print(f"Dy per Debye Length: {dy_dl}")
+        print(f"Dz per Debye Length: {dz_dl}")
         print(f"Particle Species Scaled Charge: {particle.get_charge()}")
         print(f"Particle Species Scaled Mass: {particle.get_mass()}")
     return particles

@@ -23,9 +23,6 @@ from PyPIC3D.initialization import (
     initialize_simulation
 )
 
-from PyPIC3D.evolve import (
-    time_loop_electrostatic
-)
 
 # Importing functions from the PyPIC3D package
 ############################################################################################################
@@ -36,64 +33,22 @@ def run_PyPIC3D(config_file):
 
     loop, particles, E, B, J, \
         phi, rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, \
-            plasma_parameters, M, solver, bc, electrostatic, verbose, GPUs, Nt, curl_func, \
-                pecs, lasers, surfaces = initialize_simulation(config_file)
+            plasma_parameters, M, solver, bc, electrostatic, verbose, GPUs, Nt, curl_func = initialize_simulation(config_file)
     # initialize the simulation
 
-    #loop = jax.jit(loop)
-    # jit the loop function
     ############################################################################################################
 
 
     ###################################################### SIMULATION LOOP #####################################
-    # start = time.time()
-    # start the timer
-
-    # jax.profiler.start_trace("/tmp/tensorboard")
 
     for t in tqdm(range(Nt)):
         plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters)
         # plot the data
 
-        particles, E, B, J, phi, rho = loop(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, pecs, lasers, surfaces, curl_func, M, solver, bc)
-        #particles, E, B, J, rho, phi = loop(particles=particles, E=E, B=B, J=J, rho=rho, phi=phi)
+        particles, E, B, J, phi, rho = loop(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, curl_func, M, solver, bc)
         # time loop to update the particles and fields
 
-
-    # def body_fn(carry, t):
-    #     particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi = carry
-    #     particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi = loop(particles, (Ex, Ey, Ez), (Bx, By, Bz), (Jx, Jy, Jz), rho, phi)
-    #     plotter(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters, solver, bc)
-    #     return (particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi), None
-
-    # carry = (particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi)
-    # carry, _ = jax.lax.scan(body_fn, carry, jnp.arange(Nt))
-    # loop the simulation
-    # jax.profiler.stop_trace()
-    # # stop the trace
-
-    # end = time.time()
-    # end the timer
-    #############################################################################################################
-
-    ####################################### DUMP PARAMETERS TO TOML #############################################
-
-    # duration = end - start
-    # # calculate the total simulation time
-
-    # simulation_stats = {
-    #     "total_time": duration,
-    #     "total_iterations": Nt,
-    #     "time_per_iteration": duration / Nt
-    # }
-
-    # dump_parameters_to_toml(simulation_stats, simulation_parameters, plasma_parameters, plotting_parameters, constants, particles)
-    # # save the parameters to an output file
-
-    # print(f"\nSimulation Complete")
-    # print(f"Total Simulation Time: {duration} s")
-    # print(f"Time Per Iteration: {duration/Nt} s")
-    ###############################################################################################################
+    ############################################################################################################
 
     return Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles
 
