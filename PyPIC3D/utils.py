@@ -26,51 +26,6 @@ def make_dir(path):
     if not os.path.exists(path):
         os.makedirs(path)
 
-def simpsons_rule_3d(f, dx, dy, dz):
-    """
-    Integrate a 3D array using Simpson's rule over the entire volume.
-
-    Args:
-        f (ndarray): 3D array to be integrated.
-        dx (float): Grid spacing in the x-direction.
-        dy (float): Grid spacing in the y-direction.
-        dz (float): Grid spacing in the z-direction.
-
-    Returns:
-        float: The integral of the 3D array over the entire volume.
-    """
-    nx, ny, nz = f.shape
-    integral = 0.0
-
-    for i in range(0, nx, 2):
-        for j in range(0, ny, 2):
-            for k in range(0, nz, 2):
-                coeff = 1
-                if i == 0 or i == nx - 1:
-                    coeff *= 1
-                elif i % 2 == 0:
-                    coeff *= 2
-                else:
-                    coeff *= 4
-
-                if j == 0 or j == ny - 1:
-                    coeff *= 1
-                elif j % 2 == 0:
-                    coeff *= 2
-                else:
-                    coeff *= 4
-
-                if k == 0 or k == nz - 1:
-                    coeff *= 1
-                elif k % 2 == 0:
-                    coeff *= 2
-                else:
-                    coeff *= 4
-
-                integral += coeff * f[i, j, k]
-
-    integral *= dx * dy * dz / 27.0
-    return integral
 
 def vth_to_T(vth, m, kb):
     """
@@ -293,53 +248,6 @@ def convert_to_jax_compatible(data):
         dict: The JAX-compatible PyTree.
     """
     return tree_map(lambda x: jnp.array(x) if isinstance(x, (int, float, list, tuple)) else x, data)
-
-
-# def load_rectilinear_grid(file_path):
-#     """
-#     Load a rectilinear grid from a VTK file and extract the vector field components.
-
-#     Args:
-#         file_path (str): The path to the VTK file containing the rectilinear grid.
-
-#     Returns:
-#         tuple: A tuple containing three numpy arrays (field_x, field_y, field_z) representing
-#             the x, y, and z components of the vector field, respectively. Each array is
-#             reshaped to match the dimensions of the grid.
-#     """
-#     reader = vtk.vtkRectilinearGridReader()
-#     reader.SetFileName(file_path)
-#     reader.Update()
-#     rectilinear_grid = reader.GetOutput()
-#     x = vtknp.vtk_to_numpy(rectilinear_grid.GetXCoordinates())
-#     y = vtknp.vtk_to_numpy(rectilinear_grid.GetYCoordinates())
-#     z = vtknp.vtk_to_numpy(rectilinear_grid.GetZCoordinates())
-#     data = vtknp.vtk_to_numpy(rectilinear_grid.GetPointData().GetVectors())
-#     field_x = data[:, 0].reshape(len(x), len(y), len(z))
-#     field_y = data[:, 1].reshape(len(x), len(y), len(z))
-#     field_z = data[:, 2].reshape(len(x), len(y), len(z))
-#     return field_x, field_y, field_z
-
-
-# Define the function to read the TOML file and convert it to a DataFrame
-# def read_toml_to_dataframe(toml_file):
-#     """
-#     Reads a TOML file and converts it to a pandas DataFrame.
-
-#     Args:
-#         toml_file (str): Path to the TOML file.
-
-#     Returns:
-#         pd.DataFrame: DataFrame containing the TOML data.
-#     """
-#     # Read the TOML file
-#     data = toml.load(toml_file)
-
-#     # Convert the TOML data to a pandas DataFrame
-#     df = pd.json_normalize(data, sep='_')
-#     # Transpose the DataFrame to swap rows and columns
-#     df = df.transpose()
-#     return df
 
 
 def build_coallocated_grid(world):
@@ -664,66 +572,6 @@ def create_trilinear_interpolator(field, grid):
     return interpolator
 
 
-# def trilinear_interpolation(field, grid, x, y, z):
-#     """
-#     Perform trilinear interpolation on a 3D field at given (x, y, z) coordinates.
-
-#     Parameters:
-#     field (ndarray): The 3D field to interpolate.
-#     grid (tuple): A tuple of three arrays representing the grid points in the x, y, and z directions.
-#     x (ndarray): The x-coordinates where interpolation is desired.
-#     y (ndarray): The y-coordinates where interpolation is desired.
-#     z (ndarray): The z-coordinates where interpolation is desired.
-
-#     Returns:
-#     ndarray: Interpolated values at the specified (x, y, z) coordinates.
-#     """
-#     x_grid, y_grid, z_grid = grid
-#     x_idx = jnp.searchsorted(x_grid, x) - 1
-#     y_idx = jnp.searchsorted(y_grid, y) - 1
-#     z_idx = jnp.searchsorted(z_grid, z) - 1
-
-#     x0, x1 = x_grid[x_idx], x_grid[x_idx + 1]
-#     y0, y1 = y_grid[y_idx], y_grid[y_idx + 1]
-#     z0, z1 = z_grid[z_idx], z_grid[z_idx + 1]
-
-#     xd = (x - x0) / (x1 - x0)
-#     yd = (y - y0) / (y1 - y0)
-#     zd = (z - z0) / (z1 - z0)
-
-#     c00 = field[x_idx, y_idx, z_idx] * (1 - xd) + field[x_idx + 1, y_idx, z_idx] * xd
-#     c01 = field[x_idx, y_idx, z_idx + 1] * (1 - xd) + field[x_idx + 1, y_idx, z_idx + 1] * xd
-#     c10 = field[x_idx, y_idx + 1, z_idx] * (1 - xd) + field[x_idx + 1, y_idx + 1, z_idx] * xd
-#     c11 = field[x_idx, y_idx + 1, z_idx + 1] * (1 - xd) + field[x_idx + 1, y_idx + 1, z_idx + 1] * xd
-
-#     c0 = c00 * (1 - yd) + c10 * yd
-#     c1 = c01 * (1 - yd) + c11 * yd
-
-#     return c0 * (1 - zd) + c1 * zd
-
-# @jit
-# def interpolate_and_stagger_field(field, grid, staggered_grid):
-#     """
-#     Interpolates a given field defined on a grid to a staggered grid.
-
-#     Parameters:
-#     field (array-like): The field values defined on the original grid.
-#     grid (array-like): The coordinates of the original grid.
-#     staggered_grid (array-like): The coordinates of the staggered grid where the field needs to be interpolated.
-
-#     Returns:
-#     array-like: The interpolated field values on the staggered grid.
-#     """
-
-#     interpolate = jax.scipy.interpolate.RegularGridInterpolator(grid, field, fill_value=0)
-#     # create the interpolator
-#     mesh = jnp.meshgrid( *staggered_grid, indexing='ij')
-#     points = jnp.stack(mesh, axis=-1)
-#     # get the points for the interpolation
-#     staggered_field = interpolate( points)
-#     # interpolate the field to the staggered grid
-#     return staggered_field
-
 def courant_condition(courant_number, dx, dy, dz, simulation_parameters, constants):
     """
     Calculate the Courant condition for a given grid spacing and wave speed.
@@ -746,52 +594,7 @@ def courant_condition(courant_number, dx, dy, dz, simulation_parameters, constan
     #if solver == 'fdtd':
     C = constants['C']
     return courant_number / (C * ( (1/dx) + (1/dy) + (1/dz) ) )
-    # elif solver == 'spectral':
-    #     return 2/jnp.pi / jnp.sqrt( 1/(dx**2) + 1/(dy**2) + 1/(dz**2) )
-# calculate the courant condition
 
-def modified_courant_condition(courant_number, world, constants, particles):
-    """
-    Calculate the modified Courant condition for a given grid spacing and wave speed.
-
-    The modified Courant condition is a stability criterion for numerical solutions of partial differential equations. 
-    It ensures that the numerical domain of dependence contains the true domain of dependence.
-
-    Args:
-        courant_number (float): Courant number.
-        world (dict): A dictionary containing the spatial resolution and wind parameters.
-        constants (dict): A dictionary containing physical constants.
-        wb (ndarray): frequency of the bounded particles.
-        wp (float): plasma frequency of the bounded particles.
-
-    Returns:
-        float: The maximum allowable time step for stability.
-    """
-    dx = world['dx']
-    dy = world['dy']
-    dz = world['dz']
-    C = constants['C']
-
-    wp = 0
-    wb2 = 0
-
-    for species in particles:
-        if species.is_bounded():
-            wp = wp + plasma_frequency(species, world, constants)
-            w = species.get_freqmatrix()
-            # get the frequency matrice
-            wb2 = wb2 + w[0,0]**2 + w[1,1]**2 + w[2,2]**2
-            # get the diagonal components
-        
-    if len(particles) > 0:
-        wp = wp / len(particles)
-        wb2 = wb2 / len(particles)
-    # take the averages
-
-    wp2 = wp**2
-
-    dt = 1 / jnp.sqrt( 0.25*(wb2 + wp2) + C**2 * ( (1/dx)**2 + (1/dy)**2 + (1/dz)**2 ) )
-    return courant_number * dt
 
 def plasma_frequency(particle_species, world, constants):
     """
@@ -828,7 +631,7 @@ def plasma_frequency(particle_species, world, constants):
     # the plasma frequency with floating point precision so I had to
     # break it down into smaller parts
     sqrt_dv = jnp.sqrt( x_wind * y_wind * z_wind )
-    sqrt_ne = jnp.sqrt( N ) / sqrt_dv
+    sqrt_ne = jnp.sqrt( N * particle_species.weight) / sqrt_dv
     sqrt_eps = jnp.sqrt( eps )
     sqrt_me = jnp.sqrt( m )
     pf = sqrt_ne * jnp.abs(q) / (sqrt_eps * sqrt_me)
