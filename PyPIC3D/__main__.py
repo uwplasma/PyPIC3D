@@ -33,7 +33,7 @@ def run_PyPIC3D(config_file):
 
     loop, particles, E, B, J, \
         phi, rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, \
-            plasma_parameters, M, solver, bc, electrostatic, verbose, GPUs, Nt, curl_func = initialize_simulation(config_file)
+            plasma_parameters, solver, bc, electrostatic, verbose, GPUs, Nt, curl_func = initialize_simulation(config_file)
     # initialize the simulation
 
     ############################################################################################################
@@ -45,7 +45,7 @@ def run_PyPIC3D(config_file):
         plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters)
         # plot the data
 
-        particles, E, B, J, phi, rho = loop(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, curl_func, M, solver, bc)
+        particles, E, B, J, phi, rho = loop(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, curl_func, solver, bc)
         # time loop to update the particles and fields
 
     ############################################################################################################
