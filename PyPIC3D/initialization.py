@@ -87,8 +87,6 @@ def default_parameters():
         "ncores": 4, # number of cores to use
         "ncpus": 1, # number of CPUs to use
         "cfl"  : 1, # CFL condition number
-        "NN" : False, # boolean for using neural networks
-        "model_name": None, # neural network model name
     }
     # dictionary for simulation parameters
 
@@ -250,15 +248,13 @@ def initialize_simulation(toml_file):
     E, B, J = fields[:3], fields[3:6], fields[6:9]
     # convert the fields list back into tuples
 
-    M = None
-
     if solver == "spectral":
         curl_func = functools.partial(spectral_curl, world=world)
     elif solver == "fdtd":
         curl_func = functools.partial(centered_finite_difference_curl, dx=dx, dy=dy, dz=dz, bc=bc)
 
 
-    E, phi, rho = calculateE(world, particles, constants, rho, phi, M, solver, bc)
+    E, phi, rho = calculateE(world, particles, constants, rho, phi, solver, bc)
     # calculate the electric field using the Poisson equation
 
     if electrostatic:
@@ -268,5 +264,5 @@ def initialize_simulation(toml_file):
         evolve_loop = time_loop_electrodynamic
 
     return evolve_loop, particles, E, B, J, phi, \
-        rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, M, \
+        rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, \
             solver, bc, electrostatic, verbose, GPUs, Nt, curl_func
