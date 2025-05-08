@@ -112,7 +112,6 @@ def calculateE(world, particles, constants, rho, phi, solver, bc):
         constants (dict): Dictionary containing physical constants such as permittivity (eps).
         rho (array): Charge density array.
         phi (array): Electric potential array.
-        M (int): Parameter for the solver.
         solver (str): Type of solver to use ('spectral' or other).
         bc (str): Boundary condition type.
         verbose (bool): Flag to enable verbose output.
