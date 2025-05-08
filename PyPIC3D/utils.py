@@ -476,13 +476,13 @@ def dump_parameters_to_toml(simulation_stats, simulation_parameters, plasma_para
     for particle in particles:
         particle_dict = {
             "name": particle.name,
-            "N_particles": particle.N_particles,
-            "weight": particle.weight,
-            "charge": particle.charge,
-            "mass": particle.mass,
-            "temperature": particle.T,
-            "scaled mass": particle.get_mass(),
-            "scaled charge": particle.get_charge(),
+            "N_particles": float(particle.N_particles),
+            "weight": float(particle.weight),
+            "charge": float(particle.charge),
+            "mass": float(particle.mass),
+            "temperature": float(particle.T),
+            "scaled mass": float(particle.get_mass()),
+            "scaled charge": float(particle.get_charge()),
             "update_pos": particle.update_pos,
             "update_v": particle.update_v
         }
@@ -504,6 +504,12 @@ def dump_parameters_to_toml(simulation_stats, simulation_parameters, plasma_para
     }
 
     config["package_versions"] = package_versions
+
+    # print("Simulation Stats:", simulation_stats)
+    # print("Simulation Parameters:", simulation_parameters)
+    # print("Plasma Parameters:", plasma_parameters)
+    # print("Plotting Parameters:", plotting_parameters)
+    # print("Constants:", constants)
 
     with open(output_file, 'w') as f:
         toml.dump(config, f)
