@@ -178,8 +178,10 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
 
         if 'ds_per_debye' in config[toml_key]: # assuming dx = dy = dz
             ds_per_debye = config[toml_key]['ds_per_debye']
-            weight_3 = (x_wind*y_wind*z_wind * eps * kb * T)  / (N_particles * charge**2 * ds_per_debye**2 * dx*dx)
-            weight = jnp.power(weight_3, 1/3)
+
+
+            weight = (x_wind*y_wind*z_wind * eps * kb * T)  / (N_particles * charge**2 * ds_per_debye**2 * dx*dx)
+            #weight = jnp.power(weight_3, 1/3)
 
         print(f"Particle Weight: {weight}")
 
@@ -380,7 +382,8 @@ def initial_particles(N_per_cell, N_particles, minx, maxx, miny, maxy, minz, max
         # y = jnp.repeat(jax.random.uniform(key2, shape=(N_particles // N_per_cell,), minval=miny, maxval=maxy), N_per_cell)
         # z = jnp.repeat(jax.random.uniform(key3, shape=(N_particles // N_per_cell,), minval=minz, maxval=maxz), N_per_cell)
         # initialize the positions of the particles, giving every N_per_cell particles the same position
-    std = kb * T / mass
+    #std = jnp.sqrt( kb * T / mass )
+    std = T_to_vth( T, mass, kb )
     v_x = np.random.normal(0, std, N_particles)
     v_y = np.random.normal(0, std, N_particles)
     v_z = np.random.normal(0, std, N_particles)

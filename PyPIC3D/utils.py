@@ -39,7 +39,7 @@ def vth_to_T(vth, m, kb):
     Returns:
         float: Temperature.
     """
-    return m * vth**2 / (2 * kb)
+    return m * vth**2 / (kb)
 
 def T_to_vth(T, m, kb):
     """
@@ -53,7 +53,7 @@ def T_to_vth(T, m, kb):
     Returns:
         float: Thermal velocity.
     """
-    return jnp.sqrt(2 * kb * T / m)
+    return jnp.sqrt(kb * T / m)
 
 def load_config_file():
     """
@@ -672,4 +672,4 @@ def debye_length(particle_species, world, constants):
     y_wind = world['y_wind']
     z_wind = world['z_wind']
     n = particle_species.weight * N_particles / (x_wind * y_wind * z_wind)
-    return jnp.sqrt(eps * kb * T / (n * q**2))
+    return jnp.sqrt(eps * kb * T / (n * ( q / particle_species.weight )**2))
