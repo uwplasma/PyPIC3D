@@ -40,25 +40,6 @@ class TestBorisMethods(unittest.TestCase):
 
     def test_boris(self):
 
-        # Ex_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.grid, self.Ex, fill_value=0)
-        # Ey_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.grid, self.Ey, fill_value=0)
-        # Ez_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.grid, self.Ez, fill_value=0)
-
-        # Bx_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.staggered_grid, self.Bx, fill_value=0)
-        # By_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.staggered_grid, self.By, fill_value=0)
-        # Bz_interpolate = jax.scipy.interpolate.RegularGridInterpolator(self.staggered_grid, self.Bz, fill_value=0)
-
-        # points = jnp.stack([self.x, self.y, self.z], axis=-1)
-
-        # efield_atx = Ex_interpolate(points)
-        # efield_aty = Ey_interpolate(points)
-        # efield_atz = Ez_interpolate(points)
-
-        # bfield_atx = Bx_interpolate(points)
-        # bfield_aty = By_interpolate(points)
-        # bfield_atz = Bz_interpolate(points)
-
-
         Ex_interpolate = create_trilinear_interpolator(self.Ex, self.grid)
         Ey_interpolate = create_trilinear_interpolator(self.Ey, self.grid)
         Ez_interpolate = create_trilinear_interpolator(self.Ez, self.grid)
@@ -88,6 +69,60 @@ class TestBorisMethods(unittest.TestCase):
         # make sure the y velocity is unchanged
         jnp.allclose(newvz, 1.0)
         # make sure the z velocity is 1.0 from the magnetic field
+
+
+
+    def test_boris_single_particle(self):
+        vx, vy, vz = 1.0, 0.0, 0.0
+        x, y, z = 0.0, 0.0, 0.0
+
+        q = 1.0
+        m = 1.0
+        E = jnp.array([0.0, 0.0, 0.0])
+        B = jnp.array([0.0, 1.0, 0.0])
+        dt = 0.1
+        n_steps = 5000
+
+        xs = []
+        ys = []
+        zs = []
+
+        for i in range(n_steps):
+            vx, vy, vz = boris_single_particle(vx, vy, vz, E[0], E[1], E[2], B[0], B[1], B[2], q, m, dt)
+            x += vx * dt
+            y += vy * dt
+            z += vz * dt
+
+            xs.append(x)
+            ys.append(y)
+            zs.append(z)
+
+
+        def measure_xz_radius(xs, zs):
+            """
+            Measure the radius of the XZ cut by calculating the distance of each point
+            in the XZ plane from the origin and returning the average and maximum radius.
+
+            Parameters:
+                xs (list): List of x-coordinates.
+                zs (list): List of z-coordinates.
+
+            Returns:
+                tuple: A tuple containing the average radius and maximum radius.
+            """
+            xs = jnp.array(xs)
+            zs = jnp.array(zs)
+            # Calculate the distance of each point from the origin in the XZ plane
+            radii = [jnp.sqrt(x**2 + z**2) for x, z in zip(xs, zs)]
+
+            # Compute the average and maximum radius
+            avg_radius = jnp.mean(jnp.asarray(radii))
+
+            return avg_radius
+        
+        avg_radius  = measure_xz_radius(xs, zs)
+        #print(f"Average radius: {avg_radius}")
+        assert jnp.isclose(avg_radius, 1.28, atol=0.5)
 
 
 if __name__ == '__main__':
