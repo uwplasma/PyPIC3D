@@ -6,6 +6,7 @@ import functools
 from functools import partial
 import toml
 import matplotlib.pyplot as plt
+import jax.numpy as jnp
 #from memory_profiler import profile
 
 from PyPIC3D.particle import (
@@ -91,9 +92,9 @@ def default_parameters():
     # dictionary for simulation parameters
 
     constants = {
-        "eps": 8.854e-12,  # permitivity of freespace
-        "mu" : 1.2566370613e-6, # permeability of free space
-        "C": 3e8,  # Speed of light in m/s
+        "eps": 8.85418782e-12,  # permitivity of freespace
+        "mu" : 1.25663706e-7, # permeability of free space
+        "C": 2.99792458e8,  # Speed of light in m/s
         "kb": 1.380649e-23,  # Boltzmann's constant in J/K
     }
 
@@ -256,6 +257,23 @@ def initialize_simulation(toml_file):
 
     E, phi, rho = calculateE(world, particles, constants, rho, phi, solver, bc)
     # calculate the electric field using the Poisson equation
+
+    Ex, Ey, Ez = E
+    Bx, By, Bz = B
+    # E2_integral = jnp.sum( jnp.sum( jnp.trapezoid(Ex**2 + Ey**2 + Ez**2, dx=dx, axis=0) ) )
+    # B2_integral = jnp.sum( jnp.sum( jnp.trapezoid(Bx**2 + By**2 + Bz**2, dx=dx, axis=0) ) )
+    E2_integral = jnp.trapezoid(  jnp.trapezoid(  jnp.trapezoid(Ex**2 + Ey**2 + Ez**2, dx=dx, axis=0), dx=dy, axis=0), dx=dz, axis=0)
+    B2_integral = jnp.trapezoid(  jnp.trapezoid(  jnp.trapezoid(Bx**2 + By**2 + Bz**2, dx=dx, axis=0), dx=dy, axis=0), dx=dz, axis=0)
+    # Integral of E^2 and B^2 over the entire grid
+    e_energy = 0.5 * constants['eps'] * E2_integral
+    b_energy = 0.5 / constants['mu'] * B2_integral
+    # Electric and magnetic field energy
+    print(f"Initial Electric Field Energy: {e_energy:.2e} J")
+    print(f"Initial Magnetic Field Energy: {b_energy:.2e} J\n")
+    # print the initial electric and magnetic field energy
+    
+
+
 
     if electrostatic:
         evolve_loop = time_loop_electrostatic
