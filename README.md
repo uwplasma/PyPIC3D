@@ -1,3 +1,6 @@
+
+![PyPIC3D Logo](docs/images/PyPICLogo.png)
+
 ## PyPIC3D
 
 PyPIC3D is a 3D particle-in-cell (PIC) simulation code developed in Python, leveraging the Jax library for high-performance numerical computing. The primary goal of this project is to explore the feasibility of using Python and Jax for plasma simulations, which are traditionally performed using languages like C++ and Fortran.
