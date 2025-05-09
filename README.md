@@ -1,5 +1,5 @@
 
-![PyPIC3D Logo](docs/images/PyPICLogo.png)
+<img src="docs/images/PyPICLogo.png" alt="PyPIC3D Logo" width="300">
 
 ## PyPIC3D
 
