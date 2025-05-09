@@ -7,9 +7,9 @@ from functools import partial
 # import external libraries
 
 from PyPIC3D.pstd import spectral_poisson_solve, spectral_gradient
-from PyPIC3D.fdtd import centered_finite_difference_gradient
+from PyPIC3D.fdtd import centered_finite_difference_gradient, solve_poisson_sor
 from PyPIC3D.rho import compute_rho
-from PyPIC3D.sor import solve_poisson_sor
+#from PyPIC3D.sor import solve_poisson_sor
 # import internal libraries
 
 def initialize_fields(Nx, Ny, Nz):
@@ -53,7 +53,7 @@ def initialize_fields(Nx, Ny, Nz):
     return (Ex, Ey, Ez), (Bx, By, Bz), (Jx, Jy, Jz), phi, rho
 
 @partial(jit, static_argnums=(4, 5))
-def solve_poisson(rho, constants, world, phi, solver, bc='periodic', M = None):
+def solve_poisson(rho, constants, world, phi, solver, bc='periodic'):
     """
     Solve the Poisson equation for electrostatic potential.
 
@@ -71,21 +71,14 @@ def solve_poisson(rho, constants, world, phi, solver, bc='periodic', M = None):
         phi (ndarray): Solution to the Poisson equation.
     """
 
-    # if solver == 'spectral':
-    #     phi = spectral_poisson_solve(rho, constants, world)
-    # elif solver == 'fdtd':
-    #     eps = constants['eps']
-    #     dx = world['dx']
-    #     dy = world['dy']
-    #     dz = world['dz']
-    #     sor = functools.partial(solve_poisson_sor, dx=dx, dy=dy, dz=dz, eps=eps, omega=0.15, tol=1e-12, max_iter=15000)
-    #     phi = sor(phi, rho)
-
     phi = lax.cond(
+
         solver == 'spectral',
+
         lambda _: spectral_poisson_solve(rho, constants, world),
-        lambda _: functools.partial(
-            solve_poisson_sor,
+        lambda _: solve_poisson_sor(
+            phi=phi,
+            rho=rho,
             dx=world['dx'],
             dy=world['dy'],
             dz=world['dz'],
@@ -93,15 +86,20 @@ def solve_poisson(rho, constants, world, phi, solver, bc='periodic', M = None):
             omega=0.15,
             tol=1e-12,
             max_iter=15000
-        )(phi, rho),
+        ),
+
         operand=None
     )
- 
+
+    # if solver == 'spectral':
+    #     phi = spectral_poisson_solve()
+    # elif solver == 'fdtd':
+    #     phi = solve_poisson_sor()
+
     return phi
 
-#@profile
-@partial(jit, static_argnums=(6, 7))
-def calculateE(world, particles, constants, rho, phi, M, solver, bc):
+@partial(jit, static_argnums=(5, 6))
+def calculateE(world, particles, constants, rho, phi, solver, bc):
     """
     Calculate the electric field components (Ex, Ey, Ez) and electric potential (phi)
     based on the given parameters.
@@ -114,7 +112,6 @@ def calculateE(world, particles, constants, rho, phi, M, solver, bc):
         constants (dict): Dictionary containing physical constants such as permittivity (eps).
         rho (array): Charge density array.
         phi (array): Electric potential array.
-        M (int): Parameter for the solver.
         solver (str): Type of solver to use ('spectral' or other).
         bc (str): Boundary condition type.
         verbose (bool): Flag to enable verbose output.
@@ -124,7 +121,6 @@ def calculateE(world, particles, constants, rho, phi, M, solver, bc):
             and charge density (rho).
     """
 
-
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
@@ -133,7 +129,7 @@ def calculateE(world, particles, constants, rho, phi, M, solver, bc):
     rho = compute_rho(particles, rho, world)
     # calculate the charge density based on the particle positions
 
-    phi = solve_poisson(rho=rho, constants=constants, world=world, phi=phi, solver=solver, bc=bc, M=M)
+    phi = solve_poisson(rho=rho, constants=constants, world=world, phi=phi, solver=solver, bc=bc)
     # solve the Poisson equation to get the electric potential
 
     Ex, Ey, Ez = lax.cond(

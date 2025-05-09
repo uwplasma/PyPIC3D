@@ -9,20 +9,7 @@ import os
 import plotly.graph_objects as go
 from PyPIC3D.rho import update_rho
 import jax
-#from memory_profiler import profile
 from functools import partial
-
-from PyPIC3D.errors import (
-    compute_electric_divergence_error, compute_magnetic_divergence_error
-)
-
-from PyPIC3D.rho import compute_rho
-
-from PyPIC3D.utils import (
-    simpsons_rule_3d
-)
-
-from PyPIC3D.particle import total_KE
 
 def plot_rho(rho, t, name, dx, dy, dz):
     """
@@ -56,46 +43,6 @@ def plot_rho(rho, t, name, dx, dy, dz):
     gridToVTK(f"./plots/rho/{name}_{t:09}", x, y, z,   \
             cellData = {f"{name}" : np.asarray(rho)})
 # plot the charge density in the vtk file format
-
-# def save_vector_field_as_vtk(fieldx, fieldy, fieldz, grid, file_path):
-#     """
-#     Save a 3D vector field as a VTK rectilinear grid file.
-
-#     Args:
-#         fieldx (numpy.ndarray): The x-component of the vector field.
-#         fieldy (numpy.ndarray): The y-component of the vector field.
-#         fieldz (numpy.ndarray): The z-component of the vector field.
-#         grid (tuple of numpy.ndarray): A tuple containing the grid coordinates (x, y, z).
-#         file_path (str): The file path where the VTK file will be saved.
-
-#     Returns:
-#         None
-#     """
-
-#     # Create a new vtkRectilinearGrid
-#     rectilinear_grid = vtk.vtkRectilinearGrid()
-#     rectilinear_grid.SetDimensions(grid[0].size, grid[1].size, grid[2].size)
-
-#     # Set the coordinates for the grid
-#     rectilinear_grid.SetXCoordinates(vtknp.numpy_to_vtk(grid[0]))
-#     rectilinear_grid.SetYCoordinates(vtknp.numpy_to_vtk(grid[1]))
-#     rectilinear_grid.SetZCoordinates(vtknp.numpy_to_vtk(grid[2]))
-
-#     # Combine the components into a single vector field
-#     vector_field = np.stack((fieldx, fieldy, fieldz), axis=-1)
-
-#     # Convert the numpy vector field to vtk format
-#     vtk_vector_field = vtknp.numpy_to_vtk(vector_field.reshape(-1, 3), deep=True)
-#     vtk_vector_field.SetName("VectorField")
-
-#     # Add the vector field to the grid
-#     rectilinear_grid.GetPointData().SetVectors(vtk_vector_field)
-
-#     # Write the grid to a file
-#     writer = vtk.vtkRectilinearGridWriter()
-#     writer.SetFileName(file_path)
-#     writer.SetInputData(rectilinear_grid)
-#     writer.Write()
 
 def plot_fields(fieldx, fieldy, fieldz, t, name, dx, dy, dz):
     """
@@ -196,100 +143,6 @@ def plot_positions(particles, t, x_wind, y_wind, z_wind, path):
 
     fig.write_html(f"{path}/data/positions/particles.{t:09}.html")
 
-
-def plot_velocity_histogram(species, t, output_dir, nbins=50):
-    """
-    Plots the histogram of the magnitudes of the velocities of the particles.
-
-    Args:
-        vx (array-like): The x-component of the velocities of the particles.
-        vy (array-like): The y-component of the velocities of the particles.
-        vz (array-like): The z-component of the velocities of the particles.
-        t (float): The time value.
-
-    Returns:
-        None
-    """
-    vx, vy, vz = species.get_velocity()
-    species_name = species.get_name().replace(" ", "")
-    v_magnitude = jnp.sqrt(vx**2 + vy**2 + vz**2)
-    plt.hist(v_magnitude, bins=nbins)
-    plt.title('Particle Velocity Magnitudes')
-    plt.xlabel('Velocity Magnitude')
-    plt.ylabel('Number of Particles')
-
-    if not os.path.exists(f"{output_dir}/data/velocity_histograms/{species_name}"):
-        os.makedirs(f"{output_dir}/data/velocity_histograms/{species_name}")
-
-    plt.savefig(f"{output_dir}/data/velocity_histograms/{species_name}/velocities.{t:09}.png", dpi=200)
-    plt.close()
-
-
-def plot_probe(probe, t, name, savename):
-    """
-    Plots a probe.
-
-    Args:
-        probe (array-like): The probe.
-
-    Returns:
-        None
-    """
-    plt.plot(t, probe)
-    plt.xlabel("Time")
-    plt.ylabel(f"{name}")
-    plt.title(f"{name}")
-
-    if not os.path.exists("plots"):
-        os.makedirs("plots")
-
-    plt.savefig(f"plots/{savename}_probe.png", dpi=300)
-    plt.close()
-
-def fft(signal, dt):
-    """
-    Perform a Fast Fourier Transform (FFT) on the given signal.
-
-    Args:
-        signal: The input signal to be transformed. It can be a list or a numpy array.
-        dt: The time interval between samples in the signal.
-
-    Returns:
-        xf: The frequency index for the FFT.
-        yf: The transformed signal after FFT.
-
-    Note:
-        The input signal will be converted to a numpy array if it is a list.
-    """
-    if type(signal) is list:
-        signal = np.asarray(signal)
-
-    N = signal.shape[0]
-    # get the total length of the signal
-    yf = jnp.fft.fftn(signal)[:int(N/2)]
-    # do a fast fourier transform
-    xf = jnp.fft.fftfreq(N, dt)[:int(N/2)]
-    # get the frequency index for the fast fourier transform
-    return xf, yf
-
-
-def plot_fft(signal, dt, name, path):
-    xf, yf = fft(signal, dt)
-
-    plt.plot(xf, np.abs(yf))
-    plt.xlabel("Frequency (Hz)")
-    plt.ylabel("Amplitude")
-    plt.title(f"FFT of {name}")
-
-    if not os.path.exists(f"{path}/data/fft"):
-        os.makedirs(f"{path}/data/fft")
-
-    savename = name.replace(" ", "_")
-    plt.savefig(f"{path}/data/fft/{savename}.png", dpi=300)
-    plt.close()
-    return xf[ np.argmax(np.abs(yf)[1:]) ]
-    # plot the fft of a signal
-
 def write_particles_phase_space(particles, t, path):
     """
     Write the phase space of the particles to a file.
@@ -322,9 +175,6 @@ def write_particles_phase_space(particles, t, path):
         jnp.save(f"{path}/data/phase_space/x/{name}_phase_space.{t:09}.npy", x_phase_space)
         jnp.save(f"{path}/data/phase_space/y/{name}_phase_space.{t:09}.npy", y_phase_space)
         jnp.save(f"{path}/data/phase_space/z/{name}_phase_space.{t:09}.npy", z_phase_space)
-
-
-
     # write the phase space of the particles to a file
 
 def particles_phase_space(particles, world, t, name, path):
@@ -389,6 +239,29 @@ def particles_phase_space(particles, world, t, name, path):
 
 
 def plot_initial_histograms(particle_species, world, name, path):
+    """
+    Generates and saves histograms for the initial positions and velocities 
+    of particles in a simulation.
+
+    Parameters:
+        particle_species (object): An object representing the particle species, 
+                                   which provides methods `get_position()` and 
+                                   `get_velocity()` to retrieve particle positions 
+                                   (x, y, z) and velocities (vx, vy, vz).
+        world (dict): A dictionary containing the simulation world parameters, 
+                      specifically the wind dimensions with keys 'x_wind', 
+                      'y_wind', and 'z_wind'.
+        name (str): A string representing the name of the particle species or 
+                    simulation, used in the titles of the histograms and filenames.
+        path (str): The directory path where the histogram images will be saved.
+
+    Saves:
+        Six histogram images:
+            - Initial X, Y, and Z position histograms.
+            - Initial X, Y, and Z velocity histograms.
+        The images are saved in the specified `path` directory with filenames 
+        formatted as "{name}_initial_<property>_histogram.png".
+    """
 
     x, y, z = particle_species.get_position()
     vx, vy, vz = particle_species.get_velocity()
@@ -443,28 +316,6 @@ def plot_initial_histograms(particle_species, world, name, path):
     plt.savefig(f"{path}/{name}_initial_z_velocity_histogram.png", dpi=150)
     plt.close()
 
-
-def center_of_mass(particles):
-    """
-    Calculate the center of mass of a particle species.
-
-    Args:
-        particles (ParticleSpecies): The particle species object containing positions and masses.
-
-    Returns:
-        ndarray: The center of mass coordinates.
-    """
-    if particles.get_number_of_particles() == 0:
-        return 0, 0, 0
-    
-    total_mass = particles.get_mass() * particles.get_number_of_particles()
-    # get the total mass of the particles
-    x_com = jnp.sum( particles.get_mass() * particles.get_position()[0] ) / total_mass
-    y_com = jnp.sum( particles.get_mass() * particles.get_position()[1] ) / total_mass
-    z_com = jnp.sum( particles.get_mass() * particles.get_position()[2] ) / total_mass
-    # calculate the center of mass
-    return x_com, y_com, z_com
-
 @jit
 def number_density(n, Nparticles, particlex, particley, particlez, dx, dy, dz, Nx, Ny, Nz):
     """
@@ -490,24 +341,6 @@ def number_density(n, Nparticles, particlex, particley, particlez, dx, dy, dz, N
 
     return n
 
-def probe(fieldx, fieldy, fieldz, x, y, z):
-    """
-    Probe the value of a vector field at a given point.
-
-    Args:
-        fieldx (ndarray): The x-component of the vector field.
-        fieldy (ndarray): The y-component of the vector field.
-        fieldz (ndarray): The z-component of the vector field.
-        x (float): The x-coordinate of the point.
-        y (float): The y-coordinate of the point.
-        z (float): The z-coordinate of the point.
-
-    Returns:
-        tuple: The value of the vector field at the given point.
-    """
-    return fieldx.at[x, y, z].get(), fieldy.at[x, y, z].get(), fieldz.at[x, y, z].get()
-
-
 def magnitude_probe(fieldx, fieldy, fieldz, x, y, z):
     """
     Probe the magnitude of a vector field at a given point.
@@ -524,7 +357,6 @@ def magnitude_probe(fieldx, fieldy, fieldz, x, y, z):
         float: The magnitude of the vector field at the given point.
     """
     return jnp.sqrt(fieldx.at[x, y, z].get()**2 + fieldy.at[x, y, z].get()**2 + fieldz.at[x, y, z].get()**2)
-
 
 def freq(n, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
     """
@@ -602,72 +434,6 @@ def freq_probe(n, x, y, z, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
     freq = jnp.sqrt( c1 * ne.at[xi,yi,zi].get() )    # calculate the plasma frequency at the array point: x, y, z
     return freq
 
-
-def dominant_modes(field, direction, dx, dy, dz, num_modes=5):
-    """
-    Calculate the dominant wavenumber modes of a field along a specified direction.
-
-    Args:
-        field (ndarray): The field to analyze.
-        direction (str): The direction along which to calculate the wavenumber modes ('x', 'y', or 'z').
-        dx (float): The grid spacing in the x-direction.
-        dy (float): The grid spacing in the y-direction.
-        dz (float): The grid spacing in the z-direction.
-        num_modes (int): The number of dominant modes to return.
-
-    Returns:
-        dominant_modes (ndarray): The dominant wavenumber modes.
-    """
-    if direction == 'x':
-        axis = 0
-        spacing = dx
-    elif direction == 'y':
-        axis = 1
-        spacing = dy
-    elif direction == 'z':
-        axis = 2
-        spacing = dz
-    else:
-        raise ValueError("Invalid direction. Choose from 'x', 'y', or 'z'.")
-
-    # Perform FFT along the specified direction
-    field_fft = np.fft.fftshift(np.fft.fftn(field, axes=[axis]))
-    N = field.shape[axis]
-    k = np.fft.fftshift(np.fft.fftfreq(N, spacing)) * 2 * np.pi
-
-    max_amp = np.argsort(field_fft, axis=None)[-num_modes:]
-    max_amp = np.unravel_index(max_amp, field_fft.shape)
-    max_k   = k[max_amp[axis]]
-    # get the k values of the dominant modes
-
-    return max_k
-
-def plot_dominant_modes(dominant_modes, t, name, savename):
-    """
-    Plots the dominant wavenumber modes of a field.
-
-    Args:
-        dominant_modes (ndarray): The dominant wavenumber modes to plot.
-        t (int): The time value.
-        name (str): The name of the field.
-
-    Returns:
-        None
-    """
-    for mode in range(dominant_modes.shape[1]):
-        plt.plot(t, dominant_modes[:, mode], label=f"Mode {mode + 1}")
-    #plt.plot(t, dominant_modes)
-    plt.xlabel("Time")
-    plt.ylabel("K")
-    plt.title(f"{name}")
-    plt.legend()
-
-    if not os.path.exists("plots"):
-        os.makedirs("plots")
-
-    plt.savefig(f"plots/{savename}_dominant_modes.png", dpi=300)
-    plt.close()
-
 def write_probe(probe_data, t, filename):
     """
     Writes probe data and timestep to a file.
@@ -708,36 +474,6 @@ def plot_initial_KE(particles, path):
         plt.close()
 
 
-# def plot_slice(field_slice, t, name, path, world, dt):
-#     """
-#     Plots a 2D slice of a field and saves the plot as a PNG file.
-
-#     Args:
-#         field_slice (2D array): The 2D array representing the field slice to be plotted.
-#         t (int): The time step index.
-#         name (str): The name of the field being plotted.
-#         world (dict): A dictionary containing the dimensions of the world with keys 'x_wind' and 'y_wind'.
-#         dt (float): The time step duration.
-
-#     Returns:
-#         None
-#     """
-
-#     if not os.path.exists(f"{path}/data/{name}_slice"):
-#         os.makedirs(f'{path}/data/{name}_slice')
-#     # Create directory if it doesn't exist
-    
-#     plt.title(f'{name} at t={t*dt:.2e}s')
-#     plt.imshow(jnp.swapaxes(field_slice, 0, 1), origin='lower', extent=[-world['x_wind']/2, world['x_wind']/2, -world['y_wind']/2, world['y_wind']/2])
-#     plt.colorbar(label=name)
-#     plt.tight_layout()
-#     plt.savefig(f'{path}/data/{name}_slice/{name}_slice_{t:09}.png', dpi=300)
-#     plt.clf()  # Clear the current figure
-#     plt.close('all')  # Close all figures to free up memory
-
-
-
-
 @partial(jax.jit, static_argnums=(2, 3))
 def plot_slice(field_slice, t, name, path, world, dt):
     """
@@ -774,8 +510,6 @@ def plot_slice(field_slice, t, name, path, world, dt):
     return jax.debug.callback(plot_and_save, field_slice, t, name, path, world, dt, ordered=True)
 
 
-
-
 def write_slice(field_slice, x1, x2, t, name, path, dt):
     """
     Plots a slice of a field and saves it in VTK format.
@@ -793,26 +527,12 @@ def write_slice(field_slice, x1, x2, t, name, path, dt):
 
     x3 = np.zeros(1)
 
-    field_slice = np.asarray(field_slice)[:, :, np.newaxis]
+    field_slice = jnp.expand_dims(field_slice, axis=-1)
 
     gridToVTK(f"{path}/data/{name}_slice/{name}_slice_{t:09}", x1, x2, x3,  \
             cellData = {f"{name}" : field_slice})
     # plot the slice of the field in the vtk file format
 
-# def write_data(filename, time, data):
-#     """
-#     Write the given time and data to a file.
-
-#     Args:
-#         filename (str): The name of the file to write to.
-#         time (float): The time value to write.
-#         data (any): The data to write.
-
-#     Returns:
-#         None
-#     """
-#     with open(filename, "a") as f:
-#         f.write(f"{time}, {data}\n")
 
 @partial(jax.jit, static_argnums=(0))
 def write_data(filename, time, data):
@@ -838,7 +558,6 @@ def write_data(filename, time, data):
     return jax.debug.callback(write_to_file, filename, time, data, ordered=True)
 
 
-#@profile
 @partial(jax.jit, static_argnums=(18) )
 def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid, B_grid, plotting_parameters, world, constants, output_dir):
     """
@@ -882,7 +601,6 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
     Nz = world['Nz']
     # Get the grid dimensions
 
-
     ##########################################################################################################
     def compute_and_write_energy():
         E2_integral = jnp.trapezoid(jnp.trapezoid(jnp.trapezoid(Ex**2 + Ey**2 + Ez**2, dx=dz), dx=dy), dx=dx)
@@ -892,46 +610,16 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         b_energy = 0.5 / constants['mu'] * B2_integral
         # Electric and magnetic field energy
 
-        # jax.debug.print("eps: {}", constants['eps'])
-        # jax.debug.print("mu: {}", constants['mu'])
+        #PE = jnp.sum( jnp.sum( jnp.sum( Ex**2 + Ey**2 + Ez**2 ) ) ) * 0.5 * constants['eps']
+        # sum field using Lubos method
+
 
         kinetic_energy = sum(particle.kinetic_energy() for particle in particles)
-
-        # jax.debug.print("Original Kinetic Energy Calculation: {}", kinetic_energy)
-        # # Calculate the kinetic energy of the particles
-
-        # new_kinetic_energy = total_KE(particles)
-        # jax.debug.print("New Kinetic Energy Calculation: {}", new_kinetic_energy)
-
-        # vx, vy, vz = particles[0].get_velocity()
-        # v2 = jnp.sum(vx**2 + vy**2 + vz**2)
-        # mass = particles[0].get_mass()
-        # jax.debug.print("Mass: {}", mass)
-        # kinetic_energy = 0.5 * mass * v2
-        # jax.debug.print("Velocity Squared: {}", v2)
-        # jax.debug.print("kinetic energy: {}", kinetic_energy)
-        # # Calculate the kinetic energy of the particles
-
-        # vx, vy, vz = particles[1].get_velocity()
-        # v2 = jnp.sum(vx**2 + vy**2 + vz**2)
-        # mass = particles[1].get_mass()
-        # jax.debug.print("Mass: {}", mass)
-        # kinetic_energy = 0.5 * mass * v2
-        # jax.debug.print("Velocity Squared: {}", v2)
-        # jax.debug.print("kinetic energy: {}", kinetic_energy)
-        # # Calculate the kinetic energy of the particles
-
-        # jax.debug.print("Electric Field Energy: {}", e_energy)
-        # jax.debug.print("Total Energy: {}", e_energy + b_energy + kinetic_energy)
-
-
-        # jax.debug.print("\n")
-
-
-
         # Kinetic energy of the particles
         write_data(f"{output_dir}/data/total_energy.txt", t * dt, e_energy + b_energy + kinetic_energy)
         write_data(f"{output_dir}/data/electric_field_energy.txt", t * dt, e_energy)
+        #write_data(f"{output_dir}/data/efield2.txt", t * dt, PE)
+        # Write the electric field energy to a file
         write_data(f"{output_dir}/data/magnetic_field_energy.txt", t * dt, b_energy)
         write_data(f"{output_dir}/data/kinetic_energy.txt", t * dt, kinetic_energy)
         # Write the total energy to a file
@@ -966,21 +654,18 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         write_data(f"{output_dir}/data/averageBx.txt", t*dt, jnp.mean(jnp.abs(Bx)))
         write_data(f"{output_dir}/data/averageBy.txt", t*dt, jnp.mean(jnp.abs(By)))
         write_data(f"{output_dir}/data/averageBz.txt", t*dt, jnp.mean(jnp.abs(Bz)))
-        write_data(f"{output_dir}/data/averageE.txt", t*dt, jnp.mean(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)))
-        write_data(f"{output_dir}/data/averageB.txt", t*dt, jnp.mean(jnp.sqrt(Bx**2 + By**2 + Bz**2)))
+        # write_data(f"{output_dir}/data/averageE.txt", t*dt, jnp.mean(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)))
+        # write_data(f"{output_dir}/data/averageB.txt", t*dt, jnp.mean(jnp.sqrt(Bx**2 + By**2 + Bz**2)))
         write_data(f"{output_dir}/data/Eprobe.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx-1, Ny-1, Nz-1))
         write_data(f"{output_dir}/data/centerE.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx//2, Ny//2, Nz//2))
-#     # write_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], np.asarray(E_grid[0]), np.asarray(E_grid[1]), t, 'Exy', output_dir, dt)
-#     # write_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], np.asarray(E_grid[0]), np.asarray(E_grid[1]), t, 'Exz', output_dir, dt)
-#     # write_slice(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)[:, :, int(Nz/2)], np.asarray(E_grid[0]), np.asarray(E_grid[1]), t, 'Eyz', output_dir, dt)
-#     # write_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], np.asarray(B_grid[0]), np.asarray(B_grid[1]), t, 'Bxy', output_dir, dt)
-#     # write_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], np.asarray(B_grid[0]), np.asarray(B_grid[1]), t, 'Bxz', output_dir, dt)
-#     # write_slice(jnp.sqrt(Bx**2 + By**2 + Bz**2)[:, :, int(Nz/2)], np.asarray(B_grid[0]), np.asarray(B_grid[1]), t, 'Byz', output_dir, dt)
 
-        plot_slice(Ex[:,:,Nz//2], t, 'Ex', output_dir, world, dt)
-        plot_slice(Ey[:,:,Nz//2], t, 'Ey', output_dir, world, dt)
-        plot_slice(Ez[:,:,Nz//2], t, 'Ez', output_dir, world, dt)
+        # write_slice(Ex[:, :, Nz//2], E_grid[0], E_grid[1], t, 'Ex', output_dir, dt)
+        # write_slice(Ey[:, :, Nz//2], E_grid[0], E_grid[1], t, 'Ey', output_dir, dt)
+        # write_slice(Ez[:, :, Nz//2], E_grid[0], E_grid[1], t, 'Ez', output_dir, dt)
 
+        plot_slice(Ex[:, :, Nz//2], t, 'Ex', output_dir, world, dt)
+        plot_slice(Ey[:, :, Nz//2], t, 'Ey', output_dir, world, dt)
+        plot_slice(Ez[:, :, Nz//2], t, 'Ez', output_dir, world, dt)
 
     jax.lax.cond(
         plotting_parameters['plotfields'],
@@ -1015,46 +700,9 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         lambda _: None,
         operand=None
     )
-    # Write the mean current density components to files
-    ##############################################################################################################################
 
-
-    # if plotting_parameters['plotvelocities']:
-    #     for species in particles:
-    #         plot_velocity_histogram(species, t, output_dir, nbins=50)
-
-    # if plotting_parameters['plotpositions']:
-    #     plot_positions(particles, t, world['x_wind'], world['y_wind'], world['z_wind'], output_dir)
-
-    # if plotting_parameters['phaseSpace']:
-    #     #particles_phase_space([particles[0]], world, t, "Particles", output_dir)
-    #     write_particles_phase_space(particles, t, output_dir)
-
-    # if plotting_parameters['plot_chargeconservation']:
-    #     rho_ = compute_rho(particles, rho, world)
-    #     write_data(f"{output_dir}/data/mean_charge_density.txt", t*dt, jnp.mean(rho_))
-
-    # if plotting_parameters['plot_errors']:
-    #     write_data(f"{output_dir}/data/electric_divergence_errors.txt", t*dt, compute_electric_divergence_error(Ex, Ey, Ez, rho, constants, world, solver, bc))
-    #     write_data(f"{output_dir}/data/magnetic_divergence_errors.txt", t*dt, compute_magnetic_divergence_error(Bx, By, Bz, world, solver, bc))
-
-# def save_avg_positions(t, dt, particles, output_dir):
-#     avg_x_path = os.path.join(output_dir, "data/avg_x.txt")
-#     avg_y_path = os.path.join(output_dir, "data/avg_y.txt")
-#     avg_z_path = os.path.join(output_dir, "data/avg_z.txt")
-
-#     xcom, ycom, zcom = center_of_mass(particles[0])
-#     with open(avg_x_path, "a") as f_avg_x:
-#         f_avg_x.write(f"{t*dt}, {  xcom  }\n")
-#     with open(avg_y_path, "a") as f_avg_y:
-#         f_avg_y.write(f"{t*dt}, {  ycom }\n")
-#     with open(avg_z_path, "a") as f_avg_z:
-#         f_avg_z.write(f"{t*dt}, {  zcom }\n")
-
-
-#@profile
+    
 # @partial(jax.jit, static_argnums=(12))
-#@jit
 def plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters):
     """
     Plots and saves various simulation data at specified intervals.

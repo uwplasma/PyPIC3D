@@ -21,8 +21,8 @@ from PyPIC3D.boris import (
 
 #@profile
 
-@partial(jit, static_argnums=(13, 15, 16))
-def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, pecs, lasers, surfaces, curl_func, M, solver, bc):
+@partial(jit, static_argnums=(10, 11, 12))
+def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, curl_func, solver, bc):
     """
     Perform a time loop for an electrostatic simulation.
 
@@ -63,13 +63,13 @@ def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world,
         # update the particle positions
 
     ############### SOLVE E FIELD ############################################################################################
-    E, phi, rho = calculateE(world, particles, constants, rho, phi, M, solver, bc)
+    E, phi, rho = calculateE(world, particles, constants, rho, phi, solver, bc)
     # calculate the electric field using the Poisson equation
 
     return particles, E, B, J, phi, rho
 
-@partial(jit, static_argnums=(13, 15, 16))
-def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, pecs, lasers, surfaces, curl_func, M, solver, bc):
+@partial(jit, static_argnums=(10, 11, 12))
+def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, curl_func, solver, bc):
     """
     Perform a time loop for electrodynamic simulation.
 

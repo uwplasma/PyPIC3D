@@ -43,16 +43,21 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
     y_wind = world['y_wind']
     z_wind = world['z_wind']
     kb = constants['kb']
+    eps = constants['eps']
+    C   = constants['C']
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
+    dt = world['dt']
 
     i = 0
     particles = []
     particle_keys = grab_particle_keys(config)
 
+    debye_lengths = []
+
     for toml_key in particle_keys:
-        key1, key2, key3 = jax.random.PRNGKey(i), jax.random.PRNGKey(i+1), jax.random.PRNGKey(i+2)
+        key1, key2, key3 = jax.random.key(i), jax.random.key(i+1), jax.random.key(i+2)
         i += 3
         # build the particle random number generator keys
         particle_name = config[toml_key]['name']
@@ -67,7 +72,6 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
             N_per_cell = config[toml_key]["N_per_cell"]
             N_particles = int(N_per_cell * world['Nx'] * world['Ny'] * world['Nz'])
         # set the number of particles in the species
-
 
         if 'temperature' in config[toml_key]:
             T=config[toml_key]['temperature']
@@ -103,33 +107,6 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         # set the default bounds for the particle species
 
         bounded = False
-        # if 'bounded' in config[toml_key]:
-        #     bounded = config[toml_key]['bounded']
-        # # check if the particle species is bounded or not
-        # if bounded:
-        #     #print(f"Initializing bounded particle species: {particle_name}")
-        #     w = jnp.array(config[toml_key]['w']) * jnp.identity(3)
-        #     g = jnp.array(config[toml_key]['g']) * jnp.identity(3)
-        #     #print(f"Using w:\n {w}")
-        #     #print(f"Using g:\n {g}")
-        #     try:
-        #         xmin = config[toml_key]['xmin']
-        #         xmax = config[toml_key]['xmax']
-        #         ymin = config[toml_key]['ymin']
-        #         ymax = config[toml_key]['ymax']
-        #         zmin = config[toml_key]['zmin']
-        #         zmax = config[toml_key]['zmax']
-        #     except:
-        #         print(f"Error: Bounded particle species {particle_name} requires xmin, xmax, ymin, ymax, zmin, zmax")
-        #         exit(1)
-        #     if "fermi_energy" in config[toml_key]:
-        #         fermi_energy = config[toml_key]['fermi_energy']
-        #     else:
-        #         fermi_energy = 1.0
-            
-        #     x, y, z, vx, vy, vz = initial_bound_particles(N_particles, xmin, xmax, ymin, ymax, zmin, zmax, mass, T, fermi_energy, kb, key1, key2, key3)
-        # else:
-        #     #print(f"Initializing unbounded particle species: {particle_name}")
         if 'xmin' in config[toml_key]:
             xmin = config[toml_key]['xmin']
         if 'xmax' in config[toml_key]:
@@ -196,9 +173,36 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         update_y   = True
         update_z   = True
 
-        weight = 1.0
+        weight = 1.0 #default to single particle weight
         if "weight" in config[toml_key]:
             weight = config[toml_key]['weight']
+
+        if 'ds_per_debye' in config[toml_key]: # assuming dx = dy = dz
+            ds_per_debye = config[toml_key]['ds_per_debye']
+
+
+            weight = (x_wind*y_wind*z_wind * eps * kb * T)  / (N_particles * charge**2 * ds_per_debye**2 * dx*dx)
+
+
+            #weight = (eps * mass * C**2) / charge**2 * (100)**2 / x_wind / (4*N_particles) * (0.2)**2 / ds_per_debye**2 # Exact from Jax-in-cell
+
+            #weight = eps * mass * vth**2 / charge**2 * ( x_wind / dx ) / dx / ds_per_debye**2 / (N_particles*2)
+
+            # weight = (
+            #     epsilon_0
+            #     * mass_electron
+            #     * speed_of_light**2
+            #     / charge_electron**2
+            #     * number_grid_points**2
+            #     / length
+            #     / (2 * number_pseudoelectrons)
+            #     * parameters["vth_electrons_over_c"]**2
+            #     / Debye_length_per_dx**2
+            # )
+    # )
+
+
+            #weight = jnp.power(weight_3, 1/3)
 
         print(f"Particle Weight: {weight}")
 
@@ -272,13 +276,23 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         particles.append(particle)
 
         print(f"Particle Kinetic Energy: {particle.kinetic_energy()}")
-        print(f"Particle Species Plasma Frequency: {plasma_frequency(particle, world, constants)}")
-        print(f"Particle Species Debye Length: {debye_length(particle, world, constants)}")
-        print(f"Dx per Debye Length: {dx / debye_length(particle, world, constants) }")
-        print(f"Dy per Debye Length: {dy / debye_length(particle, world, constants) }")
-        print(f"Dz per Debye Length: {dz / debye_length(particle, world, constants) }")
+        pf = plasma_frequency(particle, world, constants)
+        dl = debye_length(particle, world, constants)
+        debye_lengths.append(dl)
+        dx_dl = dl / dx
+        dy_dl = dl / dy
+        dz_dl = dl / dz
+        print(f"Particle Species Plasma Frequency: {pf}")
+        print(f"Time Steps Per Plasma Period: {(1 / (dt * pf) )}")
+        print(f"Particle Species Debye Length: {dl}")
+        print(f"Dx per Debye Length: {dx_dl}")
+        print(f"Dy per Debye Length: {dy_dl}")
+        print(f"Dz per Debye Length: {dz_dl}")
         print(f"Particle Species Scaled Charge: {particle.get_charge()}")
         print(f"Particle Species Scaled Mass: {particle.get_mass()}")
+
+    # total_debye_length = sum(1 / (dl**2) for dl in debye_lengths)
+    # print(f"Total Debye Length: {total_debye_length}")
     return particles
 
 def fermi_dirac_distribution(energy, fermi_energy, T, kb):
@@ -389,49 +403,14 @@ def initial_particles(N_per_cell, N_particles, minx, maxx, miny, maxy, minz, max
         # y = jnp.repeat(jax.random.uniform(key2, shape=(N_particles // N_per_cell,), minval=miny, maxval=maxy), N_per_cell)
         # z = jnp.repeat(jax.random.uniform(key3, shape=(N_particles // N_per_cell,), minval=minz, maxval=maxz), N_per_cell)
         # initialize the positions of the particles, giving every N_per_cell particles the same position
-    std = kb * T / mass
+    #std = jnp.sqrt( kb * T / mass )
+    std = T_to_vth( T, mass, kb )
     v_x = np.random.normal(0, std, N_particles)
     v_y = np.random.normal(0, std, N_particles)
     v_z = np.random.normal(0, std, N_particles)
     # initialize the particles with a maxwell boltzmann distribution.
     return x, y, z, v_x, v_y, v_z
 
-
-# def initial_particles(N_particles, minx, maxx, miny, maxy, minz, maxz, mass, T, kb, key1, key2, key3):
-#     """
-#     Initializes the velocities and positions of the particles.
-
-#     Args:
-#         N_particles (int): The number of particles.
-#         minx (float): The minimum value for the x-coordinate of the particles' positions.
-#         maxx (float): The maximum value for the x-coordinate of the particles' positions.
-#         miny (float): The minimum value for the y-coordinate of the particles' positions.
-#         maxy (float): The maximum value for the y-coordinate of the particles' positions.
-#         minz (float): The minimum value for the z-coordinate of the particles' positions.
-#         maxz (float): The maximum value for the z-coordinate of the particles' positions.
-#         mass (float): The mass of the particles.
-#         T (float): The temperature of the system.
-#         kb (float): The Boltzmann constant.
-#         key (jax.random.PRNGKey): The random key for generating random numbers.
-
-#     Returns:
-#         x (jax.numpy.ndarray): The x-coordinates of the particles' positions.
-#         y (jax.numpy.ndarray): The y-coordinates of the particles' positions.
-#         z (jax.numpy.ndarray): The z-coordinates of the particles' positions.
-#         v_x (numpy.ndarray): The x-component of the particles' velocities.
-#         v_y (numpy.ndarray): The y-component of the particles' velocities.
-#         v_z (numpy.ndarray): The z-component of the particles' velocities.
-#     """
-#     x = jax.random.uniform(key1, shape = (N_particles,), minval=minx, maxval=maxx)
-#     y = jax.random.uniform(key2, shape = (N_particles,), minval=miny, maxval=maxy)
-#     z = jax.random.uniform(key3, shape = (N_particles,), minval=minz, maxval=maxz)
-#     # initialize the positions of the particles
-#     std = kb * T / mass
-#     v_x = np.random.normal(0, std, N_particles)
-#     v_y = np.random.normal(0, std, N_particles)
-#     v_z = np.random.normal(0, std, N_particles)
-#     # initialize the particles with a maxwell boltzmann distribution.
-#     return x, y, z, v_x, v_y, v_z
 
 
 @jit
