@@ -628,9 +628,9 @@ def plasma_frequency(particle_species, world, constants):
     x_wind = world['x_wind']
     y_wind = world['y_wind']
     z_wind = world['z_wind']
-    q = particle_species.get_charge()
+    q = particle_species.get_charge() / particle_species.weight
     N = particle_species.get_number_of_particles()
-    m = particle_species.get_mass()
+    m = particle_species.get_mass() / particle_species.weight
     eps = constants['eps']
 
     # these values are so small that I was having issues calculating
@@ -641,6 +641,11 @@ def plasma_frequency(particle_species, world, constants):
     sqrt_eps = jnp.sqrt( eps )
     sqrt_me = jnp.sqrt( m )
     pf = sqrt_ne * jnp.abs(q) / (sqrt_eps * sqrt_me)
+
+    # pf = jnp.sqrt( N * particle_species.weight * q**2 ) / jnp.sqrt(m) / jnp.sqrt(eps) / jnp.sqrt(x_wind)
+
+    #plasma_frequency = jnp.sqrt(number_pseudoelectrons * weight * charge_electron**2)/jnp.sqrt(mass_electron)/jnp.sqrt(epsilon_0)/jnp.sqrt(length)
+
 
     return pf
 # calculate the expected plasma frequency from analytical theory
