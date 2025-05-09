@@ -610,10 +610,16 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         b_energy = 0.5 / constants['mu'] * B2_integral
         # Electric and magnetic field energy
 
+        #PE = jnp.sum( jnp.sum( jnp.sum( Ex**2 + Ey**2 + Ez**2 ) ) ) * 0.5 * constants['eps']
+        # sum field using Lubos method
+
+
         kinetic_energy = sum(particle.kinetic_energy() for particle in particles)
         # Kinetic energy of the particles
         write_data(f"{output_dir}/data/total_energy.txt", t * dt, e_energy + b_energy + kinetic_energy)
         write_data(f"{output_dir}/data/electric_field_energy.txt", t * dt, e_energy)
+        #write_data(f"{output_dir}/data/efield2.txt", t * dt, PE)
+        # Write the electric field energy to a file
         write_data(f"{output_dir}/data/magnetic_field_energy.txt", t * dt, b_energy)
         write_data(f"{output_dir}/data/kinetic_energy.txt", t * dt, kinetic_energy)
         # Write the total energy to a file
@@ -656,6 +662,10 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         # write_slice(Ex[:, :, Nz//2], E_grid[0], E_grid[1], t, 'Ex', output_dir, dt)
         # write_slice(Ey[:, :, Nz//2], E_grid[0], E_grid[1], t, 'Ey', output_dir, dt)
         # write_slice(Ez[:, :, Nz//2], E_grid[0], E_grid[1], t, 'Ez', output_dir, dt)
+
+        plot_slice(Ex[:, :, Nz//2], t, 'Ex', output_dir, world, dt)
+        plot_slice(Ey[:, :, Nz//2], t, 'Ey', output_dir, world, dt)
+        plot_slice(Ez[:, :, Nz//2], t, 'Ez', output_dir, world, dt)
 
     jax.lax.cond(
         plotting_parameters['plotfields'],

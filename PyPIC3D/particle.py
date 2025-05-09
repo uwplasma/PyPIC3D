@@ -44,6 +44,7 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
     z_wind = world['z_wind']
     kb = constants['kb']
     eps = constants['eps']
+    C   = constants['C']
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
@@ -56,7 +57,7 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
     debye_lengths = []
 
     for toml_key in particle_keys:
-        key1, key2, key3 = jax.random.PRNGKey(i), jax.random.PRNGKey(i+1), jax.random.PRNGKey(i+2)
+        key1, key2, key3 = jax.random.key(i), jax.random.key(i+1), jax.random.key(i+2)
         i += 3
         # build the particle random number generator keys
         particle_name = config[toml_key]['name']
@@ -181,6 +182,26 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
 
 
             weight = (x_wind*y_wind*z_wind * eps * kb * T)  / (N_particles * charge**2 * ds_per_debye**2 * dx*dx)
+
+
+            #weight = (eps * mass * C**2) / charge**2 * (100)**2 / x_wind / (4*N_particles) * (0.2)**2 / ds_per_debye**2 # Exact from Jax-in-cell
+
+            #weight = eps * mass * vth**2 / charge**2 * ( x_wind / dx ) / dx / ds_per_debye**2 / (N_particles*2)
+
+            # weight = (
+            #     epsilon_0
+            #     * mass_electron
+            #     * speed_of_light**2
+            #     / charge_electron**2
+            #     * number_grid_points**2
+            #     / length
+            #     / (2 * number_pseudoelectrons)
+            #     * parameters["vth_electrons_over_c"]**2
+            #     / Debye_length_per_dx**2
+            # )
+    # )
+
+
             #weight = jnp.power(weight_3, 1/3)
 
         print(f"Particle Weight: {weight}")
