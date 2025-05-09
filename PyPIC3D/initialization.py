@@ -6,6 +6,7 @@ import functools
 from functools import partial
 import toml
 import matplotlib.pyplot as plt
+import jax.numpy as jnp
 #from memory_profiler import profile
 
 from PyPIC3D.particle import (
@@ -16,7 +17,7 @@ from PyPIC3D.utils import (
     courant_condition,
     update_parameters_from_toml,
     build_yee_grid, convert_to_jax_compatible, load_external_fields_from_toml,
-    check_stability, print_stats, particle_sanity_check, build_plasma_parameters_dict,
+    print_stats, particle_sanity_check, build_plasma_parameters_dict,
     make_dir
 )
 
@@ -25,36 +26,23 @@ from PyPIC3D.fields import (
 )
 
 from PyPIC3D.pstd import (
-    spectral_curl, # initialize_magnetic_field
+    spectral_curl
 )
 
 from PyPIC3D.fdtd import (
     centered_finite_difference_curl
 )
 
-from PyPIC3D.pec import (
-    read_pec_boundaries_from_toml
-)
 
 from PyPIC3D.plotting import (
-    plot_initial_KE, plot_initial_histograms
+    plot_initial_histograms
 )
 
-# from PyPIC3D.laser import (
-#     load_lasers_from_toml
-# )
-
-# from PyPIC3D.boundaryconditions import (
-#     load_material_surfaces_from_toml
-# )
 
 from PyPIC3D.evolve import (
     time_loop_electrodynamic, time_loop_electrostatic
 )
 
-# from PyPIC3D.J import (
-#     compute_current_density
-# )
 
 def default_parameters():
     """
@@ -92,6 +80,7 @@ def default_parameters():
         "y_wind": 1e-2,  # size of the spatial window in y in meters
         "z_wind": 1e-2,  # size of the spatial window in z in meters
         "t_wind": 1e-12,  # size of the temporal window in seconds
+        "dt": None,  # time step in seconds
         "electrostatic": False,  # boolean for electrostatic simulation
         "benchmark": False, # boolean for using the profiler
         "verbose": False, # boolean for printing verbose output
@@ -99,15 +88,13 @@ def default_parameters():
         "ncores": 4, # number of cores to use
         "ncpus": 1, # number of CPUs to use
         "cfl"  : 1, # CFL condition number
-        "NN" : False, # boolean for using neural networks
-        "model_name": None, # neural network model name
     }
     # dictionary for simulation parameters
 
     constants = {
-        "eps": 8.854e-12,  # permitivity of freespace
-        "mu" : 1.2566370613e-6, # permeability of free space
-        "C": 3e8,  # Speed of light in m/s
+        "eps": 8.85418782e-12,  # permitivity of freespace
+        "mu" : 1.25663706e-7, # permeability of free space
+        "C": 2.99792458e8,  # Speed of light in m/s
         "kb": 1.380649e-23,  # Boltzmann's constant in J/K
     }
 
@@ -205,7 +192,9 @@ def initialize_simulation(toml_file):
 
     dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
     # compute the spatial resolution
-    if 'dt' in simulation_parameters:
+    #print(simulation_parameters)
+    if simulation_parameters['dt'] is not None:
+        print(f"Using user defined dt: {simulation_parameters['dt']}")
         dt = simulation_parameters['dt']
     else:
         courant_number = simulation_parameters['cfl']
@@ -225,7 +214,6 @@ def initialize_simulation(toml_file):
     E_grid, B_grid = build_yee_grid(world)
     # build the grid for the fields
 
-
     if not os.path.exists(f"{simulation_parameters['output_dir']}/data"):
         os.makedirs(f"{simulation_parameters['output_dir']}/data")
         # create the data directory if it doesn't exist
@@ -241,14 +229,8 @@ def initialize_simulation(toml_file):
         plot_initial_histograms(species, world, path=f"{simulation_parameters['output_dir']}/data", name=name)
         # plot the initial histograms of the particles
 
-
-
     print_stats(world)
     # print the statistics of the simulation
-
-    #plot_initial_KE(particles, path=simulation_parameters['output_dir'])
-    # plot the initial kinetic energy of the particles
-    # disabling this because call it allocates 82 MiB of memory and it won't let of it!
 
     plasma_parameters = build_plasma_parameters_dict(world, constants, particles[0], dt)
     # build the plasma parameters dictionary
@@ -256,17 +238,6 @@ def initialize_simulation(toml_file):
     particle_sanity_check(particles)
     # ensure the arrays for the particles are of the correct shape
 
-    #check_stability(plasma_parameters, dt)
-    # check the stability of the simulation
-
-    # devices = mesh_utils.create_device_mesh((ncpus,))
-    # mesh = Mesh(devices, ('data',))
-    # sharding = NamedSharding(mesh, PartitionSpec('data',))
-    # init_fields = jax.jit(initialize_fields, out_shardings=sharding, static_argnums=(0,1,2))
-    # # create the mesh for the fields
-
-    # Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, phi, rho = init_fields(Nx, Ny, Nz)
-    # initialize the electric and magnetic fields
     E, B, J, phi, rho = initialize_fields(Nx, Ny, Nz)
     # initialize the electric and magnetic fields
 
@@ -278,44 +249,43 @@ def initialize_simulation(toml_file):
     E, B, J = fields[:3], fields[3:6], fields[6:9]
     # convert the fields list back into tuples
 
-    pecs = None
-    #read_pec_boundaries_from_toml(toml_file, world)
-    # read in perfectly electrical conductor boundaries
-
-    M = None
-    # specify the preconditioner matrix
-
-    lasers = None
-    #load_lasers_from_toml(toml_file, constants, world, E_grid, B_grid)
-    # load the lasers from the configuration file
-
-    # surfaces = load_material_surfaces_from_toml(toml_file)
-    surfaces = None
-    # # load the material surfaces from the configuration file
-
     if solver == "spectral":
         curl_func = functools.partial(spectral_curl, world=world)
     elif solver == "fdtd":
         curl_func = functools.partial(centered_finite_difference_curl, dx=dx, dy=dy, dz=dz, bc=bc)
 
-    # if not electrostatic:
-    #     Bx, By, Bz = initialize_magnetic_field(particles, E_grid, B_grid, world, constants, GPUs)
-    # # initialize the magnetic field
 
-    E, phi, rho = calculateE(world, particles, constants, rho, phi, M, solver, bc)
+    E, phi, rho = calculateE(world, particles, constants, rho, phi, solver, bc)
     # calculate the electric field using the Poisson equation
+
+    ######################### COMPUTE INITIAL ENERGY ########################################################
+    Ex, Ey, Ez = E
+    Bx, By, Bz = B
+    E2_integral = jnp.trapezoid(  jnp.trapezoid(  jnp.trapezoid(Ex**2 + Ey**2 + Ez**2, dx=dx, axis=0), dx=dy, axis=0), dx=dz, axis=0)
+    B2_integral = jnp.trapezoid(  jnp.trapezoid(  jnp.trapezoid(Bx**2 + By**2 + Bz**2, dx=dx, axis=0), dx=dy, axis=0), dx=dz, axis=0)
+    # Integral of E^2 and B^2 over the entire grid
+    e_energy = 0.5 * constants['eps'] * E2_integral
+    b_energy = 0.5 / constants['mu'] * B2_integral
+    # Electric and magnetic field energy
+    print(f"Initial Electric Field Energy: {e_energy:.2e} J")
+    print(f"Initial Magnetic Field Energy: {b_energy:.2e} J")
+    # print the initial electric and magnetic field energy
+    kinetic_energy = sum([species.kinetic_energy() for species in particles])
+    # compute the kinetic energy of the particles
+    print(f"Initial Kinetic Energy: {kinetic_energy:.2e} J")
+    # print the initial kinetic energy
+    print(f"Total Initial Energy: {e_energy + b_energy + kinetic_energy:.2e} J\n")
     
+    
+
+
 
     if electrostatic:
         evolve_loop = time_loop_electrostatic
-        # partial(time_loop_electrostatic, E_grid=E_grid, B_grid=B_grid, world=world, constants=constants, pecs=pecs, lasers=lasers, surfaces=surfaces, \
-        #     curl_func=curl_func, M=M, solver=solver, bc=bc, verbose=verbose, GPUs=GPUs)
 
     else:
         evolve_loop = time_loop_electrodynamic
-        # partial(time_loop_electrodynamic, E_grid=E_grid, B_grid=B_grid, world=world, constants=constants, pecs=pecs, lasers=lasers, surfaces=surfaces, \
-        #     curl_func=curl_func, M=M, solver=solver, bc=bc, verbose=verbose, GPUs=GPUs)
 
     return evolve_loop, particles, E, B, J, phi, \
-        rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, M, \
-            solver, bc, electrostatic, verbose, GPUs, Nt, curl_func, pecs, lasers, surfaces
+        rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, \
+            solver, bc, electrostatic, verbose, GPUs, Nt, curl_func

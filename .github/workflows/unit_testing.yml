@@ -5,8 +5,7 @@ name: Unit Testing
 
 on:
   push:
-    branches:
-    - main
+    branches: ["**"]
 
 permissions:
   contents: read
