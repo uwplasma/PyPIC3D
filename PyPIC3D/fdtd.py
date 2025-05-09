@@ -1,11 +1,50 @@
 import jax.numpy as jnp
+import jax
+from jax import jit
+from jax import lax
 # import external libraries
 
-from PyPIC3D.utils import interpolate_field, use_gpu_if_set
 from PyPIC3D.boundaryconditions import apply_zero_boundary_condition
 
-import jax.numpy as jnp
-#from lineax import Diagonal, Identity, Sum, Scale, Shift
+def solve_poisson_sor(phi, rho, dx, dy, dz, eps, omega=1.5, tol=1e-6, max_iter=10000):
+    """
+    Solve Poisson's equation using Successive Over-Relaxation (SOR) method.
+
+    Args:
+        phi (jax.numpy.ndarray): Initial guess for the potential.
+        rho (jax.numpy.ndarray): Charge density.
+        omega (float): Relaxation factor.
+        tol (float): Tolerance for convergence.
+        max_iter (int): Maximum number of iterations.
+
+    Returns:
+        jax.numpy.ndarray: Solution for the potential.
+    """
+    phi = jnp.array(phi)
+    rho = jnp.array(rho)
+    b = dx * dy * dz / jnp.pi
+
+    def cond_fun(val):
+        _, norm_diff, iter_count = val
+        return (norm_diff >= tol) & (iter_count < max_iter)
+
+    def body_fun(val):
+        phi, _, iter_count = val
+        phi_old = phi.copy()
+        phi = phi.at[1:-1, 1:-1, 1:-1].set(
+            (1 - omega) * phi[1:-1, 1:-1, 1:-1] + omega / 6 * (
+                phi[:-2, 1:-1, 1:-1] + phi[2:, 1:-1, 1:-1] +
+                phi[1:-1, :-2, 1:-1] + phi[1:-1, 2:, 1:-1] +
+                phi[1:-1, 1:-1, :-2] + phi[1:-1, 1:-1, 2:] -
+                b * rho[1:-1, 1:-1, 1:-1] / eps
+            )
+        )
+        return phi, jnp.linalg.norm(phi - phi_old), iter_count + 1
+
+    phi, _, _ = jax.lax.while_loop(cond_fun, body_fun, (phi, jnp.inf, 0))
+
+    return phi
+
 
 #@partial(jit, static_argnums=(1, 2, 3, 4))
 def centered_finite_difference_laplacian(field, dx, dy, dz, bc):
@@ -173,65 +212,78 @@ def centered_finite_difference_divergence(field_x, field_y, field_z, dx, dy, dz,
 
     return div_x + div_y + div_z
 
+def identity(x):
+    """
+    Return the input value unchanged.
 
-# def finite_difference_laplacian_3d(Nx, Ny, Nz, dx, dy, dz, bc='dirichlet'):
-#     """
-#     Constructs the Laplacian operator in 3D dimensions using finite differencing.
+    Args:
+        x (any type): The input value to be returned.
 
-#     Args:
-#         Nx (int): Number of grid points in the x-direction.
-#         Ny (int): Number of grid points in the y-direction.
-#         Nz (int): Number of grid points in the z-direction.
-#         dx (float): Grid spacing in the x-direction.
-#         dy (float): Grid spacing in the y-direction.
-#         dz (float): Grid spacing in the z-direction.
-#         bc (str): Boundary condition type ('dirichlet' or 'neumann').
+    Returns:
+        any type: The same value that was passed as input.
+    """
+    return x
 
-#     Returns:
-#         LinearOperator: The Laplacian operator.
-#     """
-#     # Define the finite difference coefficients
-#     coeff_x = -2.0 / (dx * dx)
-#     coeff_y = -2.0 / (dy * dy)
-#     coeff_z = -2.0 / (dz * dz)
-#     coeff_xy = 1.0 / (dx * dx)
-#     coeff_yz = 1.0 / (dy * dy)
-#     coeff_zx = 1.0 / (dz * dz)
+def dot(A, B):
+    """
+    Compute the dot product of two 3D arrays using Einstein summation convention.
 
-#     # Construct the Laplacian operator
-#     laplacian = Sum([
-#         Scale(coeff_x, Identity((Nx, Ny, Nz))),
-#         Scale(coeff_y, Identity((Nx, Ny, Nz))),
-#         Scale(coeff_z, Identity((Nx, Ny, Nz))),
-#         Scale(coeff_xy, Shift((Nx, Ny, Nz), (1, 0, 0))),
-#         Scale(coeff_xy, Shift((Nx, Ny, Nz), (-1, 0, 0))),
-#         Scale(coeff_yz, Shift((Nx, Ny, Nz), (0, 1, 0))),
-#         Scale(coeff_yz, Shift((Nx, Ny, Nz), (0, -1, 0))),
-#         Scale(coeff_zx, Shift((Nx, Ny, Nz), (0, 0, 1))),
-#         Scale(coeff_zx, Shift((Nx, Ny, Nz), (0, 0, -1))),
-#     ])
+    Args:
+        A (array-like): First input array with shape (i, j, k).
+        B (array-like): Second input array with shape (i, j, k).
 
-#     # Apply boundary conditions
-#     if bc == 'dirichlet':
-#         # Apply Dirichlet boundary conditions (zero at the boundaries)
-#         mask = jnp.ones((Nx, Ny, Nz))
-#         mask = mask.at[0, :, :].set(0)
-#         mask = mask.at[-1, :, :].set(0)
-#         mask = mask.at[:, 0, :].set(0)
-#         mask = mask.at[:, -1, :].set(0)
-#         mask = mask.at[:, :, 0].set(0)
-#         mask = mask.at[:, :, -1].set(0)
-#         return Diagonal(mask) @ laplacian @ Diagonal(mask)
-    
-#     elif bc == 'neumann':
-#         # Apply Neumann boundary conditions (zero gradient at the boundaries)
-#         mask = jnp.ones((Nx, Ny, Nz))
-#         mask = mask.at[0, :, :].set(0)
-#         mask = mask.at[-1, :, :].set(0)
-#         mask = mask.at[:, 0, :].set(0)
-#         mask = mask.at[:, -1, :].set(0)
-#         mask = mask.at[:, :, 0].set(0)
-#         mask = mask.at[:, :, -1].set(0)
-#         return Diagonal(mask) @ laplacian
+    Returns:
+        float: The dot product of the input arrays.
+    """
+    return jnp.einsum('ijk,ijk->', A, B)
 
-#     return laplacian
+def conjugated_gradients(A, b, x0, tol=1e-6, maxiter=1000, M=identity):
+    """
+    Solve the linear system Ax = b using the Conjugate Gradient method.
+
+    Args:
+        A (function): A function that computes the matrix-vector product Ax.
+        b (array-like): The right-hand side vector of the linear system.
+        x0 (array-like): The initial guess for the solution.
+        tol (float, optional): The tolerance for the stopping criterion. Default is 1e-6.
+        maxiter (int, optional): The maximum number of iterations. Default is 1000.
+        M (function, optional): A function that applies the preconditioner. Default is the identity function.
+
+    Returns:
+        array-like: The approximate solution to the linear system.
+    """
+    g = A(x0) - b
+    # compute the residual
+    s = M(g)
+    d = -s
+    z = A(d)
+    alpha = dot(g, s)
+    beta  = dot(d, z)
+    initial_value = x0, d, g, alpha, beta, 0
+    # compute the initial parameters
+
+    def body_func(value):
+        x, d, g, alpha, beta, i = value
+        z = A(d)
+        x = x + (alpha/beta)*d
+        g = g + (alpha/beta)*z
+        # update using the scalar parameters
+        s = M(g)
+        # apply the preconditioning matrix
+        beta = alpha
+        alpha = dot(g, s)
+        # update the scalars
+        d = (alpha/beta)*d - s
+        i = i + 1
+        # update the counter
+        value = x, d, g, alpha, beta, i
+        # store the updated values
+        return value
+
+    def cond_fun(value):
+        x, d, g, alpha, beta, i = value
+        return (jnp.linalg.norm(g) > tol) & (i < maxiter)
+
+    x_final, *_ = lax.while_loop(cond_fun, body_func, initial_value)
+
+    return x_final
