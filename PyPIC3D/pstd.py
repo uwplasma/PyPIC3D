@@ -81,15 +81,28 @@ def spectral_poisson_solve(rho, constants, world):
 
     krho = jaxdecomp.fft.pfft3d(rho)
     # fourier transform that charge density
-    k = jaxdecomp.fft.fftfreq3d(krho)
+    #k = jaxdecomp.fft.fftfreq3d(krho, d=dx)
+    # krho = jnp.fft.fftn(rho)
+
+    nx, ny, nz = rho.shape
+    # get the number of grid points in each direction
+    kx = jnp.fft.fftfreq(nx, d=dx) * 2 * jnp.pi
+    ky = jnp.fft.fftfreq(ny, d=dy) * 2 * jnp.pi
+    kz = jnp.fft.fftfreq(nz, d=dz) * 2 * jnp.pi
     # get the wavenumbers
+
+    k = jnp.meshgrid(kx, ky, kz, indexing='ij')
+    # create a meshgrid for the wavenumbers
+
     k2 = k[0]**2 + k[1]**2 + k[2]**2
     # calculate the squared wavenumber
-    k2 = k2.at[0, 0, 0].set(1e-6)
-    phi = -1 * krho / (eps*k2)
-    #phi = phi.at[0, 0, 0].set(0)
+
+    k2 = k2.at[0, 0, 0].set(1.0)
+    phi = -krho / (eps*k2)
+    phi = phi.at[0, 0, 0].set(0)
     # set the DC component to zero
     phi = jaxdecomp.fft.pifft3d(phi).real
+    # phi = jnp.fft.ifftn(phi).real
     # calculate the inverse Fourier transform to obtain the electric potential
     return phi
 
@@ -119,8 +132,18 @@ def spectral_divergence(xfield, yfield, zfield, world):
     zfft = jaxdecomp.fft.pfft3d(zfield)
     # calculate the Fourier transform of the vector field
 
-    k = jaxdecomp.fft.fftfreq3d(xfft)
-    # get the wavevector
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    nx, ny, nz = xfield.shape
+    # get the number of grid points in each direction
+    kx = jnp.fft.fftfreq(nx, d=dx) * 2 * jnp.pi
+    ky = jnp.fft.fftfreq(ny, d=dy) * 2 * jnp.pi
+    kz = jnp.fft.fftfreq(nz, d=dz) * 2 * jnp.pi
+    # get the wavenumbers
+
+    k = jnp.meshgrid(kx, ky, kz, indexing='ij')
+    # create a meshgrid for the wavenumbers
 
     div = -1j * k[0] * xfft + -1j * k[1] * yfft + -1j * k[2] * zfft
     # calculate the divergence in Fourier space
@@ -149,8 +172,21 @@ def spectral_curl(xfield, yfield, zfield, world):
     zfft = jaxdecomp.fft.pfft3d(zfield)
     # calculate the Fourier transform of the vector field
 
-    k = jaxdecomp.fft.fftfreq3d(xfft)
-    # get the wavevector
+    # k = jaxdecomp.fft.fftfreq3d(xfft)
+    # # get the wavevector
+
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    nx, ny, nz = xfield.shape
+    # get the number of grid points in each direction
+    kx = jnp.fft.fftfreq(nx, d=dx) * 2 * jnp.pi
+    ky = jnp.fft.fftfreq(ny, d=dy) * 2 * jnp.pi
+    kz = jnp.fft.fftfreq(nz, d=dz) * 2 * jnp.pi
+    # get the wavenumbers
+
+    k = jnp.meshgrid(kx, ky, kz, indexing='ij')
+    # create a meshgrid for the wavenumbers
 
     curlx = -1j * k[1] * zfft - -1j * k[2] * yfft
     curly = -1j * k[2] * xfft - -1j * k[0] * zfft
@@ -177,8 +213,21 @@ def spectral_gradient(field, world):
     field_fft = jaxdecomp.fft.pfft3d(field)
     # calculate the Fourier transform of the field
 
-    k = jaxdecomp.fft.fftfreq3d(field_fft)
+    #k = jaxdecomp.fft.fftfreq3d(field_fft)
     # get the wavevector
+
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+
+    nx, ny, nz = field.shape
+    # get the number of grid points in each direction
+    kx = jnp.fft.fftfreq(nx, d=dx) * 2 * jnp.pi
+    ky = jnp.fft.fftfreq(ny, d=dy) * 2 * jnp.pi
+    kz = jnp.fft.fftfreq(nz, d=dz) * 2 * jnp.pi
+    # get the wavenumbers
+    k = jnp.meshgrid(kx, ky, kz, indexing='ij')
+    # create a meshgrid for the wavenumbers
 
     gradx = -1j * k[0] * field_fft
     grady = -1j * k[1] * field_fft
@@ -209,8 +258,18 @@ def spectral_laplacian(field, world):
     field_fft = jaxdecomp.fft.pfft3d(field)
     # calculate the Fourier transform of the field
 
-    k = jaxdecomp.fft.fftfreq3d(field_fft)
-    # get the wavevector
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+
+    nx, ny, nz = field.shape
+    # get the number of grid points in each direction
+    kx = jnp.fft.fftfreq(nx, d=dx) * 2 * jnp.pi
+    ky = jnp.fft.fftfreq(ny, d=dy) * 2 * jnp.pi
+    kz = jnp.fft.fftfreq(nz, d=dz) * 2 * jnp.pi
+    # get the wavenumbers
+    k = jnp.meshgrid(kx, ky, kz, indexing='ij')
+    # create a meshgrid for the wavenumbers
 
     lapl = -(k[0]**2 + k[1]**2 + k[2]**2) * field_fft
     # calculate the laplacian in Fourier space
