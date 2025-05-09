@@ -39,13 +39,13 @@ class TestSpectralMethods(unittest.TestCase):
     def test_spectral_poisson_solve(self):
         phi = spectral_poisson_solve(self.rho, self.constants, self.world)
         self.assertEqual(phi.shape, (self.Nx, self.Ny, self.Nz))
-        jnp.allclose(phi, self.phi, rtol=1e-5)
+        jnp.allclose(phi, self.phi, rtol=1e-12)
         # test against analytical solution
 
     def test_spectral_divergence(self):
         divE = spectral_divergence(self.Ex, self.Ey, self.Ez, self.world)
         self.assertEqual(divE.shape, (self.Nx, self.Ny, self.Nz))
-        jnp.allclose(divE, self.rho, rtol=1e-5)
+        jnp.allclose(divE, self.rho, rtol=1e-12)
 
     def test_spectral_curl(self):
         Fx = self.Y
@@ -58,23 +58,23 @@ class TestSpectralMethods(unittest.TestCase):
         expected_curlx = jnp.zeros_like(self.X)
         expected_curly = jnp.zeros_like(self.Y)
         expected_curlz = -2 * jnp.ones_like(self.Z)
-        jnp.allclose(curlx, expected_curlx, rtol=1e-5)
-        jnp.allclose(curly, expected_curly, rtol=1e-5)
-        jnp.allclose(curlz, expected_curlz, rtol=1e-5)
+        jnp.allclose(curlx, expected_curlx, rtol=1e-12)
+        jnp.allclose(curly, expected_curly, rtol=1e-12)
+        jnp.allclose(curlz, expected_curlz, rtol=1e-12)
 
     def test_spectral_laplacian(self):
         laplacian = spectral_laplacian(self.phi, self.world)
         self.assertEqual(laplacian.shape, (self.Nx, self.Ny, self.Nz))
-        jnp.allclose(laplacian, self.rho, rtol=1e-5)
+        jnp.allclose(laplacian, self.rho, rtol=1e-12)
 
     def test_spectral_gradient(self):
         gradx, grady, gradz = spectral_gradient(self.phi, self.world)
         self.assertEqual(gradx.shape, (self.Nx, self.Ny, self.Nz))
         self.assertEqual(grady.shape, (self.Nx, self.Ny, self.Nz))
         self.assertEqual(gradz.shape, (self.Nx, self.Ny, self.Nz))
-        jnp.allclose(gradx, self.Ex, rtol=1e-5)
-        jnp.allclose(grady, self.Ey, rtol=1e-5)
-        jnp.allclose(gradz, self.Ez, rtol=1e-5)
+        jnp.allclose(gradx, self.Ex, rtol=1e-12)
+        jnp.allclose(grady, self.Ey, rtol=1e-12)
+        jnp.allclose(gradz, self.Ez, rtol=1e-12)
 
 if __name__ == '__main__':
     unittest.main()
