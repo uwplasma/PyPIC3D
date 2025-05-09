@@ -13,8 +13,6 @@ Welcome to PyPIC3D's documentation!
    chargeconservation
    yee
    particles
-   lasers
-   materialsurfaces
    experiments
    demos
 
