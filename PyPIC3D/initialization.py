@@ -258,10 +258,9 @@ def initialize_simulation(toml_file):
     E, phi, rho = calculateE(world, particles, constants, rho, phi, solver, bc)
     # calculate the electric field using the Poisson equation
 
+    ######################### COMPUTE INITIAL ENERGY ########################################################
     Ex, Ey, Ez = E
     Bx, By, Bz = B
-    # E2_integral = jnp.sum( jnp.sum( jnp.trapezoid(Ex**2 + Ey**2 + Ez**2, dx=dx, axis=0) ) )
-    # B2_integral = jnp.sum( jnp.sum( jnp.trapezoid(Bx**2 + By**2 + Bz**2, dx=dx, axis=0) ) )
     E2_integral = jnp.trapezoid(  jnp.trapezoid(  jnp.trapezoid(Ex**2 + Ey**2 + Ez**2, dx=dx, axis=0), dx=dy, axis=0), dx=dz, axis=0)
     B2_integral = jnp.trapezoid(  jnp.trapezoid(  jnp.trapezoid(Bx**2 + By**2 + Bz**2, dx=dx, axis=0), dx=dy, axis=0), dx=dz, axis=0)
     # Integral of E^2 and B^2 over the entire grid
@@ -269,8 +268,14 @@ def initialize_simulation(toml_file):
     b_energy = 0.5 / constants['mu'] * B2_integral
     # Electric and magnetic field energy
     print(f"Initial Electric Field Energy: {e_energy:.2e} J")
-    print(f"Initial Magnetic Field Energy: {b_energy:.2e} J\n")
+    print(f"Initial Magnetic Field Energy: {b_energy:.2e} J")
     # print the initial electric and magnetic field energy
+    kinetic_energy = sum([species.kinetic_energy() for species in particles])
+    # compute the kinetic energy of the particles
+    print(f"Initial Kinetic Energy: {kinetic_energy:.2e} J")
+    # print the initial kinetic energy
+    print(f"Total Initial Energy: {e_energy + b_energy + kinetic_energy:.2e} J\n")
+    
     
 
 
