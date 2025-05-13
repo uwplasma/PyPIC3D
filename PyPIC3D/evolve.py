@@ -56,7 +56,7 @@ def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world,
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
 
-        particles[i] = particle_push(particles[i], E, B, E_grid, B_grid, world['dt'])
+        particles[i] = particle_push(particles[i], E, B, E_grid, B_grid, world['dt'], constants)
         # use boris push for particle velocities
 
         particles[i].update_position(world['dt'])
@@ -103,7 +103,7 @@ def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
 
-        particles[i] = particle_push(particles[i], E, B, E_grid, B_grid, world['dt'])
+        particles[i] = particle_push(particles[i], E, B, E_grid, B_grid, world['dt'], constants)
         # use boris push for particle velocities
 
         particles[i].update_position(world['dt'])
