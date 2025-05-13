@@ -56,8 +56,8 @@ class TestBorisMethods(unittest.TestCase):
         bfield_aty = By_interpolate(self.x, self.y, self.z)
         bfield_atz = Bz_interpolate(self.x, self.y, self.z)
 
-        boris_vmap = jax.vmap(boris_single_particle, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None))
-        newvx, newvy, newvz = boris_vmap(self.vx, self.vy, self.vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, self.q, self.m, self.dt)
+        boris_vmap = jax.vmap(boris_single_particle, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None, None))
+        newvx, newvy, newvz = boris_vmap(self.vx, self.vy, self.vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, self.q, self.m, self.dt, None)
 
         self.assertIsInstance(newvx, jnp.ndarray)
         self.assertIsInstance(newvy, jnp.ndarray)
@@ -88,7 +88,7 @@ class TestBorisMethods(unittest.TestCase):
         zs = []
 
         for i in range(n_steps):
-            vx, vy, vz = boris_single_particle(vx, vy, vz, E[0], E[1], E[2], B[0], B[1], B[2], q, m, dt)
+            vx, vy, vz = boris_single_particle(vx, vy, vz, E[0], E[1], E[2], B[0], B[1], B[2], q, m, dt, None)
             x += vx * dt
             y += vy * dt
             z += vz * dt
