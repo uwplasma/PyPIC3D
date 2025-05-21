@@ -1,4 +1,5 @@
 import jax
+import jax.numpy as jnp
 from jax import jit
 from jax import lax
 import functools
@@ -132,6 +133,9 @@ def calculateE(world, particles, constants, rho, phi, solver, bc):
     phi = solve_poisson(rho=rho, constants=constants, world=world, phi=phi, solver=solver, bc=bc)
     # solve the Poisson equation to get the electric potential
 
+    phi = digital_filter(phi, 0.95)
+    # apply a digital filter to the electric potential
+
     Ex, Ey, Ez = lax.cond(
         solver == 'spectral',
         lambda _: spectral_gradient(-1*phi, world),
@@ -217,3 +221,19 @@ def update_B(E, B, world, constants, curl_func):
     # update the magnetic field from Maxwell's equations
 
     return (Bx, By, Bz)
+
+def digital_filter(phi, alpha):
+    """
+    Apply a digital filter to the electric potential array.
+
+    Args:
+        phi (ndarray): Electric potential array.
+        alpha (float): Filter coefficient.
+
+    Returns:
+        ndarray: Filtered electric potential array.
+    """
+    filter_phi = alpha * phi +  (  (1 - alpha) / 6 ) * (  jnp.roll(phi, shift=1, axis=0) + jnp.roll(phi, shift=-1, axis=0) + \
+                                                            jnp.roll(phi, shift=1, axis=1) + jnp.roll(phi, shift=-1, axis=1) + \
+                                                                jnp.roll(phi, shift=1, axis=2) + jnp.roll(phi, shift=-1, axis=2) )
+    return filter_phi
