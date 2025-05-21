@@ -133,8 +133,9 @@ def calculateE(world, particles, constants, rho, phi, solver, bc):
     phi = solve_poisson(rho=rho, constants=constants, world=world, phi=phi, solver=solver, bc=bc)
     # solve the Poisson equation to get the electric potential
 
-    phi = digital_filter(phi, 0.95)
+    phi = digital_filter(phi, 0.5)
     # apply a digital filter to the electric potential
+    # alpha = 0.5 is a bilinear filter for the electric potential
 
     Ex, Ey, Ez = lax.cond(
         solver == 'spectral',
