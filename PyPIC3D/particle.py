@@ -54,6 +54,35 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
     particles = []
     particle_keys = grab_particle_keys(config)
 
+    ####################################### MACROPARTICLE WEIGHTING ######################################################
+
+    if simulation_parameters['ds_per_debye']: # scale the particle weight by the debye length to prevent numerical heating
+        ds_per_debye = simulation_parameters['ds_per_debye']
+        # get the number of grid points per debye length
+        inverse_total_debye = 0
+
+        for toml_key in particle_keys:
+            N_particles = config[toml_key]['N_particles']
+            charge = config[toml_key]['charge']
+            # get the charge and mass of the particle species
+            if 'temperature' in config[toml_key]:
+                T=config[toml_key]['temperature']
+            elif 'vth' in config[toml_key]:
+                T = vth_to_T(config[toml_key]['vth'], mass, kb)
+            # get the temperature of the particle species
+
+            inverse_total_debye += jnp.sqrt( N_particles / (x_wind * y_wind * z_wind) / (eps * kb * T) ) * jnp.abs(charge)
+            # get the inverse debye length before macroparticle weighting
+
+        weight = 1 / (dx**2) / (ds_per_debye**2) / inverse_total_debye
+        # weight the particles by the total debye length of the plasma
+
+    else:
+        weight = 1.0 # default to single particle weight
+
+    #########################################################################################################################
+
+
     debye_lengths = []
 
     for toml_key in particle_keys:
@@ -173,7 +202,7 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         update_y   = True
         update_z   = True
 
-        weight = 1.0 #default to single particle weight
+        #weight = 1.0 #default to single particle weight
         if "weight" in config[toml_key]:
             weight = config[toml_key]['weight']
 
@@ -285,9 +314,9 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         print(f"Particle Species Plasma Frequency: {pf}")
         print(f"Time Steps Per Plasma Period: {(1 / (dt * pf) )}")
         print(f"Particle Species Debye Length: {dl}")
-        print(f"Dx per Debye Length: {dx_dl}")
-        print(f"Dy per Debye Length: {dy_dl}")
-        print(f"Dz per Debye Length: {dz_dl}")
+        #print(f"Dx per Debye Length: {dx_dl}")
+        #print(f"Dy per Debye Length: {dy_dl}")
+        #print(f"Dz per Debye Length: {dz_dl}")
         print(f"Particle Species Scaled Charge: {particle.get_charge()}")
         print(f"Particle Species Scaled Mass: {particle.get_mass()}")
 
