@@ -64,6 +64,7 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         for toml_key in particle_keys:
             N_particles = config[toml_key]['N_particles']
             charge = config[toml_key]['charge']
+            mass = config[toml_key]['mass']
             # get the charge and mass of the particle species
             if 'temperature' in config[toml_key]:
                 T=config[toml_key]['temperature']
