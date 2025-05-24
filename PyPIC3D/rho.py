@@ -94,43 +94,51 @@ def first_order_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
     Returns:
         ndarray: Updated charge density array.
     """
-    # Calculate the nearest grid points
+
+    Nx, Ny, Nz = rho.shape
+    # get the shape of the charge density array
+
     x0 = jnp.floor((x + x_wind / 2) / dx).astype(int)
     y0 = jnp.floor((y + y_wind / 2) / dy).astype(int)
     z0 = jnp.floor((z + z_wind / 2) / dz).astype(int)
+    # Calculate the nearest grid points
 
+    deltax = x - jnp.floor(x / dx) * dx
+    deltay = y - jnp.floor(y / dy) * dy
+    deltaz = z - jnp.floor(z / dz) * dz
     # Calculate the difference between the particle position and the nearest grid point
-    deltax = (x + x_wind / 2) - x0 * dx
-    deltay = (y + y_wind / 2) - y0 * dy
-    deltaz = (z + z_wind / 2) - z0 * dz
 
+    x1 = wrap_around(x0 + 1, Nx)
+    y1 = wrap_around(y0 + 1, Ny)
+    z1 = wrap_around(z0 + 1, Nz)
     # Calculate the index of the next grid point
-    x1 = x0 + 1
-    y1 = y0 + 1
-    z1 = z0 + 1
 
-    # Calculate the weights for the surrounding grid points
-    wx = deltax / dx
-    wy = deltay / dy
-    wz = deltaz / dz
-
-    # Calculate the volume of each grid point
     dv = dx * dy * dz
+    # Calculate the volume of each grid point
 
+    Sx0 = 1 - (deltax/dx)
+    Sy0 = 1 - (deltay/dy)
+    Sz0 = 1 - (deltaz/dz)
+    # calculate the weight for the center grid points
 
-    # Distribute the charge of the particle to the surrounding grid points
-    rho = rho.at[x0, y0, z0].add((q / dv) * (1 - wx) * (1 - wy) * (1 - wz), mode='drop')
-    rho = rho.at[x1, y0, z0].add((q / dv) *      wx  * (1 - wy) * (1 - wz), mode='drop')
-    rho = rho.at[x0, y1, z0].add((q / dv) * (1 - wx) *      wy  * (1 - wz), mode='drop')
-    rho = rho.at[x0, y0, z1].add((q / dv) * (1 - wx) * (1 - wy) *      wz, mode='drop')
-    rho = rho.at[x1, y1, z0].add((q / dv) *      wx  *      wy  * (1 - wz), mode='drop')
-    rho = rho.at[x1, y0, z1].add((q / dv) *      wx  * (1 - wy) *      wz, mode='drop')
-    rho = rho.at[x0, y1, z1].add((q / dv) * (1 - wx) *      wy  *      wz, mode='drop')
-    rho = rho.at[x1, y1, z1].add((q / dv) *      wx  *      wy  *      wz, mode='drop')
+    Sx1 = deltax/dx
+    Sy1 = deltay/dy
+    Sz1 = deltaz/dz
+    # calculate the weight for the next grid points
+
+    # Distribute the charge of the particle to the grid points
+    rho = rho.at[x0, y0, z0].add((q / dv) * Sx0 * Sy0 * Sz0, mode='drop')
+    rho = rho.at[x1, y0, z0].add((q / dv) * Sx1 * Sy0 * Sz0, mode='drop')
+    rho = rho.at[x0, y1, z0].add((q / dv) * Sx0 * Sy1 * Sz0, mode='drop')
+    rho = rho.at[x0, y0, z1].add((q / dv) * Sx0 * Sy0 * Sz1, mode='drop')
+    rho = rho.at[x1, y1, z0].add((q / dv) * Sx1 * Sy1 * Sz0, mode='drop')
+    rho = rho.at[x1, y0, z1].add((q / dv) * Sx1 * Sy0 * Sz1, mode='drop')
+    rho = rho.at[x0, y1, z1].add((q / dv) * Sx0 * Sy1 * Sz1, mode='drop')
+    rho = rho.at[x1, y1, z1].add((q / dv) * Sx1 * Sy1 * Sz1, mode='drop')
 
     return rho
 
-
+@jit
 def second_order_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
     """
     Distribute the charge of a particle to the surrounding grid points using second-order weighting.
@@ -151,140 +159,111 @@ def second_order_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
     Returns:
         ndarray: Updated charge density array.
     """
-    # Calculate the nearest grid points
+
+    Nx, Ny, Nz = rho.shape
+    # get the shape of the charge density array
+
     x0 = jnp.floor((x + x_wind / 2) / dx).astype(int)
     y0 = jnp.floor((y + y_wind / 2) / dy).astype(int)
     z0 = jnp.floor((z + z_wind / 2) / dz).astype(int)
+    # Calculate the nearest grid points
 
+    deltax = x - jnp.floor(x / dx) * dx
+    deltay = y - jnp.floor(y / dy) * dy
+    deltaz = z - jnp.floor(z / dz) * dz
     # Calculate the difference between the particle position and the nearest grid point
-    deltax = (x + x_wind / 2) - x0 * dx
-    deltay = (y + y_wind / 2) - y0 * dy
-    deltaz = (z + z_wind / 2) - z0 * dz
 
+    x1 = wrap_around(x0 + 1, Nx)
+    y1 = wrap_around(y0 + 1, Ny)
+    z1 = wrap_around(z0 + 1, Nz)
     # Calculate the index of the next grid point
-    x1 = x0 + 1
-    y1 = y0 + 1
-    z1 = z0 + 1
 
     x_minus1 = x0 - 1
     y_minus1 = y0 - 1
     z_minus1 = z0 - 1
     # Calculate the index of the previous grid point
 
+    dv = dx * dy * dz
+    # Calculate the volume of each grid point
 
-    ####################### WEIGHTING FACTORS ##########################################################
-    Sx0 = (3/4) - deltax**2
-    Sy0 = (3/4) - deltay**2
-    Sz0 = (3/4) - deltaz**2
+
+    ####################### WEIGHTING FACTORS ############################################################################
+
+    Sx0 = (3/4) - (deltax/dx)**2
+    Sy0 = (3/4) - (deltay/dy)**2
+    Sz0 = (3/4) - (deltaz/dz)**2
     # Calculate the weights for the central grid points
 
-
     Sx1 = jax.lax.cond(
-        deltax < 0.5,
-        lambda _: (1/2) * ((1/2) - deltax)**2,
-        lambda _: 0,
+        deltax <= dx/2,
+        lambda _: (1/2) * ((1/2) - (deltax/dx))**2,
+        lambda _: 0.0,
         operand=None
     )
     Sy1 = jax.lax.cond(
-        deltay < 0.5,
-        lambda _: (1/2) * ((1/2) - deltay)**2,
-        lambda _: 0,
+        deltay <= dy/2,
+        lambda _: (1/2) * ((1/2) - (deltay/dy))**2,
+        lambda _: 0.0,
         operand=None
     )
     Sz1 = jax.lax.cond(
-        deltaz < 0.5,
-        lambda _: (1/2) * ((1/2) - deltaz)**2,
-        lambda _: 0,
+        deltaz <= dz/2,
+        lambda _: (1/2) * ((1/2) - (deltaz/dz))**2,
+        lambda _: 0.0,
         operand=None
     )
     # Calculate the weights for the next grid points
 
     Sx_minus1 = jax.lax.cond(
-        deltax < 0.5,
-        lambda _: (1/2) * ((1/2) + deltax)**2,
-        lambda _: 0,
+        deltax <= dx/2,
+        lambda _: (1/2) * ((1/2) + (deltax/dx))**2,
+        lambda _: 0.0,
         operand=None
     )
 
     Sy_minus1 = jax.lax.cond(
-        deltay < 0.5,
-        lambda _: (1/2) * ((1/2) + deltay)**2,
-        lambda _: 0,
+        deltay <= dy/2,
+        lambda _: (1/2) * ((1/2) + (deltay/dy))**2,
+        lambda _: 0.0,
         operand=None
     )
     Sz_minus1 = jax.lax.cond(
-        deltaz < 0.5,
-        lambda _: (1/2) * ((1/2) + deltaz)**2,
-        lambda _: 0,
+        deltaz <= dz/2,
+        lambda _: (1/2) * ((1/2) + (deltaz/dz))**2,
+        lambda _: 0.0,
         operand=None
     )
     # Calculate the weights for the previous grid points
-    ################################################################################
+    #####################################################################################################################
 
-
-    dv = dx * dy * dz
-    # Calculate the volume of each grid point
-    dq = q / dv
-    # Calculate the charge per volume
-
-    # Distribute the charge of the particle to the surrounding grid points
-    rho = rho.at[x0, y0, z0].add(dq * Sx0 * Sy0 * Sz0, mode='drop')
-    rho = rho.at[x1, y0, z0].add(dq * Sx1 * Sy0 * Sz0, mode='drop')
-    rho = rho.at[x0, y1, z0].add(dq * Sx0 * Sy1 * Sz0, mode='drop')
-    rho = rho.at[x0, y0, z1].add(dq * Sx0 * Sy0 * Sz1, mode='drop')
-    rho = rho.at[x1, y1, z0].add(dq * Sx1 * Sy1 * Sz0, mode='drop')
-    rho = rho.at[x1, y0, z1].add(dq * Sx1 * Sy0 * Sz1, mode='drop')
-    rho = rho.at[x0, y1, z1].add(dq * Sx0 * Sy1 * Sz1, mode='drop')
-    rho = rho.at[x1, y1, z1].add(dq * Sx1 * Sy1 * Sz1, mode='drop')
-    rho = rho.at[x_minus1, y0, z0].add(dq * Sx_minus1 * Sy0 * Sz0, mode='drop')
-    rho = rho.at[x0, y_minus1, z0].add(dq * Sx0 * Sy_minus1 * Sz0, mode='drop')
-    rho = rho.at[x0, y0, z_minus1].add(dq * Sx0 * Sy0 * Sz_minus1, mode='drop')
-    rho = rho.at[x_minus1, y1, z0].add(dq * Sx_minus1 * Sy1 * Sz0, mode='drop')
-    rho = rho.at[x_minus1, y0, z1].add(dq * Sx_minus1 * Sy0 * Sz1, mode='drop')
-    rho = rho.at[x0, y_minus1, z1].add(dq * Sx0 * Sy_minus1 * Sz1, mode='drop')
-    rho = rho.at[x1, y_minus1, z0].add(dq * Sx1 * Sy_minus1 * Sz0, mode='drop')
-    rho = rho.at[x1, y0, z_minus1].add(dq * Sx1 * Sy0 * Sz_minus1, mode='drop')
-    rho = rho.at[x_minus1, y1, z1].add(dq * Sx_minus1 * Sy1 * Sz1, mode='drop')
-    rho = rho.at[x0, y_minus1, z_minus1].add(dq * Sx0 * Sy_minus1 * Sz_minus1, mode='drop')
-    rho = rho.at[x1, y_minus1, z1].add(dq * Sx1 * Sy_minus1 * Sz1, mode='drop')
-    rho = rho.at[x_minus1, y0, z_minus1].add(dq * Sx_minus1 * Sy0 * Sz_minus1, mode='drop')
-    rho = rho.at[x_minus1, y1, z_minus1].add(dq * Sx_minus1 * Sy1 * Sz_minus1, mode='drop')
-    rho = rho.at[x1, y1, z_minus1].add(dq * Sx1 * Sy1 * Sz_minus1, mode='drop')
-    # Update the charge density array with the distributed charge
+    ###################################### CHARGE DISTRIBUTION ##########################################################
+    rho = rho.at[x0, y0, z0].add((q / dv) * Sx0 * Sy0 * Sz0, mode='drop')
+    rho = rho.at[x1, y0, z0].add((q / dv) * Sx1 * Sy0 * Sz0, mode='drop')
+    rho = rho.at[x0, y1, z0].add((q / dv) * Sx0 * Sy1 * Sz0, mode='drop')
+    rho = rho.at[x0, y0, z1].add((q / dv) * Sx0 * Sy0 * Sz1, mode='drop')
+    rho = rho.at[x1, y1, z0].add((q / dv) * Sx1 * Sy1 * Sz0, mode='drop')
+    rho = rho.at[x1, y0, z1].add((q / dv) * Sx1 * Sy0 * Sz1, mode='drop')
+    rho = rho.at[x0, y1, z1].add((q / dv) * Sx0 * Sy1 * Sz1, mode='drop')
+    rho = rho.at[x1, y1, z1].add((q / dv) * Sx1 * Sy1 * Sz1, mode='drop')
+    rho = rho.at[x_minus1, y0, z0].add((q / dv) * Sx_minus1 * Sy0 * Sz0, mode='drop')
+    rho = rho.at[x0, y_minus1, z0].add((q / dv) * Sx0 * Sy_minus1 * Sz0, mode='drop')
+    rho = rho.at[x0, y0, z_minus1].add((q / dv) * Sx0 * Sy0 * Sz_minus1, mode='drop')
+    rho = rho.at[x_minus1, y_minus1, z0].add((q / dv) * Sx_minus1 * Sy_minus1 * Sz0, mode='drop')
+    rho = rho.at[x_minus1, y0, z_minus1].add((q / dv) * Sx_minus1 * Sy0 * Sz_minus1, mode='drop')
+    rho = rho.at[x0, y_minus1, z_minus1].add((q / dv) * Sx0 * Sy_minus1 * Sz_minus1, mode='drop')
+    rho = rho.at[x_minus1, y_minus1, z_minus1].add((q / dv) * Sx_minus1 * Sy_minus1 * Sz_minus1, mode='drop')
+    #####################################################################################################################
 
 
     return rho
 
 
-# def S1(delta):
-
-#     """
-#     Calculate the second-order weighting factor for a given delta value.
-
-#     Args:
-#         delta (float): The delta value representing the distance from the grid point.
-
-#     Returns:
-#         float: The first-order weighting factor.
-#     """
-#     return jax.lax.cond(
-#         delta < 0.5,
-#         lambda _: (1/2) * ((1/2) - delta)**2,
-#         lambda _: 0,
-#         operand=None
-#     )
-
-# def S_minus1(delta):
-#     """
-#     Calculate the second-order weighting factor for a given delta value.
-
-#     Args:
-#         delta (float): The delta value representing the distance from the grid point.
-
-#     Returns:
-#         float: The first-order weighting factor.
-#     """
-#     if delta < 0.5:
-#         return (1/2) * ( (1/2) + delta )**2
-#     else:
-#         return 0
+@jit
+def wrap_around(ix, size):
+    """Wrap around index to ensure it is within bounds."""
+    return jax.lax.cond(
+        ix > size - 1,
+        lambda _: ix - size,
+        lambda _: ix,
+        operand=None
+    )
