@@ -67,7 +67,7 @@ def update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, q, x_win
         x = particlex.at[particle].get()
         y = particley.at[particle].get()
         z = particlez.at[particle].get()
-        rho = first_order_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind)
+        rho = second_order_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind)
         return rho
 
     rho = jax.lax.fori_loop(0, Nparticles, addto_rho, rho )

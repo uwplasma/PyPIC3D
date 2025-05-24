@@ -31,17 +31,28 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants):
     vx, vy, vz = particles.get_velocity()
     # get the charge, mass, position, and velocity of the particles
 
-    Ex, Ey, Ez = E
-    Ex_interpolate = create_trilinear_interpolator(Ex, grid)
-    Ey_interpolate = create_trilinear_interpolator(Ey, grid)
-    Ez_interpolate = create_trilinear_interpolator(Ez, grid)
-    # interpolate the electric field
+    # Ex, Ey, Ez = E
+    # Ex_interpolate = create_trilinear_interpolator(Ex, grid)
+    # Ey_interpolate = create_trilinear_interpolator(Ey, grid)
+    # Ez_interpolate = create_trilinear_interpolator(Ez, grid)
+    # # interpolate the electric field
 
+    # Bx, By, Bz = B
+    # Bx_interpolate = create_trilinear_interpolator(Bx, staggered_grid)
+    # By_interpolate = create_trilinear_interpolator(By, staggered_grid)
+    # Bz_interpolate = create_trilinear_interpolator(Bz, staggered_grid)
+    # # interpolate the magnetic field
+
+    Ex, Ey, Ez = E
+    Ex_interpolate = create_quadratic_interpolator(Ex, grid)
+    Ey_interpolate = create_quadratic_interpolator(Ey, grid)
+    Ez_interpolate = create_quadratic_interpolator(Ez, grid)
+    # interpolate the electric field using quadratic interpolation
     Bx, By, Bz = B
-    Bx_interpolate = create_trilinear_interpolator(Bx, staggered_grid)
-    By_interpolate = create_trilinear_interpolator(By, staggered_grid)
-    Bz_interpolate = create_trilinear_interpolator(Bz, staggered_grid)
-    # interpolate the magnetic field
+    Bx_interpolate = create_quadratic_interpolator(Bx, staggered_grid)
+    By_interpolate = create_quadratic_interpolator(By, staggered_grid)
+    Bz_interpolate = create_quadratic_interpolator(Bz, staggered_grid)
+    # interpolate the magnetic field using quadratic interpolation
 
     efield_atx = Ex_interpolate(x, y, z)
     efield_aty = Ey_interpolate(x, y, z)
