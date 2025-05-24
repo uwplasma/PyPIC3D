@@ -1,63 +1,9 @@
 from jax import jit
+import jax
 import jax.numpy as jnp
 from functools import partial
 import jaxdecomp
 # import external libraries
-
-
-@jit
-def spectral_divergence_correction(Ex, Ey, Ez, rho, world, constants):
-    """
-    Corrects the divergence of the electric field in Fourier space.
-
-    Args:
-        Ex (ndarray): Electric field component in the x-direction.
-        Ey (ndarray): Electric field component in the y-direction.
-        Ez (ndarray): Electric field component in the z-direction.
-        rho (ndarray): Charge density.
-        dx (float): Grid spacing in the x-direction.
-        dy (float): Grid spacing in the y-direction.
-        dz (float): Grid spacing in the z-direction.
-        dt (float): Time step.
-        constants (dict): Dictionary containing physical constants, including 'eps' (permittivity).
-
-    Returns:
-        tuple: Corrected electric field components (Ex, Ey, Ez).
-    """
-
-    k = jaxdecomp.fft.fftfreq3d(Ex)
-    # get the wavevector
-
-    rho_fft = jaxdecomp.fft.pfft3d(rho)
-    # calculate the Fourier transform of the charge density
-
-    correction_mag = k[0]*Ex + k[1]*Ey + k[2]*Ez + 1j*rho_fft/constants['eps']
-    # calculate the magnitude of the correction term
-    kmag = jnp.sqrt(k[0]**2 + k[1]**2 + k[2]**2)
-    kmag = kmag.at[0, 0, 0].set(1.0)
-    # avoid division by zero
-
-    x_correction = correction_mag * k[0] / kmag
-    x_correction = x_correction.at[0, 0, 0].set(0)
-
-    y_correction = correction_mag * k[1] / kmag
-    y_correction = y_correction.at[0, 0, 0].set(0)
-
-    z_correction = correction_mag * k[2] / kmag
-    z_correction = z_correction.at[0, 0, 0].set(0)
-    # calculate the correction term in Fourier space
-
-    Ex_fft = jaxdecomp.fft.pfft3d(Ex)
-    Ey_fft = jaxdecomp.fft.pfft3d(Ey)
-    Ez_fft = jaxdecomp.fft.pfft3d(Ez)
-    # calculate the Fourier transform of the electric field
-
-    Ex = jaxdecomp.fft.pifft3d(Ex_fft - x_correction).real
-    Ey = jaxdecomp.fft.pifft3d(Ey_fft - y_correction).real
-    Ez = jaxdecomp.fft.pifft3d(Ez_fft - z_correction).real
-    # apply the correction to the electric field
-
-    return Ex, Ey, Ez
 
 @jit
 def spectral_poisson_solve(rho, constants, world):
@@ -79,10 +25,8 @@ def spectral_poisson_solve(rho, constants, world):
     dz = world['dz']
     eps = constants['eps']
 
-    krho = jaxdecomp.fft.pfft3d(rho)
+    krho = jnp.fft.fftn(rho)
     # fourier transform that charge density
-    #k = jaxdecomp.fft.fftfreq3d(krho, d=dx)
-    # krho = jnp.fft.fftn(rho)
 
     nx, ny, nz = rho.shape
     # get the number of grid points in each direction
@@ -98,11 +42,12 @@ def spectral_poisson_solve(rho, constants, world):
     # calculate the squared wavenumber
 
     k2 = k2.at[0, 0, 0].set(1.0)
+    # set the DC component to 1.0 to avoid division by zero
     phi = -krho / (eps*k2)
+    # calculate the potential in Fourier space
     phi = phi.at[0, 0, 0].set(0)
     # set the DC component to zero
-    phi = jaxdecomp.fft.pifft3d(phi).real
-    # phi = jnp.fft.ifftn(phi).real
+    phi = jnp.fft.ifftn(phi).real
     # calculate the inverse Fourier transform to obtain the electric potential
     return phi
 
@@ -127,9 +72,9 @@ def spectral_divergence(xfield, yfield, zfield, world):
         ndarray: The real part of the inverse FFT of the spectral divergence.
     """
 
-    xfft = jaxdecomp.fft.pfft3d(xfield)
-    yfft = jaxdecomp.fft.pfft3d(yfield)
-    zfft = jaxdecomp.fft.pfft3d(zfield)
+    xfft = jnp.fft.fftn(xfield)
+    yfft = jnp.fft.fftn(yfield)
+    zfft = jnp.fft.fftn(zfield)
     # calculate the Fourier transform of the vector field
 
     dx = world['dx']
@@ -148,7 +93,7 @@ def spectral_divergence(xfield, yfield, zfield, world):
     div = -1j * k[0] * xfft + -1j * k[1] * yfft + -1j * k[2] * zfft
     # calculate the divergence in Fourier space
 
-    return jaxdecomp.fft.pifft3d(div).real
+    return jnp.fft.ifftn(div).real
 
 @jit
 def spectral_curl(xfield, yfield, zfield, world):
@@ -167,13 +112,10 @@ def spectral_curl(xfield, yfield, zfield, world):
         tuple: A tuple containing the x, y, and z components of the curl of the vector field.
     """
 
-    xfft = jaxdecomp.fft.pfft3d(xfield)
-    yfft = jaxdecomp.fft.pfft3d(yfield)
-    zfft = jaxdecomp.fft.pfft3d(zfield)
+    xfft = jnp.fft.fftn(xfield)
+    yfft = jnp.fft.fftn(yfield)
+    zfft = jnp.fft.fftn(zfield)
     # calculate the Fourier transform of the vector field
-
-    # k = jaxdecomp.fft.fftfreq3d(xfft)
-    # # get the wavevector
 
     dx = world['dx']
     dy = world['dy']
@@ -193,7 +135,7 @@ def spectral_curl(xfield, yfield, zfield, world):
     curlz = -1j * k[0] * yfft - -1j * k[1] * xfft
     # calculate the curl in Fourier space
 
-    return jaxdecomp.fft.pifft3d(curlx).real, jaxdecomp.fft.pifft3d(curly).real, jaxdecomp.fft.pifft3d(curlz).real
+    return jnp.fft.ifftn(curlx).real, jnp.fft.ifftn(curly).real, jnp.fft.ifftn(curlz).real
 
 @jit
 def spectral_gradient(field, world):
@@ -210,18 +152,16 @@ def spectral_gradient(field, world):
         tuple: A tuple containing the x, y, and z components of the gradient of the field.
     """
 
-    field_fft = jaxdecomp.fft.pfft3d(field)
+    field_fft = jnp.fft.fftn(field)
     # calculate the Fourier transform of the field
 
-    #k = jaxdecomp.fft.fftfreq3d(field_fft)
-    # get the wavevector
 
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
-
     nx, ny, nz = field.shape
     # get the number of grid points in each direction
+
     kx = jnp.fft.fftfreq(nx, d=dx) * 2 * jnp.pi
     ky = jnp.fft.fftfreq(ny, d=dy) * 2 * jnp.pi
     kz = jnp.fft.fftfreq(nz, d=dz) * 2 * jnp.pi
@@ -234,7 +174,7 @@ def spectral_gradient(field, world):
     gradz = -1j * k[2] * field_fft
     # calculate the gradient in Fourier space
 
-    return jaxdecomp.fft.pifft3d(gradx).real, jaxdecomp.fft.pifft3d(grady).real, jaxdecomp.fft.pifft3d(gradz).real
+    return jnp.fft.ifftn(gradx).real, jnp.fft.ifftn(grady).real, jnp.fft.ifftn(gradz).real
 
 @jit
 def spectral_laplacian(field, world):
@@ -255,15 +195,16 @@ def spectral_laplacian(field, world):
         numpy.ndarray
             The Laplacian of the field.
     """
-    field_fft = jaxdecomp.fft.pfft3d(field)
+
+    field_fft = jnp.fft.fftn(field)
     # calculate the Fourier transform of the field
 
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
-
     nx, ny, nz = field.shape
     # get the number of grid points in each direction
+
     kx = jnp.fft.fftfreq(nx, d=dx) * 2 * jnp.pi
     ky = jnp.fft.fftfreq(ny, d=dy) * 2 * jnp.pi
     kz = jnp.fft.fftfreq(nz, d=dz) * 2 * jnp.pi
@@ -274,4 +215,4 @@ def spectral_laplacian(field, world):
     lapl = -(k[0]**2 + k[1]**2 + k[2]**2) * field_fft
     # calculate the laplacian in Fourier space
 
-    return jaxdecomp.fft.pifft3d(lapl).real
+    return jnp.fft.ifftn(lapl).real

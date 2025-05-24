@@ -88,6 +88,7 @@ def default_parameters():
         "ncores": 4, # number of cores to use
         "ncpus": 1, # number of CPUs to use
         "cfl"  : 1, # CFL condition number
+        "ds_per_debye" : None, # number of grid spacings per debye length
     }
     # dictionary for simulation parameters
 
