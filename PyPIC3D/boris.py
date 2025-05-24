@@ -2,7 +2,6 @@ import jax
 from jax import jit
 import jax.numpy as jnp
 
-from PyPIC3D.utils import create_trilinear_interpolator
 
 @jit
 def particle_push(particles, E, B, grid, staggered_grid, dt, constants):
@@ -165,3 +164,94 @@ def relativistic_boris_single_particle(vx, vy, vz, efield_atx, efield_aty, efiel
     # define the new gamma factor
 
     return newv[0] / new_gamma, newv[1] / new_gamma, newv[2] / new_gamma
+
+
+def create_trilinear_interpolator(field, grid):
+    """
+    Create a trilinear interpolation function for a given 3D field and grid.
+
+    Args:
+        field (ndarray): The 3D field to interpolate.
+        grid (tuple): A tuple of three arrays representing the grid points in the x, y, and z directions.
+
+    Returns:
+        function: A function that takes (x, y, z) coordinates and returns the interpolated values.
+    """
+    x_grid, y_grid, z_grid = grid
+
+    @jit
+    def interpolator(x, y, z):
+        x_idx = jnp.clip(jnp.searchsorted(x_grid, x) - 1, 0, len(x_grid) - 2)
+        y_idx = jnp.clip(jnp.searchsorted(y_grid, y) - 1, 0, len(y_grid) - 2)
+        z_idx = jnp.clip(jnp.searchsorted(z_grid, z) - 1, 0, len(z_grid) - 2)
+
+        x0, x1 = x_grid[x_idx], x_grid[x_idx + 1]
+        y0, y1 = y_grid[y_idx], y_grid[y_idx + 1]
+        z0, z1 = z_grid[z_idx], z_grid[z_idx + 1]
+
+        xd = (x - x0) / (x1 - x0)
+        yd = (y - y0) / (y1 - y0)
+        zd = (z - z0) / (z1 - z0)
+
+        c00 = field[x_idx, y_idx, z_idx] * (1 - xd) + field[x_idx + 1, y_idx, z_idx] * xd
+        c01 = field[x_idx, y_idx, z_idx + 1] * (1 - xd) + field[x_idx + 1, y_idx, z_idx + 1] * xd
+        c10 = field[x_idx, y_idx + 1, z_idx] * (1 - xd) + field[x_idx + 1, y_idx + 1, z_idx] * xd
+        c11 = field[x_idx, y_idx + 1, z_idx + 1] * (1 - xd) + field[x_idx + 1, y_idx + 1, z_idx + 1] * xd
+
+        c0 = c00 * (1 - yd) + c10 * yd
+        c1 = c01 * (1 - yd) + c11 * yd
+
+        return c0 * (1 - zd) + c1 * zd
+
+
+    vmap_interpolator = jax.vmap(interpolator, in_axes=(0, 0, 0), out_axes=0)
+    # vectorize the interpolator for batch processing
+
+    return vmap_interpolator
+
+
+def create_quadratic_interpolator(field, grid):
+    """
+    Create a quadratic interpolation function for a given 3D field and grid.
+
+    Args:
+        field (ndarray): The 3D field to interpolate.
+        grid (tuple): A tuple of three arrays representing the grid points in the x, y, and z directions.
+
+    Returns:
+        function: A function that takes (x, y, z) coordinates and returns the interpolated values.
+    """
+    x_grid, y_grid, z_grid = grid
+
+    @jit
+    def interpolator(x, y, z):
+        x_idx = jnp.clip(jnp.searchsorted(x_grid, x) - 1, 1, len(x_grid) - 3)
+        y_idx = jnp.clip(jnp.searchsorted(y_grid, y) - 1, 1, len(y_grid) - 3)
+        z_idx = jnp.clip(jnp.searchsorted(z_grid, z) - 1, 1, len(z_grid) - 3)
+
+        x0, x1, x2 = x_grid[x_idx - 1], x_grid[x_idx], x_grid[x_idx + 1]
+        y0, y1, y2 = y_grid[y_idx - 1], y_grid[y_idx], y_grid[y_idx + 1]
+        z0, z1, z2 = z_grid[z_idx - 1], z_grid[z_idx], z_grid[z_idx + 1]
+
+        def quadratic_weights(t, t0, t1, t2):
+            w0 = (t - t1) * (t - t2) / ((t0 - t1) * (t0 - t2))
+            w1 = (t - t0) * (t - t2) / ((t1 - t0) * (t1 - t2))
+            w2 = (t - t0) * (t - t1) / ((t2 - t0) * (t2 - t1))
+            return w0, w1, w2
+
+        wx0, wx1, wx2 = quadratic_weights(x, x0, x1, x2)
+        wy0, wy1, wy2 = quadratic_weights(y, y0, y1, y2)
+        wz0, wz1, wz2 = quadratic_weights(z, z0, z1, z2)
+
+        interpolated_value = 0.0
+        for i, wx in enumerate([wx0, wx1, wx2]):
+            for j, wy in enumerate([wy0, wy1, wy2]):
+                for k, wz in enumerate([wz0, wz1, wz2]):
+                    interpolated_value += (
+                        wx * wy * wz * field[x_idx - 1 + i, y_idx - 1 + j, z_idx - 1 + k]
+                    )
+
+        return interpolated_value
+
+    vmap_interpolator = jax.vmap(interpolator, in_axes=(0, 0, 0), out_axes=0)
+    return vmap_interpolator
