@@ -197,19 +197,19 @@ def second_order_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
     Sx1 = jax.lax.cond(
         deltax <= dx/2,
         lambda _: (1/2) * ((1/2) - (deltax/dx))**2,
-        lambda _: 0.0,
+        lambda _: jnp.array(0.0, dtype=deltax.dtype),
         operand=None
     )
     Sy1 = jax.lax.cond(
         deltay <= dy/2,
         lambda _: (1/2) * ((1/2) - (deltay/dy))**2,
-        lambda _: 0.0,
+        lambda _: jnp.array(0.0, dtype=deltay.dtype),
         operand=None
     )
     Sz1 = jax.lax.cond(
         deltaz <= dz/2,
         lambda _: (1/2) * ((1/2) - (deltaz/dz))**2,
-        lambda _: 0.0,
+        lambda _: jnp.array(0.0, dtype=deltaz.dtype),
         operand=None
     )
     # Calculate the weights for the next grid points
@@ -217,20 +217,20 @@ def second_order_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
     Sx_minus1 = jax.lax.cond(
         deltax <= dx/2,
         lambda _: (1/2) * ((1/2) + (deltax/dx))**2,
-        lambda _: 0.0,
+        lambda _: jnp.array(0.0, dtype=deltax.dtype),
         operand=None
     )
 
     Sy_minus1 = jax.lax.cond(
         deltay <= dy/2,
         lambda _: (1/2) * ((1/2) + (deltay/dy))**2,
-        lambda _: 0.0,
+        lambda _: jnp.array(0.0, dtype=deltay.dtype),
         operand=None
     )
     Sz_minus1 = jax.lax.cond(
         deltaz <= dz/2,
         lambda _: (1/2) * ((1/2) + (deltaz/dz))**2,
-        lambda _: 0.0,
+        lambda _: jnp.array(0.0, dtype=deltaz.dtype),
         operand=None
     )
     # Calculate the weights for the previous grid points
