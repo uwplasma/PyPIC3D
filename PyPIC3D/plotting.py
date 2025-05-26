@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from pyevtk.hl import gridToVTK
 import os
 import plotly.graph_objects as go
-from PyPIC3D.rho import update_rho
+# from PyPIC3D.rho import update_rho
 import jax
 from functools import partial
 
@@ -316,30 +316,30 @@ def plot_initial_histograms(particle_species, world, name, path):
     plt.savefig(f"{path}/{name}_initial_z_velocity_histogram.png", dpi=150)
     plt.close()
 
-@jit
-def number_density(n, Nparticles, particlex, particley, particlez, dx, dy, dz, Nx, Ny, Nz):
-    """
-    Calculate the number density of particles at each grid point.
+# @jit
+# def number_density(n, Nparticles, particlex, particley, particlez, dx, dy, dz, Nx, Ny, Nz):
+#     """
+#     Calculate the number density of particles at each grid point.
 
-    Args:
-        n (array-like): The initial number density array.
-        Nparticles (int): The number of particles.
-        particlex (array-like): The x-coordinates of the particles.
-        particley (array-like): The y-coordinates of the particles.
-        particlez (array-like): The z-coordinates of the particles.
-        dx (float): The grid spacing in the x-direction.
-        dy (float): The grid spacing in the y-direction.
-        dz (float): The grid spacing in the z-direction.
+#     Args:
+#         n (array-like): The initial number density array.
+#         Nparticles (int): The number of particles.
+#         particlex (array-like): The x-coordinates of the particles.
+#         particley (array-like): The y-coordinates of the particles.
+#         particlez (array-like): The z-coordinates of the particles.
+#         dx (float): The grid spacing in the x-direction.
+#         dy (float): The grid spacing in the y-direction.
+#         dz (float): The grid spacing in the z-direction.
 
-    Returns:
-        ndarray: The number density of particles at each grid point.
-    """
-    x_wind = (Nx * dx).astype(int)
-    y_wind = (Ny * dy).astype(int)
-    z_wind = (Nz * dz).astype(int)
-    n = update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, 1, x_wind, y_wind, z_wind, n)
+#     Returns:
+#         ndarray: The number density of particles at each grid point.
+#     """
+#     x_wind = (Nx * dx).astype(int)
+#     y_wind = (Ny * dy).astype(int)
+#     z_wind = (Nz * dz).astype(int)
+#     n = update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, 1, x_wind, y_wind, z_wind, n)
 
-    return n
+#     return n
 
 def magnitude_probe(fieldx, fieldy, fieldz, x, y, z):
     """
@@ -358,81 +358,81 @@ def magnitude_probe(fieldx, fieldy, fieldz, x, y, z):
     """
     return jnp.sqrt(fieldx.at[x, y, z].get()**2 + fieldy.at[x, y, z].get()**2 + fieldz.at[x, y, z].get()**2)
 
-def freq(n, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
-    """
-    Calculate the plasma frequency based on the given parameters.
+# def freq(n, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
+#     """
+#     Calculate the plasma frequency based on the given parameters.
 
-    Args:
-        n (array-like): Input array representing the electron distribution.
-        Nelectrons (int): Total number of electrons.
-        ex (float): Electric field component in the x-direction.
-        ey (float): Electric field component in the y-direction.
-        ez (float): Electric field component in the z-direction.
-        Nx (int): Number of grid points in the x-direction.
-        Ny (int): Number of grid points in the y-direction.
-        Nz (int): Number of grid points in the z-direction.
-        dx (float): Grid spacing in the x-direction.
-        dy (float): Grid spacing in the y-direction.
-        dz (float): Grid spacing in the z-direction.
+#     Args:
+#         n (array-like): Input array representing the electron distribution.
+#         Nelectrons (int): Total number of electrons.
+#         ex (float): Electric field component in the x-direction.
+#         ey (float): Electric field component in the y-direction.
+#         ez (float): Electric field component in the z-direction.
+#         Nx (int): Number of grid points in the x-direction.
+#         Ny (int): Number of grid points in the y-direction.
+#         Nz (int): Number of grid points in the z-direction.
+#         dx (float): Grid spacing in the x-direction.
+#         dy (float): Grid spacing in the y-direction.
+#         dz (float): Grid spacing in the z-direction.
 
-    Returns:
-        float: The calculated plasma frequency.
-    """
+#     Returns:
+#         float: The calculated plasma frequency.
+#     """
 
-    ne = jnp.ravel(number_density(n, Nelectrons, ex, ey, ez, dx, dy, dz, Nx, Ny, Nz))
-    # compute the number density of the electrons
-    eps = 8.854e-12
-    # permitivity of freespace
-    q_e = -1.602e-19
-    # charge of electron
-    me = 9.1093837e-31 # Kg
-    # mass of the electron
-    c1 = q_e**2 / (eps*me)
+#     ne = jnp.ravel(number_density(n, Nelectrons, ex, ey, ez, dx, dy, dz, Nx, Ny, Nz))
+#     # compute the number density of the electrons
+#     eps = 8.854e-12
+#     # permitivity of freespace
+#     q_e = -1.602e-19
+#     # charge of electron
+#     me = 9.1093837e-31 # Kg
+#     # mass of the electron
+#     c1 = q_e**2 / (eps*me)
 
-    mask = jnp.where(  ne  > 0  )[0]
-    # Calculate mean using the mask
-    electron_density = jnp.mean(ne[mask])
-    freq = jnp.sqrt( c1 * electron_density )
-    return freq
-# computes the average plasma frequency over the middle 75% of the world volume
+#     mask = jnp.where(  ne  > 0  )[0]
+#     # Calculate mean using the mask
+#     electron_density = jnp.mean(ne[mask])
+#     freq = jnp.sqrt( c1 * electron_density )
+#     return freq
+# # computes the average plasma frequency over the middle 75% of the world volume
 
-def freq_probe(n, x, y, z, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
-    """
-    Calculate the plasma frequency at a given point in a 3D grid.
+# def freq_probe(n, x, y, z, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
+#     """
+#     Calculate the plasma frequency at a given point in a 3D grid.
 
-    Args:
-        n (ndarray): The electron density array.
-        x (float): The x-coordinate of the probe point.
-        y (float): The y-coordinate of the probe point.
-        z (float): The z-coordinate of the probe point.
-        Nelectrons (int): The total number of electrons.
-        ex (float): The extent of the grid in the x-direction.
-        ey (float): The extent of the grid in the y-direction.
-        ez (float): The extent of the grid in the z-direction.
-        Nx (int): The number of grid points in the x-direction.
-        Ny (int): The number of grid points in the y-direction.
-        Nz (int): The number of grid points in the z-direction.
-        dx (float): The grid spacing in the x-direction.
-        dy (float): The grid spacing in the y-direction.
-        dz (float): The grid spacing in the z-direction.
+#     Args:
+#         n (ndarray): The electron density array.
+#         x (float): The x-coordinate of the probe point.
+#         y (float): The y-coordinate of the probe point.
+#         z (float): The z-coordinate of the probe point.
+#         Nelectrons (int): The total number of electrons.
+#         ex (float): The extent of the grid in the x-direction.
+#         ey (float): The extent of the grid in the y-direction.
+#         ez (float): The extent of the grid in the z-direction.
+#         Nx (int): The number of grid points in the x-direction.
+#         Ny (int): The number of grid points in the y-direction.
+#         Nz (int): The number of grid points in the z-direction.
+#         dx (float): The grid spacing in the x-direction.
+#         dy (float): The grid spacing in the y-direction.
+#         dz (float): The grid spacing in the z-direction.
 
-    Returns:
-        float: The plasma frequency at the specified point.
-    """
+#     Returns:
+#         float: The plasma frequency at the specified point.
+#     """
 
-    ne = number_density(n, Nelectrons, ex, ey, ez, dx, dy, dz, Nx, Ny, Nz)
-    # compute the number density of the electrons
-    eps = 8.854e-12
-    # permitivity of freespace
-    q_e = -1.602e-19
-    # charge of electron
-    me = 9.1093837e-31 # Kg
-    # mass of the electron
-    xi, yi, zi = int(x/dx + Nx/2), int(y/dy + Ny/2), int(z/dz + Nz/2)
-    # get the array spacings for x, y, and z
-    c1 = q_e**2 / (eps*me)
-    freq = jnp.sqrt( c1 * ne.at[xi,yi,zi].get() )    # calculate the plasma frequency at the array point: x, y, z
-    return freq
+#     ne = number_density(n, Nelectrons, ex, ey, ez, dx, dy, dz, Nx, Ny, Nz)
+#     # compute the number density of the electrons
+#     eps = 8.854e-12
+#     # permitivity of freespace
+#     q_e = -1.602e-19
+#     # charge of electron
+#     me = 9.1093837e-31 # Kg
+#     # mass of the electron
+#     xi, yi, zi = int(x/dx + Nx/2), int(y/dy + Ny/2), int(z/dz + Nz/2)
+#     # get the array spacings for x, y, and z
+#     c1 = q_e**2 / (eps*me)
+#     freq = jnp.sqrt( c1 * ne.at[xi,yi,zi].get() )    # calculate the plasma frequency at the array point: x, y, z
+#     return freq
 
 def write_probe(probe_data, t, filename):
     """
