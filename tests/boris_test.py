@@ -6,7 +6,7 @@ import os
 
 
 from PyPIC3D.boris import boris_single_particle
-from PyPIC3D.utils import create_trilinear_interpolator
+from PyPIC3D.boris import create_trilinear_interpolator
 
 jax.config.update("jax_enable_x64", True)
 
