@@ -23,27 +23,6 @@ def grab_particle_keys(config):
             particle_keys.append(key)
     return particle_keys
 
-def read_value(param, key, config, default_value):
-    """
-    Reads a value from a nested dictionary structure and returns it if it exists;
-    otherwise, returns a default value.
-
-    Args:
-        param (str): The parameter name to look for in the nested dictionary.
-        key (str): The key in the outer dictionary where the nested dictionary is located.
-        config (dict): The configuration dictionary containing nested dictionaries.
-        default_value (Any): The value to return if the parameter is not found.
-
-    Returns:
-        Any: The value associated with `param` in `config[key]` if it exists,
-             otherwise `default_value`.
-    """
-    if param in config[key]:
-        return config[key][param]
-    else:
-        return default_value
-
-
 def load_particles_from_toml(config, simulation_parameters, world, constants):
     """
     Load particle data from a TOML file and initialize particle species.
@@ -105,8 +84,6 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
     #########################################################################################################################
 
 
-    debye_lengths = []
-
     for toml_key in particle_keys:
         key1, key2, key3 = jax.random.key(i), jax.random.key(i+1), jax.random.key(i+2)
         i += 3
@@ -114,7 +91,6 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         particle_name = config[toml_key]['name']
         charge=config[toml_key]['charge']
         mass=config[toml_key]['mass']
-        #T=config[toml_key]['temperature']
 
         if 'N_particles' in config[toml_key]:
             N_particles=config[toml_key]['N_particles']
@@ -135,90 +111,32 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
             vth = T_to_vth(T, mass, kb)
         # set the temperature of the particle species
 
-        print(f"\nInitializing particle species: {particle_name}")
-        print(f"Number of particles: {N_particles}")
-        print(f"Number of particles per cell: {N_per_cell}")
-        print(f"Charge: {charge}")
-        print(f"Mass: {mass}")
-        print(f"Temperature: {T}")
-        print(f"Thermal Velocity: {vth}")
-
-
-        xmin = -x_wind/2
-        xmax = x_wind/2
-        ymin = -y_wind/2
-        ymax = y_wind/2
-        zmin = -z_wind/2
-        zmax = z_wind/2
-        # set the default bounds for the particle species
-
-        if 'xmin' in config[toml_key]:
-            xmin = config[toml_key]['xmin']
-        if 'xmax' in config[toml_key]:
-            xmax = config[toml_key]['xmax']
-        if 'ymin' in config[toml_key]:
-            ymin = config[toml_key]['ymin']
-        if 'ymax' in config[toml_key]:
-            ymax = config[toml_key]['ymax']
-        if 'zmin' in config[toml_key]:
-            zmin = config[toml_key]['zmin']
-        if 'zmax' in config[toml_key]:
-            zmax = config[toml_key]['zmax']
-        # set the bounds for the particle species if specified
+        xmin = read_value('xmin', toml_key, config, -x_wind / 2)
+        xmax = read_value('xmax', toml_key, config, x_wind / 2)
+        ymin = read_value('ymin', toml_key, config, -y_wind / 2)
+        ymax = read_value('ymax', toml_key, config, y_wind / 2)
+        zmin = read_value('zmin', toml_key, config, -z_wind / 2)
+        zmax = read_value('zmax', toml_key, config, z_wind / 2)
+        # set the bounds for the particle species
         x, y, z, vx, vy, vz = initial_particles(N_per_cell, N_particles, xmin, xmax, ymin, ymax, zmin, zmax, mass, T, kb, key1, key2, key3)
-    # initialize the positions and velocities of the particles
+        # initialize the positions and velocities of the particles
 
         bc = 'periodic'
         if 'bc' in config[toml_key]:
             bc = config[toml_key]['bc']
         # set the boundary condition
-        if 'initial_x' in config[toml_key]:
-            if isinstance(config[toml_key]['initial_x'], str):
-                print(f"Loading initial_x from external source: {config[toml_key]['initial_x']}")
-                x = jnp.load(config[toml_key]['initial_x'])
-            else:
-                x = jnp.full(N_particles, config[toml_key]['initial_x'])
-        if 'initial_y' in config[toml_key]:
-            if isinstance(config[toml_key]['initial_y'], str):
-                print(f"Loading initial_y from external source: {config[toml_key]['initial_y']}")
-                y = jnp.load(config[toml_key]['initial_y'])
-            else:
-                y = jnp.full(N_particles, config[toml_key]['initial_y'])
-        if 'initial_z' in config[toml_key]:
-            if isinstance(config[toml_key]['initial_z'], str):
-                print(f"Loading initial_z from external source: {config[toml_key]['initial_z']}")
-                z = jnp.load(config[toml_key]['initial_z'])
-            else:
-                z = jnp.full(N_particles, config[toml_key]['initial_z'])
-        if 'initial_vx' in config[toml_key]:
-            if isinstance(config[toml_key]['initial_vx'], str):
-                print(f"Loading initial_vx from external source: {config[toml_key]['initial_vx']}")
-                vx = jnp.load(config[toml_key]['initial_vx'])
-            else:
-                vx = vx + jnp.full(N_particles, config[toml_key]['initial_vx'])
-        if 'initial_vy' in config[toml_key]:
-            if isinstance(config[toml_key]['initial_vy'], str):
-                print(f"Loading initial_vy from external source: {config[toml_key]['initial_vy']}")
-                vy = jnp.load(config[toml_key]['initial_vy'])
-            else:
-                vy = vy + jnp.full(N_particles, config[toml_key]['initial_vy'])
-        if 'initial_vz' in config[toml_key]:
-            if isinstance(config[toml_key]['initial_vz'], str):
-                print(f"Loading initial_vz from external source: {config[toml_key]['initial_vz']}")
-                vz = jnp.load(config[toml_key]['initial_vz'])
-            else:
-                vz = vz + jnp.full(N_particles, config[toml_key]['initial_vz'])
 
-        update_pos = True
-        update_v   = True
-        update_vx  = True
-        update_vy  = True
-        update_vz  = True
-        update_x   = True
-        update_y   = True
-        update_z   = True
+        x = load_initial_positions('initial_x', config, toml_key, x, N_particles)
+        y = load_initial_positions('initial_y', config, toml_key, y, N_particles)
+        z = load_initial_positions('initial_z', config, toml_key, z, N_particles)
+        # load the initial positions of the particles from the toml file, if specified
+        # otherwise, use the initialized positions
+        vx = load_initial_velocities('initial_vx', config, toml_key, vx, N_particles)
+        vy = load_initial_velocities('initial_vy', config, toml_key, vy, N_particles)
+        vz = load_initial_velocities('initial_vz', config, toml_key, vz, N_particles)
+        # load the initial velocities of the particles from the toml file, if specified
+        # otherwise, use the initialized velocities
 
-        #weight = 1.0 #default to single particle weight
         if "weight" in config[toml_key]:
             weight = config[toml_key]['weight']
             # set the weight of the particles, if specified in the toml file
@@ -227,38 +145,14 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
             weight = (x_wind*y_wind*z_wind * eps * kb * T)  / (N_particles * charge**2 * ds_per_debye**2 * dx*dx)
             # weight the particles by the debye length and the number of particles
 
-
-            #weight = (eps * mass * C**2) / charge**2 * (100)**2 / x_wind / (4*N_particles) * (0.2)**2 / ds_per_debye**2 # Exact from Jax-in-cell
-
-            #weight = eps * mass * vth**2 / charge**2 * ( x_wind / dx ) / dx / ds_per_debye**2 / (N_particles*2)
-
-        print(f"Particle Weight: {weight}")
-
-        if 'update_pos' in config[toml_key]:
-            update_pos = config[toml_key]['update_pos']
-            print(f"update_pos: {update_pos}")
-        if 'update_v' in config[toml_key]:
-            update_v = config[toml_key]['update_v']
-            print(f"update_v: {update_v}")
-        if 'update_vx' in config[toml_key]:
-            update_vx = config[toml_key]['update_vx']
-            print(f"update_vx: {update_vx}")
-        if 'update_vy' in config[toml_key]:
-            update_vy = config[toml_key]['update_vy']
-            print(f"update_vy: {update_vy}")
-        if 'update_vz' in config[toml_key]:
-            update_vz = config[toml_key]['update_vz']
-            print(f"update_vz: {update_vz}")
-        if 'update_x' in config[toml_key]:
-            update_x = config[toml_key]['update_x']
-            print(f"update_x: {update_x}")
-        if 'update_y' in config[toml_key]:
-            update_y = config[toml_key]['update_y']
-            print(f"update_y: {update_y}")
-        if 'update_z' in config[toml_key]:
-            update_z = config[toml_key]['update_z']
-            print(f"update_z: {update_z}")
-
+        update_pos = read_value('update_pos', toml_key, config, True)
+        update_v = read_value('update_v', toml_key, config, True)
+        update_vx = read_value('update_vx', toml_key, config, True)
+        update_vy = read_value('update_vy', toml_key, config, True)
+        update_vz = read_value('update_vz', toml_key, config, True)
+        update_x = read_value('update_x', toml_key, config, True)
+        update_y = read_value('update_y', toml_key, config, True)
+        update_z = read_value('update_z', toml_key, config, True)
 
         zeta1 = ( x + x_wind/2 ) % dx
         zeta2 = zeta1
@@ -267,6 +161,7 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         xi1   = ( z + z_wind/2 ) % dz
         xi2   = xi1
         subcells = zeta1, zeta2, eta1, eta2, xi1, xi2
+        # calculate the subcell positions for charge conservation algorithm
 
         particle = particle_species(
             name=particle_name,
@@ -301,23 +196,114 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         )
         particles.append(particle)
 
-        print(f"Particle Kinetic Energy: {particle.kinetic_energy()}")
         pf = plasma_frequency(particle, world, constants)
         dl = debye_length(particle, world, constants)
-        debye_lengths.append(dl)
-        dx_dl = dl / dx
-        dy_dl = dl / dy
-        dz_dl = dl / dz
+        print(f"\nInitializing particle species: {particle_name}")
+        print(f"Number of particles: {N_particles}")
+        print(f"Number of particles per cell: {N_per_cell}")
+        print(f"Charge: {charge}")
+        print(f"Mass: {mass}")
+        print(f"Temperature: {T}")
+        print(f"Thermal Velocity: {vth}")
+        print(f"Particle Kinetic Energy: {particle.kinetic_energy()}")
         print(f"Particle Species Plasma Frequency: {pf}")
         print(f"Time Steps Per Plasma Period: {(1 / (dt * pf) )}")
         print(f"Particle Species Debye Length: {dl}")
-        #print(f"Dx per Debye Length: {dx_dl}")
-        #print(f"Dy per Debye Length: {dy_dl}")
-        #print(f"Dz per Debye Length: {dz_dl}")
+        print(f"Particle Weight: {weight}")
         print(f"Particle Species Scaled Charge: {particle.get_charge()}")
         print(f"Particle Species Scaled Mass: {particle.get_mass()}")
 
     return particles
+
+
+def read_value(param, key, config, default_value):
+    """
+    Reads a value from a nested dictionary structure and returns it if it exists;
+    otherwise, returns a default value.
+
+    Args:
+        param (str): The parameter name to look for in the nested dictionary.
+        key (str): The key in the outer dictionary where the nested dictionary is located.
+        config (dict): The configuration dictionary containing nested dictionaries.
+        default_value (Any): The value to return if the parameter is not found.
+
+    Returns:
+        Any: The value associated with `param` in `config[key]` if it exists,
+             otherwise `default_value`.
+    """
+    if param in config[key]:
+        print(f'Reading user defined {param}')
+        return config[key][param]
+    else:
+        return default_value
+
+
+def load_initial_positions(param, config, key, default, N_particles):
+    """
+    Load initial positions for particles based on the provided configuration.
+
+    This function checks if a specific parameter exists in the configuration
+    under the given key. If the parameter exists and is a string, it loads
+    the data from an external source. If the parameter exists and is a number,
+    it creates an array filled with that value. If the parameter does not
+    exist, it returns the default value.
+
+    Args:
+        param (str): The name of the parameter to look for in the configuration.
+        config (dict): The configuration dictionary containing parameters and values.
+        key (str): The key in the configuration dictionary under which the parameter is stored.
+        default (Any): The default value to return if the parameter is not found.
+        N_particles (int): The number of particles, used to determine the size of the array.
+
+    Returns:
+        jax.numpy.ndarray or Any: An array of particle positions if the parameter is found,
+        or the default value if the parameter is not found.
+    """
+    if param in config[key]:
+        if isinstance(config[key][param], str):
+            print(f"Loading {param} from external source: {config[key][param]}")
+            return jnp.load(config[key][param])
+            # if the value is a string, load it from an external source
+        else:
+            return jnp.full(N_particles, config[key][param])
+            # if the value is a number, fill the array with that value
+    else:
+        return default
+        # return the default value if the parameter is not found
+
+def load_initial_velocities(param, config, key, default, N_particles):
+    """
+    Load initial velocities for particles based on the provided configuration.
+
+    This function checks if a specific parameter exists in the configuration
+    dictionary under the given key. Depending on the type of the parameter's
+    value, it either loads data from an external source or initializes an array
+    with a specified value. If the parameter is not found, a default value is returned.
+
+    Args:
+        param (str): The name of the parameter to look for in the configuration.
+        config (dict): A dictionary containing configuration data.
+        key (str): The key in the configuration dictionary where the parameter is located.
+        default (float or jnp.ndarray): The default value to return if the parameter is not found.
+        N_particles (int): The number of particles, used to determine the size of the array.
+
+    Returns:
+        jnp.ndarray: An array of initial velocities for the particles. If the parameter
+        is a string, the array is loaded from an external source. If the parameter is
+        a number, the array is filled with that value plus the default. If the parameter
+        is not found, the default value is returned.
+    """
+    if param in config[key]:
+        if isinstance(config[key][param], str):
+            print(f"Loading {param} from external source: {config[key][param]}")
+            return jnp.load(config[key][param])
+            # if the value is a string, load it from an external source
+        else:
+            return jnp.full(N_particles, config[key][param]) + default
+            # if the value is a number, fill the array with that value
+    else:
+        return default
+        # return the default value if the parameter is not found
 
 def initial_particles(N_per_cell, N_particles, minx, maxx, miny, maxy, minz, maxz, mass, T, kb, key1, key2, key3):
     """
