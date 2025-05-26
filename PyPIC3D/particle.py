@@ -42,46 +42,28 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
     x_wind = world['x_wind']
     y_wind = world['y_wind']
     z_wind = world['z_wind']
-    kb = constants['kb']
-    eps = constants['eps']
-    C   = constants['C']
+    # get the world dimensions
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
     dt = world['dt']
+    # get spatial and temporal resolution
+    kb = constants['kb']
+    eps = constants['eps']
+    C   = constants['C']
+    # get the constants
 
     i = 0
+    # initialize the random number generator key
+    # this is used to generate random numbers for the initial positions and velocities of the particles
+    # it is incremented by 3 for each particle species to ensure different random numbers for each species
     particles = []
     particle_keys = grab_particle_keys(config)
+    # get the particle keys from the config dictionary
 
-    ####################################### MACROPARTICLE WEIGHTING ######################################################
-
-    if simulation_parameters['ds_per_debye']: # scale the particle weight by the debye length to prevent numerical heating
-        ds_per_debye = simulation_parameters['ds_per_debye']
-        # get the number of grid points per debye length
-        inverse_total_debye = 0
-
-        for toml_key in particle_keys:
-            N_particles = config[toml_key]['N_particles']
-            charge = config[toml_key]['charge']
-            mass = config[toml_key]['mass']
-            # get the charge and mass of the particle species
-            if 'temperature' in config[toml_key]:
-                T=config[toml_key]['temperature']
-            elif 'vth' in config[toml_key]:
-                T = vth_to_T(config[toml_key]['vth'], mass, kb)
-            # get the temperature of the particle species
-
-            inverse_total_debye += jnp.sqrt( N_particles / (x_wind * y_wind * z_wind) / (eps * kb * T) ) * jnp.abs(charge)
-            # get the inverse debye length before macroparticle weighting
-
-        weight = 1 / (dx**2) / (ds_per_debye**2) / inverse_total_debye
-        # weight the particles by the total debye length of the plasma
-
-    else:
-        weight = 1.0 # default to single particle weight
-
-    #########################################################################################################################
+    weight = compute_macroparticle_weight(config, particle_keys, simulation_parameters, world, constants)
+    # scale the particle weight by the debye length to prevent numerical heating
+    # this is done by computing the total debye length of the plasma and scaling the particle weight accordingly
 
 
     for toml_key in particle_keys:
@@ -304,6 +286,47 @@ def load_initial_velocities(param, config, key, default, N_particles):
     else:
         return default
         # return the default value if the parameter is not found
+
+def compute_macroparticle_weight(config, particle_keys, simulation_parameters, world, constants):
+
+    x_wind = world['x_wind']
+    y_wind = world['y_wind']
+    z_wind = world['z_wind']
+    # get the world dimensions
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    # get the world resolution
+    kb = constants['kb']
+    eps = constants['eps']
+    # get the constants
+
+    if simulation_parameters['ds_per_debye']: # scale the particle weight by the debye length to prevent numerical heating
+        ds_per_debye = simulation_parameters['ds_per_debye']
+        # get the number of grid points per debye length
+        inverse_total_debye = 0
+
+        for toml_key in particle_keys:
+            N_particles = config[toml_key]['N_particles']
+            charge = config[toml_key]['charge']
+            mass = config[toml_key]['mass']
+            # get the charge and mass of the particle species
+            if 'temperature' in config[toml_key]:
+                T=config[toml_key]['temperature']
+            elif 'vth' in config[toml_key]:
+                T = vth_to_T(config[toml_key]['vth'], mass, kb)
+            # get the temperature of the particle species
+
+            inverse_total_debye += jnp.sqrt( N_particles / (x_wind * y_wind * z_wind) / (eps * kb * T) ) * jnp.abs(charge)
+            # get the inverse debye length before macroparticle weighting
+
+        weight = 1 / (dx**2) / (ds_per_debye**2) / inverse_total_debye
+        # weight the particles by the total debye length of the plasma
+
+    else:
+        weight = 1.0 # default to single particle weight
+
+    return weight
 
 def initial_particles(N_per_cell, N_particles, minx, maxx, miny, maxy, minz, maxz, mass, T, kb, key1, key2, key3):
     """
