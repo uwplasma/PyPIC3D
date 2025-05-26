@@ -42,49 +42,29 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
     x_wind = world['x_wind']
     y_wind = world['y_wind']
     z_wind = world['z_wind']
-    kb = constants['kb']
-    eps = constants['eps']
-    C   = constants['C']
+    # get the world dimensions
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
     dt = world['dt']
+    # get spatial and temporal resolution
+    kb = constants['kb']
+    eps = constants['eps']
+    C   = constants['C']
+    # get the constants
 
     i = 0
+    # initialize the random number generator key
+    # this is used to generate random numbers for the initial positions and velocities of the particles
+    # it is incremented by 3 for each particle species to ensure different random numbers for each species
     particles = []
     particle_keys = grab_particle_keys(config)
+    # get the particle keys from the config dictionary
 
-    ####################################### MACROPARTICLE WEIGHTING ######################################################
+    weight = compute_macroparticle_weight(config, particle_keys, simulation_parameters, world, constants)
+    # scale the particle weight by the debye length to prevent numerical heating
+    # this is done by computing the total debye length of the plasma and scaling the particle weight accordingly
 
-    if simulation_parameters['ds_per_debye']: # scale the particle weight by the debye length to prevent numerical heating
-        ds_per_debye = simulation_parameters['ds_per_debye']
-        # get the number of grid points per debye length
-        inverse_total_debye = 0
-
-        for toml_key in particle_keys:
-            N_particles = config[toml_key]['N_particles']
-            charge = config[toml_key]['charge']
-            mass = config[toml_key]['mass']
-            # get the charge and mass of the particle species
-            if 'temperature' in config[toml_key]:
-                T=config[toml_key]['temperature']
-            elif 'vth' in config[toml_key]:
-                T = vth_to_T(config[toml_key]['vth'], mass, kb)
-            # get the temperature of the particle species
-
-            inverse_total_debye += jnp.sqrt( N_particles / (x_wind * y_wind * z_wind) / (eps * kb * T) ) * jnp.abs(charge)
-            # get the inverse debye length before macroparticle weighting
-
-        weight = 1 / (dx**2) / (ds_per_debye**2) / inverse_total_debye
-        # weight the particles by the total debye length of the plasma
-
-    else:
-        weight = 1.0 # default to single particle weight
-
-    #########################################################################################################################
-
-
-    debye_lengths = []
 
     for toml_key in particle_keys:
         key1, key2, key3 = jax.random.key(i), jax.random.key(i+1), jax.random.key(i+2)
@@ -93,7 +73,6 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         particle_name = config[toml_key]['name']
         charge=config[toml_key]['charge']
         mass=config[toml_key]['mass']
-        #T=config[toml_key]['temperature']
 
         if 'N_particles' in config[toml_key]:
             N_particles=config[toml_key]['N_particles']
@@ -114,153 +93,48 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
             vth = T_to_vth(T, mass, kb)
         # set the temperature of the particle species
 
-        print(f"\nInitializing particle species: {particle_name}")
-        print(f"Number of particles: {N_particles}")
-        print(f"Number of particles per cell: {N_per_cell}")
-        print(f"Charge: {charge}")
-        print(f"Mass: {mass}")
-        print(f"Temperature: {T}")
-        print(f"Thermal Velocity: {vth}")
-
-
-        w = jnp.zeros((3,3))
-        g = jnp.zeros((3,3))
-        # initialize the frequency and damping matrices for the particle species
-
-
-        xmin = -x_wind/2
-        xmax = x_wind/2
-        ymin = -y_wind/2
-        ymax = y_wind/2
-        zmin = -z_wind/2
-        zmax = z_wind/2
-        # set the default bounds for the particle species
-
-        bounded = False
-        if 'xmin' in config[toml_key]:
-            xmin = config[toml_key]['xmin']
-        if 'xmax' in config[toml_key]:
-            xmax = config[toml_key]['xmax']
-        if 'ymin' in config[toml_key]:
-            ymin = config[toml_key]['ymin']
-        if 'ymax' in config[toml_key]:
-            ymax = config[toml_key]['ymax']
-        if 'zmin' in config[toml_key]:
-            zmin = config[toml_key]['zmin']
-        if 'zmax' in config[toml_key]:
-            zmax = config[toml_key]['zmax']
-        # set the bounds for the particle species if specified
+        xmin = read_value('xmin', toml_key, config, -x_wind / 2)
+        xmax = read_value('xmax', toml_key, config, x_wind / 2)
+        ymin = read_value('ymin', toml_key, config, -y_wind / 2)
+        ymax = read_value('ymax', toml_key, config, y_wind / 2)
+        zmin = read_value('zmin', toml_key, config, -z_wind / 2)
+        zmax = read_value('zmax', toml_key, config, z_wind / 2)
+        # set the bounds for the particle species
         x, y, z, vx, vy, vz = initial_particles(N_per_cell, N_particles, xmin, xmax, ymin, ymax, zmin, zmax, mass, T, kb, key1, key2, key3)
-    # initialize the positions and velocities of the particles
+        # initialize the positions and velocities of the particles
 
         bc = 'periodic'
         if 'bc' in config[toml_key]:
             bc = config[toml_key]['bc']
         # set the boundary condition
-        if 'initial_x' in config[toml_key]:
-            if isinstance(config[toml_key]['initial_x'], str):
-                print(f"Loading initial_x from external source: {config[toml_key]['initial_x']}")
-                x = jnp.load(config[toml_key]['initial_x'])
-            else:
-                x = jnp.full(N_particles, config[toml_key]['initial_x'])
-        if 'initial_y' in config[toml_key]:
-            if isinstance(config[toml_key]['initial_y'], str):
-                print(f"Loading initial_y from external source: {config[toml_key]['initial_y']}")
-                y = jnp.load(config[toml_key]['initial_y'])
-            else:
-                y = jnp.full(N_particles, config[toml_key]['initial_y'])
-        if 'initial_z' in config[toml_key]:
-            if isinstance(config[toml_key]['initial_z'], str):
-                print(f"Loading initial_z from external source: {config[toml_key]['initial_z']}")
-                z = jnp.load(config[toml_key]['initial_z'])
-            else:
-                z = jnp.full(N_particles, config[toml_key]['initial_z'])
-        if 'initial_vx' in config[toml_key]:
-            if isinstance(config[toml_key]['initial_vx'], str):
-                print(f"Loading initial_vx from external source: {config[toml_key]['initial_vx']}")
-                vx = jnp.load(config[toml_key]['initial_vx'])
-            else:
-                vx = vx + jnp.full(N_particles, config[toml_key]['initial_vx'])
-        if 'initial_vy' in config[toml_key]:
-            if isinstance(config[toml_key]['initial_vy'], str):
-                print(f"Loading initial_vy from external source: {config[toml_key]['initial_vy']}")
-                vy = jnp.load(config[toml_key]['initial_vy'])
-            else:
-                vy = vy + jnp.full(N_particles, config[toml_key]['initial_vy'])
-        if 'initial_vz' in config[toml_key]:
-            if isinstance(config[toml_key]['initial_vz'], str):
-                print(f"Loading initial_vz from external source: {config[toml_key]['initial_vz']}")
-                vz = jnp.load(config[toml_key]['initial_vz'])
-            else:
-                vz = vz + jnp.full(N_particles, config[toml_key]['initial_vz'])
 
-        update_pos = True
-        update_v   = True
-        update_vx  = True
-        update_vy  = True
-        update_vz  = True
-        update_x   = True
-        update_y   = True
-        update_z   = True
+        x = load_initial_positions('initial_x', config, toml_key, x, N_particles)
+        y = load_initial_positions('initial_y', config, toml_key, y, N_particles)
+        z = load_initial_positions('initial_z', config, toml_key, z, N_particles)
+        # load the initial positions of the particles from the toml file, if specified
+        # otherwise, use the initialized positions
+        vx = load_initial_velocities('initial_vx', config, toml_key, vx, N_particles)
+        vy = load_initial_velocities('initial_vy', config, toml_key, vy, N_particles)
+        vz = load_initial_velocities('initial_vz', config, toml_key, vz, N_particles)
+        # load the initial velocities of the particles from the toml file, if specified
+        # otherwise, use the initialized velocities
 
-        #weight = 1.0 #default to single particle weight
         if "weight" in config[toml_key]:
             weight = config[toml_key]['weight']
-
-        if 'ds_per_debye' in config[toml_key]: # assuming dx = dy = dz
+            # set the weight of the particles, if specified in the toml file
+        elif 'ds_per_debye' in config[toml_key]: # assuming dx = dy = dz
             ds_per_debye = config[toml_key]['ds_per_debye']
-
-
             weight = (x_wind*y_wind*z_wind * eps * kb * T)  / (N_particles * charge**2 * ds_per_debye**2 * dx*dx)
+            # weight the particles by the debye length and the number of particles
 
-
-            #weight = (eps * mass * C**2) / charge**2 * (100)**2 / x_wind / (4*N_particles) * (0.2)**2 / ds_per_debye**2 # Exact from Jax-in-cell
-
-            #weight = eps * mass * vth**2 / charge**2 * ( x_wind / dx ) / dx / ds_per_debye**2 / (N_particles*2)
-
-            # weight = (
-            #     epsilon_0
-            #     * mass_electron
-            #     * speed_of_light**2
-            #     / charge_electron**2
-            #     * number_grid_points**2
-            #     / length
-            #     / (2 * number_pseudoelectrons)
-            #     * parameters["vth_electrons_over_c"]**2
-            #     / Debye_length_per_dx**2
-            # )
-    # )
-
-
-            #weight = jnp.power(weight_3, 1/3)
-
-        print(f"Particle Weight: {weight}")
-
-        if 'update_pos' in config[toml_key]:
-            update_pos = config[toml_key]['update_pos']
-            print(f"update_pos: {update_pos}")
-        if 'update_v' in config[toml_key]:
-            update_v = config[toml_key]['update_v']
-            print(f"update_v: {update_v}")
-        if 'update_vx' in config[toml_key]:
-            update_vx = config[toml_key]['update_vx']
-            print(f"update_vx: {update_vx}")
-        if 'update_vy' in config[toml_key]:
-            update_vy = config[toml_key]['update_vy']
-            print(f"update_vy: {update_vy}")
-        if 'update_vz' in config[toml_key]:
-            update_vz = config[toml_key]['update_vz']
-            print(f"update_vz: {update_vz}")
-        if 'update_x' in config[toml_key]:
-            update_x = config[toml_key]['update_x']
-            print(f"update_x: {update_x}")
-        if 'update_y' in config[toml_key]:
-            update_y = config[toml_key]['update_y']
-            print(f"update_y: {update_y}")
-        if 'update_z' in config[toml_key]:
-            update_z = config[toml_key]['update_z']
-            print(f"update_z: {update_z}")
-
+        update_pos = read_value('update_pos', toml_key, config, True)
+        update_v = read_value('update_v', toml_key, config, True)
+        update_vx = read_value('update_vx', toml_key, config, True)
+        update_vy = read_value('update_vy', toml_key, config, True)
+        update_vz = read_value('update_vz', toml_key, config, True)
+        update_x = read_value('update_x', toml_key, config, True)
+        update_y = read_value('update_y', toml_key, config, True)
+        update_z = read_value('update_z', toml_key, config, True)
 
         zeta1 = ( x + x_wind/2 ) % dx
         zeta2 = zeta1
@@ -269,6 +143,7 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         xi1   = ( z + z_wind/2 ) % dz
         xi2   = xi1
         subcells = zeta1, zeta2, eta1, eta2, xi1, xi2
+        # calculate the subcell positions for charge conservation algorithm
 
         particle = particle_species(
             name=particle_name,
@@ -299,29 +174,159 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
             update_z=update_z,
             update_pos=update_pos,
             update_v=update_v,
-            bound=bounded,
-            w=w,
-            g=g,
+            shape=simulation_parameters['shape_factor']
         )
         particles.append(particle)
 
-        print(f"Particle Kinetic Energy: {particle.kinetic_energy()}")
         pf = plasma_frequency(particle, world, constants)
         dl = debye_length(particle, world, constants)
-        debye_lengths.append(dl)
-        dx_dl = dl / dx
-        dy_dl = dl / dy
-        dz_dl = dl / dz
+        print(f"\nInitializing particle species: {particle_name}")
+        print(f"Number of particles: {N_particles}")
+        print(f"Number of particles per cell: {N_per_cell}")
+        print(f"Charge: {charge}")
+        print(f"Mass: {mass}")
+        print(f"Temperature: {T}")
+        print(f"Thermal Velocity: {vth}")
+        print(f"Particle Kinetic Energy: {particle.kinetic_energy()}")
         print(f"Particle Species Plasma Frequency: {pf}")
         print(f"Time Steps Per Plasma Period: {(1 / (dt * pf) )}")
         print(f"Particle Species Debye Length: {dl}")
-        #print(f"Dx per Debye Length: {dx_dl}")
-        #print(f"Dy per Debye Length: {dy_dl}")
-        #print(f"Dz per Debye Length: {dz_dl}")
+        print(f"Particle Weight: {weight}")
         print(f"Particle Species Scaled Charge: {particle.get_charge()}")
         print(f"Particle Species Scaled Mass: {particle.get_mass()}")
 
     return particles
+
+
+def read_value(param, key, config, default_value):
+    """
+    Reads a value from a nested dictionary structure and returns it if it exists;
+    otherwise, returns a default value.
+
+    Args:
+        param (str): The parameter name to look for in the nested dictionary.
+        key (str): The key in the outer dictionary where the nested dictionary is located.
+        config (dict): The configuration dictionary containing nested dictionaries.
+        default_value (Any): The value to return if the parameter is not found.
+
+    Returns:
+        Any: The value associated with `param` in `config[key]` if it exists,
+             otherwise `default_value`.
+    """
+    if param in config[key]:
+        print(f'Reading user defined {param}')
+        return config[key][param]
+    else:
+        return default_value
+
+
+def load_initial_positions(param, config, key, default, N_particles):
+    """
+    Load initial positions for particles based on the provided configuration.
+
+    This function checks if a specific parameter exists in the configuration
+    under the given key. If the parameter exists and is a string, it loads
+    the data from an external source. If the parameter exists and is a number,
+    it creates an array filled with that value. If the parameter does not
+    exist, it returns the default value.
+
+    Args:
+        param (str): The name of the parameter to look for in the configuration.
+        config (dict): The configuration dictionary containing parameters and values.
+        key (str): The key in the configuration dictionary under which the parameter is stored.
+        default (Any): The default value to return if the parameter is not found.
+        N_particles (int): The number of particles, used to determine the size of the array.
+
+    Returns:
+        jax.numpy.ndarray or Any: An array of particle positions if the parameter is found,
+        or the default value if the parameter is not found.
+    """
+    if param in config[key]:
+        if isinstance(config[key][param], str):
+            print(f"Loading {param} from external source: {config[key][param]}")
+            return jnp.load(config[key][param])
+            # if the value is a string, load it from an external source
+        else:
+            return jnp.full(N_particles, config[key][param])
+            # if the value is a number, fill the array with that value
+    else:
+        return default
+        # return the default value if the parameter is not found
+
+def load_initial_velocities(param, config, key, default, N_particles):
+    """
+    Load initial velocities for particles based on the provided configuration.
+
+    This function checks if a specific parameter exists in the configuration
+    dictionary under the given key. Depending on the type of the parameter's
+    value, it either loads data from an external source or initializes an array
+    with a specified value. If the parameter is not found, a default value is returned.
+
+    Args:
+        param (str): The name of the parameter to look for in the configuration.
+        config (dict): A dictionary containing configuration data.
+        key (str): The key in the configuration dictionary where the parameter is located.
+        default (float or jnp.ndarray): The default value to return if the parameter is not found.
+        N_particles (int): The number of particles, used to determine the size of the array.
+
+    Returns:
+        jnp.ndarray: An array of initial velocities for the particles. If the parameter
+        is a string, the array is loaded from an external source. If the parameter is
+        a number, the array is filled with that value plus the default. If the parameter
+        is not found, the default value is returned.
+    """
+    if param in config[key]:
+        if isinstance(config[key][param], str):
+            print(f"Loading {param} from external source: {config[key][param]}")
+            return jnp.load(config[key][param])
+            # if the value is a string, load it from an external source
+        else:
+            return jnp.full(N_particles, config[key][param]) + default
+            # if the value is a number, fill the array with that value
+    else:
+        return default
+        # return the default value if the parameter is not found
+
+def compute_macroparticle_weight(config, particle_keys, simulation_parameters, world, constants):
+
+    x_wind = world['x_wind']
+    y_wind = world['y_wind']
+    z_wind = world['z_wind']
+    # get the world dimensions
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    # get the world resolution
+    kb = constants['kb']
+    eps = constants['eps']
+    # get the constants
+
+    if simulation_parameters['ds_per_debye']: # scale the particle weight by the debye length to prevent numerical heating
+        ds_per_debye = simulation_parameters['ds_per_debye']
+        # get the number of grid points per debye length
+        inverse_total_debye = 0
+
+        for toml_key in particle_keys:
+            N_particles = config[toml_key]['N_particles']
+            charge = config[toml_key]['charge']
+            mass = config[toml_key]['mass']
+            # get the charge and mass of the particle species
+            if 'temperature' in config[toml_key]:
+                T=config[toml_key]['temperature']
+            elif 'vth' in config[toml_key]:
+                T = vth_to_T(config[toml_key]['vth'], mass, kb)
+            # get the temperature of the particle species
+
+            inverse_total_debye += jnp.sqrt( N_particles / (x_wind * y_wind * z_wind) / (eps * kb * T) ) * jnp.abs(charge)
+            # get the inverse debye length before macroparticle weighting
+
+        weight = 1 / (dx**2) / (ds_per_debye**2) / inverse_total_debye
+        # weight the particles by the total debye length of the plasma
+
+    else:
+        weight = 1.0 # default to single particle weight
+
+    return weight
 
 def initial_particles(N_per_cell, N_particles, minx, maxx, miny, maxy, minz, maxz, mass, T, kb, key1, key2, key3):
     """
@@ -367,39 +372,6 @@ def initial_particles(N_per_cell, N_particles, minx, maxx, miny, maxy, minz, max
     # initialize the particles with a maxwell boltzmann distribution.
     return x, y, z, v_x, v_y, v_z
 
-
-
-@jit
-def total_KE(particle_species_list):
-    """
-    Calculate the total kinetic energy of all particle species.
-
-    Args:
-        particle_species_list (list): A list of particle_species objects.
-
-    Returns:
-        float: The total kinetic energy of all particle species.
-    """
-    total_ke = 0.0
-    for species in particle_species_list:
-        vx, vy, vz = species.get_velocity()
-        total_ke += 0.5 * species.mass * jnp.sum(vx**2 + vy**2 + vz**2)
-    return total_ke
-
-@jit
-def total_momentum(m, vx, vy, vz):
-    """
-    Calculate the total momentum of the particles.
-
-    Args:
-        m (float): The mass of the particle.
-        v (jax.numpy.ndarray): The velocity of the particle.
-
-    Returns:
-        float: The total momentum of the particle.
-    """
-    return m * jnp.sum( jnp.sqrt( vx**2 + vy**2 + vz**2 ) )
-
 @jit
 def compute_index(x, dx, window):
     """
@@ -418,98 +390,58 @@ def compute_index(x, dx, window):
 @register_pytree_node_class
 class particle_species:
     """
-    A class to represent a species of particles in a simulation.
-    Attributes
-    ----------
-    name : str
-        The name of the particle species.
-    N_particles : int
-        The number of particles in the species.
-    charge : float
-        The charge of each particle.
-    mass : float
-        The mass of each particle.
-    weight : float, optional
-        The weight of the particles (default is 1).
-    T : float
-        The temperature of the particles.
-    v1, v2, v3 : array-like
-        The velocity components of the particles.
-    x1, x2, x3 : array-like
-        The position components of the particles.
-    dx, dy, dz : float
-        The resolution of the grid in each dimension.
-    x_wind, y_wind, z_wind : float
-        The dimensions of the simulation box.
-    zeta1, zeta2, eta1, eta2, xi1, xi2 : array-like
-        The subcell positions for charge conservation.
-    bc : str, optional
-        The boundary condition type (default is 'periodic').
-    update_x, update_y, update_z : bool, optional
-        Flags to update the position components (default is True).
-    update_vx, update_vy, update_vz : bool, optional
-        Flags to update the velocity components (default is True).
-    update_pos, update_v : bool, optional
-        Flags to update the position and velocity (default is True).
-    w, g : array-like, optional
-        Frequency and damping matrices for bound species (default is zero matrices).
-    Methods
-    -------
-    get_name():
-        Returns the name of the particle species.
-    get_charge():
-        Returns the charge of the particles multiplied by their weight.
-    get_number_of_particles():
-        Returns the number of particles in the species.
-    get_temperature():
-        Returns the temperature of the particles.
-    get_velocity():
-        Returns the velocity components of the particles.
-    get_position():
-        Returns the position components of the particles.
-    get_mass():
-        Returns the mass of the particles multiplied by their weight.
-    get_subcell_position():
-        Returns the subcell positions for charge conservation.
-    get_resolution():
-        Returns the resolution of the grid in each dimension.
-    get_index():
-        Returns the grid indices of the particle positions.
-    get_freqmatrix():
-        Returns the frequency matrix.
-    get_dampingmatrix():
-        Returns the damping matrix.
-    set_velocity(v1, v2, v3):
-        Sets the velocity components of the particles.
-    set_position(x1, x2, x3):
-        Sets the position components of the particles.
-    set_mass(mass):
-        Sets the mass of the particles.
-    set_weight(weight):
-        Sets the weight of the particles.
-    calc_subcell_position():
-        Calculates the subcell positions for charge conservation.
-    kinetic_energy():
-        Calculates the kinetic energy of the particles.
-    momentum():
-        Calculates the momentum of the particles.
-    periodic_boundary_condition(x_wind, y_wind, z_wind):
-        Applies periodic boundary conditions to the particle positions.
-    reflecting_boundary_condition(x_wind, y_wind, z_wind):
-        Applies reflecting boundary conditions to the particle positions and velocities.
-    update_position(dt, x_wind, y_wind, z_wind):
-        Updates the position of the particles based on their velocities and boundary conditions.
-    tree_flatten():
-        Flattens the particle species object for JAX transformations.
-    tree_unflatten(aux_data, children):
-        Unflattens the particle species object for JAX transformations.
+    Class representing a species of particles in a simulation.
+
+    Attributes:
+        name (str): Name of the particle species.
+        N_particles (int): Number of particles in the species.
+        charge (float): Charge of each particle.
+        mass (float): Mass of each particle.
+        weight (float): Weighting factor for the particles.
+        T (float): Temperature of the particle species.
+        v1, v2, v3 (array-like): Velocity components of the particles.
+        x1, x2, x3 (array-like): Position components of the particles.
+        dx, dy, dz (float): Spatial resolution in each dimension.
+        x_wind, y_wind, z_wind (float): Domain size in each dimension.
+        zeta1, zeta2, eta1, eta2, xi1, xi2 (float): Subcell positions for charge conservation.
+        bc (str): Boundary condition type ('periodic' or 'reflecting').
+        update_x, update_y, update_z (bool): Flags to update position in respective dimensions.
+        update_vx, update_vy, update_vz (bool): Flags to update velocity in respective dimensions.
+        update_pos (bool): Flag to update particle positions.
+        update_v (bool): Flag to update particle velocities.
+        shape (int): Shape factor for the particles (1 for first order, 2 for second order)
+
+    Methods:
+        get_name(): Returns the name of the particle species.
+        get_charge(): Returns the total charge of the particles.
+        get_number_of_particles(): Returns the number of particles in the species.
+        get_temperature(): Returns the temperature of the particle species.
+        get_velocity(): Returns the velocity components of the particles.
+        get_position(): Returns the position components of the particles.
+        get_mass(): Returns the total mass of the particles.
+        get_subcell_position(): Returns the subcell positions for charge conservation.
+        get_resolution(): Returns the spatial resolution in each dimension.
+        get_shape(): Returns the shape factor of the particles.
+        get_index(): Computes and returns the particle indices in the grid.
+        set_velocity(v1, v2, v3): Sets the velocity components of the particles.
+        set_position(x1, x2, x3): Sets the position components of the particles.
+        set_mass(mass): Sets the mass of the particles.
+        set_weight(weight): Sets the weight of the particles.
+        calc_subcell_position(): Calculates and returns the subcell positions.
+        kinetic_energy(): Computes and returns the kinetic energy of the particles.
+        momentum(): Computes and returns the momentum of the particles.
+        periodic_boundary_condition(x_wind, y_wind, z_wind): Applies periodic boundary conditions.
+        reflecting_boundary_condition(x_wind, y_wind, z_wind): Applies reflecting boundary conditions.
+        update_position(dt): Updates the positions of the particles based on their velocities and boundary conditions.
+        tree_flatten(): Flattens the object for serialization.
+        tree_unflatten(aux_data, children): Reconstructs the object from flattened data.
     """
+
 
 
     def __init__(self, name, N_particles, charge, mass, T, v1, v2, v3, x1, x2, x3, subcells, \
             xwind, ywind, zwind, dx, dy, dz, weight=1, bc='periodic', update_x=True, update_y=True, update_z=True, \
-                update_vx=True, update_vy=True, update_vz=True, update_pos=True, update_v=True, w=jnp.zeros((3,3)), \
-                    g=jnp.zeros((3,3)), bound=False):
+                update_vx=True, update_vy=True, update_vz=True, update_pos=True, update_v=True, shape=1):
         self.name = name
         self.N_particles = N_particles
         self.charge = charge
@@ -538,11 +470,8 @@ class particle_species:
         self.update_vz = update_vz
         self.update_pos = update_pos
         self.update_v   = update_v
+        self.shape = shape
 
-        self.bound = bound
-        self.w = w
-        self.g = g
-        # matricies for bounded species
 
     def get_name(self):
         return self.name
@@ -571,17 +500,12 @@ class particle_species:
     def get_resolution(self):
         return self.dx, self.dy, self.dz
 
+    def get_shape(self):
+        return self.shape
+
     def get_index(self):
         return compute_index(self.x1, self.dx, self.x_wind), compute_index(self.x2, self.dy, self.y_wind), compute_index(self.x3, self.dz, self.z_wind)
 
-    def is_bounded(self):
-        return self.bound
-
-    def get_freqmatrix(self):
-        return self.w
-    def get_dampingmatrix(self):
-        return self.g
-    
     def set_velocity(self, v1, v2, v3):
         if self.update_v:
             if self.update_vx:
@@ -653,7 +577,6 @@ class particle_species:
             elif self.bc == 'reflecting':
                 #print('Using reflecting boundary conditions')
                 self.reflecting_boundary_condition(self.x_wind, self.y_wind, self.z_wind)
-            # self.x1, self.x2, self.x3, self.v1, self.v2, self.v3 = self.boundary_condition()
             # apply boundary conditions
 
             self.zeta1 = self.zeta2
@@ -674,7 +597,7 @@ class particle_species:
             self.name, self.N_particles, self.charge, self.mass, self.T, \
             self.x_wind, self.y_wind, self.z_wind, self.dx, self.dy, self.dz, \
             self.weight, self.bc, self.update_pos, self.update_v, self.update_x, self.update_y, \
-            self.update_z, self.update_vx, self.update_vy, self.update_vz, self.w, self.g
+            self.update_z, self.update_vx, self.update_vy, self.update_vz, self.shape
         )
         return children, aux_data
 
@@ -684,7 +607,7 @@ class particle_species:
 
         name, N_particles, charge, mass, T, x_wind, y_wind, z_wind, dx, dy, \
             dz, weight, bc, update_pos, update_v, update_x, update_y, update_z, \
-                update_vx, update_vy, update_vz, w, g = aux_data
+                update_vx, update_vy, update_vz, shape  = aux_data
 
         subcells = zeta1, zeta2, eta1, eta2, xi1, xi2
 
@@ -717,6 +640,5 @@ class particle_species:
             update_vz=update_vz,
             update_pos=update_pos,
             update_v=update_v,
-            w=w,
-            g=g
+            shape=shape
         )

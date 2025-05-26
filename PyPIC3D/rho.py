@@ -1,6 +1,7 @@
 import jax
 from jax import jit
 import jax.numpy as jnp
+from jax import lax
 # import external libraries
 
 @jit
@@ -32,11 +33,37 @@ def compute_rho(particles, rho, world):
     # reset rho to zero
 
     for species in particles:
+        shape_factor = species.get_shape()
+        # get the shape factor of the species, which determines the weighting function
         N_particles = species.get_number_of_particles()
         charge = species.get_charge()
+        # get the number of particles and their charge
         particle_x, particle_y, particle_z = species.get_position()
-        rho = update_rho(N_particles, particle_x, particle_y, particle_z, dx, dy, dz, charge, x_wind, y_wind, z_wind, rho)
+        # get the position of the particles in the species
+
+        def add_to_rho(particle, rho):
+            x = particle_x.at[particle].get()
+            y = particle_y.at[particle].get()
+            z = particle_z.at[particle].get()
+            # get the position of the particle
+            rho = lax.cond(
+                shape_factor == 1,
+                lambda _: first_order_weighting(charge, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind),
+                lambda _: second_order_weighting(charge, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind),
+                operand=None
+            )
+            # use the shape factor to determine which weighting function to use and update rho accordingly
+            return rho
         # add the particle species to the charge density array
+        rho = jax.lax.fori_loop(0, N_particles, add_to_rho, rho)
+    # The above loop iterates over each species of particles and updates the charge density array rho
+
+    # for species in particles:
+    #     N_particles = species.get_number_of_particles()
+    #     charge = species.get_charge()
+    #     particle_x, particle_y, particle_z = species.get_position()
+    #     rho = update_rho(N_particles, particle_x, particle_y, particle_z, dx, dy, dz, charge, x_wind, y_wind, z_wind, rho)
+    #     # add the particle species to the charge density array
 
     return rho
 
@@ -116,17 +143,18 @@ def first_order_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
     dv = dx * dy * dz
     # Calculate the volume of each grid point
 
+    ##################################### WEIGHTING FACTORS ##########################################################
     Sx0 = 1 - (deltax/dx)
     Sy0 = 1 - (deltay/dy)
     Sz0 = 1 - (deltaz/dz)
     # calculate the weight for the center grid points
-
     Sx1 = deltax/dx
     Sy1 = deltay/dy
     Sz1 = deltaz/dz
     # calculate the weight for the next grid points
+    ####################################################################################################################
 
-    # Distribute the charge of the particle to the grid points
+    ####################################### CHARGE DISTRIBUTION ########################################################
     rho = rho.at[x0, y0, z0].add((q / dv) * Sx0 * Sy0 * Sz0, mode='drop')
     rho = rho.at[x1, y0, z0].add((q / dv) * Sx1 * Sy0 * Sz0, mode='drop')
     rho = rho.at[x0, y1, z0].add((q / dv) * Sx0 * Sy1 * Sz0, mode='drop')
@@ -135,6 +163,8 @@ def first_order_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
     rho = rho.at[x1, y0, z1].add((q / dv) * Sx1 * Sy0 * Sz1, mode='drop')
     rho = rho.at[x0, y1, z1].add((q / dv) * Sx0 * Sy1 * Sz1, mode='drop')
     rho = rho.at[x1, y1, z1].add((q / dv) * Sx1 * Sy1 * Sz1, mode='drop')
+    # Distribute the charge of the particle to the grid points
+    #####################################################################################################################
 
     return rho
 
@@ -188,7 +218,6 @@ def second_order_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
 
 
     ####################### WEIGHTING FACTORS ############################################################################
-
     Sx0 = (3/4) - (deltax/dx)**2
     Sy0 = (3/4) - (deltay/dy)**2
     Sz0 = (3/4) - (deltaz/dz)**2
@@ -252,6 +281,7 @@ def second_order_weighting(q, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind):
     rho = rho.at[x_minus1, y0, z_minus1].add((q / dv) * Sx_minus1 * Sy0 * Sz_minus1, mode='drop')
     rho = rho.at[x0, y_minus1, z_minus1].add((q / dv) * Sx0 * Sy_minus1 * Sz_minus1, mode='drop')
     rho = rho.at[x_minus1, y_minus1, z_minus1].add((q / dv) * Sx_minus1 * Sy_minus1 * Sz_minus1, mode='drop')
+    # Distribute the charge of the particle to the grid points
     #####################################################################################################################
 
 

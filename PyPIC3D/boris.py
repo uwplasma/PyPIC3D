@@ -31,40 +31,55 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants):
     vx, vy, vz = particles.get_velocity()
     # get the charge, mass, position, and velocity of the particles
 
-    # Ex, Ey, Ez = E
-    # Ex_interpolate = create_trilinear_interpolator(Ex, grid)
-    # Ey_interpolate = create_trilinear_interpolator(Ey, grid)
-    # Ez_interpolate = create_trilinear_interpolator(Ez, grid)
-    # # interpolate the electric field
-
-    # Bx, By, Bz = B
-    # Bx_interpolate = create_trilinear_interpolator(Bx, staggered_grid)
-    # By_interpolate = create_trilinear_interpolator(By, staggered_grid)
-    # Bz_interpolate = create_trilinear_interpolator(Bz, staggered_grid)
-    # # interpolate the magnetic field
+    shape_factor = particles.get_shape()
+    # get the shape factor of the particles
 
     Ex, Ey, Ez = E
-    Ex_interpolate = create_quadratic_interpolator(Ex, grid)
-    Ey_interpolate = create_quadratic_interpolator(Ey, grid)
-    Ez_interpolate = create_quadratic_interpolator(Ez, grid)
-    # interpolate the electric field using quadratic interpolation
-    Bx, By, Bz = B
-    Bx_interpolate = create_quadratic_interpolator(Bx, staggered_grid)
-    By_interpolate = create_quadratic_interpolator(By, staggered_grid)
-    Bz_interpolate = create_quadratic_interpolator(Bz, staggered_grid)
-    # interpolate the magnetic field using quadratic interpolation
-
-    efield_atx = Ex_interpolate(x, y, z)
-    efield_aty = Ey_interpolate(x, y, z)
-    efield_atz = Ez_interpolate(x, y, z)
+    # unpack the electric field components
+    efield_atx = jax.lax.cond(
+        shape_factor == 1,
+        lambda _: create_trilinear_interpolator(Ex, grid)(x, y, z),
+        lambda _: create_quadratic_interpolator(Ex, grid)(x, y, z),
+        operand=None
+    )
+    efield_aty = jax.lax.cond(
+        shape_factor == 1,
+        lambda _: create_trilinear_interpolator(Ey, grid)(x, y, z),
+        lambda _: create_quadratic_interpolator(Ey, grid)(x, y, z),
+        operand=None
+    )
+    efield_atz = jax.lax.cond(
+        shape_factor == 1,
+        lambda _: create_trilinear_interpolator(Ez, grid)(x, y, z),
+        lambda _: create_quadratic_interpolator(Ez, grid)(x, y, z),
+        operand=None
+    )
     # calculate the electric field at the particle positions
-    bfield_atx = Bx_interpolate(x, y, z)
-    bfield_aty = By_interpolate(x, y, z)
-    bfield_atz = Bz_interpolate(x, y, z)
+    Bx, By, Bz = B
+    # unpack the magnetic field components
+    bfield_atx = jax.lax.cond(
+        shape_factor == 1,
+        lambda _: create_trilinear_interpolator(Bx, staggered_grid)(x, y, z),
+        lambda _: create_quadratic_interpolator(Bx, staggered_grid)(x, y, z),
+        operand=None
+    )
+    bfield_aty = jax.lax.cond(
+        shape_factor == 1,
+        lambda _: create_trilinear_interpolator(By, staggered_grid)(x, y, z),
+        lambda _: create_quadratic_interpolator(By, staggered_grid)(x, y, z),
+        operand=None
+    )
+    bfield_atz = jax.lax.cond(
+        shape_factor == 1,
+        lambda _: create_trilinear_interpolator(Bz, staggered_grid)(x, y, z),
+        lambda _: create_quadratic_interpolator(Bz, staggered_grid)(x, y, z),
+        operand=None
+    )
     # calculate the magnetic field at the particle positions
 
     boris_vmap = jax.vmap(relativistic_boris_single_particle, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None, None))
     newvx, newvy, newvz = boris_vmap(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, q, m, dt, constants)
+    # apply the Boris algorithm to update the velocities of the particles
 
     particles.set_velocity(newvx, newvy, newvz)
     # set the new velocities of the particles

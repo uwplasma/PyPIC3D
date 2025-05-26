@@ -89,6 +89,7 @@ def default_parameters():
         "ncpus": 1, # number of CPUs to use
         "cfl"  : 1, # CFL condition number
         "ds_per_debye" : None, # number of grid spacings per debye length
+        "shape_factor" : 1 # shape factor for the simulation (1 for 1st order, 2 for 2nd order)
     }
     # dictionary for simulation parameters
 
