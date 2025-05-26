@@ -223,6 +223,7 @@ def update_B(E, B, world, constants, curl_func):
 
     return (Bx, By, Bz)
 
+@partial(jit, static_argnums=(1))
 def digital_filter(phi, alpha):
     """
     Apply a digital filter to the electric potential array.
