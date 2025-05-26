@@ -614,7 +614,7 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         # sum field using Lubos method
 
 
-        kinetic_energy = sum(particle.kinetic_energy() for particle in particles)
+        kinetic_energy = sum(particle_species.kinetic_energy() for particle_species in particles)
         # Kinetic energy of the particles
         write_data(f"{output_dir}/data/total_energy.txt", t * dt, e_energy + b_energy + kinetic_energy)
         write_data(f"{output_dir}/data/electric_field_energy.txt", t * dt, e_energy)
@@ -623,6 +623,12 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         write_data(f"{output_dir}/data/magnetic_field_energy.txt", t * dt, b_energy)
         write_data(f"{output_dir}/data/kinetic_energy.txt", t * dt, kinetic_energy)
         # Write the total energy to a file
+
+
+        total_momentum = sum(particle_species.momentum() for particle_species in particles)
+        # Total momentum of the particles
+        write_data(f"{output_dir}/data/total_momentum.txt", t * dt, total_momentum)
+        # Write the total momentum to a file
 
     jax.lax.cond(
         plotting_parameters['plotenergy'],
