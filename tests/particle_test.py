@@ -8,7 +8,7 @@ import os
 # sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from PyPIC3D.particle import (
-    initial_particles, total_KE, total_momentum, particle_species
+    initial_particles, particle_species
 )
 
 jax.config.update("jax_enable_x64", True)
@@ -223,32 +223,8 @@ class TestParticleMethods(unittest.TestCase):
             subcells=(x1, x1, x2, x2, x3, x3),
         )
 
-        ke = total_KE([species])
+        ke = species.kinetic_energy()
         self.assertAlmostEqual(ke, 0.5 * self.mass * self.N_particles * 3)
-
-    def test_total_momentum(self):
-        """
-        Test the total_momentum function.
-
-        This test verifies that the total_momentum function correctly calculates
-        the total momentum of a system of particles. It initializes the velocities
-        (vx, vy, vz) of all particles to 1 and checks if the computed momentum
-        matches the expected value, which is mass * N_particles * sqrt(3).
-
-        The expected momentum is calculated based on the formula:
-            momentum = mass * N_particles * sqrt(vx^2 + vy^2 + vz^2)
-                     = mass * N_particles * sqrt(1^2 + 1^2 + 1^2)
-                     = mass * N_particles * sqrt(3)
-
-        Asserts:
-            self.assertAlmostEqual: Checks if the calculated momentum is almost
-            equal to the expected momentum value.
-        """
-        vx = jnp.ones(self.N_particles)
-        vy = jnp.ones(self.N_particles)
-        vz = jnp.ones(self.N_particles)
-        momentum = total_momentum(self.mass, vx, vy, vz)
-        self.assertAlmostEqual(momentum, self.mass * self.N_particles * jnp.sqrt(3))
 
     def test_particle_species(self):
         """
@@ -313,6 +289,8 @@ class TestParticleMethods(unittest.TestCase):
         self.assertEqual(species.get_mass(), 2.0)
         self.assertAlmostEqual(species.kinetic_energy(), 0.0)
         self.assertAlmostEqual(species.momentum(), 0.0)
+
+
 
 if __name__ == '__main__':
     unittest.main()
