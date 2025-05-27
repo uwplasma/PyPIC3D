@@ -18,7 +18,7 @@ from PyPIC3D.utils import (
     update_parameters_from_toml,
     build_yee_grid, convert_to_jax_compatible, load_external_fields_from_toml,
     print_stats, particle_sanity_check, build_plasma_parameters_dict,
-    make_dir
+    make_dir, compute_energy
 )
 
 from PyPIC3D.fields import (
@@ -109,23 +109,23 @@ def setup_write_dir(simulation_parameters, plotting_parameters):
         # get the output directory from the simulation parameters
         make_dir(f'{output_dir}/data')
         # make the directory for the data
-        if plotting_parameters['plotfields']:
-            make_dir( f"{output_dir}/data/E_slice" )
-            # make the directory for the electric field slices
-            make_dir( f"{output_dir}/data/B_slice" )
-            # make the directory for the magnetic field slices
-            make_dir( f"{output_dir}/data/Exy_slice" )
-            # make the directory for the electric field xy slices
-            make_dir( f"{output_dir}/data/Exz_slice" )
-            # make the directory for the electric field xz slices
-            make_dir( f"{output_dir}/data/Eyz_slice" )
-            # make the directory for the electric field yz slices
-            make_dir( f"{output_dir}/data/Bxy_slice" )
-            # make the directory for the magnetic field xy slices
-            make_dir( f"{output_dir}/data/Bxz_slice" )
-            # make the directory for the magnetic field xz slices
-            make_dir( f"{output_dir}/data/Byz_slice" )
-            # make the directory for the magnetic field yz slices
+        # if plotting_parameters['plotfields']:
+        #     make_dir( f"{output_dir}/data/E_slice" )
+        #     # make the directory for the electric field slices
+        #     make_dir( f"{output_dir}/data/B_slice" )
+        #     # make the directory for the magnetic field slices
+        #     make_dir( f"{output_dir}/data/Exy_slice" )
+        #     # make the directory for the electric field xy slices
+        #     make_dir( f"{output_dir}/data/Exz_slice" )
+        #     # make the directory for the electric field xz slices
+        #     make_dir( f"{output_dir}/data/Eyz_slice" )
+        #     # make the directory for the electric field yz slices
+        #     make_dir( f"{output_dir}/data/Bxy_slice" )
+        #     # make the directory for the magnetic field xy slices
+        #     make_dir( f"{output_dir}/data/Bxz_slice" )
+        #     # make the directory for the magnetic field xz slices
+        #     make_dir( f"{output_dir}/data/Byz_slice" )
+        #     # make the directory for the magnetic field yz slices
 
 
 #@profile
@@ -194,7 +194,7 @@ def initialize_simulation(toml_file):
 
     dx, dy, dz = x_wind/Nx, y_wind/Ny, z_wind/Nz
     # compute the spatial resolution
-    #print(simulation_parameters)
+
     if simulation_parameters['dt'] is not None:
         print(f"Using user defined dt: {simulation_parameters['dt']}")
         dt = simulation_parameters['dt']
@@ -261,26 +261,13 @@ def initialize_simulation(toml_file):
     # calculate the electric field using the Poisson equation
 
     ######################### COMPUTE INITIAL ENERGY ########################################################
-    Ex, Ey, Ez = E
-    Bx, By, Bz = B
-    E2_integral = jnp.trapezoid(  jnp.trapezoid(  jnp.trapezoid(Ex**2 + Ey**2 + Ez**2, dx=dx, axis=0), dx=dy, axis=0), dx=dz, axis=0)
-    B2_integral = jnp.trapezoid(  jnp.trapezoid(  jnp.trapezoid(Bx**2 + By**2 + Bz**2, dx=dx, axis=0), dx=dy, axis=0), dx=dz, axis=0)
-    # Integral of E^2 and B^2 over the entire grid
-    e_energy = 0.5 * constants['eps'] * E2_integral
-    b_energy = 0.5 / constants['mu'] * B2_integral
-    # Electric and magnetic field energy
+    e_energy, b_energy, kinetic_energy = compute_energy(particles, E, B, world, constants)
+    # compute the initial energy of the system
     print(f"Initial Electric Field Energy: {e_energy:.2e} J")
     print(f"Initial Magnetic Field Energy: {b_energy:.2e} J")
-    # print the initial electric and magnetic field energy
-    kinetic_energy = sum([species.kinetic_energy() for species in particles])
-    # compute the kinetic energy of the particles
     print(f"Initial Kinetic Energy: {kinetic_energy:.2e} J")
-    # print the initial kinetic energy
     print(f"Total Initial Energy: {e_energy + b_energy + kinetic_energy:.2e} J\n")
-    
-    
-
-
+    # print the initial energy of the system
 
     if electrostatic:
         evolve_loop = time_loop_electrostatic

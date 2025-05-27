@@ -16,6 +16,38 @@ from datetime import datetime
 import importlib.metadata
 # import external libraries
 
+def compute_energy(particles, E, B, world, constants):
+    """
+    Compute the total energy of the system, including electric field energy, magnetic field energy, and kinetic energy of particles.
+
+    Args:
+        particles (list): List of particle species.
+        E (tuple): Electric field components (Ex, Ey, Ez).
+        B (tuple): Magnetic field components (Bx, By, Bz).
+        world (dict): Dictionary containing the simulation world parameters.
+        constants (dict): Dictionary containing physical constants.
+
+    Returns:
+        None
+    """
+
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    # get the resolution of the grid
+
+    Ex, Ey, Ez = E
+    Bx, By, Bz = B
+    E2_integral = jnp.trapezoid(  jnp.trapezoid(  jnp.trapezoid(Ex**2 + Ey**2 + Ez**2, dx=dx, axis=0), dx=dy, axis=0), dx=dz, axis=0)
+    B2_integral = jnp.trapezoid(  jnp.trapezoid(  jnp.trapezoid(Bx**2 + By**2 + Bz**2, dx=dx, axis=0), dx=dy, axis=0), dx=dz, axis=0)
+    # Integral of E^2 and B^2 over the entire grid
+    e_energy = 0.5 * constants['eps'] * E2_integral
+    b_energy = 0.5 / constants['mu'] * B2_integral
+    # Electric and magnetic field energy
+    kinetic_energy = sum([species.kinetic_energy() for species in particles])
+    # Kinetic energy of particles
+    return e_energy, b_energy, kinetic_energy
+
 def make_dir(path):
     """
     Create a directory if it does not exist.

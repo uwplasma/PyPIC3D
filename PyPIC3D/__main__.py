@@ -17,7 +17,7 @@ from PyPIC3D.plotting import (
 )
 
 from PyPIC3D.utils import (
-    dump_parameters_to_toml, load_config_file
+    dump_parameters_to_toml, load_config_file, compute_energy
 )
 
 from PyPIC3D.initialization import (
@@ -74,21 +74,15 @@ def main():
     Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles, E, B, J, world =  block_until_ready(run_PyPIC3D(toml_file))
     # run the PyPIC3D simulation
 
-    Ex, Ey, Ez = E
-    Bx, By, Bz = B
-    E2_integral = jnp.trapezoid(  jnp.trapezoid(  jnp.trapezoid(Ex**2 + Ey**2 + Ez**2, dx=world['dx'], axis=0), dx=world['dy'], axis=0), dx=world['dz'], axis=0)
-    B2_integral = jnp.trapezoid(  jnp.trapezoid(  jnp.trapezoid(Bx**2 + By**2 + Bz**2, dx=world['dx'], axis=0), dx=world['dy'], axis=0), dx=world['dz'], axis=0)
-    # Integral of E^2 and B^2 over the entire grid
-    e_energy = 0.5 * constants['eps'] * E2_integral
-    b_energy = 0.5 / constants['mu'] * B2_integral
-    # Electric and magnetic field energy
-    kinetic_energy = sum([species.kinetic_energy() for species in particles])
-    # compute the kinetic energy of the particles
-    print(f"Total Final Energy: {e_energy + b_energy + kinetic_energy}")
-    # print the final energy of the system
-
     end = time.time()
     # end the timer
+
+    e_energy, b_energy, kinetic_energy = compute_energy(particles, E, B, world, constants)
+    # compute the energy of the system
+    print(f"Final Electric Field Energy: {e_energy}")
+    print(f"Final Magnetic Field Energy: {b_energy}")
+    print(f"Final Kinetic Energy: {kinetic_energy}")
+    print(f"Total Final Energy: {e_energy + b_energy + kinetic_energy}\n")
 
 
     duration = end - start
