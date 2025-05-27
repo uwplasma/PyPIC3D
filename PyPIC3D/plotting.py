@@ -11,6 +11,8 @@ import plotly.graph_objects as go
 import jax
 from functools import partial
 
+from PyPIC3D.utils import compute_energy
+
 def plot_rho(rho, t, name, dx, dy, dz):
     """
     Plot the density field.
@@ -316,31 +318,6 @@ def plot_initial_histograms(particle_species, world, name, path):
     plt.savefig(f"{path}/{name}_initial_z_velocity_histogram.png", dpi=150)
     plt.close()
 
-# @jit
-# def number_density(n, Nparticles, particlex, particley, particlez, dx, dy, dz, Nx, Ny, Nz):
-#     """
-#     Calculate the number density of particles at each grid point.
-
-#     Args:
-#         n (array-like): The initial number density array.
-#         Nparticles (int): The number of particles.
-#         particlex (array-like): The x-coordinates of the particles.
-#         particley (array-like): The y-coordinates of the particles.
-#         particlez (array-like): The z-coordinates of the particles.
-#         dx (float): The grid spacing in the x-direction.
-#         dy (float): The grid spacing in the y-direction.
-#         dz (float): The grid spacing in the z-direction.
-
-#     Returns:
-#         ndarray: The number density of particles at each grid point.
-#     """
-#     x_wind = (Nx * dx).astype(int)
-#     y_wind = (Ny * dy).astype(int)
-#     z_wind = (Nz * dz).astype(int)
-#     n = update_rho(Nparticles, particlex, particley, particlez, dx, dy, dz, 1, x_wind, y_wind, z_wind, n)
-
-#     return n
-
 def magnitude_probe(fieldx, fieldy, fieldz, x, y, z):
     """
     Probe the magnitude of a vector field at a given point.
@@ -357,82 +334,6 @@ def magnitude_probe(fieldx, fieldy, fieldz, x, y, z):
         float: The magnitude of the vector field at the given point.
     """
     return jnp.sqrt(fieldx.at[x, y, z].get()**2 + fieldy.at[x, y, z].get()**2 + fieldz.at[x, y, z].get()**2)
-
-# def freq(n, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
-#     """
-#     Calculate the plasma frequency based on the given parameters.
-
-#     Args:
-#         n (array-like): Input array representing the electron distribution.
-#         Nelectrons (int): Total number of electrons.
-#         ex (float): Electric field component in the x-direction.
-#         ey (float): Electric field component in the y-direction.
-#         ez (float): Electric field component in the z-direction.
-#         Nx (int): Number of grid points in the x-direction.
-#         Ny (int): Number of grid points in the y-direction.
-#         Nz (int): Number of grid points in the z-direction.
-#         dx (float): Grid spacing in the x-direction.
-#         dy (float): Grid spacing in the y-direction.
-#         dz (float): Grid spacing in the z-direction.
-
-#     Returns:
-#         float: The calculated plasma frequency.
-#     """
-
-#     ne = jnp.ravel(number_density(n, Nelectrons, ex, ey, ez, dx, dy, dz, Nx, Ny, Nz))
-#     # compute the number density of the electrons
-#     eps = 8.854e-12
-#     # permitivity of freespace
-#     q_e = -1.602e-19
-#     # charge of electron
-#     me = 9.1093837e-31 # Kg
-#     # mass of the electron
-#     c1 = q_e**2 / (eps*me)
-
-#     mask = jnp.where(  ne  > 0  )[0]
-#     # Calculate mean using the mask
-#     electron_density = jnp.mean(ne[mask])
-#     freq = jnp.sqrt( c1 * electron_density )
-#     return freq
-# # computes the average plasma frequency over the middle 75% of the world volume
-
-# def freq_probe(n, x, y, z, Nelectrons, ex, ey, ez, Nx, Ny, Nz, dx, dy, dz):
-#     """
-#     Calculate the plasma frequency at a given point in a 3D grid.
-
-#     Args:
-#         n (ndarray): The electron density array.
-#         x (float): The x-coordinate of the probe point.
-#         y (float): The y-coordinate of the probe point.
-#         z (float): The z-coordinate of the probe point.
-#         Nelectrons (int): The total number of electrons.
-#         ex (float): The extent of the grid in the x-direction.
-#         ey (float): The extent of the grid in the y-direction.
-#         ez (float): The extent of the grid in the z-direction.
-#         Nx (int): The number of grid points in the x-direction.
-#         Ny (int): The number of grid points in the y-direction.
-#         Nz (int): The number of grid points in the z-direction.
-#         dx (float): The grid spacing in the x-direction.
-#         dy (float): The grid spacing in the y-direction.
-#         dz (float): The grid spacing in the z-direction.
-
-#     Returns:
-#         float: The plasma frequency at the specified point.
-#     """
-
-#     ne = number_density(n, Nelectrons, ex, ey, ez, dx, dy, dz, Nx, Ny, Nz)
-#     # compute the number density of the electrons
-#     eps = 8.854e-12
-#     # permitivity of freespace
-#     q_e = -1.602e-19
-#     # charge of electron
-#     me = 9.1093837e-31 # Kg
-#     # mass of the electron
-#     xi, yi, zi = int(x/dx + Nx/2), int(y/dy + Ny/2), int(z/dz + Nz/2)
-#     # get the array spacings for x, y, and z
-#     c1 = q_e**2 / (eps*me)
-#     freq = jnp.sqrt( c1 * ne.at[xi,yi,zi].get() )    # calculate the plasma frequency at the array point: x, y, z
-#     return freq
 
 def write_probe(probe_data, t, filename):
     """
@@ -603,23 +504,10 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
 
     ##########################################################################################################
     def compute_and_write_energy():
-        E2_integral = jnp.trapezoid(jnp.trapezoid(jnp.trapezoid(Ex**2 + Ey**2 + Ez**2, dx=dz), dx=dy), dx=dx)
-        B2_integral = jnp.trapezoid(jnp.trapezoid(jnp.trapezoid(Bx**2 + By**2 + Bz**2, dx=dz), dx=dy), dx=dx)
-        # Integral of E^2 and B^2 over the entire grid
-        e_energy = 0.5 * constants['eps'] * E2_integral
-        b_energy = 0.5 / constants['mu'] * B2_integral
-        # Electric and magnetic field energy
-
-        #PE = jnp.sum( jnp.sum( jnp.sum( Ex**2 + Ey**2 + Ez**2 ) ) ) * 0.5 * constants['eps']
-        # sum field using Lubos method
-
-
-        kinetic_energy = sum(particle_species.kinetic_energy() for particle_species in particles)
-        # Kinetic energy of the particles
+        e_energy, b_energy, kinetic_energy = compute_energy(particles, (Ex, Ey, Ez), (Bx, By, Bz), world, constants)
+        # Compute the energy of the system
         write_data(f"{output_dir}/data/total_energy.txt", t * dt, e_energy + b_energy + kinetic_energy)
         write_data(f"{output_dir}/data/electric_field_energy.txt", t * dt, e_energy)
-        #write_data(f"{output_dir}/data/efield2.txt", t * dt, PE)
-        # Write the electric field energy to a file
         write_data(f"{output_dir}/data/magnetic_field_energy.txt", t * dt, b_energy)
         write_data(f"{output_dir}/data/kinetic_energy.txt", t * dt, kinetic_energy)
         # Write the total energy to a file
