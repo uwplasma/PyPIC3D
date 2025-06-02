@@ -13,7 +13,7 @@ from tqdm import tqdm
 # Importing relevant libraries
 
 from PyPIC3D.plotting import (
-    plotter
+    plotter, write_data, write_particles_phase_space
 )
 
 from PyPIC3D.utils import (
@@ -38,14 +38,29 @@ def run_PyPIC3D(config_file):
     # initialize the simulation
 
     jit_loop = jax.jit(loop, static_argnames=('curl_func', 'solver', 'bc'))
-
+    output_dir = simulation_parameters['output_dir']
+    dt = world['dt']
     ############################################################################################################
 
     ###################################################### SIMULATION LOOP #####################################
 
     for t in tqdm(range(Nt)):
-        plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters)
+        # plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters)
         # plot the data
+        if t % plotting_parameters['plotting_interval'] == 0:
+            e_energy, b_energy, kinetic_energy = compute_energy(particles, E, B, world, constants)
+            # Compute the energy of the system
+            write_data(f"{output_dir}/data/total_energy.txt", t * dt, e_energy + b_energy + kinetic_energy)
+            write_data(f"{output_dir}/data/electric_field_energy.txt", t * dt, e_energy)
+            write_data(f"{output_dir}/data/magnetic_field_energy.txt", t * dt, b_energy)
+            write_data(f"{output_dir}/data/kinetic_energy.txt", t * dt, kinetic_energy)
+            # Write the total energy to a file
+            total_momentum = sum(particle_species.momentum() for particle_species in particles)
+            # Total momentum of the particles
+            write_data(f"{output_dir}/data/total_momentum.txt", t * dt, total_momentum)
+            # Write the total momentum to a file
+
+            write_particles_phase_space(particles, t, output_dir)
 
         particles, E, B, J, phi, rho = jit_loop(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, curl_func, solver, bc)
         # time loop to update the particles and fields

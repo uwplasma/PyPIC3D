@@ -180,6 +180,9 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
 
         pf = plasma_frequency(particle, world, constants)
         dl = debye_length(particle, world, constants)
+        dx_per_dl = dl / dx
+        dy_per_dl = dl / dy
+        dz_per_dl = dl / dz
         print(f"\nInitializing particle species: {particle_name}")
         print(f"Number of particles: {N_particles}")
         print(f"Number of particles per cell: {N_per_cell}")
@@ -191,7 +194,11 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         print(f"Particle Species Plasma Frequency: {pf}")
         print(f"Time Steps Per Plasma Period: {(1 / (dt * pf) )}")
         print(f"Particle Species Debye Length: {dl}")
+        print(f"X Points Per Debye Length: {dx_per_dl}")
+        print(f"Y Points Per Debye Length: {dy_per_dl}")
+        print(f"Z Points Per Debye Length: {dz_per_dl}")
         print(f"Particle Weight: {weight}")
+        print(f"Plasma Frequency * dt = {pf * dt}")
         print(f"Particle Species Scaled Charge: {particle.get_charge()}")
         print(f"Particle Species Scaled Mass: {particle.get_mass()}")
 

@@ -130,10 +130,13 @@ def calculateE(world, particles, constants, rho, phi, solver, bc):
     rho = compute_rho(particles, rho, world)
     # calculate the charge density based on the particle positions
 
+    rho = digital_filter(rho, 0.85)
+    # apply a digital filter to the charge density
+
     phi = solve_poisson(rho=rho, constants=constants, world=world, phi=phi, solver=solver, bc=bc)
     # solve the Poisson equation to get the electric potential
 
-    phi = digital_filter(phi, 0.5)
+    # phi = digital_filter(phi, 0.95)
     # apply a digital filter to the electric potential
     # alpha = 0.5 is a bilinear filter for the electric potential
 
