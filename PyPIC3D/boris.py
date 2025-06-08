@@ -34,45 +34,73 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants):
     shape_factor = particles.get_shape()
     # get the shape factor of the particles
 
+    dx = grid[0][1] - grid[0][0]
+    dy = grid[1][1] - grid[1][0]
+    dz = grid[2][1] - grid[2][0]
+    # calculate the grid spacing in each direction
+
+    ##################### ENERGY CONSERVING GRIDS ##########################
+    Ex_grid = grid[0] - dx, grid[1], grid[2]
+    Ey_grid = grid[0], grid[1] - dy, grid[2]
+    Ez_grid = grid[0], grid[1], grid[2] - dz
+    # create the grids for the electric field components
+
+    Bx_grid = staggered_grid[0], grid[1] - dy, grid[2] - dz
+    By_grid = grid[0] - dx, staggered_grid[1], grid[2] - dz
+    Bz_grid = grid[0] - dx, grid[1] - dy, staggered_grid[2]
+    # create the staggered grids for the magnetic field components
+    ########################################################################
+
+    # ################## MOMENTUM CONSERVING GRIDS ##########################
+    # Ex_grid = grid
+    # Ey_grid = grid
+    # Ez_grid = grid
+    # # create the grids for the electric field components
+    # Bx_grid = staggered_grid[0], grid[1], grid[2]
+    # By_grid = grid[0], staggered_grid[1], grid[2]
+    # Bz_grid = grid[0], grid[1], staggered_grid[2]
+    # # create the staggered grids for the magnetic field components
+
     Ex, Ey, Ez = E
     # unpack the electric field components
+    # calculate the electric field at the particle positions using their specific grids
     efield_atx = jax.lax.cond(
         shape_factor == 1,
-        lambda _: create_trilinear_interpolator(Ex, grid)(x, y, z),
-        lambda _: create_quadratic_interpolator(Ex, grid)(x, y, z),
+        lambda _: create_trilinear_interpolator(Ex, Ex_grid)(x, y, z),
+        lambda _: create_quadratic_interpolator(Ex, Ex_grid)(x, y, z),
         operand=None
     )
     efield_aty = jax.lax.cond(
         shape_factor == 1,
-        lambda _: create_trilinear_interpolator(Ey, grid)(x, y, z),
-        lambda _: create_quadratic_interpolator(Ey, grid)(x, y, z),
+        lambda _: create_trilinear_interpolator(Ey, Ey_grid)(x, y, z),
+        lambda _: create_quadratic_interpolator(Ey, Ey_grid)(x, y, z),
         operand=None
     )
     efield_atz = jax.lax.cond(
         shape_factor == 1,
-        lambda _: create_trilinear_interpolator(Ez, grid)(x, y, z),
-        lambda _: create_quadratic_interpolator(Ez, grid)(x, y, z),
+        lambda _: create_trilinear_interpolator(Ez, Ez_grid)(x, y, z),
+        lambda _: create_quadratic_interpolator(Ez, Ez_grid)(x, y, z),
         operand=None
     )
-    # calculate the electric field at the particle positions
-    Bx, By, Bz = B
     # unpack the magnetic field components
+    Bx, By, Bz = B
+    # calculate the magnetic field at the particle positions using their specific staggered grids
     bfield_atx = jax.lax.cond(
         shape_factor == 1,
-        lambda _: create_trilinear_interpolator(Bx, staggered_grid)(x, y, z),
-        lambda _: create_quadratic_interpolator(Bx, staggered_grid)(x, y, z),
+        lambda _: create_trilinear_interpolator(Bx, Bx_grid)(x, y, z),
+        lambda _: create_quadratic_interpolator(Bx, Bx_grid)(x, y, z),
         operand=None
     )
     bfield_aty = jax.lax.cond(
         shape_factor == 1,
-        lambda _: create_trilinear_interpolator(By, staggered_grid)(x, y, z),
-        lambda _: create_quadratic_interpolator(By, staggered_grid)(x, y, z),
+        lambda _: create_trilinear_interpolator(By, By_grid)(x, y, z),
+        lambda _: create_quadratic_interpolator(By, By_grid)(x, y, z),
         operand=None
     )
     bfield_atz = jax.lax.cond(
         shape_factor == 1,
-        lambda _: create_trilinear_interpolator(Bz, staggered_grid)(x, y, z),
-        lambda _: create_quadratic_interpolator(Bz, staggered_grid)(x, y, z),
+        lambda _: create_trilinear_interpolator(Bz, Bz_grid)(x, y, z),
+        lambda _: create_quadratic_interpolator(Bz, Bz_grid)(x, y, z),
         operand=None
     )
     # calculate the magnetic field at the particle positions
