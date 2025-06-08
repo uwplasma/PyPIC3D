@@ -77,8 +77,7 @@ def J_from_rhov(particles, J, rho, constants, world):
             return J
         # add the particle species to the charge density array
         J = jax.lax.fori_loop(0, N_particles, add_to_J, J)
-        # iterate over each particle in the species and update the current density
-        # using the J_first_order_weighting function
+    # loop over all particles in the species and add their contribution to the current density
 
     return J, new_rho
 
@@ -160,13 +159,12 @@ def J_first_order_weighting(q, x, y, z, vx, vy, vz, J, rho, dx, dy, dz, x_wind, 
 
     return (Jx, Jy, Jz)
 
-
 @jit
 def wrap_around(ix, size):
     """Wrap around index (scalar or 1D array) to ensure it is within bounds."""
     return jnp.where(ix > size - 1, ix - size, ix)
 
-#@partial(jit, static_argnums=(1, 2, 3))
+@jit
 def VB_correction(particles, J, constants):
     """
     Apply Villasenor-Buneman correction to ensure rigorous charge conservation for local electromagnetic field solvers.
