@@ -39,27 +39,27 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants):
     dz = grid[2][1] - grid[2][0]
     # calculate the grid spacing in each direction
 
-    ##################### ENERGY CONSERVING GRIDS ##########################
-    Ex_grid = grid[0] - dx, grid[1], grid[2]
-    Ey_grid = grid[0], grid[1] - dy, grid[2]
-    Ez_grid = grid[0], grid[1], grid[2] - dz
-    # create the grids for the electric field components
-
-    Bx_grid = staggered_grid[0], grid[1] - dy, grid[2] - dz
-    By_grid = grid[0] - dx, staggered_grid[1], grid[2] - dz
-    Bz_grid = grid[0] - dx, grid[1] - dy, staggered_grid[2]
-    # create the staggered grids for the magnetic field components
-    ########################################################################
-
-    # ################## MOMENTUM CONSERVING GRIDS ##########################
-    # Ex_grid = grid
-    # Ey_grid = grid
-    # Ez_grid = grid
+    # ##################### ENERGY CONSERVING GRIDS ##########################
+    # Ex_grid = grid[0] - dx, grid[1], grid[2]
+    # Ey_grid = grid[0], grid[1] - dy, grid[2]
+    # Ez_grid = grid[0], grid[1], grid[2] - dz
     # # create the grids for the electric field components
-    # Bx_grid = staggered_grid[0], grid[1], grid[2]
-    # By_grid = grid[0], staggered_grid[1], grid[2]
-    # Bz_grid = grid[0], grid[1], staggered_grid[2]
+
+    # Bx_grid = staggered_grid[0], staggered_grid[1] - dy, staggered_grid[2] - dz
+    # By_grid = staggered_grid[0] - dx, staggered_grid[1], staggered_grid[2] - dz
+    # Bz_grid = staggered_grid[0] - dx, staggered_grid[1] - dy, staggered_grid[2]
     # # create the staggered grids for the magnetic field components
+    # ########################################################################
+
+    ################## MOMENTUM CONSERVING GRIDS ##########################
+    Ex_grid = grid
+    Ey_grid = grid
+    Ez_grid = grid
+    # create the grids for the electric field components
+    Bx_grid = staggered_grid[0], staggered_grid[1], staggered_grid[2]
+    By_grid = staggered_grid[0], staggered_grid[1], staggered_grid[2]
+    Bz_grid = staggered_grid[0], staggered_grid[1], staggered_grid[2]
+    # create the staggered grids for the magnetic field components
 
     Ex, Ey, Ez = E
     # unpack the electric field components
