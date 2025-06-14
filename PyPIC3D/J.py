@@ -2,6 +2,7 @@ import jax
 from jax import jit
 import jax.numpy as jnp
 from functools import partial
+from jax import lax
 # import external libraries
 
 from PyPIC3D.rho import compute_rho
@@ -58,6 +59,8 @@ def J_from_rhov(particles, J, rho, constants, world):
         vx, vy, vz = species.get_velocity()
         # get the velocity of the particles in the species
 
+        shape_factor = species.get_shape()
+
         def add_to_J(particle, J):
             x = particle_x.at[particle].get()
             y = particle_y.at[particle].get()
@@ -68,9 +71,16 @@ def J_from_rhov(particles, J, rho, constants, world):
             vz_particle = vz.at[particle].get()
             # get the velocity of the particle
 
-            J = J_first_order_weighting(
-                charge, x, y, z, vx_particle, vy_particle, vz_particle, J, rho,
-                dx, dy, dz, x_wind, y_wind, z_wind
+            # J = J_first_order_weighting(
+            #     charge, x, y, z, vx_particle, vy_particle, vz_particle, J, rho,
+            #     dx, dy, dz, x_wind, y_wind, z_wind
+            # )
+
+            J = lax.cond(
+                shape_factor == 1,
+                lambda _: J_first_order_weighting(charge, x, y, z, vx_particle, vy_particle, vz_particle, J, rho, dx, dy, dz, x_wind, y_wind, z_wind),
+                lambda _: J_second_order_weighting(charge, x, y, z, vx_particle, vy_particle, vz_particle, J, rho, dx, dy, dz, x_wind, y_wind, z_wind),
+                operand=None
             )
             # use first-order weighting to distribute the current density
 
@@ -158,6 +168,146 @@ def J_first_order_weighting(q, x, y, z, vx, vy, vz, J, rho, dx, dy, dz, x_wind, 
 
 
     return (Jx, Jy, Jz)
+
+
+@jit
+def J_second_order_weighting(q, x, y, z, vx, vy, vz, J, rho, dx, dy, dz, x_wind, y_wind, z_wind):
+    """
+    Distribute the current of a particle to the surrounding grid points using second-order weighting.
+
+    Args:
+        q (float): Charge of the particle.
+        x, y, z (float): Position of the particle.
+        vx, vy, vz (float): Velocity components of the particle.
+        J (tuple): Current density arrays (Jx, Jy, Jz).
+        rho (ndarray): Charge density array (for shape).
+        dx, dy, dz (float): Grid spacing.
+        x_wind, y_wind, z_wind (float): Window offsets.
+
+    Returns:
+        tuple: Updated current density arrays (Jx, Jy, Jz).
+    """
+
+    Jx, Jy, Jz = J
+    Nx, Ny, Nz = rho.shape
+
+    x0 = jnp.floor((x + x_wind / 2) / dx).astype(int)
+    y0 = jnp.floor((y + y_wind / 2) / dy).astype(int)
+    z0 = jnp.floor((z + z_wind / 2) / dz).astype(int)
+
+    deltax = x - jnp.floor(x / dx) * dx
+    deltay = y - jnp.floor(y / dy) * dy
+    deltaz = z - jnp.floor(z / dz) * dz
+
+    x1 = wrap_around(x0 + 1, Nx)
+    y1 = wrap_around(y0 + 1, Ny)
+    z1 = wrap_around(z0 + 1, Nz)
+
+    x_minus1 = x0 - 1
+    y_minus1 = y0 - 1
+    z_minus1 = z0 - 1
+
+    dv = dx * dy * dz
+
+    # Weighting factors
+    Sx0 = (3/4) - (deltax/dx)**2
+    Sy0 = (3/4) - (deltay/dy)**2
+    Sz0 = (3/4) - (deltaz/dz)**2
+
+    Sx1 = jax.lax.cond(
+        deltax <= dx/2,
+        lambda _: (1/2) * ((1/2) - (deltax/dx))**2,
+        lambda _: jnp.array(0.0, dtype=deltax.dtype),
+        operand=None
+    )
+    Sy1 = jax.lax.cond(
+        deltay <= dy/2,
+        lambda _: (1/2) * ((1/2) - (deltay/dy))**2,
+        lambda _: jnp.array(0.0, dtype=deltay.dtype),
+        operand=None
+    )
+    Sz1 = jax.lax.cond(
+        deltaz <= dz/2,
+        lambda _: (1/2) * ((1/2) - (deltaz/dz))**2,
+        lambda _: jnp.array(0.0, dtype=deltaz.dtype),
+        operand=None
+    )
+
+    Sx_minus1 = jax.lax.cond(
+        deltax <= dx/2,
+        lambda _: (1/2) * ((1/2) + (deltax/dx))**2,
+        lambda _: jnp.array(0.0, dtype=deltax.dtype),
+        operand=None
+    )
+    Sy_minus1 = jax.lax.cond(
+        deltay <= dy/2,
+        lambda _: (1/2) * ((1/2) + (deltay/dy))**2,
+        lambda _: jnp.array(0.0, dtype=deltay.dtype),
+        operand=None
+    )
+    Sz_minus1 = jax.lax.cond(
+        deltaz <= dz/2,
+        lambda _: (1/2) * ((1/2) + (deltaz/dz))**2,
+        lambda _: jnp.array(0.0, dtype=deltaz.dtype),
+        operand=None
+    )
+
+    # Jx distribution
+    Jx = Jx.at[x0, y0, z0].add((q * vx / dv) * Sx0 * Sy0 * Sz0, mode='drop')
+    Jx = Jx.at[x1, y0, z0].add((q * vx / dv) * Sx1 * Sy0 * Sz0, mode='drop')
+    Jx = Jx.at[x0, y1, z0].add((q * vx / dv) * Sx0 * Sy1 * Sz0, mode='drop')
+    Jx = Jx.at[x0, y0, z1].add((q * vx / dv) * Sx0 * Sy0 * Sz1, mode='drop')
+    Jx = Jx.at[x1, y1, z0].add((q * vx / dv) * Sx1 * Sy1 * Sz0, mode='drop')
+    Jx = Jx.at[x1, y0, z1].add((q * vx / dv) * Sx1 * Sy0 * Sz1, mode='drop')
+    Jx = Jx.at[x0, y1, z1].add((q * vx / dv) * Sx0 * Sy1 * Sz1, mode='drop')
+    Jx = Jx.at[x1, y1, z1].add((q * vx / dv) * Sx1 * Sy1 * Sz1, mode='drop')
+    Jx = Jx.at[x_minus1, y0, z0].add((q * vx / dv) * Sx_minus1 * Sy0 * Sz0, mode='drop')
+    Jx = Jx.at[x0, y_minus1, z0].add((q * vx / dv) * Sx0 * Sy_minus1 * Sz0, mode='drop')
+    Jx = Jx.at[x0, y0, z_minus1].add((q * vx / dv) * Sx0 * Sy0 * Sz_minus1, mode='drop')
+    Jx = Jx.at[x_minus1, y_minus1, z0].add((q * vx / dv) * Sx_minus1 * Sy_minus1 * Sz0, mode='drop')
+    Jx = Jx.at[x_minus1, y0, z_minus1].add((q * vx / dv) * Sx_minus1 * Sy0 * Sz_minus1, mode='drop')
+    Jx = Jx.at[x0, y_minus1, z_minus1].add((q * vx / dv) * Sx0 * Sy_minus1 * Sz_minus1, mode='drop')
+    Jx = Jx.at[x_minus1, y_minus1, z_minus1].add((q * vx / dv) * Sx_minus1 * Sy_minus1 * Sz_minus1, mode='drop')
+
+    # Jy distribution
+    Jy = Jy.at[x0, y0, z0].add((q * vy / dv) * Sx0 * Sy0 * Sz0, mode='drop')
+    Jy = Jy.at[x1, y0, z0].add((q * vy / dv) * Sx1 * Sy0 * Sz0, mode='drop')
+    Jy = Jy.at[x0, y1, z0].add((q * vy / dv) * Sx0 * Sy1 * Sz0, mode='drop')
+    Jy = Jy.at[x0, y0, z1].add((q * vy / dv) * Sx0 * Sy0 * Sz1, mode='drop')
+    Jy = Jy.at[x1, y1, z0].add((q * vy / dv) * Sx1 * Sy1 * Sz0, mode='drop')
+    Jy = Jy.at[x1, y0, z1].add((q * vy / dv) * Sx1 * Sy0 * Sz1, mode='drop')
+    Jy = Jy.at[x0, y1, z1].add((q * vy / dv) * Sx0 * Sy1 * Sz1, mode='drop')
+    Jy = Jy.at[x1, y1, z1].add((q * vy / dv) * Sx1 * Sy1 * Sz1, mode='drop')
+    Jy = Jy.at[x_minus1, y0, z0].add((q * vy / dv) * Sx_minus1 * Sy0 * Sz0, mode='drop')
+    Jy = Jy.at[x0, y_minus1, z0].add((q * vy / dv) * Sx0 * Sy_minus1 * Sz0, mode='drop')
+    Jy = Jy.at[x0, y0, z_minus1].add((q * vy / dv) * Sx0 * Sy0 * Sz_minus1, mode='drop')
+    Jy = Jy.at[x_minus1, y_minus1, z0].add((q * vy / dv) * Sx_minus1 * Sy_minus1 * Sz0, mode='drop')
+    Jy = Jy.at[x_minus1, y0, z_minus1].add((q * vy / dv) * Sx_minus1 * Sy0 * Sz_minus1, mode='drop')
+    Jy = Jy.at[x0, y_minus1, z_minus1].add((q * vy / dv) * Sx0 * Sy_minus1 * Sz_minus1, mode='drop')
+    Jy = Jy.at[x_minus1, y_minus1, z_minus1].add((q * vy / dv) * Sx_minus1 * Sy_minus1 * Sz_minus1, mode='drop')
+
+    # Jz distribution
+    Jz = Jz.at[x0, y0, z0].add((q * vz / dv) * Sx0 * Sy0 * Sz0, mode='drop')
+    Jz = Jz.at[x1, y0, z0].add((q * vz / dv) * Sx1 * Sy0 * Sz0, mode='drop')
+    Jz = Jz.at[x0, y1, z0].add((q * vz / dv) * Sx0 * Sy1 * Sz0, mode='drop')
+    Jz = Jz.at[x0, y0, z1].add((q * vz / dv) * Sx0 * Sy0 * Sz1, mode='drop')
+    Jz = Jz.at[x1, y1, z0].add((q * vz / dv) * Sx1 * Sy1 * Sz0, mode='drop')
+    Jz = Jz.at[x1, y0, z1].add((q * vz / dv) * Sx1 * Sy0 * Sz1, mode='drop')
+    Jz = Jz.at[x0, y1, z1].add((q * vz / dv) * Sx0 * Sy1 * Sz1, mode='drop')
+    Jz = Jz.at[x1, y1, z1].add((q * vz / dv) * Sx1 * Sy1 * Sz1, mode='drop')
+    Jz = Jz.at[x_minus1, y0, z0].add((q * vz / dv) * Sx_minus1 * Sy0 * Sz0, mode='drop')
+    Jz = Jz.at[x0, y_minus1, z0].add((q * vz / dv) * Sx0 * Sy_minus1 * Sz0, mode='drop')
+    Jz = Jz.at[x0, y0, z_minus1].add((q * vz / dv) * Sx0 * Sy0 * Sz_minus1, mode='drop')
+    Jz = Jz.at[x_minus1, y_minus1, z0].add((q * vz / dv) * Sx_minus1 * Sy_minus1 * Sz0, mode='drop')
+    Jz = Jz.at[x_minus1, y0, z_minus1].add((q * vz / dv) * Sx_minus1 * Sy0 * Sz_minus1, mode='drop')
+    Jz = Jz.at[x0, y_minus1, z_minus1].add((q * vz / dv) * Sx0 * Sy_minus1 * Sz_minus1, mode='drop')
+    Jz = Jz.at[x_minus1, y_minus1, z_minus1].add((q * vz / dv) * Sx_minus1 * Sy_minus1 * Sz_minus1, mode='drop')
+
+    return (Jx, Jy, Jz)
+
+
+
+
 
 @jit
 def wrap_around(ix, size):
