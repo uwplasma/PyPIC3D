@@ -4,6 +4,26 @@ import jax.numpy as jnp
 from functools import partial
 # import external libraries
 
+def create_k_mesh(nx, ny, nz, dx, dy, dz):
+    """
+    Create a mesh of wave numbers for FFT operations.
+
+    Args:
+        nx (int): Number of grid points in the x-direction.
+        ny (int): Number of grid points in the y-direction.
+        nz (int): Number of grid points in the z-direction.
+        dx (float): Grid spacing in the x-direction.
+        dy (float): Grid spacing in the y-direction.
+        dz (float): Grid spacing in the z-direction.
+
+    Returns:
+        tuple: Meshgrid of wave numbers (kx, ky, kz).
+    """
+    kx = jnp.fft.fftfreq(nx, d=dx) * 2 * jnp.pi
+    ky = jnp.fft.fftfreq(ny, d=dy) * 2 * jnp.pi
+    kz = jnp.fft.fftfreq(nz, d=dz) * 2 * jnp.pi
+    return jnp.meshgrid(kx, ky, kz, indexing='ij')
+
 @jit
 def spectral_poisson_solve(rho, constants, world):
     """
@@ -25,18 +45,12 @@ def spectral_poisson_solve(rho, constants, world):
     eps = constants['eps']
 
     krho = jnp.fft.fftn(rho)
-    # fft the charge density
     nx, ny, nz = krho.shape
-    kx = jnp.fft.fftfreq(nx, d=dy) * 2 * jnp.pi
-    ky = jnp.fft.fftfreq(ny, d=dz) * 2 * jnp.pi
-    kz = jnp.fft.fftfreq(nz, d=dx) * 2 * jnp.pi
-    kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
-    # create the wave numbers
+    kx, ky, kz = create_k_mesh(nx, ny, nz, dx, dy, dz)
     k2 = kx**2 + ky**2 + kz**2
     k2 = k2.at[0, 0, 0].set(1.0)
     phi = krho / (eps*k2)
     phi = phi.at[0, 0, 0].set(0)
-    # set the 0th fourier mode to zero to avoid division by zero
     phi = jnp.fft.ifftn(phi).real
     return phi
 
@@ -64,17 +78,11 @@ def spectral_divergence(xfield, yfield, zfield, world):
     xfft = jnp.fft.fftn(xfield)
     yfft = jnp.fft.fftn(yfield)
     zfft = jnp.fft.fftn(zfield)
-    # fft the vector field components
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
-    # get the grid spacing from the world dictionary
     nx, ny, nz = xfft.shape
-    kx = jnp.fft.fftfreq(nx, d=dy) * 2 * jnp.pi
-    ky = jnp.fft.fftfreq(ny, d=dz) * 2 * jnp.pi
-    kz = jnp.fft.fftfreq(nz, d=dx) * 2 * jnp.pi
-    kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
-    # create the wave numbers
+    kx, ky, kz = create_k_mesh(nx, ny, nz, dx, dy, dz)
     div = 1j * kx * xfft + 1j * ky * yfft + 1j * kz * zfft
     return jnp.fft.ifftn(div).real
 
@@ -98,17 +106,11 @@ def spectral_curl(xfield, yfield, zfield, world):
     xfft = jnp.fft.fftn(xfield)
     yfft = jnp.fft.fftn(yfield)
     zfft = jnp.fft.fftn(zfield)
-    # fft the vector field components
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
-    # get the grid spacing from the world dictionary
     nx, ny, nz = xfft.shape
-    kx = jnp.fft.fftfreq(nx, d=dy) * 2 * jnp.pi
-    ky = jnp.fft.fftfreq(ny, d=dz) * 2 * jnp.pi
-    kz = jnp.fft.fftfreq(nz, d=dx) * 2 * jnp.pi
-    kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
-    # create the wave numbers
+    kx, ky, kz = create_k_mesh(nx, ny, nz, dx, dy, dz)
     curlx = 1j * ky * zfft - 1j * kz * yfft
     curly = 1j * kz * xfft - 1j * kx * zfft
     curlz = 1j * kx * yfft - 1j * ky * xfft
@@ -130,17 +132,11 @@ def spectral_gradient(field, world):
     """
 
     field_fft = jnp.fft.fftn(field)
-    # fft the scalar field
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
-    # get the grid spacing from the world dictionary
     nx, ny, nz = field_fft.shape
-    kx = jnp.fft.fftfreq(nx, d=dy) * 2 * jnp.pi
-    ky = jnp.fft.fftfreq(ny, d=dz) * 2 * jnp.pi
-    kz = jnp.fft.fftfreq(nz, d=dx) * 2 * jnp.pi
-    kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
-    # create the wave numbers
+    kx, ky, kz = create_k_mesh(nx, ny, nz, dx, dy, dz)
     gradx = 1j * kx * field_fft
     grady = 1j * ky * field_fft
     gradz = 1j * kz * field_fft
@@ -166,17 +162,10 @@ def spectral_laplacian(field, world):
             The Laplacian of the field.
     """
     field_fft = jnp.fft.fftn(field)
-    # fft the scalar field
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
-    # get the grid spacing from the world dictionary
     nx, ny, nz = field_fft.shape
-    kx = jnp.fft.fftfreq(nx, d=dy) * 2 * jnp.pi
-    ky = jnp.fft.fftfreq(ny, d=dz) * 2 * jnp.pi
-    kz = jnp.fft.fftfreq(nz, d=dx) * 2 * jnp.pi
-    kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
-    # create the wave numbers
+    kx, ky, kz = create_k_mesh(nx, ny, nz, dx, dy, dz)
     lapl = -(kx**2 + ky**2 + kz**2) * field_fft
-    # compute the Laplacian in the spectral domain
     return jnp.fft.ifftn(lapl).real
