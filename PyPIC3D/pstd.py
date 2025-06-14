@@ -34,7 +34,7 @@ def spectral_poisson_solve(rho, constants, world):
     # create the wave numbers
     k2 = kx**2 + ky**2 + kz**2
     k2 = k2.at[0, 0, 0].set(1.0)
-    phi = -krho / (eps*k2)
+    phi = krho / (eps*k2)
     phi = phi.at[0, 0, 0].set(0)
     # set the 0th fourier mode to zero to avoid division by zero
     phi = jnp.fft.ifftn(phi).real
@@ -75,7 +75,7 @@ def spectral_divergence(xfield, yfield, zfield, world):
     kz = jnp.fft.fftfreq(nz, d=dx) * 2 * jnp.pi
     kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
     # create the wave numbers
-    div = -1j * kx * xfft + -1j * ky * yfft + -1j * kz * zfft
+    div = 1j * kx * xfft + 1j * ky * yfft + 1j * kz * zfft
     return jnp.fft.ifftn(div).real
 
 @jit
@@ -109,9 +109,9 @@ def spectral_curl(xfield, yfield, zfield, world):
     kz = jnp.fft.fftfreq(nz, d=dx) * 2 * jnp.pi
     kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
     # create the wave numbers
-    curlx = -1j * ky * zfft - -1j * kz * yfft
-    curly = -1j * kz * xfft - -1j * kx * zfft
-    curlz = -1j * kx * yfft - -1j * ky * xfft
+    curlx = 1j * ky * zfft - 1j * kz * yfft
+    curly = 1j * kz * xfft - 1j * kx * zfft
+    curlz = 1j * kx * yfft - 1j * ky * xfft
     return jnp.fft.ifftn(curlx).real, jnp.fft.ifftn(curly).real, jnp.fft.ifftn(curlz).real
 
 @jit
@@ -141,10 +141,9 @@ def spectral_gradient(field, world):
     kz = jnp.fft.fftfreq(nz, d=dx) * 2 * jnp.pi
     kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
     # create the wave numbers
-    gradx = -1j * kx * field_fft
-    grady = -1j * ky * field_fft
-    gradz = -1j * kz * field_fft
-    # compute the gradient in the spectral domain
+    gradx = 1j * kx * field_fft
+    grady = 1j * ky * field_fft
+    gradz = 1j * kz * field_fft
     return jnp.fft.ifftn(gradx).real, jnp.fft.ifftn(grady).real, jnp.fft.ifftn(gradz).real
 
 @jit
