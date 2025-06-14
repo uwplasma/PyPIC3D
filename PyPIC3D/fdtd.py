@@ -114,19 +114,16 @@ def centered_finite_difference_curl(field_x, field_y, field_z, dx, dy, dz, bc):
         field_y = apply_zero_boundary_condition(field_y)
         field_z = apply_zero_boundary_condition(field_z)
 
-    dfx_dy = (jnp.roll(field_x, 1, axis=1) - jnp.roll(field_x, -1, axis=1)) / (2 * dy)
-    dfx_dz = (jnp.roll(field_x, 1, axis=2) - jnp.roll(field_x, -1, axis=2)) / (2 * dz)
-    # calculate the partial derivative of the x-component of the field with respect to y and z
-    dfy_dx = (jnp.roll(field_y, 1, axis=0) - jnp.roll(field_y, -1, axis=0)) / (2 * dz)
-    dfy_dz = (jnp.roll(field_y, 1, axis=2) - jnp.roll(field_y, -1, axis=2)) / (2 * dx)
-    # calculate the partial derivative of the y-component of the field with respect to x and z
-    dfz_dx = (jnp.roll(field_z, 1, axis=0) - jnp.roll(field_z, -1, axis=0)) / (2 * dx)
-    dfz_dy = (jnp.roll(field_z, 1, axis=1) - jnp.roll(field_z, -1, axis=1)) / (2 * dy)
-    # calculate the partial derivative of the z-component of the field with respect to x and y
+    dFz_dy = (jnp.roll(field_z, shift=-1, axis=1) - jnp.roll(field_z, shift=1, axis=1)) / (2 * dy)
+    dFy_dz = (jnp.roll(field_y, shift=-1, axis=2) - jnp.roll(field_y, shift=1, axis=2)) / (2 * dz)
+    dFx_dz = (jnp.roll(field_x, shift=-1, axis=2) - jnp.roll(field_x, shift=1, axis=2)) / (2 * dz)
+    dFz_dx = (jnp.roll(field_z, shift=-1, axis=0) - jnp.roll(field_z, shift=1, axis=0)) / (2 * dx)
+    dFy_dx = (jnp.roll(field_y, shift=-1, axis=0) - jnp.roll(field_y, shift=1, axis=0)) / (2 * dx)
+    dFx_dy = (jnp.roll(field_x, shift=-1, axis=1) - jnp.roll(field_x, shift=1, axis=1)) / (2 * dy)
 
-    curl_x = dfz_dy - dfy_dz
-    curl_y = dfx_dz - dfz_dx
-    curl_z = dfy_dx - dfx_dy
+    curl_x = dFz_dy - dFy_dz
+    curl_y = dFx_dz - dFz_dx
+    curl_z = dFy_dx - dFx_dy
     # calculate the curl of the field
 
     if bc == 'neumann':
@@ -160,9 +157,9 @@ def centered_finite_difference_gradient(field, dx, dy, dz, bc):
     if bc == 'dirichlet':
         field = apply_zero_boundary_condition(field)
 
-    grad_x = (jnp.roll(field, shift=1, axis=0) - jnp.roll(field, shift=-1, axis=0)) / (2 * dx)
-    grad_y = (jnp.roll(field, shift=1, axis=1) - jnp.roll(field, shift=-1, axis=1)) / (2 * dy)
-    grad_z = (jnp.roll(field, shift=1, axis=2) - jnp.roll(field, shift=-1, axis=2)) / (2 * dz)
+    grad_x = (jnp.roll(field, shift=-1, axis=0) - jnp.roll(field, shift=1, axis=0)) / (2 * dx)
+    grad_y = (jnp.roll(field, shift=-1, axis=1) - jnp.roll(field, shift=1, axis=1)) / (2 * dy)
+    grad_z = (jnp.roll(field, shift=-1, axis=2) - jnp.roll(field, shift=1, axis=2)) / (2 * dz)
 
     if bc == 'neumann':
         grad_x = apply_zero_boundary_condition(grad_x)
@@ -201,9 +198,9 @@ def centered_finite_difference_divergence(field_x, field_y, field_z, dx, dy, dz,
         field_y = apply_zero_boundary_condition(field_y)
         field_z = apply_zero_boundary_condition(field_z)
 
-    div_x = (jnp.roll(field_x, shift=1, axis=0) - jnp.roll(field_x, shift=-1, axis=0)) / (2 * dx)
-    div_y = (jnp.roll(field_y, shift=1, axis=1) - jnp.roll(field_y, shift=-1, axis=1)) / (2 * dy)
-    div_z = (jnp.roll(field_z, shift=1, axis=2) - jnp.roll(field_z, shift=-1, axis=2)) / (2 * dz)
+    div_x = (jnp.roll(field_x, shift=-1, axis=0) - jnp.roll(field_x, shift=1, axis=0)) / (2 * dx)
+    div_y = (jnp.roll(field_y, shift=-1, axis=1) - jnp.roll(field_y, shift=1, axis=1)) / (2 * dy)
+    div_z = (jnp.roll(field_z, shift=-1, axis=2) - jnp.roll(field_z, shift=1, axis=2)) / (2 * dz)
 
     if bc == 'neumann':
         div_x = apply_zero_boundary_condition(div_x)
