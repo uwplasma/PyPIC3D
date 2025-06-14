@@ -111,7 +111,7 @@ def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world
     ################ FIELD UPDATE ################################################################################################
     J, rho = J_from_rhov(particles, J, rho, constants, world)
     # calculate the current density from the particle positions and velocities
-    J = VB_correction(particles, J, constants)
+    # J = VB_correction(particles, J, constants)
     # calculate the corrections for charge conservation using villasenor buneamn 1991
     E = update_E(E, B, J, world, constants, curl_func)
     # update the electric field using the curl of the magnetic field
