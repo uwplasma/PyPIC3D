@@ -72,25 +72,27 @@ def solve_poisson(rho, constants, world, phi, solver, bc='periodic'):
         phi (ndarray): Solution to the Poisson equation.
     """
 
-    phi = lax.cond(
+    # phi = lax.cond(
 
-        solver == 'spectral',
+    #     solver == 'spectral',
 
-        lambda _: spectral_poisson_solve(rho, constants, world),
-        lambda _: solve_poisson_sor(
-            phi=phi,
-            rho=rho,
-            dx=world['dx'],
-            dy=world['dy'],
-            dz=world['dz'],
-            eps=constants['eps'],
-            omega=0.15,
-            tol=1e-12,
-            max_iter=15000
-        ),
+    #     lambda _: spectral_poisson_solve(rho, constants, world),
+    #     lambda _: solve_poisson_sor(
+    #         phi=phi,
+    #         rho=rho,
+    #         dx=world['dx'],
+    #         dy=world['dy'],
+    #         dz=world['dz'],
+    #         eps=constants['eps'],
+    #         omega=0.15,
+    #         tol=1e-12,
+    #         max_iter=15000
+    #     ),
 
-        operand=None
-    )
+    #     operand=None
+    # )
+
+    phi = spectral_poisson_solve(rho, constants, world)
 
     # if solver == 'spectral':
     #     phi = spectral_poisson_solve()
