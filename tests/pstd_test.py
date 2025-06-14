@@ -55,7 +55,7 @@ class TestSpectralMethods(unittest.TestCase):
         maxerrx = jnp.max(jnp.abs(curlx))
         maxerry = jnp.max(jnp.abs(curly))
         maxerrz = jnp.max(jnp.abs(curlz))
-        print('Curl (grad field) max abs error:', float(maxerrx), float(maxerry), float(maxerrz))
+        # print('Curl (grad field) max abs error:', float(maxerrx), float(maxerry), float(maxerrz))
         self.assertTrue(jnp.allclose(curlx, 0, atol=1e-10, rtol=1e-8))
         self.assertTrue(jnp.allclose(curly, 0, atol=1e-10, rtol=1e-8))
         self.assertTrue(jnp.allclose(curlz, 0, atol=1e-10, rtol=1e-8))
@@ -65,21 +65,21 @@ class TestSpectralMethods(unittest.TestCase):
         phi_num = phi_num - jnp.mean(phi_num)
         phi_true = self.phi - jnp.mean(self.phi)
         maxerr = jnp.max(jnp.abs(phi_num - phi_true))
-        print('Poisson max abs error:', float(maxerr))
+        # calculate the maximum absolute error
         self.assertEqual(phi_num.shape, self.phi.shape)
         self.assertTrue(jnp.allclose(phi_num, phi_true, atol=1e-10, rtol=1e-8))
 
     def test_spectral_divergence(self):
         divE = spectral_divergence(self.Ex, self.Ey, self.Ez, self.world)
         maxerr = jnp.max(jnp.abs(divE - self.laplacian))
-        print('Divergence max abs error:', float(maxerr))
+        # calculate the maximum absolute error
         self.assertEqual(divE.shape, self.phi.shape)
         self.assertTrue(jnp.allclose(divE, self.laplacian, atol=1e-10, rtol=1e-8))
 
     def test_spectral_laplacian(self):
         laplacian_num = spectral_laplacian(self.phi, self.world)
         maxerr = jnp.max(jnp.abs(laplacian_num - self.laplacian))
-        print('Laplacian max abs error:', float(maxerr))
+        # calculate the maximum absolute error
         self.assertEqual(laplacian_num.shape, self.phi.shape)
         self.assertTrue(jnp.allclose(laplacian_num, self.laplacian, atol=1e-10, rtol=1e-8))
 
@@ -88,7 +88,7 @@ class TestSpectralMethods(unittest.TestCase):
         maxerrx = jnp.max(jnp.abs(gradx - self.gradx))
         maxerry = jnp.max(jnp.abs(grady - self.grady))
         maxerrz = jnp.max(jnp.abs(gradz - self.gradz))
-        print('Gradient max abs error:', float(maxerrx), float(maxerry), float(maxerrz))
+        # calculate the maximum absolute error
         self.assertEqual(gradx.shape, self.phi.shape)
         self.assertEqual(grady.shape, self.phi.shape)
         self.assertEqual(gradz.shape, self.phi.shape)
