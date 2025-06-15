@@ -18,3 +18,5 @@ dist/
 build/
 *.agr
 .vscode/
+run_dir/
+test_output/
