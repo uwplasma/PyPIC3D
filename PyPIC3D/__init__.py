@@ -6,7 +6,7 @@ import os, sys
 import matplotlib.pyplot as plt
 # import external libraries
 
-#jax.config.update('jax_platform_name', 'cpu')
+jax.config.update('jax_platform_name', 'cpu')
 
 from . import errors
 from . import fields

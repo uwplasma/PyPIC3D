@@ -13,7 +13,6 @@ license = { file = "LICENSE" }
 
 dependencies = [
     "jax",
-    "jaxdecomp",
     "matplotlib",
     "plotly",
     "toml",

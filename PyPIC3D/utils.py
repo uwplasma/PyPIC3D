@@ -1,5 +1,4 @@
 import jax
-import jaxdecomp
 import plotly
 import tqdm
 import pyevtk
@@ -528,7 +527,6 @@ def dump_parameters_to_toml(simulation_stats, simulation_parameters, plasma_para
     # Get the versions of all the packages being imported
     package_versions = {
         "jax": jax.__version__,
-        "jaxdecomp" : jaxdecomp.__version__,
         "toml": toml.__version__,
         "plotly": plotly.__version__,
         "tqdm": tqdm.__version__,
