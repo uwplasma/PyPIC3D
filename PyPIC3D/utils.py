@@ -37,9 +37,26 @@ def compute_energy(particles, E, B, world, constants):
 
     Ex, Ey, Ez = E
     Bx, By, Bz = B
-    E2_integral = jnp.trapezoid(  jnp.trapezoid(  jnp.trapezoid(Ex**2 + Ey**2 + Ez**2, dx=dx, axis=0), dx=dy, axis=0), dx=dz, axis=0)
-    B2_integral = jnp.trapezoid(  jnp.trapezoid(  jnp.trapezoid(Bx**2 + By**2 + Bz**2, dx=dx, axis=0), dx=dy, axis=0), dx=dz, axis=0)
-    # Integral of E^2 and B^2 over the entire grid
+    # E2_integral = jnp.trapezoid(  jnp.trapezoid(  jnp.trapezoid(Ex**2 + Ey**2 + Ez**2, dx=dx, axis=0), dx=dy, axis=0), dx=dz, axis=0)
+    # B2_integral = jnp.trapezoid(  jnp.trapezoid(  jnp.trapezoid(Bx**2 + By**2 + Bz**2, dx=dx, axis=0), dx=dy, axis=0), dx=dz, axis=0)
+
+    nx, ny, nz = world['Nx'], world['Ny'], world['Nz']
+
+    dx_ = [ds for ds, n in zip([dx, dy, dz], [nx, ny, nz]) if n > 1]
+    # get all the dimensions that are greater than 1
+
+    E2_integral = Ex**2 + Ey**2 + Ez**2
+    B2_integral = Bx**2 + By**2 + Bz**2
+
+    for ds in dx_:
+        E2_integral = jnp.trapezoid(E2_integral, dx=ds, axis=0)
+        B2_integral = jnp.trapezoid(B2_integral, dx=ds, axis=0)
+    # Generalize field energy integral to arbitrary number of dimensions
+
+    E2_integral = jnp.squeeze(E2_integral)
+    B2_integral = jnp.squeeze(B2_integral)
+    # Squeeze the result to remove any singleton dimensions
+
     e_energy = 0.5 * constants['eps'] * E2_integral
     b_energy = 0.5 / constants['mu'] * B2_integral
     # Electric and magnetic field energy
