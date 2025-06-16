@@ -105,6 +105,9 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants):
     )
     # calculate the magnetic field at the particle positions
 
+    # jax.debug.print('efield_atx: {}, efield_aty: {}, efield_atz: {}', efield_atx, efield_aty, efield_atz)
+    # jax.debug.print('bfield_atx: {}, bfield_aty: {}, bfield_atz: {}', bfield_atx, bfield_aty, bfield_atz)
+
     boris_vmap = jax.vmap(relativistic_boris_single_particle, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None, None))
     newvx, newvy, newvz = boris_vmap(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, q, m, dt, constants)
     # apply the Boris algorithm to update the velocities of the particles
@@ -235,32 +238,66 @@ def create_trilinear_interpolator(field, grid):
 
     @jit
     def interpolator(x, y, z):
-        x_idx = jnp.clip(jnp.searchsorted(x_grid, x) - 1, 0, len(x_grid) - 2)
-        y_idx = jnp.clip(jnp.searchsorted(y_grid, y) - 1, 0, len(y_grid) - 2)
-        z_idx = jnp.clip(jnp.searchsorted(z_grid, z) - 1, 0, len(z_grid) - 2)
+        # Handle quasi-1D/2D cases
+        if len(x_grid) == 1:
+            x_idx = 0
+            xd = 0.0
+        else:
+            x_idx = jnp.clip(jnp.searchsorted(x_grid, x) - 1, 0, len(x_grid) - 2)
+            x0, x1 = x_grid[x_idx], x_grid[x_idx + 1]
+            xd = (x - x0) / (x1 - x0)
+        if len(y_grid) == 1:
+            y_idx = 0
+            yd = 0.0
+        else:
+            y_idx = jnp.clip(jnp.searchsorted(y_grid, y) - 1, 0, len(y_grid) - 2)
+            y0, y1 = y_grid[y_idx], y_grid[y_idx + 1]
+            yd = (y - y0) / (y1 - y0)
+        if len(z_grid) == 1:
+            z_idx = 0
+            zd = 0.0
+        else:
+            z_idx = jnp.clip(jnp.searchsorted(z_grid, z) - 1, 0, len(z_grid) - 2)
+            z0, z1 = z_grid[z_idx], z_grid[z_idx + 1]
+            zd = (z - z0) / (z1 - z0)
 
-        x0, x1 = x_grid[x_idx], x_grid[x_idx + 1]
-        y0, y1 = y_grid[y_idx], y_grid[y_idx + 1]
-        z0, z1 = z_grid[z_idx], z_grid[z_idx + 1]
 
-        xd = (x - x0) / (x1 - x0)
-        yd = (y - y0) / (y1 - y0)
-        zd = (z - z0) / (z1 - z0)
-
-        c00 = field[x_idx, y_idx, z_idx] * (1 - xd) + field[x_idx + 1, y_idx, z_idx] * xd
-        c01 = field[x_idx, y_idx, z_idx + 1] * (1 - xd) + field[x_idx + 1, y_idx, z_idx + 1] * xd
-        c10 = field[x_idx, y_idx + 1, z_idx] * (1 - xd) + field[x_idx + 1, y_idx + 1, z_idx] * xd
-        c11 = field[x_idx, y_idx + 1, z_idx + 1] * (1 - xd) + field[x_idx + 1, y_idx + 1, z_idx + 1] * xd
-
-        c0 = c00 * (1 - yd) + c10 * yd
-        c1 = c01 * (1 - yd) + c11 * yd
-
-        return c0 * (1 - zd) + c1 * zd
-
+        if len(x_grid) == 1 and len(y_grid) == 1 and len(z_grid) == 1:
+            return field[0, 0, 0]
+        elif len(x_grid) == 1 and len(y_grid) == 1:
+            c0 = field[0, 0, z_idx]
+            c1 = field[0, 0, z_idx + 1]
+            return c0 * (1 - zd) + c1 * zd
+        elif len(x_grid) == 1 and len(z_grid) == 1:
+            c0 = field[0, y_idx, 0]
+            c1 = field[0, y_idx + 1, 0]
+            return c0 * (1 - yd) + c1 * yd
+        elif len(y_grid) == 1 and len(z_grid) == 1:
+            c0 = field[x_idx, 0, 0]
+            c1 = field[x_idx + 1, 0, 0]
+            return c0 * (1 - xd) + c1 * xd
+        elif len(x_grid) == 1:
+            c00 = field[0, y_idx, z_idx] * (1 - yd) + field[0, y_idx + 1, z_idx] * yd
+            c01 = field[0, y_idx, z_idx + 1] * (1 - yd) + field[0, y_idx + 1, z_idx + 1] * yd
+            return c00 * (1 - zd) + c01 * zd
+        elif len(y_grid) == 1:
+            c00 = field[x_idx, 0, z_idx] * (1 - xd) + field[x_idx + 1, 0, z_idx] * xd
+            c01 = field[x_idx, 0, z_idx + 1] * (1 - xd) + field[x_idx + 1, 0, z_idx + 1] * xd
+            return c00 * (1 - zd) + c01 * zd
+        elif len(z_grid) == 1:
+            c00 = field[x_idx, y_idx, 0] * (1 - xd) + field[x_idx + 1, y_idx, 0] * xd
+            c10 = field[x_idx, y_idx + 1, 0] * (1 - xd) + field[x_idx + 1, y_idx + 1, 0] * xd
+            return c00 * (1 - yd) + c10 * yd
+        else:
+            c00 = field[x_idx, y_idx, z_idx] * (1 - xd) + field[x_idx + 1, y_idx, z_idx] * xd
+            c01 = field[x_idx, y_idx, z_idx + 1] * (1 - xd) + field[x_idx + 1, y_idx, z_idx + 1] * xd
+            c10 = field[x_idx, y_idx + 1, z_idx] * (1 - xd) + field[x_idx + 1, y_idx + 1, z_idx] * xd
+            c11 = field[x_idx, y_idx + 1, z_idx + 1] * (1 - xd) + field[x_idx + 1, y_idx + 1, z_idx + 1] * xd
+            c0 = c00 * (1 - yd) + c10 * yd
+            c1 = c01 * (1 - yd) + c11 * yd
+            return c0 * (1 - zd) + c1 * zd
 
     vmap_interpolator = jax.vmap(interpolator, in_axes=(0, 0, 0), out_axes=0)
-    # vectorize the interpolator for batch processing
-
     return vmap_interpolator
 
 
@@ -279,31 +316,52 @@ def create_quadratic_interpolator(field, grid):
 
     @jit
     def interpolator(x, y, z):
-        x_idx = jnp.clip(jnp.searchsorted(x_grid, x) - 1, 1, len(x_grid) - 3)
-        y_idx = jnp.clip(jnp.searchsorted(y_grid, y) - 1, 1, len(y_grid) - 3)
-        z_idx = jnp.clip(jnp.searchsorted(z_grid, z) - 1, 1, len(z_grid) - 3)
-
-        x0, x1, x2 = x_grid[x_idx - 1], x_grid[x_idx], x_grid[x_idx + 1]
-        y0, y1, y2 = y_grid[y_idx - 1], y_grid[y_idx], y_grid[y_idx + 1]
-        z0, z1, z2 = z_grid[z_idx - 1], z_grid[z_idx], z_grid[z_idx + 1]
-
-        def quadratic_weights(t, t0, t1, t2):
-            w0 = (t - t1) * (t - t2) / ((t0 - t1) * (t0 - t2))
-            w1 = (t - t0) * (t - t2) / ((t1 - t0) * (t1 - t2))
-            w2 = (t - t0) * (t - t1) / ((t2 - t0) * (t2 - t1))
-            return w0, w1, w2
-
-        wx0, wx1, wx2 = quadratic_weights(x, x0, x1, x2)
-        wy0, wy1, wy2 = quadratic_weights(y, y0, y1, y2)
-        wz0, wz1, wz2 = quadratic_weights(z, z0, z1, z2)
+        # Handle quasi-1D/2D cases
+        if len(x_grid) == 1:
+            x_idx = 0
+            wxs = [1.0]
+        else:
+            x_idx = jnp.clip(jnp.searchsorted(x_grid, x) - 1, 1, len(x_grid) - 3)
+            x0, x1, x2 = x_grid[x_idx - 1], x_grid[x_idx], x_grid[x_idx + 1]
+            def quadratic_weights(t, t0, t1, t2):
+                w0 = (t - t1) * (t - t2) / ((t0 - t1) * (t0 - t2))
+                w1 = (t - t0) * (t - t2) / ((t1 - t0) * (t1 - t2))
+                w2 = (t - t0) * (t - t1) / ((t2 - t0) * (t2 - t1))
+                return [w0, w1, w2]
+            wxs = quadratic_weights(x, x0, x1, x2)
+        if len(y_grid) == 1:
+            y_idx = 0
+            wys = [1.0]
+        else:
+            y_idx = jnp.clip(jnp.searchsorted(y_grid, y) - 1, 1, len(y_grid) - 3)
+            y0, y1, y2 = y_grid[y_idx - 1], y_grid[y_idx], y_grid[y_idx + 1]
+            def quadratic_weights(t, t0, t1, t2):
+                w0 = (t - t1) * (t - t2) / ((t0 - t1) * (t0 - t2))
+                w1 = (t - t0) * (t - t2) / ((t1 - t0) * (t1 - t2))
+                w2 = (t - t0) * (t - t1) / ((t2 - t0) * (t2 - t1))
+                return [w0, w1, w2]
+            wys = quadratic_weights(y, y0, y1, y2)
+        if len(z_grid) == 1:
+            z_idx = 0
+            wzs = [1.0]
+        else:
+            z_idx = jnp.clip(jnp.searchsorted(z_grid, z) - 1, 1, len(z_grid) - 3)
+            z0, z1, z2 = z_grid[z_idx - 1], z_grid[z_idx], z_grid[z_idx + 1]
+            def quadratic_weights(t, t0, t1, t2):
+                w0 = (t - t1) * (t - t2) / ((t0 - t1) * (t0 - t2))
+                w1 = (t - t0) * (t - t2) / ((t1 - t0) * (t1 - t2))
+                w2 = (t - t0) * (t - t1) / ((t2 - t0) * (t2 - t1))
+                return [w0, w1, w2]
+            wzs = quadratic_weights(z, z0, z1, z2)
 
         interpolated_value = 0.0
-        for i, wx in enumerate([wx0, wx1, wx2]):
-            for j, wy in enumerate([wy0, wy1, wy2]):
-                for k, wz in enumerate([wz0, wz1, wz2]):
-                    interpolated_value += (
-                        wx * wy * wz * field[x_idx - 1 + i, y_idx - 1 + j, z_idx - 1 + k]
-                    )
+        for i, wx in enumerate(wxs):
+            for j, wy in enumerate(wys):
+                for k, wz in enumerate(wzs):
+                    ix = x_idx - 1 + i if len(x_grid) > 1 else 0
+                    iy = y_idx - 1 + j if len(y_grid) > 1 else 0
+                    iz = z_idx - 1 + k if len(z_grid) > 1 else 0
+                    interpolated_value += wx * wy * wz * field[ix, iy, iz]
 
         return interpolated_value
 
