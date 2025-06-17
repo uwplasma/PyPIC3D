@@ -4,6 +4,7 @@
 # Jax's auto-differentiation capabilities
 
 ########################################## IMPORT LIBRARIES #############################################
+from sys import path
 import time
 import jax
 from jax import block_until_ready
@@ -13,7 +14,7 @@ from tqdm import tqdm
 # Importing relevant libraries
 
 from PyPIC3D.plotting import (
-    plotter, write_particles_phase_space, write_data
+    plotter, write_particles_phase_space, write_data, plot_vtk_particles, plot_field_slice_vtk
 )
 
 from PyPIC3D.utils import (
@@ -42,6 +43,8 @@ def run_PyPIC3D(config_file):
     dt = world['dt']
     output_dir = simulation_parameters['output_dir']
 
+    field_names = ["E_magnitude", "B_magnitude"]
+
     ############################################################################################################
 
     ###################################################### SIMULATION LOOP #####################################
@@ -62,7 +65,17 @@ def run_PyPIC3D(config_file):
             write_data(f"{output_dir}/data/total_momentum.txt", t * dt, total_momentum)
             # Write the total momentum to a file
 
-            write_particles_phase_space(particles, t, output_dir)
+            # write_particles_phase_space(particles, t, output_dir)
+
+            E_magnitude = jnp.sqrt(E[0]**2 + E[1]**2 + E[2]**2)[:,:,world['Nz']//2]
+            B_magnitude = jnp.sqrt(B[0]**2 + B[1]**2 + B[2]**2)[:,:,world['Nz']//2]
+            fields = [E_magnitude, B_magnitude]
+            plot_field_slice_vtk(fields, field_names, 2, E_grid, t, "fields", output_dir, world)
+            # Plot the fields in VTK format
+
+
+            plot_vtk_particles(particles, t, output_dir)
+            # Plot the particles in VTK format
 
         particles, E, B, J, phi, rho = jit_loop(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, curl_func, solver, bc)
         # time loop to update the particles and fields
