@@ -20,3 +20,4 @@ build/
 .vscode/
 run_dir/
 test_output/
+.coverage
