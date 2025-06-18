@@ -4,7 +4,7 @@ matplotlib.use('agg')
 import matplotlib.pyplot as plt
 from jax import jit
 import jax.numpy as jnp
-from pyevtk.hl import gridToVTK
+from pyevtk.hl import gridToVTK, pointsToVTK
 import os
 import plotly.graph_objects as go
 # from PyPIC3D.rho import update_rho
@@ -318,37 +318,37 @@ def plot_initial_histograms(particle_species, world, name, path):
     plt.savefig(f"{path}/{name}_initial_z_velocity_histogram.png", dpi=150)
     plt.close()
 
-def magnitude_probe(fieldx, fieldy, fieldz, x, y, z):
-    """
-    Probe the magnitude of a vector field at a given point.
+# def magnitude_probe(fieldx, fieldy, fieldz, x, y, z):
+#     """
+#     Probe the magnitude of a vector field at a given point.
 
-    Args:
-        fieldx (ndarray): The x-component of the vector field.
-        fieldy (ndarray): The y-component of the vector field.
-        fieldz (ndarray): The z-component of the vector field.
-        x (float): The x-coordinate of the point.
-        y (float): The y-coordinate of the point.
-        z (float): The z-coordinate of the point.
+#     Args:
+#         fieldx (ndarray): The x-component of the vector field.
+#         fieldy (ndarray): The y-component of the vector field.
+#         fieldz (ndarray): The z-component of the vector field.
+#         x (float): The x-coordinate of the point.
+#         y (float): The y-coordinate of the point.
+#         z (float): The z-coordinate of the point.
 
-    Returns:
-        float: The magnitude of the vector field at the given point.
-    """
-    return jnp.sqrt(fieldx.at[x, y, z].get()**2 + fieldy.at[x, y, z].get()**2 + fieldz.at[x, y, z].get()**2)
+#     Returns:
+#         float: The magnitude of the vector field at the given point.
+#     """
+#     return jnp.sqrt(fieldx.at[x, y, z].get()**2 + fieldy.at[x, y, z].get()**2 + fieldz.at[x, y, z].get()**2)
 
-def write_probe(probe_data, t, filename):
-    """
-    Writes probe data and timestep to a file.
+# def write_probe(probe_data, t, filename):
+#     """
+#     Writes probe data and timestep to a file.
 
-    Args:
-        probe_data (any): The data collected by the probe to be written to the file.
-        t (int or float): The timestep at which the probe data was collected.
-        filename (str): The name of the file where the probe data will be written.
+#     Args:
+#         probe_data (any): The data collected by the probe to be written to the file.
+#         t (int or float): The timestep at which the probe data was collected.
+#         filename (str): The name of the file where the probe data will be written.
 
-    Returns:
-        None
-    """
-    with open(filename, 'a') as file:
-        file.write(f"{t}\t{probe_data}\n")
+#     Returns:
+#         None
+#     """
+#     with open(filename, 'a') as file:
+#         file.write(f"{t}\t{probe_data}\n")
 
 def plot_initial_KE(particles, path):
     """
@@ -550,8 +550,8 @@ def save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid
         write_data(f"{output_dir}/data/averageBz.txt", t*dt, jnp.mean(jnp.abs(Bz)))
         # write_data(f"{output_dir}/data/averageE.txt", t*dt, jnp.mean(jnp.sqrt(Ex**2 + Ey**2 + Ez**2)))
         # write_data(f"{output_dir}/data/averageB.txt", t*dt, jnp.mean(jnp.sqrt(Bx**2 + By**2 + Bz**2)))
-        write_data(f"{output_dir}/data/Eprobe.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx-1, Ny-1, Nz-1))
-        write_data(f"{output_dir}/data/centerE.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx//2, Ny//2, Nz//2))
+        # write_data(f"{output_dir}/data/Eprobe.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx-1, Ny-1, Nz-1))
+        # write_data(f"{output_dir}/data/centerE.txt", t*dt, magnitude_probe(Ex, Ey, Ez, Nx//2, Ny//2, Nz//2))
 
         # write_slice(Ex[:, :, Nz//2], E_grid[0], E_grid[1], t, 'Ex', output_dir, dt)
         # write_slice(Ey[:, :, Nz//2], E_grid[0], E_grid[1], t, 'Ey', output_dir, dt)
@@ -653,4 +653,75 @@ def plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, p
     # if plotting_parameters['plotting']:
     #     if t % plotting_parameters['plotting_interval'] == 0:
     #         save_datas(t, dt, particles, Ex, Ey, Ez, Bx, By, Bz, rho, Jx, Jy, Jz, E_grid, B_grid, plotting_parameters, world, constants, output_dir)
- 
+
+
+
+def plot_vtk_particles(particles, t, path):
+    """
+    Plot the particles in VTK format.
+
+    Args:
+        particles (Particles): The particles to be plotted.
+        t (ndarray): The time values.
+        path (str): The path to save the plot.
+
+    Returns:
+        None
+    """
+    if not os.path.exists(f"{path}/data/particles"):
+        os.makedirs(f"{path}/data/particles")
+
+    particle_names = [species.get_name().replace(" ", "") for species in particles]
+    for species in particles:
+        name = species.get_name().replace(" ", "")
+        x, y, z = map(np.asarray, species.get_position())
+        vx, vy, vz = map(np.asarray, species.get_velocity())
+        # Get the position and velocity of the particles
+        q = np.asarray( species.get_charge() * np.ones_like(vx) )
+        # Get the charge of the particles
+
+        pointsToVTK(f"{path}/data/particles/{name}.{t:09}", x, y, z, \
+                {"vx": vx, "vy": vy, "vz": vz, "q": q})
+        # save the particles in the vtk file format
+
+def plot_field_slice_vtk(field_slices, field_names, slice, grid, t, name, path, world):
+    """
+    Plot a slice of a field in VTK format.
+
+    Args:
+        field_slice (ndarray): The 2D slice of the field to be plotted.
+        grid (tuple): The grid dimensions (x, y).
+        t (int): The time step.
+        name (str): The name of the field.
+        path (str): The path to save the plot.
+
+    Returns:
+        None
+    """
+
+    x, y, z = grid
+    nx, ny, nz = world['Nx'], world['Ny'], world['Nz']
+    dx, dy, dz = world['dx'], world['dy'], world['dz']
+
+    if slice == 0:
+        x = np.array([x[nx//2]])
+    elif slice == 1:
+        y = np.array([y[ny//2]])
+    elif slice == 2:
+        z = np.array([z[nz//2]])
+
+    X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
+
+    if not os.path.exists(f"{path}/data/{name}_slice"):
+        os.makedirs(f"{path}/data/{name}_slice")
+    # Create directory if it doesn't exist
+
+    slices = [np.expand_dims(np.asarray(slice_), axis=slice) for slice_ in field_slices]
+    # add a new axis to the field slices to match the grid dimensions
+
+    cell_data = { f"{field_names[i]}": slice_ for i, slice_ in enumerate(slices) }
+    # loop over the field slices and save them as separate entries in cellData
+
+    gridToVTK(f"{path}/data/{name}_slice/{name}_slice_{t:09}", X, Y, Z, \
+            cellData=cell_data)
+    # save the field slices in the vtk file format

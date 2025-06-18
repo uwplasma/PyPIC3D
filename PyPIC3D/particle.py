@@ -108,9 +108,9 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
             bc = config[toml_key]['bc']
         # set the boundary condition
 
-        x = load_initial_positions('initial_x', config, toml_key, x, N_particles)
-        y = load_initial_positions('initial_y', config, toml_key, y, N_particles)
-        z = load_initial_positions('initial_z', config, toml_key, z, N_particles)
+        x = load_initial_positions('initial_x', config, toml_key, x, N_particles, dx, key1)
+        y = load_initial_positions('initial_y', config, toml_key, y, N_particles, dy, key2)
+        z = load_initial_positions('initial_z', config, toml_key, z, N_particles, dz, key3)
         # load the initial positions of the particles from the toml file, if specified
         # otherwise, use the initialized positions
         vx = load_initial_velocities('initial_vx', config, toml_key, vx, N_particles)
@@ -220,7 +220,7 @@ def read_value(param, key, config, default_value):
         return default_value
 
 
-def load_initial_positions(param, config, key, default, N_particles):
+def load_initial_positions(param, config, key, default, N_particles, ds, key1):
     """
     Load initial positions for particles based on the provided configuration.
 
@@ -236,6 +236,8 @@ def load_initial_positions(param, config, key, default, N_particles):
         key (str): The key in the configuration dictionary under which the parameter is stored.
         default (Any): The default value to return if the parameter is not found.
         N_particles (int): The number of particles, used to determine the size of the array.
+        ds (float): The spatial resolution, used to add noise to the particle positions.
+        key1 (jax.random.PRNGKey): The random key for generating random numbers.
 
     Returns:
         jax.numpy.ndarray or Any: An array of particle positions if the parameter is found,
@@ -247,8 +249,10 @@ def load_initial_positions(param, config, key, default, N_particles):
             return jnp.load(config[key][param])
             # if the value is a string, load it from an external source
         else:
-            return jnp.full(N_particles, config[key][param])
-            # if the value is a number, fill the array with that value
+            #return jnp.full(N_particles, config[key][param])
+            val = config[key][param]
+            return jax.random.uniform(key1, shape = (N_particles,), minval=val-(ds/2), maxval=val+(ds/2))
+            # if the value is a number, fill the array with that value with some noise in the subcell position
     else:
         return default
         # return the default value if the parameter is not found

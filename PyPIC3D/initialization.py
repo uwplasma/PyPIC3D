@@ -64,6 +64,7 @@ def default_parameters():
     "plot_errors": False,
     "plot_dispersion": False,
     'plot_chargeconservation': False,
+    "plot_vtk_particles": True,
     "plotting_interval": 10
     }
     # dictionary for plotting/saving data
