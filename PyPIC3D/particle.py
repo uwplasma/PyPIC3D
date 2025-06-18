@@ -199,6 +199,7 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         print(f"Z Points Per Debye Length: {dz_per_dl}")
         print(f"Particle Weight: {weight}")
         print(f"Plasma Frequency * dt = {pf * dt}")
+        print(f"Time window * Plasma Frequency = {world['Nt'] * dt * pf}")
         print(f"Particle Species Scaled Charge: {particle.get_charge()}")
         print(f"Particle Species Scaled Mass: {particle.get_mass()}")
 

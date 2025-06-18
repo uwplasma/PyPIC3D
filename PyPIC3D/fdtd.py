@@ -8,21 +8,13 @@ from PyPIC3D.boundaryconditions import apply_zero_boundary_condition
 
 def solve_poisson_sor(phi, rho, dx, dy, dz, eps, omega=1.5, tol=1e-6, max_iter=10000):
     """
-    Solve Poisson's equation using Successive Over-Relaxation (SOR) method.
-
-    Args:
-        phi (jax.numpy.ndarray): Initial guess for the potential.
-        rho (jax.numpy.ndarray): Charge density.
-        omega (float): Relaxation factor.
-        tol (float): Tolerance for convergence.
-        max_iter (int): Maximum number of iterations.
-
-    Returns:
-        jax.numpy.ndarray: Solution for the potential.
+    Solve Poisson's equation using SOR with periodic boundary conditions.
     """
     phi = jnp.array(phi)
     rho = jnp.array(rho)
-    b = dx * dy * dz / jnp.pi
+    b = dx * dy * dz
+
+    nx, ny, nz = phi.shape
 
     def cond_fun(val):
         _, norm_diff, iter_count = val
@@ -30,16 +22,17 @@ def solve_poisson_sor(phi, rho, dx, dy, dz, eps, omega=1.5, tol=1e-6, max_iter=1
 
     def body_fun(val):
         phi, _, iter_count = val
-        phi_old = phi.copy()
-        phi = phi.at[1:-1, 1:-1, 1:-1].set(
-            (1 - omega) * phi[1:-1, 1:-1, 1:-1] + omega / 6 * (
-                phi[:-2, 1:-1, 1:-1] + phi[2:, 1:-1, 1:-1] +
-                phi[1:-1, :-2, 1:-1] + phi[1:-1, 2:, 1:-1] +
-                phi[1:-1, 1:-1, :-2] + phi[1:-1, 1:-1, 2:] -
-                b * rho[1:-1, 1:-1, 1:-1] / eps
-            )
+        phi_old = phi
+
+        # roll for periodic BCs
+        phi_new = (1 - omega) * phi + omega / 6 * (
+            jnp.roll(phi, shift=1, axis=0) + jnp.roll(phi, shift=-1, axis=0) +
+            jnp.roll(phi, shift=1, axis=1) + jnp.roll(phi, shift=-1, axis=1) +
+            jnp.roll(phi, shift=1, axis=2) + jnp.roll(phi, shift=-1, axis=2) -
+            b * rho / eps
         )
-        return phi, jnp.linalg.norm(phi - phi_old), iter_count + 1
+
+        return phi_new, jnp.linalg.norm(phi_new - phi_old), iter_count + 1
 
     phi, _, _ = jax.lax.while_loop(cond_fun, body_fun, (phi, jnp.inf, 0))
 

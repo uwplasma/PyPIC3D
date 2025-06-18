@@ -186,7 +186,7 @@ def initialize_simulation(toml_file):
     # set the simulation parameters
 
     if 'ncores' in simulation_parameters:
-        os.environ["XLA_FLAGS"] = f'--xla_force_host_platform_device_count={simulation_parameters['ncores']}'
+        os.environ["XLA_FLAGS"] = f"--xla_force_host_platform_device_count={simulation_parameters['ncores']}"
     # set the number of cores to use
 
     setup_write_dir(simulation_parameters, plotting_parameters)
@@ -257,7 +257,7 @@ def initialize_simulation(toml_file):
         curl_func = functools.partial(centered_finite_difference_curl, dx=dx, dy=dy, dz=dz, bc=bc)
 
 
-    E, phi, rho = calculateE(world, particles, constants, rho, phi, solver, bc)
+    # E, phi, rho = calculateE(world, particles, constants, rho, phi, solver, bc)
     # calculate the electric field using the Poisson equation
 
     ######################### COMPUTE INITIAL ENERGY ########################################################
