@@ -236,6 +236,8 @@ def load_initial_positions(param, config, key, default, N_particles, ds, key1):
         key (str): The key in the configuration dictionary under which the parameter is stored.
         default (Any): The default value to return if the parameter is not found.
         N_particles (int): The number of particles, used to determine the size of the array.
+        ds (float): The spatial resolution, used to add noise to the particle positions.
+        key1 (jax.random.PRNGKey): The random key for generating random numbers.
 
     Returns:
         jax.numpy.ndarray or Any: An array of particle positions if the parameter is found,
