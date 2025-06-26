@@ -235,14 +235,21 @@ def initialize_simulation(toml_file):
     print_stats(world)
     # print the statistics of the simulation
 
-    plasma_parameters = build_plasma_parameters_dict(world, constants, particles[0], dt)
-    # build the plasma parameters dictionary
+    if particles:
+        plasma_parameters = build_plasma_parameters_dict(world, constants, particles[0], dt)
+        # build the plasma parameters dictionary
+    else:
+        plasma_parameters = {}
+        # if no particles are loaded, set plasma parameters to empty dictionary
 
     particle_sanity_check(particles)
     # ensure the arrays for the particles are of the correct shape
 
     E, B, J, phi, rho = initialize_fields(Nx, Ny, Nz)
     # initialize the electric and magnetic fields
+
+    E, phi, rho = calculateE(world, particles, constants, rho, phi, solver, bc)
+    # calculate the electric field using the Poisson equation
 
     # load any external fields
     fields = [component for field in [E, B, J] for component in field]
@@ -257,9 +264,6 @@ def initialize_simulation(toml_file):
     elif solver == "fdtd":
         curl_func = functools.partial(centered_finite_difference_curl, dx=dx, dy=dy, dz=dz, bc=bc)
 
-
-    E, phi, rho = calculateE(world, particles, constants, rho, phi, solver, bc)
-    # calculate the electric field using the Poisson equation
 
     ######################### COMPUTE INITIAL ENERGY ########################################################
     e_energy, b_energy, kinetic_energy = compute_energy(particles, E, B, world, constants)
