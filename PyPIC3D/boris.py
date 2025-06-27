@@ -233,15 +233,23 @@ def create_trilinear_interpolator(field, grid):
     """
     x_grid, y_grid, z_grid = grid
 
+    x_wind = x_grid[1] - x_grid[0]
+    y_wind = y_grid[1] - y_grid[0]
+    z_wind = z_grid[1] - z_grid[0]
+
+    dx = x_grid[1] - x_grid[0]
+    dy = y_grid[1] - y_grid[0]
+    dz = z_grid[1] - z_grid[0]
+
     @jit
     def interpolator(x, y, z):
-        x_idx = jnp.clip(jnp.searchsorted(x_grid, x) - 1, 0, len(x_grid) - 2)
-        y_idx = jnp.clip(jnp.searchsorted(y_grid, y) - 1, 0, len(y_grid) - 2)
-        z_idx = jnp.clip(jnp.searchsorted(z_grid, z) - 1, 0, len(z_grid) - 2)
+        x_idx = jnp.floor((x + x_wind / 2) / dx).astype(int)
+        y_idx = jnp.floor((y + y_wind / 2) / dy).astype(int)
+        z_idx = jnp.floor((z + z_wind / 2) / dz).astype(int)
 
-        x0, x1 = x_grid[x_idx], x_grid[x_idx + 1]
-        y0, y1 = y_grid[y_idx], y_grid[y_idx + 1]
-        z0, z1 = z_grid[z_idx], z_grid[z_idx + 1]
+        x0, x1 = x_grid[x_idx], x_grid[wrap_around(x_idx + 1, len(x_grid))]
+        y0, y1 = y_grid[y_idx], y_grid[wrap_around(y_idx + 1, len(y_grid))]
+        z0, z1 = z_grid[z_idx], z_grid[wrap_around(z_idx + 1, len(z_grid))]
 
         xd = (x - x0) / (x1 - x0)
         yd = (y - y0) / (y1 - y0)
@@ -309,3 +317,8 @@ def create_quadratic_interpolator(field, grid):
 
     vmap_interpolator = jax.vmap(interpolator, in_axes=(0, 0, 0), out_axes=0)
     return vmap_interpolator
+
+@jit
+def wrap_around(ix, size):
+    """Wrap around index (scalar or 1D array) to ensure it is within bounds."""
+    return jnp.where(ix > size - 1, ix - size, ix)
