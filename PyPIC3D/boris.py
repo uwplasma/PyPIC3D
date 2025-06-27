@@ -236,66 +236,94 @@ def create_trilinear_interpolator(field, grid):
     """
     x_grid, y_grid, z_grid = grid
 
+    x_wind = x_grid[1] - x_grid[0]
+    y_wind = y_grid[1] - y_grid[0]
+    z_wind = z_grid[1] - z_grid[0]
+
+    dx = x_grid[1] - x_grid[0]
+    dy = y_grid[1] - y_grid[0]
+    dz = z_grid[1] - z_grid[0]
+
     @jit
     def interpolator(x, y, z):
+
+        x_idx = jnp.floor((x + x_wind / 2) / dx).astype(int)
+        y_idx = jnp.floor((y + y_wind / 2) / dy).astype(int)
+        z_idx = jnp.floor((z + z_wind / 2) / dz).astype(int)
+
+        x0, x1 = x_grid[x_idx], x_grid[wrap_around(x_idx + 1, len(x_grid))]
+        y0, y1 = y_grid[y_idx], y_grid[wrap_around(y_idx + 1, len(y_grid))]
+        z0, z1 = z_grid[z_idx], z_grid[wrap_around(z_idx + 1, len(z_grid))]
+    
+
+
         # Handle quasi-1D/2D cases
         if len(x_grid) == 1:
             x_idx = 0
             xd = 0.0
         else:
-            x_idx = jnp.clip(jnp.searchsorted(x_grid, x) - 1, 0, len(x_grid) - 2)
-            x0, x1 = x_grid[x_idx], x_grid[x_idx + 1]
+            x_idx = jnp.floor((x + x_wind / 2) / dx).astype(int)
+            x0, x1 = x_grid[x_idx], x_grid[wrap_around(x_idx + 1, len(x_grid))]
             xd = (x - x0) / (x1 - x0)
         if len(y_grid) == 1:
             y_idx = 0
             yd = 0.0
         else:
-            y_idx = jnp.clip(jnp.searchsorted(y_grid, y) - 1, 0, len(y_grid) - 2)
-            y0, y1 = y_grid[y_idx], y_grid[y_idx + 1]
+            y_idx = jnp.floor((y + y_wind / 2) / dy).astype(int)
+            y0, y1 = y_grid[y_idx], y_grid[wrap_around(y_idx + 1, len(y_grid))]
             yd = (y - y0) / (y1 - y0)
         if len(z_grid) == 1:
             z_idx = 0
             zd = 0.0
         else:
-            z_idx = jnp.clip(jnp.searchsorted(z_grid, z) - 1, 0, len(z_grid) - 2)
-            z0, z1 = z_grid[z_idx], z_grid[z_idx + 1]
+            z_idx = jnp.floor((z + z_wind / 2) / dz).astype(int)
+            z0, z1 = z_grid[z_idx], z_grid[wrap_around(z_idx + 1, len(z_grid))]
             zd = (z - z0) / (z1 - z0)
 
-
-        if len(x_grid) == 1 and len(y_grid) == 1 and len(z_grid) == 1:
-            return field[0, 0, 0]
-        elif len(x_grid) == 1 and len(y_grid) == 1:
-            c0 = field[0, 0, z_idx]
-            c1 = field[0, 0, z_idx + 1]
-            return c0 * (1 - zd) + c1 * zd
-        elif len(x_grid) == 1 and len(z_grid) == 1:
-            c0 = field[0, y_idx, 0]
-            c1 = field[0, y_idx + 1, 0]
-            return c0 * (1 - yd) + c1 * yd
-        elif len(y_grid) == 1 and len(z_grid) == 1:
-            c0 = field[x_idx, 0, 0]
-            c1 = field[x_idx + 1, 0, 0]
-            return c0 * (1 - xd) + c1 * xd
-        elif len(x_grid) == 1:
-            c00 = field[0, y_idx, z_idx] * (1 - yd) + field[0, y_idx + 1, z_idx] * yd
-            c01 = field[0, y_idx, z_idx + 1] * (1 - yd) + field[0, y_idx + 1, z_idx + 1] * yd
-            return c00 * (1 - zd) + c01 * zd
-        elif len(y_grid) == 1:
-            c00 = field[x_idx, 0, z_idx] * (1 - xd) + field[x_idx + 1, 0, z_idx] * xd
-            c01 = field[x_idx, 0, z_idx + 1] * (1 - xd) + field[x_idx + 1, 0, z_idx + 1] * xd
-            return c00 * (1 - zd) + c01 * zd
-        elif len(z_grid) == 1:
-            c00 = field[x_idx, y_idx, 0] * (1 - xd) + field[x_idx + 1, y_idx, 0] * xd
-            c10 = field[x_idx, y_idx + 1, 0] * (1 - xd) + field[x_idx + 1, y_idx + 1, 0] * xd
-            return c00 * (1 - yd) + c10 * yd
-        else:
-            c00 = field[x_idx, y_idx, z_idx] * (1 - xd) + field[x_idx + 1, y_idx, z_idx] * xd
-            c01 = field[x_idx, y_idx, z_idx + 1] * (1 - xd) + field[x_idx + 1, y_idx, z_idx + 1] * xd
-            c10 = field[x_idx, y_idx + 1, z_idx] * (1 - xd) + field[x_idx + 1, y_idx + 1, z_idx] * xd
-            c11 = field[x_idx, y_idx + 1, z_idx + 1] * (1 - xd) + field[x_idx + 1, y_idx + 1, z_idx + 1] * xd
-            c0 = c00 * (1 - yd) + c10 * yd
-            c1 = c01 * (1 - yd) + c11 * yd
-            return c0 * (1 - zd) + c1 * zd
+            if len(x_grid) == 1 and len(y_grid) == 1 and len(z_grid) == 1:
+                return field[0, 0, 0]
+            elif len(x_grid) == 1 and len(y_grid) == 1:
+                c0 = field[0, 0, wrap_around(z_idx, field.shape[2])]
+                c1 = field[0, 0, wrap_around(z_idx + 1, field.shape[2])]
+                return c0 * (1 - zd) + c1 * zd
+            elif len(x_grid) == 1 and len(z_grid) == 1:
+                c0 = field[0, wrap_around(y_idx, field.shape[1]), 0]
+                c1 = field[0, wrap_around(y_idx + 1, field.shape[1]), 0]
+                return c0 * (1 - yd) + c1 * yd
+            elif len(y_grid) == 1 and len(z_grid) == 1:
+                c0 = field[wrap_around(x_idx, field.shape[0]), 0, 0]
+                c1 = field[wrap_around(x_idx + 1, field.shape[0]), 0, 0]
+                return c0 * (1 - xd) + c1 * xd
+            elif len(x_grid) == 1:
+                c00 = field[0, wrap_around(y_idx, field.shape[1]), wrap_around(z_idx, field.shape[2])] * (1 - yd) + \
+                  field[0, wrap_around(y_idx + 1, field.shape[1]), wrap_around(z_idx, field.shape[2])] * yd
+                c01 = field[0, wrap_around(y_idx, field.shape[1]), wrap_around(z_idx + 1, field.shape[2])] * (1 - yd) + \
+                  field[0, wrap_around(y_idx + 1, field.shape[1]), wrap_around(z_idx + 1, field.shape[2])] * yd
+                return c00 * (1 - zd) + c01 * zd
+            elif len(y_grid) == 1:
+                c00 = field[wrap_around(x_idx, field.shape[0]), 0, wrap_around(z_idx, field.shape[2])] * (1 - xd) + \
+                  field[wrap_around(x_idx + 1, field.shape[0]), 0, wrap_around(z_idx, field.shape[2])] * xd
+                c01 = field[wrap_around(x_idx, field.shape[0]), 0, wrap_around(z_idx + 1, field.shape[2])] * (1 - xd) + \
+                  field[wrap_around(x_idx + 1, field.shape[0]), 0, wrap_around(z_idx + 1, field.shape[2])] * xd
+                return c00 * (1 - zd) + c01 * zd
+            elif len(z_grid) == 1:
+                c00 = field[wrap_around(x_idx, field.shape[0]), wrap_around(y_idx, field.shape[1]), 0] * (1 - xd) + \
+                  field[wrap_around(x_idx + 1, field.shape[0]), wrap_around(y_idx, field.shape[1]), 0] * xd
+                c10 = field[wrap_around(x_idx, field.shape[0]), wrap_around(y_idx + 1, field.shape[1]), 0] * (1 - xd) + \
+                  field[wrap_around(x_idx + 1, field.shape[0]), wrap_around(y_idx + 1, field.shape[1]), 0] * xd
+                return c00 * (1 - yd) + c10 * yd
+            else:
+                c00 = field[wrap_around(x_idx, field.shape[0]), wrap_around(y_idx, field.shape[1]), wrap_around(z_idx, field.shape[2])] * (1 - xd) + \
+                  field[wrap_around(x_idx + 1, field.shape[0]), wrap_around(y_idx, field.shape[1]), wrap_around(z_idx, field.shape[2])] * xd
+                c01 = field[wrap_around(x_idx, field.shape[0]), wrap_around(y_idx, field.shape[1]), wrap_around(z_idx + 1, field.shape[2])] * (1 - xd) + \
+                  field[wrap_around(x_idx + 1, field.shape[0]), wrap_around(y_idx, field.shape[1]), wrap_around(z_idx + 1, field.shape[2])] * xd
+                c10 = field[wrap_around(x_idx, field.shape[0]), wrap_around(y_idx + 1, field.shape[1]), wrap_around(z_idx, field.shape[2])] * (1 - xd) + \
+                  field[wrap_around(x_idx + 1, field.shape[0]), wrap_around(y_idx + 1, field.shape[1]), wrap_around(z_idx, field.shape[2])] * xd
+                c11 = field[wrap_around(x_idx, field.shape[0]), wrap_around(y_idx + 1, field.shape[1]), wrap_around(z_idx + 1, field.shape[2])] * (1 - xd) + \
+                  field[wrap_around(x_idx + 1, field.shape[0]), wrap_around(y_idx + 1, field.shape[1]), wrap_around(z_idx + 1, field.shape[2])] * xd
+                c0 = c00 * (1 - yd) + c10 * yd
+                c1 = c01 * (1 - yd) + c11 * yd
+                return c0 * (1 - zd) + c1 * zd
 
     vmap_interpolator = jax.vmap(interpolator, in_axes=(0, 0, 0), out_axes=0)
     return vmap_interpolator
@@ -367,3 +395,9 @@ def create_quadratic_interpolator(field, grid):
 
     vmap_interpolator = jax.vmap(interpolator, in_axes=(0, 0, 0), out_axes=0)
     return vmap_interpolator
+
+
+@jit
+def wrap_around(ix, size):
+    """Wrap around index (scalar or 1D array) to ensure it is within bounds."""
+    return jnp.where(ix > size - 1, ix - size, ix)
