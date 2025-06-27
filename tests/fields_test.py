@@ -11,7 +11,7 @@ from PyPIC3D.fields import initialize_fields, solve_poisson, calculateE, update_
 from PyPIC3D.utils import build_yee_grid
 
 from PyPIC3D.pstd import spectral_gradient
-from PyPIC3D.fdtd import centered_finite_difference_gradient
+from PyPIC3D.fdtd import centered_finite_difference_gradient, centered_finite_difference_curl
 
 jax.config.update("jax_enable_x64", True)
 
@@ -150,23 +150,136 @@ class TestFieldsMethods(unittest.TestCase):
         # Ensure the computed E field matches the analytical solution
 
     def test_update_E(self):
-        E = (self.Ex, self.Ey, self.Ez)
-        B = (self.Bx, self.By, self.Bz)
-        J = (self.Jx, self.Jy, self.Jz)
-        Ex, Ey, Ez = update_E(E, B, J, self.world, self.constants, lambda x, y, z: (x, y, z))
-        # Update the electric field using the update_E function
-        self.assertEqual(Ex.shape, (100, 100, 100))
-        self.assertEqual(Ey.shape, (100, 100, 100))
-        self.assertEqual(Ez.shape, (100, 100, 100))
+        """Test update_E against analytical electromagnetic wave solution"""
+        # Create analytical electromagnetic wave solution
+        # Use a simple plane wave: E = E0 * sin(kz - ωt), B = (E0/c) * sin(kz - ωt)
+        # Propagating in z-direction, E in x-direction, B in y-direction
+
+        dx, dy, dz = self.world['dx'], self.world['dy'], self.world['dz']
+        dt = self.world['dt']
+        c = self.constants['C']
+        eps = self.constants['eps']
+
+        # Wave parameters
+        wavelength = 4 * dz * 32  # 4 wavelengths across domain
+        k = 2 * jnp.pi / wavelength  # wavenumber
+        omega = k * c  # frequency (dispersion relation)
+        E0 = 1.0  # amplitude
+
+        # Current time step (t=0)
+        t = 0.0
+
+        # Create wave fields at t=0
+        kz_phase = k * self.Z
+        Ex_initial = E0 * jnp.sin(kz_phase - omega * t)
+        Ey_initial = jnp.zeros_like(Ex_initial)
+        Ez_initial = jnp.zeros_like(Ex_initial)
+
+        By_initial = (E0 / c) * jnp.sin(kz_phase - omega * t)
+        Bx_initial = jnp.zeros_like(By_initial)
+        Bz_initial = jnp.zeros_like(By_initial)
+
+        # Zero current density
+        Jx = jnp.zeros_like(Ex_initial)
+        Jy = jnp.zeros_like(Ex_initial)
+        Jz = jnp.zeros_like(Ex_initial)
+
+        # Analytical solution at t + dt
+        Ex_analytical = E0 * jnp.sin(kz_phase - omega * (t + dt))
+        Ey_analytical = jnp.zeros_like(Ex_analytical)
+        Ez_analytical = jnp.zeros_like(Ex_analytical)
+
+        # Use curl function
+        curl_func = lambda Bx, By, Bz: centered_finite_difference_curl(Bx, By, Bz, dx, dy, dz, 'periodic')
+
+        # Test update_E
+        E_initial = (Ex_initial, Ey_initial, Ez_initial)
+        B_initial = (Bx_initial, By_initial, Bz_initial)
+        J = (Jx, Jy, Jz)
+
+        Ex_computed, Ey_computed, Ez_computed = update_E(E_initial, B_initial, J, self.world, self.constants, curl_func)
+
+        # Check shapes
+        self.assertEqual(Ex_computed.shape, (100, 100, 100))
+        self.assertEqual(Ey_computed.shape, (100, 100, 100))
+        self.assertEqual(Ez_computed.shape, (100, 100, 100))
+
+        # Compare with analytical solution (interior points to avoid boundary effects)
+        interior = (slice(4, 28), slice(4, 28), slice(4, 28))
+
+        Ex_error = jnp.max(jnp.abs(Ex_computed[interior] - Ex_analytical[interior]))
+        Ey_error = jnp.max(jnp.abs(Ey_computed[interior] - Ey_analytical[interior]))
+        Ez_error = jnp.max(jnp.abs(Ez_computed[interior] - Ez_analytical[interior]))
+
+        # For a plane wave, Ey and Ez should remain zero
+        self.assertLess(Ey_error, 1e-10, "Ey should remain zero for plane wave")
+        self.assertLess(Ez_error, 1e-10, "Ez should remain zero for plane wave")
+
+        # Ex should evolve correctly (tolerance accounts for discretization)
+        relative_error = Ex_error / E0
+        print(f"  Relative Ex error: {relative_error:.6f}")
+        self.assertLess(relative_error, 1e-2, "Ex evolution should match analytical solution within 10%")
 
     def test_update_B(self):
-        E = (self.Ex, self.Ey, self.Ez)
-        B = (self.Bx, self.By, self.Bz)
-        Bx, By, Bz = update_B(E, B, self.world, self.constants, lambda x, y, z: (x, y, z))
-        # Update the magnetic field using the update_B function
-        self.assertEqual(Bx.shape, (100, 100, 100))
-        self.assertEqual(By.shape, (100, 100, 100))
-        self.assertEqual(Bz.shape, (100, 100, 100))
+        """Test update_B against analytical electromagnetic wave solution"""
+
+        dx, dy, dz = self.world['dx'], self.world['dy'], self.world['dz']
+        dt = self.world['dt']
+        c = self.constants['C']
+
+        # Wave parameters (same as test_update_E)
+        wavelength = 4 * dz * 32
+        k = 2 * jnp.pi / wavelength
+        omega = k * c
+        E0 = 1.0
+
+        # Current time step (t=0)
+        t = 0.0
+
+        # Create wave fields at t=0
+        kz_phase = k * self.Z
+        Ex_initial = E0 * jnp.sin(kz_phase - omega * t)
+        Ey_initial = jnp.zeros_like(Ex_initial)
+        Ez_initial = jnp.zeros_like(Ex_initial)
+
+        By_initial = (E0 / c) * jnp.sin(kz_phase - omega * t)
+        Bx_initial = jnp.zeros_like(By_initial)
+        Bz_initial = jnp.zeros_like(By_initial)
+
+        # Analytical solution at t + dt
+        By_analytical = (E0 / c) * jnp.sin(kz_phase - omega * (t + dt))
+        Bx_analytical = jnp.zeros_like(By_analytical)
+        Bz_analytical = jnp.zeros_like(By_analytical)
+
+        # Use curl function
+        curl_func = lambda Ex, Ey, Ez: centered_finite_difference_curl(Ex, Ey, Ez, dx, dy, dz, 'periodic')
+
+        # Test update_B
+        E_initial = (Ex_initial, Ey_initial, Ez_initial)
+        B_initial = (Bx_initial, By_initial, Bz_initial)
+
+        Bx_computed, By_computed, Bz_computed = update_B(E_initial, B_initial, self.world, self.constants, curl_func)
+
+        # Check shapes
+        self.assertEqual(Bx_computed.shape, (100, 100, 100))
+        self.assertEqual(By_computed.shape, (100, 100, 100))
+        self.assertEqual(Bz_computed.shape, (100, 100, 100))
+
+        # Compare with analytical solution (interior points)
+        interior = (slice(4, 28), slice(4, 28), slice(4, 28))
+
+        Bx_error = jnp.max(jnp.abs(Bx_computed[interior] - Bx_analytical[interior]))
+        By_error = jnp.max(jnp.abs(By_computed[interior] - By_analytical[interior]))
+        Bz_error = jnp.max(jnp.abs(Bz_computed[interior] - Bz_analytical[interior]))
+
+        # For a plane wave, Bx and Bz should remain zero
+        self.assertLess(Bx_error, 1e-10, "Bx should remain zero for plane wave")
+        self.assertLess(Bz_error, 1e-10, "Bz should remain zero for plane wave")
+
+        # By should evolve correctly
+        B0 = E0 / c
+        relative_error = By_error / B0
+        self.assertLess(relative_error, 1e-2, "By evolution should match analytical solution within 10%")
 
 if __name__ == '__main__':
     unittest.main()
