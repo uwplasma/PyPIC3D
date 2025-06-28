@@ -434,7 +434,7 @@ def load_external_fields_from_toml(fields, config):
 
         external_field = jnp.load(field_path)
 
-        fields[field_type] = fields[field_type] + external_field
+        fields[field_type] += external_field
         print(f"Field loaded successfully: {field_name}")
 
     return fields

@@ -40,10 +40,6 @@ class TestFDTDMethods(unittest.TestCase):
         expected_grady = 2 * jnp.pi * jnp.cos(2 * jnp.pi * self.Y)
         expected_gradz = 2 * jnp.pi * jnp.cos(2 * jnp.pi * self.Z)
         gradx, grady, gradz = centered_finite_difference_gradient(phi, self.dx, self.dy, self.dz, self.bc)
-
-        print("gradx error (max):", jnp.max(jnp.abs(gradx[self.slicer] - expected_gradx[self.slicer])))
-        print("grady error (max):", jnp.max(jnp.abs(grady[self.slicer] - expected_grady[self.slicer])))
-        print("gradz error (max):", jnp.max(jnp.abs(gradz[self.slicer] - expected_gradz[self.slicer])))
         self.assertEqual(gradx.shape, (self.Nx, self.Ny, self.Nz))
         self.assertEqual(grady.shape, (self.Nx, self.Ny, self.Nz))
         self.assertEqual(gradz.shape, (self.Nx, self.Ny, self.Nz))
