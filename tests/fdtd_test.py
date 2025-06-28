@@ -11,14 +11,14 @@ jax.config.update("jax_enable_x64", True)
 
 class TestFDTDMethods(unittest.TestCase):
     def setUp(self):
-        x = jnp.linspace(0, 1, 10)
-        y = jnp.linspace(0, 1, 10)
-        z = jnp.linspace(0, 1, 10)
+        x = jnp.linspace(0, 1, 120)
+        y = jnp.linspace(0, 1, 120)
+        z = jnp.linspace(0, 1, 120)
         self.X, self.Y, self.Z = jnp.meshgrid(x, y, z, indexing='ij')
-        self.Nx, self.Ny, self.Nz = 10, 10, 10
-        self.dx = 1.0/9
-        self.dy = 1.0/9
-        self.dz = 1.0/9
+        self.Nx, self.Ny, self.Nz = 120, 120, 120
+        self.dx = 1.0/119
+        self.dy = 1.0/119
+        self.dz = 1.0/119
         self.bc = 'periodic'
         self.slicer = (slice(1, -1), slice(1, -1), slice(1, -1))
 
@@ -32,11 +32,13 @@ class TestFDTDMethods(unittest.TestCase):
         self.assertTrue(jnp.allclose(laplacian[self.slicer], expected[self.slicer], rtol=1e-2, atol=1e-2))
 
     def test_centered_finite_difference_gradient(self):
-        # Scalar field: phi = X**2 + Y**2 + Z**2, grad = (2X, 2Y, 2Z)
-        phi = self.X**2 + self.Y**2 + self.Z**2
-        expected_gradx = 2 * self.X
-        expected_grady = 2 * self.Y
-        expected_gradz = 2 * self.Z
+        # Scalar field: phi = sin(2 * pi * X) + sin(2 * pi * Y) + sin(2 * pi * Z)
+        # Gradient: grad(phi) = (2 * pi * cos(2 * pi * X), 2 * pi * cos(2 * pi * Y), 2 * pi * cos(2 * pi * Z))
+        # Expected values at interior points
+        phi = jnp.sin(2 * jnp.pi * self.X) + jnp.sin(2 * jnp.pi * self.Y) + jnp.sin(2 * jnp.pi * self.Z)
+        expected_gradx = 2 * jnp.pi * jnp.cos(2 * jnp.pi * self.X)
+        expected_grady = 2 * jnp.pi * jnp.cos(2 * jnp.pi * self.Y)
+        expected_gradz = 2 * jnp.pi * jnp.cos(2 * jnp.pi * self.Z)
         gradx, grady, gradz = centered_finite_difference_gradient(phi, self.dx, self.dy, self.dz, self.bc)
         self.assertEqual(gradx.shape, (self.Nx, self.Ny, self.Nz))
         self.assertEqual(grady.shape, (self.Nx, self.Ny, self.Nz))
@@ -70,9 +72,9 @@ class TestFDTDMethods(unittest.TestCase):
         self.assertEqual(curly.shape, (self.Nx, self.Ny, self.Nz))
         self.assertEqual(curlz.shape, (self.Nx, self.Ny, self.Nz))
         self.assertEqual(curlx.dtype, Fx.dtype)
-        self.assertTrue(jnp.allclose(curlx[self.slicer], expected_curlx[self.slicer], rtol=1e-2, atol=1e-2))
-        self.assertTrue(jnp.allclose(curly[self.slicer], expected_curly[self.slicer], rtol=1e-2, atol=1e-2))
-        self.assertTrue(jnp.allclose(curlz[self.slicer], expected_curlz[self.slicer], rtol=1e-2, atol=1e-2))
+        self.assertTrue(jnp.allclose(curlx[self.slicer], expected_curlx[self.slicer], rtol=1e-4, atol=1e-4))
+        self.assertTrue(jnp.allclose(curly[self.slicer], expected_curly[self.slicer], rtol=1e-4, atol=1e-4))
+        self.assertTrue(jnp.allclose(curlz[self.slicer], expected_curlz[self.slicer], rtol=1e-4, atol=1e-4))
 
 if __name__ == '__main__':
     unittest.main()
