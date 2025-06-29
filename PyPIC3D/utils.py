@@ -9,11 +9,65 @@ import functools
 from functools import partial
 import toml
 import os
-#import pandas as pd
 from jax.tree_util import tree_map
 from datetime import datetime
 import importlib.metadata
+from scipy import stats
 # import external libraries
+
+def mse(x, y):
+    """
+    Compute the mean squared error (MSE) between two arrays.
+
+    Parameters
+    ----------
+    x : array-like
+        The first input array.
+    y : array-like
+        The second input array, must be broadcastable to the shape of `x`.
+
+    Returns
+    -------
+    float
+        The mean squared error between `x` and `y`.
+    """
+    return jnp.mean( (x-y)**2 )
+
+
+def convergence_test(func):
+    """
+    Computes the order of convergence for a numerical method by measuring the error at increasing grid resolutions.
+
+    Args:
+        func (callable): A function that takes an integer `nx` (number of grid points) as input and returns a tuple `(error, dx)`,
+                         where `error` is the error at that resolution and `dx` is the grid spacing.
+
+    Returns:
+        float: The absolute value of the slope from a linear regression of log(error) vs. log(dx), representing the order of convergence.
+    """
+
+    nxs = [10*i + 30 for i in range(20)]
+    # build list of different number of grid points
+
+    errors = []
+    dxs    = []
+    # initialize the error and resolution lists
+
+    for nx in nxs:
+        error, dx = func(nx)
+        errors.append( error )
+        dxs.append( dx )
+    # measure the error for increasing resolutions
+
+    dxs = jnp.asarray(dxs)
+    errors = jnp.asarray(errors)
+    # convert the result lists to ndarrays
+
+    res = stats.linregress( jnp.log(dxs), jnp.log(errors) )
+    slope = jnp.abs( res.slope )
+    # compute the order of the convergence using a line fit of the log(y)/log(x)
+
+    return slope
 
 def compute_energy(particles, E, B, world, constants):
     """
