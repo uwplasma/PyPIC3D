@@ -15,24 +15,6 @@ from PyPIC3D.utils import (
     convergence_test, mse
 )
 
-# def mse(x, y):
-#     """
-#     Compute the mean squared error (MSE) between two arrays.
-
-#     Parameters
-#     ----------
-#     x : array-like
-#         The first input array.
-#     y : array-like
-#         The second input array, must be broadcastable to the shape of `x`.
-
-#     Returns
-#     -------
-#     float
-#         The mean squared error between `x` and `y`.
-#     """
-#     return jnp.mean( (x-y)**2 )
-
 def fdtd_laplacian_comparison(nx):
     """
     Computes the mean squared error between the numerical and analytical Laplacian of a test function
@@ -136,7 +118,7 @@ def fdtd_gradient_comparison(nx):
     x_error = mse(gradx, expected_gradx)
     y_error = mse(grady, expected_grady)
     z_error = mse(gradz, expected_gradz)
-    error = x_error + y_error + z_error
+    error = (x_error + y_error + z_error) / 3
     # compute the mean squared error of the gradient function
 
     return error, dx
@@ -241,7 +223,7 @@ def fdtd_curl_comparison(nx):
     error_x = mse(curlx, expected_curlx)
     error_y = mse(curly, expected_curly)
     error_z = mse(curlz, expected_curlz)
-    error = error_x + error_y + error_z + error_z
+    error = (error_x + error_y + error_z) / 3
     # compute the error in the numerical curl
 
     return error, dx
@@ -347,7 +329,7 @@ def pstd_gradient_comparison(nx):
     error_x = mse( gradx, expected_gradx )
     error_y = mse( grady, expected_grady )
     error_z = mse( gradz, expected_gradz )
-    error = error_x + error_y + error_z
+    error = (error_x + error_y + error_z)/3
     # compute the mean squared error of the gradient against the analytical solution
 
     return error, dx
@@ -451,46 +433,10 @@ def pstd_curl_comparison(nx):
     error_x = mse( curlx, expected_curlx )
     error_y = mse( curly, expected_curly )
     error_z = mse( curlz, expected_curlz )
-    error = error_x + error_y + error_z
+    error = (error_x + error_y + error_z) / 3
     # compute the mean squared error of the curl against the analytical solution
 
     return error, dx
-
-
-# def convergence_test(func):
-#     """
-#     Computes the order of convergence for a numerical method by measuring the error at increasing grid resolutions.
-
-#     Args:
-#         func (callable): A function that takes an integer `nx` (number of grid points) as input and returns a tuple `(error, dx)`,
-#                          where `error` is the error at that resolution and `dx` is the grid spacing.
-
-#     Returns:
-#         float: The absolute value of the slope from a linear regression of log(error) vs. log(dx), representing the order of convergence.
-#     """
-
-#     nxs = [10*i + 30 for i in range(20)]
-#     # build list of different number of grid points
-
-#     errors = []
-#     dxs    = []
-#     # initialize the error and resolution lists
-
-#     for nx in nxs:
-#         error, dx = func(nx)
-#         errors.append( error )
-#         dxs.append( dx )
-#     # measure the error for increasing resolutions
-
-#     dxs = jnp.asarray(dxs)
-#     errors = jnp.asarray(errors)
-#     # convert the result lists to ndarrays
-
-#     res = stats.linregress( jnp.log(dxs), jnp.log(errors) )
-#     slope = jnp.abs( res.slope )
-#     # compute the order of the convergence using a line fit of the log(y)/log(x)
-
-#     return slope
 
 
 if __name__ == "__main__":
@@ -539,9 +485,9 @@ if __name__ == "__main__":
 
     ################### LAPLACIAN CONVERGENCE TEST #############################
     slope = convergence_test(pstd_laplacian_comparison)
-    print(f"\nExpected Order of Laplacian Method: 2")
+    print(f"\nExpected Order of Laplacian Method: 3")
     print(f"Calculated Order of Laplacian Method: {slope}")
-    print(f"Error in Order: {jnp.abs( 100 * (slope - 2) / 2 )} %")
+    print(f"Error in Order: {jnp.abs( 100 * (slope - 3) / 3 )} %")
     ############################################################################
 
     ################## GRADIENT CONVERGENCE TEST ###############################
