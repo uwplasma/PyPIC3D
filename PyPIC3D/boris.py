@@ -4,23 +4,21 @@ import jax.numpy as jnp
 
 
 @jit
-def particle_push(particles, E, B, grid, staggered_grid, dt, constants):
+def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic=True):
     """
     Updates the velocities of particles using the Boris algorithm.
 
     Args:
         particles (Particles): The particles to be updated.
-        Ex (array-like): Electric field component in the x-direction.
-        Ey (array-like): Electric field component in the y-direction.
-        Ez (array-like): Electric field component in the z-direction.
-        Bx (array-like): Magnetic field component in the x-direction.
-        By (array-like): Magnetic field component in the y-direction.
-        Bz (array-like): Magnetic field component in the z-direction.
+        E (tuple): Electric field components (Ex, Ey, Ez).
+        B (tuple): Magnetic field components (Bx, By, Bz).
         grid (Grid): The grid on which the fields are defined.
         staggered_grid (Grid): The staggered grid for field interpolation.
         dt (float): The time step for the update.
         constants (dict): Dictionary containing physical constants. Must include:
             - 'C': Speed of light in vacuum (m/s).
+        periodic (tuple): A tuple of three booleans indicating whether each dimension is periodic.
+                         Default is (True, True, True) for fully periodic domains.
 
     Returns:
         Particles: The particles with updated velocities.
@@ -66,19 +64,19 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants):
     # calculate the electric field at the particle positions using their specific grids
     efield_atx = jax.lax.cond(
         shape_factor == 1,
-        lambda _: create_trilinear_interpolator(Ex, Ex_grid)(x, y, z),
+        lambda _: create_trilinear_interpolator(Ex, Ex_grid, periodic)(x, y, z),
         lambda _: create_quadratic_interpolator(Ex, Ex_grid)(x, y, z),
         operand=None
     )
     efield_aty = jax.lax.cond(
         shape_factor == 1,
-        lambda _: create_trilinear_interpolator(Ey, Ey_grid)(x, y, z),
+        lambda _: create_trilinear_interpolator(Ey, Ey_grid, periodic)(x, y, z),
         lambda _: create_quadratic_interpolator(Ey, Ey_grid)(x, y, z),
         operand=None
     )
     efield_atz = jax.lax.cond(
         shape_factor == 1,
-        lambda _: create_trilinear_interpolator(Ez, Ez_grid)(x, y, z),
+        lambda _: create_trilinear_interpolator(Ez, Ez_grid, periodic)(x, y, z),
         lambda _: create_quadratic_interpolator(Ez, Ez_grid)(x, y, z),
         operand=None
     )
@@ -87,19 +85,19 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants):
     # calculate the magnetic field at the particle positions using their specific staggered grids
     bfield_atx = jax.lax.cond(
         shape_factor == 1,
-        lambda _: create_trilinear_interpolator(Bx, Bx_grid)(x, y, z),
+        lambda _: create_trilinear_interpolator(Bx, Bx_grid, periodic)(x, y, z),
         lambda _: create_quadratic_interpolator(Bx, Bx_grid)(x, y, z),
         operand=None
     )
     bfield_aty = jax.lax.cond(
         shape_factor == 1,
-        lambda _: create_trilinear_interpolator(By, By_grid)(x, y, z),
+        lambda _: create_trilinear_interpolator(By, By_grid, periodic)(x, y, z),
         lambda _: create_quadratic_interpolator(By, By_grid)(x, y, z),
         operand=None
     )
     bfield_atz = jax.lax.cond(
         shape_factor == 1,
-        lambda _: create_trilinear_interpolator(Bz, Bz_grid)(x, y, z),
+        lambda _: create_trilinear_interpolator(Bz, Bz_grid, periodic)(x, y, z),
         lambda _: create_quadratic_interpolator(Bz, Bz_grid)(x, y, z),
         operand=None
     )
@@ -220,49 +218,113 @@ def relativistic_boris_single_particle(vx, vy, vz, efield_atx, efield_aty, efiel
     return newv[0] / new_gamma, newv[1] / new_gamma, newv[2] / new_gamma
 
 
-def create_trilinear_interpolator(field, grid):
+def create_trilinear_interpolator(field, grid, periodic=True):
     """
     Create a trilinear interpolation function for a given 3D field and grid.
 
     Args:
         field (ndarray): The 3D field to interpolate.
         grid (tuple): A tuple of three arrays representing the grid points in the x, y, and z directions.
+        periodic (tuple): A tuple of three booleans indicating whether each dimension is periodic.
+                         Default is (True, True, True) for fully periodic domains.
 
     Returns:
         function: A function that takes (x, y, z) coordinates and returns the interpolated values.
     """
     x_grid, y_grid, z_grid = grid
 
+    dx = x_grid[1] - x_grid[0]
+    dy = y_grid[1] - y_grid[0]
+    dz = z_grid[1] - z_grid[0]
+    # calculate the grid spacing in each direction
+
+    x_min, x_max = x_grid[0], x_grid[-1]
+    y_min, y_max = y_grid[0], y_grid[-1]
+    z_min, z_max = z_grid[0], z_grid[-1]
+    # get grid bounds
+
+    # For periodic domains, the domain width is the span without the last point
+    # since the last point is equivalent to the first point
+    x_width = x_max - x_min if periodic else x_max - x_min
+    y_width = y_max - y_min if periodic else y_max - y_min
+    z_width = z_max - z_min if periodic else z_max - z_min
+
+    Nx = len(x_grid)
+    Ny = len(y_grid)
+    Nz = len(z_grid)
+    # get the number of grid points in each direction
+
     @jit
     def interpolator(x, y, z):
-        x_idx = jnp.clip(jnp.searchsorted(x_grid, x) - 1, 0, len(x_grid) - 2)
-        y_idx = jnp.clip(jnp.searchsorted(y_grid, y) - 1, 0, len(y_grid) - 2)
-        z_idx = jnp.clip(jnp.searchsorted(z_grid, z) - 1, 0, len(z_grid) - 2)
+        # Handle periodic boundaries by wrapping coordinates
+        if periodic:
+            x = x_min + jnp.mod(x - x_min, x_width)
+            y = y_min + jnp.mod(y - y_min, y_width)
+            z = z_min + jnp.mod(z - z_min, z_width)
 
-        x0, x1 = x_grid[x_idx], x_grid[x_idx + 1]
-        y0, y1 = y_grid[y_idx], y_grid[y_idx + 1]
-        z0, z1 = z_grid[z_idx], z_grid[z_idx + 1]
+        # Convert coordinates to grid indices (fractional)
+        xi = (x - x_min) / dx
+        yi = (y - y_min) / dy
+        zi = (z - z_min) / dz
 
-        xd = (x - x0) / (x1 - x0)
-        yd = (y - y0) / (y1 - y0)
-        zd = (z - z0) / (z1 - z0)
+        # Find the lower-left-bottom corner indices
+        x0 = jnp.floor(xi).astype(int)
+        y0 = jnp.floor(yi).astype(int)
+        z0 = jnp.floor(zi).astype(int)
 
-        c00 = field[x_idx, y_idx, z_idx] * (1 - xd) + field[x_idx + 1, y_idx, z_idx] * xd
-        c01 = field[x_idx, y_idx, z_idx + 1] * (1 - xd) + field[x_idx + 1, y_idx, z_idx + 1] * xd
-        c10 = field[x_idx, y_idx + 1, z_idx] * (1 - xd) + field[x_idx + 1, y_idx + 1, z_idx] * xd
-        c11 = field[x_idx, y_idx + 1, z_idx + 1] * (1 - xd) + field[x_idx + 1, y_idx + 1, z_idx + 1] * xd
+        # Handle boundary conditions
+        if periodic:
+            x0 = jnp.mod(x0, Nx)
+            y0 = jnp.mod(y0, Ny)
+            z0 = jnp.mod(z0, Nz)
+        else:
+            x0 = jnp.clip(x0, 0, Nx - 2)
+            y0 = jnp.clip(y0, 0, Ny - 2)
+            z0 = jnp.clip(z0, 0, Nz - 2)
 
-        c0 = c00 * (1 - yd) + c10 * yd
-        c1 = c01 * (1 - yd) + c11 * yd
+        if periodic:
+            x1 = jnp.mod(x0 + 1, Nx)
+            y1 = jnp.mod(y0 + 1, Ny)
+            z1 = jnp.mod(z0 + 1, Nz)
+        else:
+            x1 = jnp.clip(x0 + 1, 0, Nx - 1)
+            y1 = jnp.clip(y0 + 1, 0, Ny - 1)
+            z1 = jnp.clip(z0 + 1, 0, Nz - 1)
 
-        return c0 * (1 - zd) + c1 * zd
+        # Calculate the fractional parts (weights)
+        wx = xi - jnp.floor(xi)
+        wy = yi - jnp.floor(yi)
+        wz = zi - jnp.floor(zi)
 
+        # Trilinear interpolation
+        c000 = field[x0, y0, z0]
+        c001 = field[x0, y0, z1]
+        c010 = field[x0, y1, z0]
+        c011 = field[x0, y1, z1]
+        c100 = field[x1, y0, z0]
+        c101 = field[x1, y0, z1]
+        c110 = field[x1, y1, z0]
+        c111 = field[x1, y1, z1]
+
+        # Interpolate along x-axis first
+        c00 = c000 * (1 - wx) + c100 * wx
+        c01 = c001 * (1 - wx) + c101 * wx
+        c10 = c010 * (1 - wx) + c110 * wx
+        c11 = c011 * (1 - wx) + c111 * wx
+
+        # Then interpolate along y-axis
+        c0 = c00 * (1 - wy) + c10 * wy
+        c1 = c01 * (1 - wy) + c11 * wy
+
+        # Finally interpolate along z-axis
+        value = c0 * (1 - wz) + c1 * wz
+
+        return value
 
     vmap_interpolator = jax.vmap(interpolator, in_axes=(0, 0, 0), out_axes=0)
     # vectorize the interpolator for batch processing
 
     return vmap_interpolator
-
 
 def create_quadratic_interpolator(field, grid):
     """
@@ -309,3 +371,13 @@ def create_quadratic_interpolator(field, grid):
 
     vmap_interpolator = jax.vmap(interpolator, in_axes=(0, 0, 0), out_axes=0)
     return vmap_interpolator
+
+@jit
+def wrap_around(ix, size):
+    """Wrap around index to ensure it is within bounds."""
+    return jax.lax.cond(
+        ix > size - 1,
+        lambda _: ix - size,
+        lambda _: ix,
+        operand=None
+    )
