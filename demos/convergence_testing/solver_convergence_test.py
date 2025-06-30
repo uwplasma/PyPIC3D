@@ -118,7 +118,7 @@ def fdtd_gradient_comparison(nx):
     x_error = mse(gradx, expected_gradx)
     y_error = mse(grady, expected_grady)
     z_error = mse(gradz, expected_gradz)
-    error = x_error + y_error + z_error
+    error = (x_error + y_error + z_error) / 3
     # compute the mean squared error of the gradient function
 
     return error, dx
@@ -223,7 +223,7 @@ def fdtd_curl_comparison(nx):
     error_x = mse(curlx, expected_curlx)
     error_y = mse(curly, expected_curly)
     error_z = mse(curlz, expected_curlz)
-    error = error_x + error_y + error_z + error_z
+    error = (error_x + error_y + error_z) / 3
     # compute the error in the numerical curl
 
     return error, dx
@@ -329,7 +329,7 @@ def pstd_gradient_comparison(nx):
     error_x = mse( gradx, expected_gradx )
     error_y = mse( grady, expected_grady )
     error_z = mse( gradz, expected_gradz )
-    error = error_x + error_y + error_z
+    error = (error_x + error_y + error_z)/3
     # compute the mean squared error of the gradient against the analytical solution
 
     return error, dx
@@ -433,7 +433,7 @@ def pstd_curl_comparison(nx):
     error_x = mse( curlx, expected_curlx )
     error_y = mse( curly, expected_curly )
     error_z = mse( curlz, expected_curlz )
-    error = error_x + error_y + error_z
+    error = (error_x + error_y + error_z) / 3
     # compute the mean squared error of the curl against the analytical solution
 
     return error, dx
@@ -485,9 +485,9 @@ if __name__ == "__main__":
 
     ################### LAPLACIAN CONVERGENCE TEST #############################
     slope = convergence_test(pstd_laplacian_comparison)
-    print(f"\nExpected Order of Laplacian Method: 2")
+    print(f"\nExpected Order of Laplacian Method: 3")
     print(f"Calculated Order of Laplacian Method: {slope}")
-    print(f"Error in Order: {jnp.abs( 100 * (slope - 2) / 2 )} %")
+    print(f"Error in Order: {jnp.abs( 100 * (slope - 3) / 3 )} %")
     ############################################################################
 
     ################## GRADIENT CONVERGENCE TEST ###############################

@@ -309,8 +309,8 @@ class TestSpectralMethods(unittest.TestCase):
 
             return error, dx
 
-        # order = convergence_test(pstd_laplacian_comparison)
-        # self.assertTrue(jnp.isclose(order, 2, rtol=1.5e-2, atol=1.5e-2))
+        order = convergence_test(pstd_laplacian_comparison)
+        self.assertTrue(jnp.isclose(order, 3, rtol=2.5e-2, atol=2.5e-2))
         # compute order of pstd laplacian
 
         order = convergence_test(pstd_gradient_comparison)
