@@ -1,28 +1,14 @@
 import jax.numpy as jnp
 from scipy import stats
 
-from PyPIC3D.boris import create_trilinear_interpolator
+from PyPIC3D.boris import create_trilinear_interpolator, create_quadratic_interpolator
 from PyPIC3D.utils import convergence_test, mse
 
+from functools import partial
 
-def trilinear_interpolation_convergence_test(nx):
-    """
-    Tests the convergence of trilinear interpolation by comparing interpolated values
-    to analytical solutions using trigonometric test functions.
 
-    This function creates a 3D grid, defines analytical test functions using
-    trigonometric expressions, samples them at grid points, and then uses trilinear
-    interpolation to estimate values at different points. The interpolated values
-    are compared to the analytical values to compute the mean squared error.
+def interpolation_wave_test(nx, interp_func):
 
-    Args:
-        nx (int): Number of grid points in each spatial dimension.
-
-    Returns:
-        tuple:
-            error (float): Mean squared error between interpolated and analytical values.
-            dx (float): Grid spacing.
-    """
     # Define a symmetric domain
     x_wind = 2.0 * jnp.pi
     y_wind = 2.0 * jnp.pi
@@ -33,9 +19,9 @@ def trilinear_interpolation_convergence_test(nx):
     y_grid = jnp.linspace(0, y_wind, nx)
     z_grid = jnp.linspace(0, z_wind, nx)
 
-    dx = x_wind / (nx - 1)
-    dy = y_wind / (nx - 1)
-    dz = z_wind / (nx - 1)
+    dx = x_wind / nx
+    dy = y_wind / nx
+    dz = z_wind / nx
 
     # Create meshgrid for field evaluation
     X, Y, Z = jnp.meshgrid(x_grid, y_grid, z_grid, indexing='ij')
@@ -46,11 +32,11 @@ def trilinear_interpolation_convergence_test(nx):
 
     # Create the trilinear interpolator
     grid = (x_grid, y_grid, z_grid)
-    interpolator = create_trilinear_interpolator(analytical_field, grid)
+    interpolator = interp_func(analytical_field, grid)
 
     # Create test points that are offset from grid points
     # This tests the interpolation accuracy between grid points
-    n_test = nx // 2  # Use fewer test points for efficiency
+    n_test = nx
     x_test = jnp.linspace(dx/3, x_wind - dx/3, n_test)
     y_test = jnp.linspace(dy/3, y_wind - dy/3, n_test)
     z_test = jnp.linspace(dz/3, z_wind - dz/3, n_test)
@@ -74,19 +60,8 @@ def trilinear_interpolation_convergence_test(nx):
     return error, dx
 
 
-def trilinear_interpolation_polynomial_test(nx):
-    """
-    Tests trilinear interpolation accuracy for a function with known gradients.
-    Uses a polynomial test function where exact derivatives can be computed.
+def interpolation_polynomial_test(nx, interp_func):
 
-    Args:
-        nx (int): Number of grid points in each spatial dimension.
-
-    Returns:
-        tuple:
-            error (float): Mean squared error between interpolated and analytical values.
-            dx (float): Grid spacing.
-    """
     # Define domain
     x_wind = 1.0
     y_wind = 1.0
@@ -98,7 +73,7 @@ def trilinear_interpolation_polynomial_test(nx):
     z_grid = jnp.linspace(0, z_wind, nx)
 
 
-    dx = x_wind / (nx - 1)
+    dx = x_wind / nx
     # create grid spacing
 
     # Create meshgrid
@@ -110,10 +85,10 @@ def trilinear_interpolation_polynomial_test(nx):
 
     # Create interpolator
     grid = (x_grid, y_grid, z_grid)
-    interpolator = create_trilinear_interpolator(analytical_field, grid)
+    interpolator = interp_func(analytical_field, grid)
 
     # Test at mid-points between grid points (maximum interpolation error)
-    n_test = max(4, nx // 4)  # Ensure we have enough test points
+    n_test = max(4, nx)  # Ensure we have enough test points
     x_test = jnp.linspace(dx/2, x_wind - dx/2, n_test)
     y_test = jnp.linspace(dx/2, y_wind - dx/2, n_test)
     z_test = jnp.linspace(dx/2, z_wind - dx/2, n_test)
@@ -126,8 +101,8 @@ def trilinear_interpolation_polynomial_test(nx):
     z_test_flat = Z_test.flatten()
 
     # Analytical values
-    analytical_values = (x_test_flat**2 * y_test_flat + 
-                        y_test_flat**2 * z_test_flat + 
+    analytical_values = (x_test_flat**2 * y_test_flat +
+                        y_test_flat**2 * z_test_flat +
                         z_test_flat**2 * x_test_flat)
 
     # Interpolated values
@@ -139,19 +114,8 @@ def trilinear_interpolation_polynomial_test(nx):
     return error, dx
 
 
-def trilinear_interpolation_oscillatory_test(nx):
-    """
-    Tests trilinear interpolation with a highly oscillatory function to check
-    how well it handles high-frequency content.
+def interpolation_oscillatory_test(nx, interp_func):
 
-    Args:
-        nx (int): Number of grid points in each spatial dimension.
-
-    Returns:
-        tuple:
-            error (float): Mean squared error between interpolated and analytical values.
-            dx (float): Grid spacing.
-    """
     # Define domain
     x_wind = jnp.pi
     y_wind = jnp.pi
@@ -162,7 +126,7 @@ def trilinear_interpolation_oscillatory_test(nx):
     y_grid = jnp.linspace(0, y_wind, nx)
     z_grid = jnp.linspace(0, z_wind, nx)
 
-    dx = x_wind / (nx - 1)
+    dx = x_wind / nx
     # create grid spacing
 
     # Create meshgrid
@@ -173,10 +137,10 @@ def trilinear_interpolation_oscillatory_test(nx):
 
     # Create interpolator
     grid = (x_grid, y_grid, z_grid)
-    interpolator = create_trilinear_interpolator(analytical_field, grid)
+    interpolator = interp_func(analytical_field, grid)
 
     # Test points slightly offset from grid
-    n_test = max(6, nx // 3)
+    n_test = max(6, nx)
     x_test = jnp.linspace(dx/4, x_wind - dx/4, n_test)
     y_test = jnp.linspace(dx/4, y_wind - dx/4, n_test)
     z_test = jnp.linspace(dx/4, z_wind - dx/4, n_test)
@@ -189,8 +153,8 @@ def trilinear_interpolation_oscillatory_test(nx):
     z_test_flat = Z_test.flatten()
 
     # Analytical values
-    analytical_values = (jnp.cos(2*x_test_flat) * 
-                        jnp.sin(3*y_test_flat) * 
+    analytical_values = (jnp.cos(2*x_test_flat) *
+                        jnp.sin(3*y_test_flat) *
                         jnp.cos(4*z_test_flat))
 
     # Interpolated values
@@ -208,7 +172,7 @@ if __name__ == "__main__":
     ################### BASIC TRIGONOMETRIC TEST #############################
     print("\n1. Basic Trigonometric Function Test")
     print("   Function: f(x,y,z) = sin(x) * cos(y) * sin(z)")
-    slope = convergence_test(trilinear_interpolation_convergence_test)
+    slope = convergence_test(partial(interpolation_wave_test, interp_func=create_trilinear_interpolator))
     print(f"   Expected Order: 2 (trilinear interpolation)")
     print(f"   Calculated Order: {slope:.3f}")
     print(f"   Error in Order: {abs(100 * (slope - 2) / 2):.1f}%")
@@ -217,7 +181,7 @@ if __name__ == "__main__":
     ################### POLYNOMIAL TEST #######################################
     print("\n2. Polynomial Function Test")
     print("   Function: f(x,y,z) = x²y + y²z + z²x")
-    slope = convergence_test(trilinear_interpolation_polynomial_test)
+    slope = convergence_test(partial(interpolation_polynomial_test, interp_func=create_trilinear_interpolator))
     print(f"   Expected Order: 2 (trilinear interpolation)")
     print(f"   Calculated Order: {slope:.3f}")
     print(f"   Error in Order: {abs(100 * (slope - 2) / 2):.1f}%")
@@ -226,10 +190,39 @@ if __name__ == "__main__":
     ################### HIGH-FREQUENCY TEST ###################################
     print("\n3. High-Frequency Oscillatory Test")
     print("   Function: f(x,y,z) = cos(2x) * sin(3y) * cos(4z)")
-    slope = convergence_test(trilinear_interpolation_oscillatory_test)
+    slope = convergence_test(partial(interpolation_oscillatory_test, interp_func=create_trilinear_interpolator))
     print(f"   Expected Order: 2 (trilinear interpolation)")
     print(f"   Calculated Order: {slope:.3f}")
     print(f"   Error in Order: {abs(100 * (slope - 2) / 2):.1f}%")
     ############################################################################
 
     print("#" * 70)
+
+    print("\nConvergence Testing of Quadratic Interpolation Method in PyPIC3D")
+
+    ################### BASIC TRIGONOMETRIC TEST #############################
+    print("\n1. Basic Trigonometric Function Test")
+    print("   Function: f(x,y,z) = sin(x) * cos(y) * sin(z)")
+    slope = convergence_test(partial(interpolation_wave_test, interp_func=create_quadratic_interpolator))
+    print(f"   Expected Order: 3 (quadratic interpolation)")
+    print(f"   Calculated Order: {slope:.3f}")
+    print(f"   Error in Order: {abs(100 * (slope - 3) / 3):.1f}%")
+    ############################################################################
+
+    ################### POLYNOMIAL TEST #######################################
+    print("\n2. Polynomial Function Test")
+    print("   Function: f(x,y,z) = x²y + y²z + z²x")
+    slope = convergence_test(partial(interpolation_polynomial_test, interp_func=create_quadratic_interpolator))
+    print(f"   Expected Order: 3 (quadratic interpolation)")
+    print(f"   Calculated Order: {slope:.3f}")
+    print(f"   Error in Order: {abs(100 * (slope - 3) / 3):.1f}%")
+    ############################################################################
+
+    ################### HIGH-FREQUENCY TEST ###################################
+    print("\n3. High-Frequency Oscillatory Test")
+    print("   Function: f(x,y,z) = cos(2x) * sin(3y) * cos(4z)")
+    slope = convergence_test(partial(interpolation_oscillatory_test, interp_func=create_quadratic_interpolator))
+    print(f"   Expected Order: 3 (quadratic interpolation)")
+    print(f"   Calculated Order: {slope:.3f}")
+    print(f"   Error in Order: {abs(100 * (slope - 3) / 3):.1f}%")
+    ############################################################################
