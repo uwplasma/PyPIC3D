@@ -3,10 +3,12 @@ import jax
 import jax.numpy as jnp
 import sys
 import os
+from functools import partial
 
 
 from PyPIC3D.boris import boris_single_particle
-from PyPIC3D.boris import create_trilinear_interpolator
+from PyPIC3D.boris import create_trilinear_interpolator, create_quadratic_interpolator
+from PyPIC3D.utils import mae, convergence_test
 
 jax.config.update("jax_enable_x64", True)
 
@@ -123,6 +125,360 @@ class TestBorisMethods(unittest.TestCase):
         avg_radius  = measure_xz_radius(xs, zs)
         #print(f"Average radius: {avg_radius}")
         assert jnp.isclose(avg_radius, 1.28, atol=0.5)
+
+
+    def test_trilinear_convergence(self):
+        def interpolation_wave_test(nx, interp_func):
+            # Define a symmetric domain
+            x_wind = 2.0 * jnp.pi
+            y_wind = 2.0 * jnp.pi
+            z_wind = 2.0 * jnp.pi
+
+            # Create uniform grid
+            x_grid = jnp.linspace(0, x_wind, nx)
+            y_grid = jnp.linspace(0, y_wind, nx)
+            z_grid = jnp.linspace(0, z_wind, nx)
+
+            dx = x_wind / (nx - 1)
+            dy = y_wind / (nx - 1)
+            dz = z_wind / (nx - 1)
+
+            # Create meshgrid for field evaluation
+            X, Y, Z = jnp.meshgrid(x_grid, y_grid, z_grid, indexing='ij')
+
+            # Define analytical test function: smooth trigonometric function
+            # f(x,y,z) = sin(x) * cos(y) * sin(z)
+            analytical_field = jnp.sin(X) * jnp.cos(Y) * jnp.sin(Z)
+
+            # Create the trilinear interpolator
+            grid = (x_grid, y_grid, z_grid)
+            interpolator = interp_func(analytical_field, grid)
+
+            # Create test points that are offset from grid points
+            # This tests the interpolation accuracy between grid points
+            n_test = nx
+            x_test = jnp.linspace(dx/3, x_wind - dx/3, n_test)
+            y_test = jnp.linspace(dy/3, y_wind - dy/3, n_test)
+            z_test = jnp.linspace(dz/3, z_wind - dz/3, n_test)
+
+            X_test, Y_test, Z_test = jnp.meshgrid(x_test, y_test, z_test, indexing='ij')
+
+            # Flatten for vectorized interpolation
+            x_test_flat = X_test.flatten()
+            y_test_flat = Y_test.flatten()
+            z_test_flat = Z_test.flatten()
+
+            # Compute analytical values at test points
+            analytical_values = jnp.sin(x_test_flat) * jnp.cos(y_test_flat) * jnp.sin(z_test_flat)
+
+            # Interpolate values at test points
+            interpolated_values = interpolator(x_test_flat, y_test_flat, z_test_flat)
+
+            # Compute mean squared error
+            error = mae(interpolated_values, analytical_values)
+
+            return error, dx
+
+
+        def interpolation_polynomial_test(nx, interp_func):
+
+            # Define domain
+            x_wind = 1.0
+            y_wind = 1.0
+            z_wind = 1.0
+
+            # Create uniform grid
+            x_grid = jnp.linspace(0, x_wind, nx)
+            y_grid = jnp.linspace(0, y_wind, nx)
+            z_grid = jnp.linspace(0, z_wind, nx)
+
+            dx = x_wind / (nx - 1)
+            # create grid spacing
+
+            # Create meshgrid
+            X, Y, Z = jnp.meshgrid(x_grid, y_grid, z_grid, indexing='ij')
+
+            # Use a polynomial test function: f(x,y,z) = x³y + y³z + z³x
+            # This has continuous derivatives and tests interpolation of curved surfaces
+            analytical_field = X**3 * Y + Y**3 * Z + Z**3 * X
+
+            # Create interpolator
+            grid = (x_grid, y_grid, z_grid)
+            interpolator = interp_func(analytical_field, grid)
+
+            # Test at mid-points between grid points (maximum interpolation error)
+            n_test = max(4, nx)  # Ensure we have enough test points
+            x_test = jnp.linspace(dx/2, x_wind - dx/2, n_test)
+            y_test = jnp.linspace(dx/2, y_wind - dx/2, n_test)
+            z_test = jnp.linspace(dx/2, z_wind - dx/2, n_test)
+
+            X_test, Y_test, Z_test = jnp.meshgrid(x_test, y_test, z_test, indexing='ij')
+
+            # Flatten
+            x_test_flat = X_test.flatten()
+            y_test_flat = Y_test.flatten()
+            z_test_flat = Z_test.flatten()
+
+            # Analytical values
+            analytical_values = (x_test_flat**3 * y_test_flat +
+                                y_test_flat**3 * z_test_flat +
+                                z_test_flat**3 * x_test_flat)
+
+            # Interpolated values
+            interpolated_values = interpolator(x_test_flat, y_test_flat, z_test_flat)
+
+            # Compute error
+            error = mae(interpolated_values, analytical_values)
+
+            return error, dx
+
+
+        def interpolation_oscillatory_test(nx, interp_func):
+
+            # Define domain
+            x_wind = jnp.pi
+            y_wind = jnp.pi
+            z_wind = jnp.pi
+
+            # Create grid
+            x_grid = jnp.linspace(0, x_wind, nx)
+            y_grid = jnp.linspace(0, y_wind, nx)
+            z_grid = jnp.linspace(0, z_wind, nx)
+
+            dx = x_wind / (nx - 1)
+            # create grid spacing
+
+            # Create meshgrid
+            X, Y, Z = jnp.meshgrid(x_grid, y_grid, z_grid, indexing='ij')
+
+            # High-frequency test function: f(x,y,z) = cos(2x) * sin(3y) * cos(4z)
+            analytical_field = jnp.cos(2*X) * jnp.sin(3*Y) * jnp.cos(4*Z)
+
+            # Create interpolator
+            grid = (x_grid, y_grid, z_grid)
+            interpolator = interp_func(analytical_field, grid)
+
+            # Test points slightly offset from grid
+            n_test = max(6, nx)
+            x_test = jnp.linspace(dx/4, x_wind - dx/4, n_test)
+            y_test = jnp.linspace(dx/4, y_wind - dx/4, n_test)
+            z_test = jnp.linspace(dx/4, z_wind - dx/4, n_test)
+
+            X_test, Y_test, Z_test = jnp.meshgrid(x_test, y_test, z_test, indexing='ij')
+
+            # Flatten
+            x_test_flat = X_test.flatten()
+            y_test_flat = Y_test.flatten()
+            z_test_flat = Z_test.flatten()
+
+            # Analytical values
+            analytical_values = (jnp.cos(2*x_test_flat) *
+                                jnp.sin(3*y_test_flat) *
+                                jnp.cos(4*z_test_flat))
+
+            # Interpolated values
+            interpolated_values = interpolator(x_test_flat, y_test_flat, z_test_flat)
+
+            # Compute error
+            error = mae(interpolated_values, analytical_values)
+
+            return error, dx
+
+        # Run convergence tests for each interpolation method
+        ################### BASIC TRIGONOMETRIC TEST #############################
+        slope = convergence_test(partial(interpolation_wave_test, interp_func=create_trilinear_interpolator))
+        error = abs(100 * (slope - 2) / 2 )
+        self.assertLess(error, 1.0)  # Check if error is less than 1.0%
+        ############################################################################
+
+        ################### POLYNOMIAL TEST #######################################
+        slope = convergence_test(partial(interpolation_polynomial_test, interp_func=create_trilinear_interpolator))
+        error = abs(100 * (slope - 2) / 2 )
+        self.assertLess(error, 1.0)  # Check if error is less than 1.0%
+        ############################################################################
+
+        ################### HIGH-FREQUENCY TEST ###################################
+        slope = convergence_test(partial(interpolation_oscillatory_test, interp_func=create_trilinear_interpolator))
+        error = abs(100 * (slope - 2) / 2 )
+        self.assertLess(error, 1.0)  # Check if error is less than 1.0%
+        ############################################################################
+
+    def test_quadratic_convergence(self):
+
+        def interpolation_wave_test(nx, interp_func):
+
+            # Define a symmetric domain
+            x_wind = 2.0 * jnp.pi
+            y_wind = 2.0 * jnp.pi
+            z_wind = 2.0 * jnp.pi
+
+            # Create uniform grid
+            x_grid = jnp.linspace(0, x_wind, nx)
+            y_grid = jnp.linspace(0, y_wind, nx)
+            z_grid = jnp.linspace(0, z_wind, nx)
+
+            dx = x_wind / (nx - 1)
+            dy = y_wind / (nx - 1)
+            dz = z_wind / (nx - 1)
+
+            # Create meshgrid for field evaluation
+            X, Y, Z = jnp.meshgrid(x_grid, y_grid, z_grid, indexing='ij')
+
+            # Define analytical test function: smooth trigonometric function
+            # f(x,y,z) = sin(x) * cos(y) * sin(z)
+            analytical_field = jnp.sin(X) * jnp.cos(Y) * jnp.sin(Z)
+
+            # Create the trilinear interpolator
+            grid = (x_grid, y_grid, z_grid)
+            interpolator = interp_func(analytical_field, grid)
+
+            # Create test points that are offset from grid points
+            # This tests the interpolation accuracy between grid points
+            n_test = nx
+            x_test = jnp.linspace(dx/3, x_wind - dx/3, n_test)
+            y_test = jnp.linspace(dy/3, y_wind - dy/3, n_test)
+            z_test = jnp.linspace(dz/3, z_wind - dz/3, n_test)
+
+            X_test, Y_test, Z_test = jnp.meshgrid(x_test, y_test, z_test, indexing='ij')
+
+            # Flatten for vectorized interpolation
+            x_test_flat = X_test.flatten()
+            y_test_flat = Y_test.flatten()
+            z_test_flat = Z_test.flatten()
+
+            # Compute analytical values at test points
+            analytical_values = jnp.sin(x_test_flat) * jnp.cos(y_test_flat) * jnp.sin(z_test_flat)
+
+            # Interpolate values at test points
+            interpolated_values = interpolator(x_test_flat, y_test_flat, z_test_flat)
+
+            # Compute mean squared error
+            error = mae(interpolated_values, analytical_values)
+
+            return error, dx
+
+
+        def interpolation_polynomial_test(nx, interp_func):
+
+            # Define domain
+            x_wind = 1.0
+            y_wind = 1.0
+            z_wind = 1.0
+
+            # Create uniform grid
+            x_grid = jnp.linspace(0, x_wind, nx)
+            y_grid = jnp.linspace(0, y_wind, nx)
+            z_grid = jnp.linspace(0, z_wind, nx)
+
+            dx = x_wind / (nx - 1)
+            # create grid spacing
+
+            # Create meshgrid
+            X, Y, Z = jnp.meshgrid(x_grid, y_grid, z_grid, indexing='ij')
+
+            # Use a polynomial test function: f(x,y,z) = x³y + y³z + z³x
+            # This has continuous derivatives and tests interpolation of curved surfaces
+            analytical_field = X**3 * Y + Y**3 * Z + Z**3 * X
+
+            # Create interpolator
+            grid = (x_grid, y_grid, z_grid)
+            interpolator = interp_func(analytical_field, grid)
+
+            # Test at mid-points between grid points (maximum interpolation error)
+            n_test = max(4, nx)  # Ensure we have enough test points
+            x_test = jnp.linspace(dx/2, x_wind - dx/2, n_test)
+            y_test = jnp.linspace(dx/2, y_wind - dx/2, n_test)
+            z_test = jnp.linspace(dx/2, z_wind - dx/2, n_test)
+
+            X_test, Y_test, Z_test = jnp.meshgrid(x_test, y_test, z_test, indexing='ij')
+
+            # Flatten
+            x_test_flat = X_test.flatten()
+            y_test_flat = Y_test.flatten()
+            z_test_flat = Z_test.flatten()
+
+            # Analytical values
+            analytical_values = (x_test_flat**3 * y_test_flat +
+                                y_test_flat**3 * z_test_flat +
+                                z_test_flat**3 * x_test_flat)
+
+            # Interpolated values
+            interpolated_values = interpolator(x_test_flat, y_test_flat, z_test_flat)
+
+            # Compute error
+            error = mae(interpolated_values, analytical_values)
+
+            return error, dx
+
+
+        def interpolation_oscillatory_test(nx, interp_func):
+
+            # Define domain
+            x_wind = jnp.pi
+            y_wind = jnp.pi
+            z_wind = jnp.pi
+
+            # Create grid
+            x_grid = jnp.linspace(0, x_wind, nx)
+            y_grid = jnp.linspace(0, y_wind, nx)
+            z_grid = jnp.linspace(0, z_wind, nx)
+
+            dx = x_wind / (nx - 1)
+            # create grid spacing
+
+            # Create meshgrid
+            X, Y, Z = jnp.meshgrid(x_grid, y_grid, z_grid, indexing='ij')
+
+            # High-frequency test function: f(x,y,z) = cos(2x) * sin(3y) * cos(4z)
+            analytical_field = jnp.cos(2*X) * jnp.sin(3*Y) * jnp.cos(4*Z)
+
+            # Create interpolator
+            grid = (x_grid, y_grid, z_grid)
+            interpolator = interp_func(analytical_field, grid)
+
+            # Test points slightly offset from grid
+            n_test = max(6, nx)
+            x_test = jnp.linspace(dx/4, x_wind - dx/4, n_test)
+            y_test = jnp.linspace(dx/4, y_wind - dx/4, n_test)
+            z_test = jnp.linspace(dx/4, z_wind - dx/4, n_test)
+
+            X_test, Y_test, Z_test = jnp.meshgrid(x_test, y_test, z_test, indexing='ij')
+
+            # Flatten
+            x_test_flat = X_test.flatten()
+            y_test_flat = Y_test.flatten()
+            z_test_flat = Z_test.flatten()
+
+            # Analytical values
+            analytical_values = (jnp.cos(2*x_test_flat) *
+                                jnp.sin(3*y_test_flat) *
+                                jnp.cos(4*z_test_flat))
+
+            # Interpolated values
+            interpolated_values = interpolator(x_test_flat, y_test_flat, z_test_flat)
+
+            # Compute error
+            error = mae(interpolated_values, analytical_values)
+
+            return error, dx
+
+        ################### BASIC TRIGONOMETRIC TEST ###############################
+        slope = convergence_test(partial(interpolation_wave_test, interp_func=create_quadratic_interpolator))
+        error = abs(100 * (slope - 3) / 3 )
+        self.assertLess(error, 1.0)  # Check if error is less than 1.0%
+        ############################################################################
+
+        ################### POLYNOMIAL TEST ########################################
+        slope = convergence_test(partial(interpolation_polynomial_test, interp_func=create_quadratic_interpolator))
+        error = abs(100 * (slope - 3) / 3 )
+        self.assertLess(error, 1.0)  # Check if error is less than 1.0%
+        ############################################################################
+
+        ################### HIGH-FREQUENCY TEST ####################################
+        slope = convergence_test(partial(interpolation_oscillatory_test, interp_func=create_quadratic_interpolator))
+        error = abs(100 * (slope - 3) / 3 )
+        self.assertLess(error, 1.0)  # Check if error is less than 1.0%
+        ############################################################################
 
 
 if __name__ == '__main__':
