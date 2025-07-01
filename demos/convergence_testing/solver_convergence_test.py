@@ -12,7 +12,7 @@ from PyPIC3D.pstd import (
 )
 
 from PyPIC3D.utils import (
-    convergence_test, mse
+    convergence_test, mae
 )
 
 def fdtd_laplacian_comparison(nx):
@@ -63,7 +63,7 @@ def fdtd_laplacian_comparison(nx):
     slicer = (slice(1, -1), slice(1, -1), slice(1, -1))
     # slice for the solution comparison
 
-    error = mse( laplacian[slicer], expected_solution[slicer] )
+    error = mae( laplacian[slicer], expected_solution[slicer] )
     # compute the mean squared error of the laplacian against the analytical solution
 
     return error,  dx
@@ -115,9 +115,9 @@ def fdtd_gradient_comparison(nx):
     gradx, grady, gradz = centered_finite_difference_gradient(phi, dx, dy, dz, 'periodic')
     # compute the numerical result
 
-    x_error = mse(gradx, expected_gradx)
-    y_error = mse(grady, expected_grady)
-    z_error = mse(gradz, expected_gradz)
+    x_error = mae(gradx, expected_gradx)
+    y_error = mae(grady, expected_grady)
+    z_error = mae(gradz, expected_gradz)
     error = (x_error + y_error + z_error) / 3
     # compute the mean squared error of the gradient function
 
@@ -168,7 +168,7 @@ def fdtd_divergence_comparison(nx):
     divergence = centered_finite_difference_divergence(Fx, Fy, Fz, dx, dy, dz, 'periodic')
     # compute the numerical divergence
 
-    error = mse(divergence, expected_divergence)
+    error = mae(divergence, expected_divergence)
     # compute the mean squared error of the divergence
 
     return error, dx
@@ -220,9 +220,9 @@ def fdtd_curl_comparison(nx):
     curlx, curly, curlz = centered_finite_difference_curl(Fx, Fy, Fz, dx, dy, dz, 'periodic')
     # compute the numerical curl
 
-    error_x = mse(curlx, expected_curlx)
-    error_y = mse(curly, expected_curly)
-    error_z = mse(curlz, expected_curlz)
+    error_x = mae(curlx, expected_curlx)
+    error_y = mae(curly, expected_curly)
+    error_z = mae(curlz, expected_curlz)
     error = (error_x + error_y + error_z) / 3
     # compute the error in the numerical curl
 
@@ -277,7 +277,7 @@ def pstd_laplacian_comparison(nx):
     slicer = (slice(1, -1), slice(1, -1), slice(1, -1))
     # slice for the solution comparison
 
-    error = mse( laplacian[slicer], expected_solution[slicer] )
+    error = mae( laplacian[slicer], expected_solution[slicer] )
     # compute the mean squared error of the laplacian against the analytical solution
 
     return error,  dx
@@ -326,9 +326,9 @@ def pstd_gradient_comparison(nx):
     gradx, grady, gradz = spectral_gradient(phi, world={'dx': dx, 'dy': dy, 'dz': dz})
     # compute the numerical result
 
-    error_x = mse( gradx, expected_gradx )
-    error_y = mse( grady, expected_grady )
-    error_z = mse( gradz, expected_gradz )
+    error_x = mae( gradx, expected_gradx )
+    error_y = mae( grady, expected_grady )
+    error_z = mae( gradz, expected_gradz )
     error = (error_x + error_y + error_z)/3
     # compute the mean squared error of the gradient against the analytical solution
 
@@ -378,7 +378,7 @@ def pstd_divergence_comparison(nx):
     divF = spectral_divergence(Fx, Fy, Fz, world={'dx': dx, 'dy': dy, 'dz': dz})
     # compute the numerical result
 
-    error = mse( divF, expected_div )
+    error = mae( divF, expected_div )
     # compute the mean squared error of the divergence against the analytical solution
 
     return error, dx
@@ -430,9 +430,9 @@ def pstd_curl_comparison(nx):
     curlx, curly, curlz = spectral_curl(Fx, Fy, Fz, world={'dx': dx, 'dy': dy, 'dz': dz})
     # compute the numerical result
 
-    error_x = mse( curlx, expected_curlx )
-    error_y = mse( curly, expected_curly )
-    error_z = mse( curlz, expected_curlz )
+    error_x = mae( curlx, expected_curlx )
+    error_y = mae( curly, expected_curly )
+    error_z = mae( curlz, expected_curlz )
     error = (error_x + error_y + error_z) / 3
     # compute the mean squared error of the curl against the analytical solution
 
@@ -447,33 +447,33 @@ if __name__ == "__main__":
 
     ################### LAPLACIAN CONVERGENCE TEST #############################
     slope = convergence_test(fdtd_laplacian_comparison)
-    print(f"\nExpected Order of Laplacian Method: 2")
+    print(f"\nExpected Order of Laplacian Method: 3")
     print(f"Calculated Order of Laplacian Method: {slope}")
-    print(f"Error in Order: {jnp.abs( 100 * (slope - 2) / 2 )} %")
+    print(f"Error in Order: {jnp.abs( 100 * (slope - 3) / 3 )} %")
     ############################################################################
 
 
     ################## GRADIENT CONVERGENCE TEST ###############################
     slope = convergence_test(fdtd_gradient_comparison)
-    print(f"\nExpected Order of Gradient Method: 1")
+    print(f"\nExpected Order of Gradient Method: 2")
     print(f"Calculated Order of Gradient Method: {slope}")
-    print(f"Error in Order: {jnp.abs(100 * (slope - 1) / 1)} %")
+    print(f"Error in Order: {jnp.abs(100 * (slope - 2) / 2)} %")
     ############################################################################
 
 
     ################## DIVERGENCE CONVERGENCE TEST #############################
     slope = convergence_test(fdtd_divergence_comparison)
-    print(f"\nExpected Order of Divergence Method: 1")
+    print(f"\nExpected Order of Divergence Method: 2")
     print(f"Calculated Order of Divergence Method: {slope}")
-    print(f"Error in Order: {jnp.abs(100 * (slope - 1) / 1)} %")
+    print(f"Error in Order: {jnp.abs(100 * (slope - 2) / 2)} %")
     ############################################################################
 
 
     ################# CURL CONVERGENCE TEST ####################################
     slope = convergence_test(fdtd_curl_comparison)
-    print(f"\nExpected Order of Curl Method: 1")
+    print(f"\nExpected Order of Curl Method: 2")
     print(f"Calculated Order of Curl Method: {slope}")
-    print(f"Error in Order: {jnp.abs(100 * (slope - 1) / 1)} %")
+    print(f"Error in Order: {jnp.abs(100 * (slope - 2) / 2)} %")
     ############################################################################
 
     print("###################################################################")
@@ -492,23 +492,23 @@ if __name__ == "__main__":
 
     ################## GRADIENT CONVERGENCE TEST ###############################
     slope = convergence_test(pstd_gradient_comparison)
-    print(f"\nExpected Order of Gradient Method: 1")
+    print(f"\nExpected Order of Gradient Method: 2")
     print(f"Calculated Order of Gradient Method: {slope}")
-    print(f"Error in Order: {jnp.abs(100 * (slope - 1) / 1)} %")
+    print(f"Error in Order: {jnp.abs(100 * (slope - 2) / 2)} %")
     ############################################################################
 
     ################## DIVERGENCE CONVERGENCE TEST #############################
     slope = convergence_test(pstd_divergence_comparison)
-    print(f"\nExpected Order of Divergence Method: 1")
+    print(f"\nExpected Order of Divergence Method: 2")
     print(f"Calculated Order of Divergence Method: {slope}")
-    print(f"Error in Order: {jnp.abs(100 * (slope - 1) / 1)} %")
+    print(f"Error in Order: {jnp.abs(100 * (slope - 2) / 2)} %")
     ############################################################################
 
     ################# CURL CONVERGENCE TEST ####################################
     slope = convergence_test(pstd_curl_comparison)
-    print(f"\nExpected Order of Curl Method: 1")
+    print(f"\nExpected Order of Curl Method: 2")
     print(f"Calculated Order of Curl Method: {slope}")
-    print(f"Error in Order: {jnp.abs(100 * (slope - 1) / 1)} %")
+    print(f"Error in Order: {jnp.abs(100 * (slope - 2) / 2)} %")
     ############################################################################
 
     ############################################################################
