@@ -2,7 +2,7 @@ import jax.numpy as jnp
 from scipy import stats
 
 from PyPIC3D.boris import create_trilinear_interpolator, create_quadratic_interpolator
-from PyPIC3D.utils import convergence_test, mse
+from PyPIC3D.utils import convergence_test, mae
 
 from functools import partial
 
@@ -19,9 +19,9 @@ def interpolation_wave_test(nx, interp_func):
     y_grid = jnp.linspace(0, y_wind, nx)
     z_grid = jnp.linspace(0, z_wind, nx)
 
-    dx = x_wind / nx
-    dy = y_wind / nx
-    dz = z_wind / nx
+    dx = x_wind / (nx - 1)
+    dy = y_wind / (nx - 1)
+    dz = z_wind / (nx - 1)
 
     # Create meshgrid for field evaluation
     X, Y, Z = jnp.meshgrid(x_grid, y_grid, z_grid, indexing='ij')
@@ -55,7 +55,7 @@ def interpolation_wave_test(nx, interp_func):
     interpolated_values = interpolator(x_test_flat, y_test_flat, z_test_flat)
 
     # Compute mean squared error
-    error = mse(interpolated_values, analytical_values)
+    error = mae(interpolated_values, analytical_values)
 
     return error, dx
 
@@ -72,16 +72,15 @@ def interpolation_polynomial_test(nx, interp_func):
     y_grid = jnp.linspace(0, y_wind, nx)
     z_grid = jnp.linspace(0, z_wind, nx)
 
-
-    dx = x_wind / nx
+    dx = x_wind / (nx - 1)
     # create grid spacing
 
     # Create meshgrid
     X, Y, Z = jnp.meshgrid(x_grid, y_grid, z_grid, indexing='ij')
 
-    # Use a polynomial test function: f(x,y,z) = x²y + y²z + z²x
+    # Use a polynomial test function: f(x,y,z) = x³y + y³z + z³x
     # This has continuous derivatives and tests interpolation of curved surfaces
-    analytical_field = X**2 * Y + Y**2 * Z + Z**2 * X
+    analytical_field = X**3 * Y + Y**3 * Z + Z**3 * X
 
     # Create interpolator
     grid = (x_grid, y_grid, z_grid)
@@ -101,15 +100,15 @@ def interpolation_polynomial_test(nx, interp_func):
     z_test_flat = Z_test.flatten()
 
     # Analytical values
-    analytical_values = (x_test_flat**2 * y_test_flat +
-                        y_test_flat**2 * z_test_flat +
-                        z_test_flat**2 * x_test_flat)
+    analytical_values = (x_test_flat**3 * y_test_flat +
+                        y_test_flat**3 * z_test_flat +
+                        z_test_flat**3 * x_test_flat)
 
     # Interpolated values
     interpolated_values = interpolator(x_test_flat, y_test_flat, z_test_flat)
 
     # Compute error
-    error = mse(interpolated_values, analytical_values)
+    error = mae(interpolated_values, analytical_values)
 
     return error, dx
 
@@ -126,7 +125,7 @@ def interpolation_oscillatory_test(nx, interp_func):
     y_grid = jnp.linspace(0, y_wind, nx)
     z_grid = jnp.linspace(0, z_wind, nx)
 
-    dx = x_wind / nx
+    dx = x_wind / (nx - 1)
     # create grid spacing
 
     # Create meshgrid
@@ -161,7 +160,7 @@ def interpolation_oscillatory_test(nx, interp_func):
     interpolated_values = interpolator(x_test_flat, y_test_flat, z_test_flat)
 
     # Compute error
-    error = mse(interpolated_values, analytical_values)
+    error = mae(interpolated_values, analytical_values)
 
     return error, dx
 
@@ -180,7 +179,7 @@ if __name__ == "__main__":
 
     ################### POLYNOMIAL TEST #######################################
     print("\n2. Polynomial Function Test")
-    print("   Function: f(x,y,z) = x²y + y²z + z²x")
+    print("   Function: f(x,y,z) = x³y + y³z + z³x")
     slope = convergence_test(partial(interpolation_polynomial_test, interp_func=create_trilinear_interpolator))
     print(f"   Expected Order: 2 (trilinear interpolation)")
     print(f"   Calculated Order: {slope:.3f}")
@@ -211,7 +210,7 @@ if __name__ == "__main__":
 
     ################### POLYNOMIAL TEST #######################################
     print("\n2. Polynomial Function Test")
-    print("   Function: f(x,y,z) = x²y + y²z + z²x")
+    print("   Function: f(x,y,z) = x³y + y³z + z³x")
     slope = convergence_test(partial(interpolation_polynomial_test, interp_func=create_quadratic_interpolator))
     print(f"   Expected Order: 3 (quadratic interpolation)")
     print(f"   Calculated Order: {slope:.3f}")

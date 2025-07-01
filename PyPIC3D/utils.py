@@ -15,22 +15,35 @@ import importlib.metadata
 from scipy import stats
 # import external libraries
 
+def mae(x, y):
+    """
+    Calculates the mean squared error (MSE) between two arrays.
+
+    Parameters:
+        x (array-like): First input array.
+        y (array-like): Second input array, must be broadcastable to the shape of x.
+
+    Returns:
+        jnp.ndarray: The square root of the mean of squared differences between x and y.
+
+    Note:
+        Despite the function name 'mae' (mean absolute error), this function actually computes the root mean squared error (RMSE).
+    """
+
+    return jnp.sqrt( jnp.mean( (x-y)**2 ) )
+
 def mse(x, y):
     """
-    Compute the mean squared error (MSE) between two arrays.
+    Calculates the mean squared error (MSE) between two arrays.
 
-    Parameters
-    ----------
-    x : array-like
-        The first input array.
-    y : array-like
-        The second input array, must be broadcastable to the shape of `x`.
+    Parameters:
+        x (array-like): First input array.
+        y (array-like): Second input array, must be broadcastable to the shape of x.
 
-    Returns
-    -------
-    float
-        The mean squared error between `x` and `y`.
+    Returns:
+        jnp.ndarray: The mean of squared differences between x and y.
     """
+
     return jnp.mean( (x-y)**2 )
 
 
