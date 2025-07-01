@@ -17,7 +17,7 @@ from scipy import stats
 
 def mae(x, y):
     """
-    Calculates the mean squared error (MSE) between two arrays.
+    Calculates the mean absolute error (MAE) between two arrays.
 
     Parameters:
         x (array-like): First input array.
