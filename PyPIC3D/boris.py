@@ -65,19 +65,19 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic
     efield_atx = jax.lax.cond(
         shape_factor == 1,
         lambda _: create_trilinear_interpolator(Ex, Ex_grid, periodic)(x, y, z),
-        lambda _: create_quadratic_interpolator(Ex, Ex_grid)(x, y, z),
+        lambda _: create_quadratic_interpolator(Ex, Ex_grid, periodic)(x, y, z),
         operand=None
     )
     efield_aty = jax.lax.cond(
         shape_factor == 1,
         lambda _: create_trilinear_interpolator(Ey, Ey_grid, periodic)(x, y, z),
-        lambda _: create_quadratic_interpolator(Ey, Ey_grid)(x, y, z),
+        lambda _: create_quadratic_interpolator(Ey, Ey_grid, periodic)(x, y, z),
         operand=None
     )
     efield_atz = jax.lax.cond(
         shape_factor == 1,
         lambda _: create_trilinear_interpolator(Ez, Ez_grid, periodic)(x, y, z),
-        lambda _: create_quadratic_interpolator(Ez, Ez_grid)(x, y, z),
+        lambda _: create_quadratic_interpolator(Ez, Ez_grid, periodic)(x, y, z),
         operand=None
     )
     # unpack the magnetic field components
@@ -86,19 +86,19 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic
     bfield_atx = jax.lax.cond(
         shape_factor == 1,
         lambda _: create_trilinear_interpolator(Bx, Bx_grid, periodic)(x, y, z),
-        lambda _: create_quadratic_interpolator(Bx, Bx_grid)(x, y, z),
+        lambda _: create_quadratic_interpolator(Bx, Bx_grid, periodic)(x, y, z),
         operand=None
     )
     bfield_aty = jax.lax.cond(
         shape_factor == 1,
         lambda _: create_trilinear_interpolator(By, By_grid, periodic)(x, y, z),
-        lambda _: create_quadratic_interpolator(By, By_grid)(x, y, z),
+        lambda _: create_quadratic_interpolator(By, By_grid, periodic)(x, y, z),
         operand=None
     )
     bfield_atz = jax.lax.cond(
         shape_factor == 1,
         lambda _: create_trilinear_interpolator(Bz, Bz_grid, periodic)(x, y, z),
-        lambda _: create_quadratic_interpolator(Bz, Bz_grid)(x, y, z),
+        lambda _: create_quadratic_interpolator(Bz, Bz_grid, periodic)(x, y, z),
         operand=None
     )
     # calculate the magnetic field at the particle positions
@@ -222,6 +222,9 @@ def create_trilinear_interpolator(field, grid, periodic=True):
     """
     Create a trilinear interpolation function for a given 3D field and grid.
 
+    Handles cases where any dimension (nx, ny, nz) has only 1 grid point.
+    In such cases, no interpolation is performed along that dimension.
+
     Args:
         field (ndarray): The 3D field to interpolate.
         grid (tuple): A tuple of three arrays representing the grid points in the x, y, and z directions.
@@ -243,11 +246,10 @@ def create_trilinear_interpolator(field, grid, periodic=True):
     z_min, z_max = z_grid[0], z_grid[-1]
     # get grid bounds
 
-    # For periodic domains, the domain width is the span without the last point
-    # since the last point is equivalent to the first point
-    x_width = x_max - x_min if periodic else x_max - x_min
-    y_width = y_max - y_min if periodic else y_max - y_min
-    z_width = z_max - z_min if periodic else z_max - z_min
+    x_wind = x_max - x_min
+    y_wind = y_max - y_min
+    z_wind = z_max - z_min
+    # get spatial widths of the grid
 
     Nx = len(x_grid)
     Ny = len(y_grid)
@@ -256,45 +258,45 @@ def create_trilinear_interpolator(field, grid, periodic=True):
 
     @jit
     def interpolator(x, y, z):
+
         # Handle periodic boundaries by wrapping coordinates
         if periodic:
-            x = x_min + jnp.mod(x - x_min, x_width)
-            y = y_min + jnp.mod(y - y_min, y_width)
-            z = z_min + jnp.mod(z - z_min, z_width)
+            x = x_min + jnp.mod(x - x_min, x_wind)
+            y = y_min + jnp.mod(y - y_min, y_wind)
+            z = z_min + jnp.mod(z - z_min, z_wind)
 
         # Convert coordinates to grid indices (fractional)
-        xi = (x - x_min) / dx
-        yi = (y - y_min) / dy
-        zi = (z - z_min) / dz
+        # Handle single-point dimensions specially
+        xi = jnp.where(Nx == 1, 0.0, (x - x_min) / dx)
+        yi = jnp.where(Ny == 1, 0.0, (y - y_min) / dy)
+        zi = jnp.where(Nz == 1, 0.0, (z - z_min) / dz)
 
         # Find the lower-left-bottom corner indices
-        x0 = jnp.floor(xi).astype(int)
-        y0 = jnp.floor(yi).astype(int)
-        z0 = jnp.floor(zi).astype(int)
+        x0 = jnp.where(Nx == 1, 0, jnp.floor(xi).astype(int))
+        y0 = jnp.where(Ny == 1, 0, jnp.floor(yi).astype(int))
+        z0 = jnp.where(Nz == 1, 0, jnp.floor(zi).astype(int))
 
         # Handle boundary conditions
         if periodic:
-            x0 = jnp.mod(x0, Nx)
-            y0 = jnp.mod(y0, Ny)
-            z0 = jnp.mod(z0, Nz)
+            x0 = jnp.where(Nx == 1, 0, jnp.mod(x0, Nx))
+            y0 = jnp.where(Ny == 1, 0, jnp.mod(y0, Ny))
+            z0 = jnp.where(Nz == 1, 0, jnp.mod(z0, Nz))
+            x1 = jnp.where(Nx == 1, 0, jnp.mod(x0 + 1, Nx))
+            y1 = jnp.where(Ny == 1, 0, jnp.mod(y0 + 1, Ny))
+            z1 = jnp.where(Nz == 1, 0, jnp.mod(z0 + 1, Nz))
         else:
-            x0 = jnp.clip(x0, 0, Nx - 2)
-            y0 = jnp.clip(y0, 0, Ny - 2)
-            z0 = jnp.clip(z0, 0, Nz - 2)
-
-        if periodic:
-            x1 = jnp.mod(x0 + 1, Nx)
-            y1 = jnp.mod(y0 + 1, Ny)
-            z1 = jnp.mod(z0 + 1, Nz)
-        else:
-            x1 = jnp.clip(x0 + 1, 0, Nx - 1)
-            y1 = jnp.clip(y0 + 1, 0, Ny - 1)
-            z1 = jnp.clip(z0 + 1, 0, Nz - 1)
+            x0 = jnp.where(Nx == 1, 0, jnp.clip(x0, 0, Nx - 2))
+            y0 = jnp.where(Ny == 1, 0, jnp.clip(y0, 0, Ny - 2))
+            z0 = jnp.where(Nz == 1, 0, jnp.clip(z0, 0, Nz - 2))
+            x1 = jnp.where(Nx == 1, 0, jnp.clip(x0 + 1, 0, Nx - 1))
+            y1 = jnp.where(Ny == 1, 0, jnp.clip(y0 + 1, 0, Ny - 1))
+            z1 = jnp.where(Nz == 1, 0, jnp.clip(z0 + 1, 0, Nz - 1))
 
         # Calculate the fractional parts (weights)
-        wx = xi - jnp.floor(xi)
-        wy = yi - jnp.floor(yi)
-        wz = zi - jnp.floor(zi)
+        # For single-point dimensions, weight is meaningless so set to 0
+        wx = jnp.where(Nx == 1, 0.0, xi - jnp.floor(xi))
+        wy = jnp.where(Ny == 1, 0.0, yi - jnp.floor(yi))
+        wz = jnp.where(Nz == 1, 0.0, zi - jnp.floor(zi))
 
         # Trilinear interpolation
         c000 = field[x0, y0, z0]
@@ -326,33 +328,145 @@ def create_trilinear_interpolator(field, grid, periodic=True):
 
     return vmap_interpolator
 
-def create_quadratic_interpolator(field, grid):
+def create_quadratic_interpolator(field, grid, periodic=True):
     """
     Create a quadratic interpolation function for a given 3D field and grid.
 
     Args:
         field (ndarray): The 3D field to interpolate.
         grid (tuple): A tuple of three arrays representing the grid points in the x, y, and z directions.
+        periodic (tuple): A tuple of three booleans indicating whether each dimension is periodic.
+                         Default is (True, True, True) for fully periodic domains.
 
     Returns:
         function: A function that takes (x, y, z) coordinates and returns the interpolated values.
     """
     x_grid, y_grid, z_grid = grid
 
+    # Calculate grid spacing and bounds
+    dx = x_grid[1] - x_grid[0] if len(x_grid) > 1 else 1.0
+    dy = y_grid[1] - y_grid[0] if len(y_grid) > 1 else 1.0
+    dz = z_grid[1] - z_grid[0] if len(z_grid) > 1 else 1.0
+
+    x_min, x_max = x_grid[0], x_grid[-1]
+    y_min, y_max = y_grid[0], y_grid[-1]
+    z_min, z_max = z_grid[0], z_grid[-1]
+
+    # Calculate domain widths
+    x_width = x_max - x_min
+    y_width = y_max - y_min
+    z_width = z_max - z_min
+
+    Nx = len(x_grid)
+    Ny = len(y_grid)
+    Nz = len(z_grid)
+
     @jit
     def interpolator(x, y, z):
-        x_idx = jnp.clip(jnp.searchsorted(x_grid, x) - 1, 1, len(x_grid) - 3)
-        y_idx = jnp.clip(jnp.searchsorted(y_grid, y) - 1, 1, len(y_grid) - 3)
-        z_idx = jnp.clip(jnp.searchsorted(z_grid, z) - 1, 1, len(z_grid) - 3)
+        # Handle periodic boundaries by wrapping coordinates
+        if periodic:
+            x = x_min + jnp.mod(x - x_min, x_width)
+            y = y_min + jnp.mod(y - y_min, y_width)
+            z = z_min + jnp.mod(z - z_min, z_width)
 
-        x0, x1, x2 = x_grid[x_idx - 1], x_grid[x_idx], x_grid[x_idx + 1]
-        y0, y1, y2 = y_grid[y_idx - 1], y_grid[y_idx], y_grid[y_idx + 1]
-        z0, z1, z2 = z_grid[z_idx - 1], z_grid[z_idx], z_grid[z_idx + 1]
+        # Handle each dimension separately to account for different grid sizes
+        def get_indices_and_points(coord, grid_1d, coord_min, d_spacing):
+            grid_len = len(grid_1d)
+
+            # Convert coordinate to fractional grid index
+            if grid_len == 1:
+                frac_idx = 0.0
+            else:
+                frac_idx = (coord - coord_min) / d_spacing
+
+            # Use JAX-compatible conditionals
+            idx_base = jnp.floor(frac_idx).astype(int) if grid_len > 1 else 0
+
+            # For grids with 3+ points, use quadratic interpolation
+            idx_quad = jnp.clip(idx_base, 1, grid_len - 2)
+
+            # For grids with 2 points, use linear interpolation
+            idx_lin = jnp.clip(idx_base, 0, 0)
+
+            # For single-point grids, use index 0
+            idx_single = 0
+
+            # Select appropriate index based on grid size
+            idx = jnp.where(grid_len >= 3, idx_quad,
+                   jnp.where(grid_len == 2, idx_lin, idx_single))
+
+            # Handle periodic boundary conditions for indices
+            if periodic and grid_len > 1:
+                # For periodic boundaries, wrap the indices
+                idx_m1 = jnp.mod(idx - 1, grid_len)
+                idx_0 = jnp.mod(idx, grid_len)
+                idx_p1 = jnp.mod(idx + 1, grid_len)
+
+                p0 = jnp.where(grid_len >= 3, grid_1d[idx_m1],
+                      jnp.where(grid_len == 2, grid_1d[0], grid_1d[0]))
+                p1 = jnp.where(grid_len >= 2, grid_1d[idx_0], grid_1d[0])
+                p2 = jnp.where(grid_len >= 3, grid_1d[idx_p1],
+                      jnp.where(grid_len == 2, grid_1d[1], grid_1d[0]))
+            else:
+                # For non-periodic boundaries, use clipping
+                # Get the three points for interpolation
+                # For 3+ points: normal stencil
+                # For 2 points: duplicate last point
+                # For 1 point: duplicate the single point
+                p0 = jnp.where(grid_len >= 3, grid_1d[jnp.clip(idx - 1, 0, grid_len - 1)],
+                      jnp.where(grid_len == 2, grid_1d[0], grid_1d[0]))
+
+                p1 = jnp.where(grid_len >= 2, grid_1d[jnp.clip(idx, 0, grid_len - 1)], grid_1d[0])
+
+                p2 = jnp.where(grid_len >= 3, grid_1d[jnp.clip(idx + 1, 0, grid_len - 1)],
+                      jnp.where(grid_len == 2, grid_1d[1], grid_1d[0]))
+
+            return idx, p0, p1, p2
+
+        x_idx, x0, x1, x2 = get_indices_and_points(x, x_grid, x_min, dx)
+        y_idx, y0, y1, y2 = get_indices_and_points(y, y_grid, y_min, dy)
+        z_idx, z0, z1, z2 = get_indices_and_points(z, z_grid, z_min, dz)
 
         def quadratic_weights(t, t0, t1, t2):
-            w0 = (t - t1) * (t - t2) / ((t0 - t1) * (t0 - t2))
-            w1 = (t - t0) * (t - t2) / ((t1 - t0) * (t1 - t2))
-            w2 = (t - t0) * (t - t1) / ((t2 - t0) * (t2 - t1))
+            # Handle degenerate cases (when points are equal)
+            eps = 1e-12
+
+            # Check for degenerate cases using JAX-compatible logic
+            all_same = (jnp.abs(t0 - t1) < eps) & (jnp.abs(t1 - t2) < eps)
+            t0_eq_t1 = (jnp.abs(t0 - t1) < eps) & (jnp.abs(t1 - t2) >= eps)
+            t1_eq_t2 = (jnp.abs(t0 - t1) >= eps) & (jnp.abs(t1 - t2) < eps)
+
+            # Standard quadratic weights
+            denom0 = (t0 - t1) * (t0 - t2)
+            denom1 = (t1 - t0) * (t1 - t2)
+            denom2 = (t2 - t0) * (t2 - t1)
+
+            # Avoid division by zero by adding small epsilon where needed
+            denom0 = jnp.where(jnp.abs(denom0) < eps, eps, denom0)
+            denom1 = jnp.where(jnp.abs(denom1) < eps, eps, denom1)
+            denom2 = jnp.where(jnp.abs(denom2) < eps, eps, denom2)
+
+            w0_standard = (t - t1) * (t - t2) / denom0
+            w1_standard = (t - t0) * (t - t2) / denom1
+            w2_standard = (t - t0) * (t - t1) / denom2
+
+            # Linear interpolation weights for degenerate cases
+            w_lin_01 = jnp.where(jnp.abs(t1 - t0) < eps, 0.0, (t - t0) / (t1 - t0))
+            w_lin_12 = jnp.where(jnp.abs(t2 - t1) < eps, 0.0, (t - t1) / (t2 - t1))
+
+            # Select weights based on degenerate cases
+            w0 = jnp.where(all_same, 0.0,
+                  jnp.where(t0_eq_t1, 0.0,
+                   jnp.where(t1_eq_t2, 1.0 - w_lin_01, w0_standard)))
+
+            w1 = jnp.where(all_same, 1.0,
+                  jnp.where(t0_eq_t1, 1.0 - w_lin_12,
+                   jnp.where(t1_eq_t2, w_lin_01, w1_standard)))
+
+            w2 = jnp.where(all_same, 0.0,
+                  jnp.where(t0_eq_t1, w_lin_12,
+                   jnp.where(t1_eq_t2, 0.0, w2_standard)))
+
             return w0, w1, w2
 
         wx0, wx1, wx2 = quadratic_weights(x, x0, x1, x2)
@@ -363,9 +477,52 @@ def create_quadratic_interpolator(field, grid):
         for i, wx in enumerate([wx0, wx1, wx2]):
             for j, wy in enumerate([wy0, wy1, wy2]):
                 for k, wz in enumerate([wz0, wz1, wz2]):
-                    interpolated_value += (
-                        wx * wy * wz * field[x_idx - 1 + i, y_idx - 1 + j, z_idx - 1 + k]
-                    )
+                    # Calculate array indices with proper bounds checking
+                    # Use JAX-compatible conditionals
+
+                    # X index calculation
+                    if periodic and Nx > 1:
+                        xi_quad = jnp.mod(x_idx - 1 + i, Nx)  # For 3+ points with periodic
+                        xi_lin = jnp.mod(x_idx + i - 1, Nx)   # For 2 points with periodic
+                    else:
+                        xi_quad = x_idx - 1 + i  # For 3+ points
+                        xi_lin = jnp.clip(x_idx + i - 1, 0, max(1, Nx - 1))  # For 2 points
+                    xi_single = 0  # For 1 point
+
+                    xi = jnp.where(Nx >= 3, xi_quad,
+                          jnp.where(Nx == 2, xi_lin, xi_single))
+
+                    # Y index calculation
+                    if periodic and Ny > 1:
+                        yi_quad = jnp.mod(y_idx - 1 + j, Ny)
+                        yi_lin = jnp.mod(y_idx + j - 1, Ny)
+                    else:
+                        yi_quad = y_idx - 1 + j
+                        yi_lin = jnp.clip(y_idx + j - 1, 0, max(1, Ny - 1))
+                    yi_single = 0
+
+                    yi = jnp.where(Ny >= 3, yi_quad,
+                          jnp.where(Ny == 2, yi_lin, yi_single))
+
+                    # Z index calculation
+                    if periodic and Nz > 1:
+                        zi_quad = jnp.mod(z_idx - 1 + k, Nz)
+                        zi_lin = jnp.mod(z_idx + k - 1, Nz)
+                    else:
+                        zi_quad = z_idx - 1 + k
+                        zi_lin = jnp.clip(z_idx + k - 1, 0, max(1, Nz - 1))
+                    zi_single = 0
+
+                    zi = jnp.where(Nz >= 3, zi_quad,
+                          jnp.where(Nz == 2, zi_lin, zi_single))
+
+                    # Final bounds check (only needed for non-periodic)
+                    if not periodic:
+                        xi = jnp.clip(xi, 0, field.shape[0] - 1)
+                        yi = jnp.clip(yi, 0, field.shape[1] - 1)
+                        zi = jnp.clip(zi, 0, field.shape[2] - 1)
+
+                    interpolated_value += wx * wy * wz * field[xi, yi, zi]
 
         return interpolated_value
 
