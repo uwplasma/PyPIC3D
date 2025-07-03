@@ -97,7 +97,7 @@ def default_parameters():
 
     constants = {
         "eps": 8.85418782e-12,  # permitivity of freespace
-        "mu" : 1.25663706e-7, # permeability of free space
+        "mu" : 1.25663706e-6, # permeability of free space
         "C": 2.99792458e8,  # Speed of light in m/s
         "kb": 1.380649e-23,  # Boltzmann's constant in J/K
     }
