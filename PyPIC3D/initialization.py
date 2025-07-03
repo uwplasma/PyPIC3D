@@ -248,7 +248,7 @@ def initialize_simulation(toml_file):
     E, B, J, phi, rho = initialize_fields(Nx, Ny, Nz)
     # initialize the electric and magnetic fields
 
-    E, phi, rho = calculateE(world, particles, constants, rho, phi, solver, bc)
+    # E, phi, rho = calculateE(world, particles, constants, rho, phi, solver, bc)
     # calculate the electric field using the Poisson equation
 
     # load any external fields
