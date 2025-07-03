@@ -82,6 +82,7 @@ def default_parameters():
         "z_wind": 1e-2,  # size of the spatial window in z in meters
         "t_wind": 1e-12,  # size of the temporal window in seconds
         "dt": None,  # time step in seconds
+        "Nt": None,  # number of time steps
         "electrostatic": False,  # boolean for electrostatic simulation
         "benchmark": False, # boolean for using the profiler
         "verbose": False, # boolean for printing verbose output
@@ -203,7 +204,10 @@ def initialize_simulation(toml_file):
         courant_number = simulation_parameters['cfl']
         dt = courant_condition(courant_number, dx, dy, dz, simulation_parameters, constants)
     # compute the time step
-    Nt     = int( t_wind / dt )
+    if simulation_parameters['Nt'] is not None:
+        Nt = simulation_parameters['Nt']
+    else:
+        Nt     = int( t_wind / dt )
     # Nt for resolution
     world = {'dt': dt, 'Nt': Nt, 'dx': dx, 'dy': dy, 'dz': dz, 'Nx': Nx, 'Ny': Ny, 'Nz': Nz, 'x_wind': x_wind, 'y_wind': y_wind, 'z_wind': z_wind}
     # set the simulation world parameters
