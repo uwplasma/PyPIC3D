@@ -473,18 +473,19 @@ class particle_species:
         self.update_pos = update_pos
         self.update_v   = update_v
         self.shape = shape
+        self.dt = dt
 
         self.x1 = x1
         self.x2 = x2
         self.x3 = x3
 
-        self.x1_back = self.x1 - self.v1 * dt / 2
-        self.x2_back = self.x2 - self.v2 * dt / 2
-        self.x3_back = self.x3 - self.v3 * dt / 2
+        self.x1_back = self.x1 - self.v1 * self.dt / 2
+        self.x2_back = self.x2 - self.v2 * self.dt / 2
+        self.x3_back = self.x3 - self.v3 * self.dt / 2
 
-        self.x1_forward = self.x1 + self.v1 * dt / 2
-        self.x2_forward = self.x2 + self.v2 * dt / 2
-        self.x3_forward = self.x3 + self.v3 * dt / 2
+        self.x1_forward = self.x1 + self.v1 * self.dt / 2
+        self.x2_forward = self.x2 + self.v2 * self.dt / 2
+        self.x3_forward = self.x3 + self.v3 * self.dt / 2
 
 
     def get_name(self):
