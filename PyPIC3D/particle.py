@@ -503,6 +503,12 @@ class particle_species:
     def get_velocity(self):
         return self.v1, self.v2, self.v3
 
+    def get_backward_position(self):
+        return self.x1_back, self.x2_back, self.x3_back
+
+    def get_forward_position(self):
+        return self.x1_forward, self.x2_forward, self.x3_forward
+
     def get_position(self):
         return self.x1, self.x2, self.x3
 
@@ -529,6 +535,24 @@ class particle_species:
                 self.v2 = v2
             if self.update_vz:
                 self.v3 = v3
+
+    def set_backward_position(self, x1, x2, x3):
+        if self.update_v:
+            if self.update_vx:
+                self.x1_back = x1
+            if self.update_vy:
+                self.x2_back = x2
+            if self.update_vz:
+                self.x3_back = x3
+
+    def set_forward_position(self, x1, x2, x3):
+        if self.update_v:
+            if self.update_vx:
+                self.x1_forward = x1
+            if self.update_vy:
+                self.x2_forward = x2
+            if self.update_vz:
+                self.x3_forward = x3
 
     def set_position(self, x1, x2, x3):
         self.x1 = x1
