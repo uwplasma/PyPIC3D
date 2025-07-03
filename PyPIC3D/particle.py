@@ -537,21 +537,21 @@ class particle_species:
                 self.v3 = v3
 
     def set_backward_position(self, x1, x2, x3):
-        if self.update_v:
-            if self.update_vx:
+        if self.update_pos:
+            if self.update_x:
                 self.x1_back = x1
-            if self.update_vy:
+            if self.update_y:
                 self.x2_back = x2
-            if self.update_vz:
+            if self.update_z:
                 self.x3_back = x3
 
     def set_forward_position(self, x1, x2, x3):
-        if self.update_v:
-            if self.update_vx:
+        if self.update_pos:
+            if self.update_x:
                 self.x1_forward = x1
-            if self.update_vy:
+            if self.update_y:
                 self.x2_forward = x2
-            if self.update_vz:
+            if self.update_z:
                 self.x3_forward = x3
 
     def set_position(self, x1, x2, x3):
@@ -621,14 +621,14 @@ class particle_species:
                 self.x3 = self.x3_forward - self.v3 * self.dt / 2
                 # update the z position of the particles
 
-            self.periodic_boundary_condition()
-            # apply periodic boundary conditions to the particles
+        self.periodic_boundary_condition()
+        # apply periodic boundary conditions to the particles
 
-            self.zeta1 = self.zeta2
-            self.eta1  = self.eta2
-            self.xi1   = self.xi2
-            self.zeta2, self.eta2, self.xi2 = self.calc_subcell_position()
-            # update the subcell positions for charge conservation algorithm
+        self.zeta1 = self.zeta2
+        self.eta1  = self.eta2
+        self.xi1   = self.xi2
+        self.zeta2, self.eta2, self.xi2 = self.calc_subcell_position()
+        # update the subcell positions for charge conservation algorithm
 
     def tree_flatten(self):
         children = (
@@ -658,7 +658,7 @@ class particle_species:
 
         subcells = zeta1, zeta2, eta1, eta2, xi1, xi2
 
-        obj = cls(
+        return cls(
             name=name,
             N_particles=N_particles,
             charge=charge,
@@ -690,11 +690,3 @@ class particle_species:
             shape=shape,
             dt=dt
         )
-
-        obj.x1_back = x1_back
-        obj.x2_back = x2_back
-        obj.x3_back = x3_back
-        obj.x1_forward = x1_forward
-        obj.x2_forward = x2_forward
-        obj.x3_forward = x3_forward
-        return obj
