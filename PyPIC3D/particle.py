@@ -174,7 +174,8 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
             update_z=update_z,
             update_pos=update_pos,
             update_v=update_v,
-            shape=simulation_parameters['shape_factor']
+            shape=simulation_parameters['shape_factor'],
+            dt=dt
         )
         particles.append(particle)
 
@@ -598,12 +599,13 @@ class particle_species:
             self.zeta2, self.eta2, self.xi2 = self.calc_subcell_position()
             # update the subcell positions for charge conservation algorithm
 
-
     def tree_flatten(self):
         children = (
             self.v1, self.v2, self.v3, \
             self.x1, self.x2, self.x3, \
-            self.zeta1, self.zeta2, self.eta1, self.eta2, self.xi1, self.xi2
+            self.zeta1, self.zeta2, self.eta1, self.eta2, self.xi1, self.xi2, \
+            self.x1_back, self.x2_back, self.x3_back, \
+            self.x1_forward, self.x2_forward, self.x3_forward
         )
 
         aux_data = (
@@ -616,7 +618,8 @@ class particle_species:
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        v1, v2, v3, x1, x2, x3, zeta1, zeta2, eta1, eta2, xi1, xi2 = children
+        v1, v2, v3, x1, x2, x3, zeta1, zeta2, eta1, eta2, xi1, xi2, x1_back, x2_back, x3_back, x1_forward, x2_forward, x3_forward = children
+
 
         name, N_particles, charge, mass, T, x_wind, y_wind, z_wind, dx, dy, \
             dz, weight, bc, update_pos, update_v, update_x, update_y, update_z, \
@@ -624,7 +627,7 @@ class particle_species:
 
         subcells = zeta1, zeta2, eta1, eta2, xi1, xi2
 
-        return cls(
+        obj = cls(
             name=name,
             N_particles=N_particles,
             charge=charge,
@@ -656,3 +659,11 @@ class particle_species:
             shape=shape,
             dt=dt
         )
+
+        obj.x1_back = x1_back
+        obj.x2_back = x2_back
+        obj.x3_back = x3_back
+        obj.x1_forward = x1_forward
+        obj.x2_forward = x2_forward
+        obj.x3_forward = x3_forward
+        return obj
