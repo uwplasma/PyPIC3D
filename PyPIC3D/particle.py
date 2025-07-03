@@ -445,7 +445,7 @@ class particle_species:
 
     def __init__(self, name, N_particles, charge, mass, T, v1, v2, v3, x1, x2, x3, subcells, \
             xwind, ywind, zwind, dx, dy, dz, weight=1, bc='periodic', update_x=True, update_y=True, update_z=True, \
-                update_vx=True, update_vy=True, update_vz=True, update_pos=True, update_v=True, shape=1):
+                update_vx=True, update_vy=True, update_vz=True, update_pos=True, update_v=True, shape=1, dt = 0):
         self.name = name
         self.N_particles = N_particles
         self.charge = charge
@@ -455,9 +455,6 @@ class particle_species:
         self.v1 = v1
         self.v2 = v2
         self.v3 = v3
-        self.x1 = x1
-        self.x2 = x2
-        self.x3 = x3
         self.dx = dx
         self.dy = dy
         self.dz = dz
@@ -475,6 +472,18 @@ class particle_species:
         self.update_pos = update_pos
         self.update_v   = update_v
         self.shape = shape
+
+        self.x1 = x1
+        self.x2 = x2
+        self.x3 = x3
+
+        self.x1_back = self.x1 - self.v1 * dt / 2
+        self.x2_back = self.x2 - self.v2 * dt / 2
+        self.x3_back = self.x3 - self.v3 * dt / 2
+
+        self.x1_forward = self.x1 + self.v1 * dt / 2
+        self.x2_forward = self.x2 + self.v2 * dt / 2
+        self.x3_forward = self.x3 + self.v3 * dt / 2
 
 
     def get_name(self):
@@ -601,7 +610,7 @@ class particle_species:
             self.name, self.N_particles, self.charge, self.mass, self.T, \
             self.x_wind, self.y_wind, self.z_wind, self.dx, self.dy, self.dz, \
             self.weight, self.bc, self.update_pos, self.update_v, self.update_x, self.update_y, \
-            self.update_z, self.update_vx, self.update_vy, self.update_vz, self.shape
+            self.update_z, self.update_vx, self.update_vy, self.update_vz, self.shape, self.dt
         )
         return children, aux_data
 
@@ -611,7 +620,7 @@ class particle_species:
 
         name, N_particles, charge, mass, T, x_wind, y_wind, z_wind, dx, dy, \
             dz, weight, bc, update_pos, update_v, update_x, update_y, update_z, \
-                update_vx, update_vy, update_vz, shape  = aux_data
+                update_vx, update_vy, update_vz, shape, dt  = aux_data
 
         subcells = zeta1, zeta2, eta1, eta2, xi1, xi2
 
@@ -644,5 +653,6 @@ class particle_species:
             update_vz=update_vz,
             update_pos=update_pos,
             update_v=update_v,
-            shape=shape
+            shape=shape,
+            dt=dt
         )
