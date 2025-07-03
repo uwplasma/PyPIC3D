@@ -39,7 +39,7 @@ class TestParticleMethods(unittest.TestCase):
         self.T = 300.0
         self.kb = 1.38e-23
         self.key1, self.key2, self.key3 = jax.random.split(jax.random.PRNGKey(0), 3)
-        self.dt = 1.0
+        self.dt = 2.0
 
     def test_initial_particles(self):
         """
@@ -126,11 +126,11 @@ class TestParticleMethods(unittest.TestCase):
             subcells = (x1, x1, x2, x2, x3, x3),
         )
 
-        species.periodic_boundary_condition(self.x_wind, self.y_wind, self.z_wind)
+        species.periodic_boundary_condition()
         x, y, z = species.get_position()
-        self.assertTrue(jnp.all(x == jnp.array([-5.0, 5.0, 0.0])))
-        self.assertTrue(jnp.all(y == jnp.array([-5.0, 5.0, 0.0])))
-        self.assertTrue(jnp.all(z == jnp.array([-5.0, 5.0, 0.0])))
+        self.assertTrue(jnp.all(x == jnp.array([-4.5, 4.0, 0.0])))
+        self.assertTrue(jnp.all(y == jnp.array([-4.5, 4.0, 0.0])))
+        self.assertTrue(jnp.all(z == jnp.array([-4.5, 4.0, 0.0])))
 
     def test_update_position(self):
         """
@@ -151,7 +151,7 @@ class TestParticleMethods(unittest.TestCase):
         x1=jnp.array([0.1, 0.2, 0.3])
         x2=jnp.array([0.1, 0.2, 0.3])
         x3=jnp.array([0.1, 0.2, 0.3])
-    
+
         species = particle_species(
             name="test",
             N_particles=self.N_particles,
@@ -172,8 +172,10 @@ class TestParticleMethods(unittest.TestCase):
             ywind=self.y_wind,
             zwind=self.z_wind,
             subcells=(x1, x1, x2, x2, x3, x3),
+            dt=self.dt
         )
-        species.update_position(self.dt)
+
+        species.update_position()
         x, y, z = species.get_position()
         self.assertTrue(jnp.allclose(x, jnp.array([1.1, 2.2, 3.3])))
         self.assertTrue(jnp.allclose(y, jnp.array([1.1, 2.2, 3.3])))

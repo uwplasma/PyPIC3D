@@ -62,19 +62,14 @@ def J_from_rhov(particles, J, rho, constants, world):
         shape_factor = species.get_shape()
 
         def add_to_J(particle, J):
-            x = particle_x.at[particle].get()
-            y = particle_y.at[particle].get()
-            z = particle_z.at[particle].get()
+            x = particle_x.at[particle].get() - dx/2
+            y = particle_y.at[particle].get() - dy/2
+            z = particle_z.at[particle].get() - dz/2
             # get the position of the particle
             vx_particle = vx.at[particle].get()
             vy_particle = vy.at[particle].get()
             vz_particle = vz.at[particle].get()
             # get the velocity of the particle
-
-            # J = J_first_order_weighting(
-            #     charge, x, y, z, vx_particle, vy_particle, vz_particle, J, rho,
-            #     dx, dy, dz, x_wind, y_wind, z_wind
-            # )
 
             J = lax.cond(
                 shape_factor == 1,

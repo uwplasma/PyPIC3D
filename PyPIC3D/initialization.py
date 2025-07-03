@@ -82,6 +82,7 @@ def default_parameters():
         "z_wind": 1e-2,  # size of the spatial window in z in meters
         "t_wind": 1e-12,  # size of the temporal window in seconds
         "dt": None,  # time step in seconds
+        "Nt": None,  # number of time steps
         "electrostatic": False,  # boolean for electrostatic simulation
         "benchmark": False, # boolean for using the profiler
         "verbose": False, # boolean for printing verbose output
@@ -96,7 +97,7 @@ def default_parameters():
 
     constants = {
         "eps": 8.85418782e-12,  # permitivity of freespace
-        "mu" : 1.25663706e-7, # permeability of free space
+        "mu" : 1.25663706e-6, # permeability of free space
         "C": 2.99792458e8,  # Speed of light in m/s
         "kb": 1.380649e-23,  # Boltzmann's constant in J/K
     }
@@ -203,7 +204,10 @@ def initialize_simulation(toml_file):
         courant_number = simulation_parameters['cfl']
         dt = courant_condition(courant_number, dx, dy, dz, simulation_parameters, constants)
     # compute the time step
-    Nt     = int( t_wind / dt )
+    if simulation_parameters['Nt'] is not None:
+        Nt = simulation_parameters['Nt']
+    else:
+        Nt     = int( t_wind / dt )
     # Nt for resolution
     world = {'dt': dt, 'Nt': Nt, 'dx': dx, 'dy': dy, 'dz': dz, 'Nx': Nx, 'Ny': Ny, 'Nz': Nz, 'x_wind': x_wind, 'y_wind': y_wind, 'z_wind': z_wind}
     # set the simulation world parameters
@@ -214,7 +218,7 @@ def initialize_simulation(toml_file):
     plotting_parameters = convert_to_jax_compatible(plotting_parameters)
     # convert the world parameters to jax compatible format
 
-    E_grid, B_grid = build_yee_grid(world)
+    B_grid, E_grid = build_yee_grid(world)
     # build the grid for the fields
 
     if not os.path.exists(f"{simulation_parameters['output_dir']}/data"):
@@ -248,7 +252,7 @@ def initialize_simulation(toml_file):
     E, B, J, phi, rho = initialize_fields(Nx, Ny, Nz)
     # initialize the electric and magnetic fields
 
-    E, phi, rho = calculateE(world, particles, constants, rho, phi, solver, bc)
+    # E, phi, rho = calculateE(world, particles, constants, rho, phi, solver, bc)
     # calculate the electric field using the Poisson equation
 
     # load any external fields

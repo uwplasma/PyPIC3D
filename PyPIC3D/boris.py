@@ -25,7 +25,7 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic
     """
     q = particles.get_charge()
     m = particles.get_mass()
-    x, y, z = particles.get_position()
+    x, y, z = particles.get_backward_position()
     vx, vy, vz = particles.get_velocity()
     # get the charge, mass, position, and velocity of the particles
 
@@ -103,7 +103,7 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic
     )
     # calculate the magnetic field at the particle positions
 
-    boris_vmap = jax.vmap(relativistic_boris_single_particle, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None, None))
+    boris_vmap = jax.vmap(boris_single_particle, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None, None))
     newvx, newvy, newvz = boris_vmap(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, q, m, dt, constants)
     # apply the Boris algorithm to update the velocities of the particles
 
@@ -193,7 +193,7 @@ def relativistic_boris_single_particle(vx, vy, vz, efield_atx, efield_aty, efiel
     v = jnp.array([vx, vy, vz])
     # convert v into an array
 
-    gamma = jnp.sqrt( 1  + (  (v[0]**2 + v[1]**2 + v[2]**2) / C**2 ) )
+    gamma = 1 / jnp.sqrt( 1  - (  (v[0]**2 + v[1]**2 + v[2]**2) / C**2 ) )
     # define the gamma factor
 
     vminus = v * gamma + q*dt/(2*m)*jnp.array([efield_atx, efield_aty, efield_atz])
@@ -212,10 +212,11 @@ def relativistic_boris_single_particle(vx, vy, vz, efield_atx, efield_aty, efiel
     newv = vplus + q*dt/(2*m)*jnp.array([efield_atx, efield_aty, efield_atz])
     # calculate the new velocity
 
-    new_gamma = jnp.sqrt( 1  +  (  (newv[0]**2 + newv[1]**2 + newv[2]**2) / C**2 ) )
+    new_gamma = 1 / jnp.sqrt( 1  -  (  (newv[0]**2 + newv[1]**2 + newv[2]**2) / C**2 ) )
     # define the new gamma factor
 
     return newv[0] / new_gamma, newv[1] / new_gamma, newv[2] / new_gamma
+
 
 
 def create_trilinear_interpolator(field, grid, periodic=True):

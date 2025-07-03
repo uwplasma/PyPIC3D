@@ -174,7 +174,8 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
             update_z=update_z,
             update_pos=update_pos,
             update_v=update_v,
-            shape=simulation_parameters['shape_factor']
+            shape=simulation_parameters['shape_factor'],
+            dt=dt
         )
         particles.append(particle)
 
@@ -445,7 +446,7 @@ class particle_species:
 
     def __init__(self, name, N_particles, charge, mass, T, v1, v2, v3, x1, x2, x3, subcells, \
             xwind, ywind, zwind, dx, dy, dz, weight=1, bc='periodic', update_x=True, update_y=True, update_z=True, \
-                update_vx=True, update_vy=True, update_vz=True, update_pos=True, update_v=True, shape=1):
+                update_vx=True, update_vy=True, update_vz=True, update_pos=True, update_v=True, shape=1, dt = 0):
         self.name = name
         self.N_particles = N_particles
         self.charge = charge
@@ -455,9 +456,6 @@ class particle_species:
         self.v1 = v1
         self.v2 = v2
         self.v3 = v3
-        self.x1 = x1
-        self.x2 = x2
-        self.x3 = x3
         self.dx = dx
         self.dy = dy
         self.dz = dz
@@ -475,6 +473,19 @@ class particle_species:
         self.update_pos = update_pos
         self.update_v   = update_v
         self.shape = shape
+        self.dt = dt
+
+        self.x1 = x1
+        self.x2 = x2
+        self.x3 = x3
+
+        self.x1_back = self.x1 - self.v1 * self.dt / 2
+        self.x2_back = self.x2 - self.v2 * self.dt / 2
+        self.x3_back = self.x3 - self.v3 * self.dt / 2
+
+        self.x1_forward = self.x1 + self.v1 * self.dt / 2
+        self.x2_forward = self.x2 + self.v2 * self.dt / 2
+        self.x3_forward = self.x3 + self.v3 * self.dt / 2
 
 
     def get_name(self):
@@ -491,6 +502,12 @@ class particle_species:
 
     def get_velocity(self):
         return self.v1, self.v2, self.v3
+
+    def get_backward_position(self):
+        return self.x1_back, self.x2_back, self.x3_back
+
+    def get_forward_position(self):
+        return self.x1_forward, self.x2_forward, self.x3_forward
 
     def get_position(self):
         return self.x1, self.x2, self.x3
@@ -519,6 +536,24 @@ class particle_species:
             if self.update_vz:
                 self.v3 = v3
 
+    def set_backward_position(self, x1, x2, x3):
+        if self.update_pos:
+            if self.update_x:
+                self.x1_back = x1
+            if self.update_y:
+                self.x2_back = x2
+            if self.update_z:
+                self.x3_back = x3
+
+    def set_forward_position(self, x1, x2, x3):
+        if self.update_pos:
+            if self.update_x:
+                self.x1_forward = x1
+            if self.update_y:
+                self.x2_forward = x2
+            if self.update_z:
+                self.x3_forward = x3
+
     def set_position(self, x1, x2, x3):
         self.x1 = x1
         self.x2 = x2
@@ -543,75 +578,87 @@ class particle_species:
     def momentum(self):
         return self.mass * self.weight * jnp.sum(jnp.sqrt(self.v1**2 + self.v2**2 + self.v3**2))
 
-    def periodic_boundary_condition(self, x_wind, y_wind, z_wind):
-        self.x1 = jnp.where(self.x1 > x_wind/2, -x_wind/2, self.x1)
-        self.x1 = jnp.where(self.x1 < -x_wind/2,  x_wind/2, self.x1)
-        self.x2 = jnp.where(self.x2 > y_wind/2, -y_wind/2, self.x2)
-        self.x2 = jnp.where(self.x2 < -y_wind/2,  y_wind/2, self.x2)
-        self.x3 = jnp.where(self.x3 > z_wind/2, -z_wind/2, self.x3)
-        self.x3 = jnp.where(self.x3 < -z_wind/2,  z_wind/2, self.x3)
+    def periodic_boundary_condition(self):
+        self.x1 = jnp.where(self.x1 > self.x_wind/2,  self.x1 - self.x_wind, \
+                            jnp.where(self.x1 < -self.x_wind/2, self.x1 + self.x_wind, self.x1))
+        self.x2 = jnp.where(self.x2 > self.y_wind/2,  self.x2 - self.y_wind, \
+                            jnp.where(self.x2 < -self.y_wind/2, self.x2 + self.y_wind, self.x2))
+        self.x3 = jnp.where(self.x3 > self.z_wind/2,  self.x3 - self.z_wind, \
+                            jnp.where(self.x3 < -self.z_wind/2, self.x3 + self.z_wind, self.x3))
 
-    def reflecting_boundary_condition(self, x_wind, y_wind, z_wind):
+    def reflecting_boundary_condition(self):
 
-        self.v1 = jnp.where((self.x1 > x_wind/2) | (self.x1 < -x_wind/2), -self.v1, self.v1)
-        self.x1 = jnp.where(self.x1 > x_wind/2, x_wind/2, self.x1)
-        self.x1 = jnp.where(self.x1 < -x_wind/2, -x_wind/2, self.x1)
+        self.v1 = jnp.where((self.x1 > self.x_wind/2) | (self.x1 < -self.x_wind/2), -self.v1, self.v1)
+        self.x1 = jnp.where(self.x1 > self.x_wind/2, self.x_wind/2, self.x1)
+        self.x1 = jnp.where(self.x1 < -self.x_wind/2, -self.x_wind/2, self.x1)
 
-        self.v2 = jnp.where((self.x2 > y_wind/2) | (self.x2 < -y_wind/2), -self.v2, self.v2)
-        self.x2 = jnp.where(self.x2 > y_wind/2, y_wind/2, self.x2)
-        self.x2 = jnp.where(self.x2 < -y_wind/2, -y_wind/2, self.x2)
+        self.v2 = jnp.where((self.x2 > self.y_wind/2) | (self.x2 < -self.y_wind/2), -self.v2, self.v2)
+        self.x2 = jnp.where(self.x2 > self.y_wind/2, self.y_wind/2, self.x2)
+        self.x2 = jnp.where(self.x2 < -self.y_wind/2, -self.y_wind/2, self.x2)
 
-        self.v3 = jnp.where((self.x3 > z_wind/2) | (self.x3 < -z_wind/2), -self.v3, self.v3)
-        self.x3 = jnp.where(self.x3 > z_wind/2, z_wind/2, self.x3)
-        self.x3 = jnp.where(self.x3 < -z_wind/2, -z_wind/2, self.x3)
+        self.v3 = jnp.where((self.x3 > self.z_wind/2) | (self.x3 < -self.z_wind/2), -self.v3, self.v3)
+        self.x3 = jnp.where(self.x3 > self.z_wind/2, self.z_wind/2, self.x3)
+        self.x3 = jnp.where(self.x3 < -self.z_wind/2, -self.z_wind/2, self.x3)
 
 
-    def update_position(self, dt):
+    def update_position(self):
         if self.update_pos:
             if self.update_x:
-                self.x1 = self.x1 + self.v1 * dt
+                self.x1_back = self.x1_forward
+                self.x1_forward = self.x1_forward + self.v1 * self.dt / 2
+                self.x1 = self.x1_forward - self.v1 * self.dt / 2
+                # update the x position of the particles
+
             if self.update_y:
-                self.x2 = self.x2 + self.v2 * dt
+                self.x2_back = self.x2_forward
+                self.x2_forward = self.x2_forward + self.v2 * self.dt / 2
+                self.x2 = self.x2_forward - self.v2 * self.dt / 2
+                # update the y position of the particles
+
             if self.update_z:
-                self.x3 = self.x3 + self.v3 * dt
-            # update the position of the particles
-            if self.bc == 'periodic':
-                #print('Using periodic boundary conditions')
-                self.periodic_boundary_condition(self.x_wind, self.y_wind, self.z_wind)
-            elif self.bc == 'reflecting':
-                #print('Using reflecting boundary conditions')
-                self.reflecting_boundary_condition(self.x_wind, self.y_wind, self.z_wind)
-            # apply boundary conditions
+                self.x3_back = self.x3_forward
+                self.x3_forward = self.x3_forward + self.v3 * self.dt / 2
+                self.x3 = self.x3_forward - self.v3 * self.dt / 2
+                # update the z position of the particles
 
-            self.zeta1 = self.zeta2
-            self.eta1  = self.eta2
-            self.xi1   = self.xi2
-            self.zeta2, self.eta2, self.xi2 = self.calc_subcell_position()
-            # update the subcell positions for charge conservation algorithm
+        if self.bc == 'periodic':
+            self.periodic_boundary_condition()
+            # apply periodic boundary conditions to the particles
+        elif self.bc == 'reflecting':
+            self.reflecting_boundary_condition()
+            # apply reflecting boundary conditions to the particles
 
+        self.zeta1 = self.zeta2
+        self.eta1  = self.eta2
+        self.xi1   = self.xi2
+        self.zeta2, self.eta2, self.xi2 = self.calc_subcell_position()
+        # update the subcell positions for charge conservation algorithm
 
     def tree_flatten(self):
         children = (
             self.v1, self.v2, self.v3, \
             self.x1, self.x2, self.x3, \
-            self.zeta1, self.zeta2, self.eta1, self.eta2, self.xi1, self.xi2
+            self.zeta1, self.zeta2, self.eta1, self.eta2, self.xi1, self.xi2, \
+            self.x1_back, self.x2_back, self.x3_back, \
+            self.x1_forward, self.x2_forward, self.x3_forward
         )
 
         aux_data = (
             self.name, self.N_particles, self.charge, self.mass, self.T, \
             self.x_wind, self.y_wind, self.z_wind, self.dx, self.dy, self.dz, \
             self.weight, self.bc, self.update_pos, self.update_v, self.update_x, self.update_y, \
-            self.update_z, self.update_vx, self.update_vy, self.update_vz, self.shape
+            self.update_z, self.update_vx, self.update_vy, self.update_vz, self.shape, self.dt
         )
         return children, aux_data
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        v1, v2, v3, x1, x2, x3, zeta1, zeta2, eta1, eta2, xi1, xi2 = children
+        v1, v2, v3, x1, x2, x3, zeta1, zeta2, eta1, eta2, xi1, xi2, x1_back, x2_back, x3_back, x1_forward, x2_forward, x3_forward = children
+
 
         name, N_particles, charge, mass, T, x_wind, y_wind, z_wind, dx, dy, \
             dz, weight, bc, update_pos, update_v, update_x, update_y, update_z, \
-                update_vx, update_vy, update_vz, shape  = aux_data
+                update_vx, update_vy, update_vz, shape, dt  = aux_data
 
         subcells = zeta1, zeta2, eta1, eta2, xi1, xi2
 
@@ -644,5 +691,6 @@ class particle_species:
             update_vz=update_vz,
             update_pos=update_pos,
             update_v=update_v,
-            shape=shape
+            shape=shape,
+            dt=dt
         )
