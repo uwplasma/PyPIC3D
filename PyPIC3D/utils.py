@@ -102,11 +102,26 @@ def compute_energy(particles, E, B, world, constants):
     dz = world['dz']
     # get the resolution of the grid
 
+    Nx = world['Nx']
+    Ny = world['Ny']
+    Nz = world['Nz']
+    # get the number of grid points in each direction
+
+    def nd_trapezoid(arr, dxs):
+        # arr: ndarray to integrate
+        # dxs: list/tuple of grid spacings for each axis
+        for axis, dx in enumerate(dxs):
+            arr = jnp.trapezoid(arr, dx=dx, axis=axis)
+        return arr
+
+    # Build dxs tuple with only components that are not 1
+    dxs = tuple(d for d in (dx, dy, dz) if d != 1)
+
     Ex, Ey, Ez = E
     Bx, By, Bz = B
-    E2_integral = jnp.trapezoid(  jnp.trapezoid(  jnp.trapezoid(Ex**2 + Ey**2 + Ez**2, dx=dx, axis=0), dx=dy, axis=0), dx=dz, axis=0)
-    B2_integral = jnp.trapezoid(  jnp.trapezoid(  jnp.trapezoid(Bx**2 + By**2 + Bz**2, dx=dx, axis=0), dx=dy, axis=0), dx=dz, axis=0)
-    # Integral of E^2 and B^2 over the entire grid
+    E2_integral = jnp.squeeze( nd_trapezoid(Ex**2 + Ey**2 + Ez**2, dxs))
+    B2_integral = jnp.squeeze( nd_trapezoid(Bx**2 + By**2 + Bz**2, dxs))
+    # Integrate E^2 and B^2 over the grid using trapezoidal rule
     e_energy = 0.5 * constants['eps'] * E2_integral
     b_energy = 0.5 / constants['mu'] * B2_integral
     # Electric and magnetic field energy
