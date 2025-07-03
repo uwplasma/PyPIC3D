@@ -576,22 +576,28 @@ class particle_species:
         self.x3 = jnp.where(self.x3 < -z_wind/2, -z_wind/2, self.x3)
 
 
-    def update_position(self, dt):
+    def update_position(self):
         if self.update_pos:
             if self.update_x:
-                self.x1 = self.x1 + self.v1 * dt
+                self.x1_back = self.x1_forward
+                self.x1_forward = self.x1_forward + self.v1 * self.dt / 2
+                self.x1 = self.x1_forward - self.v1 * self.dt / 2
+                # update the x position of the particles
+
             if self.update_y:
-                self.x2 = self.x2 + self.v2 * dt
+                self.x2_back = self.x2_forward
+                self.x2_forward = self.x2_forward + self.v2 * self.dt / 2
+                self.x2 = self.x2_forward - self.v2 * self.dt / 2
+                # update the y position of the particles
+
             if self.update_z:
-                self.x3 = self.x3 + self.v3 * dt
-            # update the position of the particles
-            if self.bc == 'periodic':
-                #print('Using periodic boundary conditions')
-                self.periodic_boundary_condition(self.x_wind, self.y_wind, self.z_wind)
-            elif self.bc == 'reflecting':
-                #print('Using reflecting boundary conditions')
-                self.reflecting_boundary_condition(self.x_wind, self.y_wind, self.z_wind)
-            # apply boundary conditions
+                self.x3_back = self.x3_forward
+                self.x3_forward = self.x3_forward + self.v3 * self.dt / 2
+                self.x3 = self.x3_forward - self.v3 * self.dt / 2
+                # update the z position of the particles
+
+            self.periodic_boundary_condition()
+            # apply periodic boundary conditions to the particles
 
             self.zeta1 = self.zeta2
             self.eta1  = self.eta2
