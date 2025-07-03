@@ -71,11 +71,6 @@ def J_from_rhov(particles, J, rho, constants, world):
             vz_particle = vz.at[particle].get()
             # get the velocity of the particle
 
-            # J = J_first_order_weighting(
-            #     charge, x, y, z, vx_particle, vy_particle, vz_particle, J, rho,
-            #     dx, dy, dz, x_wind, y_wind, z_wind
-            # )
-
             J = lax.cond(
                 shape_factor == 1,
                 lambda _: J_first_order_weighting(charge, x, y, z, vx_particle, vy_particle, vz_particle, J, rho, dx, dy, dz, x_wind, y_wind, z_wind),
