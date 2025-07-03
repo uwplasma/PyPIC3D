@@ -543,13 +543,13 @@ class particle_species:
     def momentum(self):
         return self.mass * self.weight * jnp.sum(jnp.sqrt(self.v1**2 + self.v2**2 + self.v3**2))
 
-    def periodic_boundary_condition(self, x_wind, y_wind, z_wind):
-        self.x1 = jnp.where(self.x1 > x_wind/2, -x_wind/2, self.x1)
-        self.x1 = jnp.where(self.x1 < -x_wind/2,  x_wind/2, self.x1)
-        self.x2 = jnp.where(self.x2 > y_wind/2, -y_wind/2, self.x2)
-        self.x2 = jnp.where(self.x2 < -y_wind/2,  y_wind/2, self.x2)
-        self.x3 = jnp.where(self.x3 > z_wind/2, -z_wind/2, self.x3)
-        self.x3 = jnp.where(self.x3 < -z_wind/2,  z_wind/2, self.x3)
+    def periodic_boundary_condition(self):
+        self.x1 = jnp.where(self.x1 > self.x_wind/2,  self.x1 - self.x_wind, \
+                            jnp.where(self.x1 < -self.x_wind/2, self.x1 + self.x_wind, self.x1))
+        self.x2 = jnp.where(self.x2 > self.y_wind/2,  self.x2 - self.y_wind, \
+                            jnp.where(self.x2 < -self.y_wind/2, self.x2 + self.y_wind, self.x2))
+        self.x3 = jnp.where(self.x3 > self.z_wind/2,  self.x3 - self.z_wind, \
+                            jnp.where(self.x3 < -self.z_wind/2, self.x3 + self.z_wind, self.x3))
 
     def reflecting_boundary_condition(self, x_wind, y_wind, z_wind):
 
