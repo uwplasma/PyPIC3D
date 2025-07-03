@@ -111,11 +111,11 @@ def compute_energy(particles, E, B, world, constants):
         # arr: ndarray to integrate
         # dxs: list/tuple of grid spacings for each axis
         for axis, dx in enumerate(dxs):
-            arr = jnp.trapezoid(arr, dx=dx, axis=axis)
+            arr = jnp.trapezoid( jnp.squeeze(arr), dx=dx, axis=-1)
         return arr
 
     # Build dxs tuple with only components that are not 1
-    dxs = tuple(d for d in (dx, dy, dz) if d != 1)
+    dxs = tuple(d for d in (dz, dy, dx) if d != 1)
 
     Ex, Ey, Ez = E
     Bx, By, Bz = B
@@ -267,9 +267,9 @@ def print_stats(world):
     z_wind = world['z_wind']
     t_wind = Nt*dt
     print(f'\ntime window: {t_wind} s with {Nt} time steps of {dt} s')
-    print(f'x window: {x_wind} m with dx: {dx}')
-    print(f'y window: {y_wind} m with dy: {dy}')
-    print(f'z window: {z_wind} m with dz: {dz}\n')
+    print(f'x window: {x_wind} m with dx: {dx} m')
+    print(f'y window: {y_wind} m with dy: {dy} m')
+    print(f'z window: {z_wind} m with dz: {dz} m\n')
 
 def check_stability(plasma_parameters, dt):
     """
