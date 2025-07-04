@@ -25,6 +25,24 @@ from PyPIC3D.initialization import (
     initialize_simulation
 )
 
+from PyPIC3D.vector_potential import (
+    E_from_A, B_from_A, initialize_vector_potential, update_vector_potential
+)
+
+
+from PyPIC3D.boris import (
+    particle_push
+)
+
+
+from PyPIC3D.fields import (
+    calculateE, update_B, update_E
+)
+
+from PyPIC3D.J import (
+    VB_correction, J_from_rhov
+)
+
 
 # Importing functions from the PyPIC3D package
 ############################################################################################################
@@ -43,7 +61,10 @@ def run_PyPIC3D(config_file):
     dt = world['dt']
     output_dir = simulation_parameters['output_dir']
 
-    field_names = ["E_magnitude", "B_magnitude"]
+    field_names = ["E_magnitude", "B_magnitude", "Ax", "Ay", "Az"]
+
+    A2, A1, A0 = initialize_vector_potential(J, world, constants)
+    # initialize the vector potential A based on the current density J
 
     ############################################################################################################
 
@@ -69,7 +90,11 @@ def run_PyPIC3D(config_file):
 
             E_magnitude = jnp.sqrt(E[0]**2 + E[1]**2 + E[2]**2)[:,:,world['Nz']//2]
             B_magnitude = jnp.sqrt(B[0]**2 + B[1]**2 + B[2]**2)[:,:,world['Nz']//2]
-            fields = [E_magnitude, B_magnitude]
+            Ax, Ay, Az = A0
+            Ax_ = Ax[:,:,world['Nz']//2]
+            Ay_ = Ay[:,:,world['Nz']//2]
+            Az_ = Az[:,:,world['Nz']//2]
+            fields = [E_magnitude, B_magnitude, Ax_, Ay_, Az_]
             plot_field_slice_vtk(fields, field_names, 2, E_grid, t, "fields", output_dir, world)
             # Plot the fields in VTK format
 
@@ -77,8 +102,53 @@ def run_PyPIC3D(config_file):
                 plot_vtk_particles(particles, t, output_dir)
             # Plot the particles in VTK format
 
-        particles, E, B, J, phi, rho = jit_loop(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, curl_func, solver, bc)
+        # particles, E, B, J, phi, rho = jit_loop(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, curl_func, solver, bc)
         # time loop to update the particles and fields
+
+
+        ################ PARTICLE PUSH ########################################################################################
+        for i in range(len(particles)):
+
+            particles[i] = particle_push(particles[i], E, B, E_grid, B_grid, world['dt'], constants)
+            # use boris push for particle velocities
+
+            particles[i].update_position()
+            # update the particle positions
+
+        ################ FIELD UPDATE ################################################################################################
+        J, rho = J_from_rhov(particles, J, rho, constants, world)
+        # calculate the current density from the particle positions and velocities
+
+        # if t == 0:
+        #     A1 = initialize_vector_potential(J, world, constants)
+        #     # initialize the vector potential A based on the current density J
+
+        #     E, phi, rho = calculateE(world, particles, constants, rho, phi, solver, bc)
+        #     # calculate the electric field using the Poisson equation
+
+        #     Ax0, Ay0, Az0 = A0
+        #     # unpack the vector potential components
+        #     Ex, Ey, Ez = E
+        #     # unpack the electric field components
+
+        #     Ax2 = Ax0 + 2*dt*Ex
+        #     Ay2 = Ay0 + 2*dt*Ey
+        #     Az2 = Az0 + 2*dt*Ez
+        #     # update the vector potential based on the electric field
+
+        #     A2 = Ax2, Ay2, Az2
+        #     # new vector potential components
+
+        A0 = A1
+        A1 = A2
+        # update the vector potential for the next iteration
+        A2 = update_vector_potential(J, world, constants, A1, A0)
+        # update the vector potential based on the current density J
+
+        E = E_from_A(A2, A0, world)
+        # calculate the electric field from the vector potential using centered finite difference
+        B = B_from_A(A2, world)
+        # calculate the magnetic field from the vector potential using centered finite difference
 
     ############################################################################################################
 
