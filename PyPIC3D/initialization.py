@@ -18,7 +18,7 @@ from PyPIC3D.utils import (
     update_parameters_from_toml,
     build_yee_grid, convert_to_jax_compatible, load_external_fields_from_toml,
     print_stats, particle_sanity_check, build_plasma_parameters_dict,
-    make_dir, compute_energy
+    make_dir, compute_energy, build_collocated_grid
 )
 
 from PyPIC3D.fields import (
@@ -218,7 +218,7 @@ def initialize_simulation(toml_file):
     plotting_parameters = convert_to_jax_compatible(plotting_parameters)
     # convert the world parameters to jax compatible format
 
-    B_grid, E_grid = build_yee_grid(world)
+    B_grid, E_grid = build_collocated_grid(world)
     # build the grid for the fields
 
     if not os.path.exists(f"{simulation_parameters['output_dir']}/data"):

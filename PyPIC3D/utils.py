@@ -363,7 +363,7 @@ def convert_to_jax_compatible(data):
     return tree_map(lambda x: jnp.array(x) if isinstance(x, (int, float, list, tuple)) else x, data)
 
 
-def build_coallocated_grid(world):
+def build_collocated_grid(world):
     """
     Builds a co-allocated grid based on the provided world parameters.
 
