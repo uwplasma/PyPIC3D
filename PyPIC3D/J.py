@@ -403,20 +403,20 @@ def Esirkepov_current(particles, J, constants, world):
     Jz = Jz.at[:, :, :].set(0)
     # initialize the current arrays as 0
 
-    C = constants['C']
-    # speed of light
-
     x_wind = world['x_wind']
     y_wind = world['y_wind']
     z_wind = world['z_wind']
+    # get the window parameters
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
+    # get the grid spacing parameters
     dt = world['dt']
+    # get the time step
     Nx = world['Nx']
     Ny = world['Ny']
     Nz = world['Nz']
-    # get the world parameters
+    # get the number of grid points in each direction
 
 
     for species in particles:
@@ -451,11 +451,6 @@ def Esirkepov_current(particles, J, constants, world):
         y2     = wrap_around(y1 + 1, Ny)
         z2     = wrap_around(z1 + 1, Nz)
         # Calculate the index of the next grid point
-
-        x_minus1 = x0 - 1
-        y_minus1 = y0 - 1
-        z_minus1 = z0 - 1
-        # Calculate the index of the previous grid point
 
         old_Sx0 = (3/4) - (old_deltax/dx)**2
         old_Sy0 = (3/4) - (old_deltay/dy)**2
@@ -610,4 +605,64 @@ def Esirkepov_current(particles, J, constants, world):
         Jz = Jz.at[x0, y0, z2].add(       Wz1 * (q / dx / dy / dt), mode='drop')
         # Update the current density in the z direction
 
+        # Jx = Jx.at[x0, y0, z0].add( ( Wx_minus1 + Wx0 + Wx1 ) * (q / dy / dz / dt), mode='drop')
+        # Jy = Jy.at[x0, y0, z0].add( ( Wy_minus1 + Wy0 + Wy1 ) * (q / dx / dz / dt), mode='drop')
+        # Jz = Jz.at[x0, y0, z0].add( ( Wz_minus1 + Wz0 + Wz1 ) * (q / dx / dy / dt), mode='drop')
+
     return (Jx, Jy, Jz)
+
+
+def get_second_order_weights(deltax, deltay, deltaz, dx, dy, dz):
+    """
+    Calculate the second-order weights for particle current distribution.
+
+    Args:
+        deltax, deltay, deltaz (float): Particle position offsets from grid points.
+        dx, dy, dz (float): Grid spacings in x, y, and z directions.
+
+    Returns:
+        tuple: Weights for x, y, and z directions.
+    """
+    Sx0 = (3/4) - (deltax/dx)**2
+    Sy0 = (3/4) - (deltay/dy)**2
+    Sz0 = (3/4) - (deltaz/dz)**2
+
+    Sx1 = jnp.where(deltax <= dx/2, (1/2) * ((1/2) - (deltax/dx))**2, 0.0)
+    Sy1 = jnp.where(deltay <= dy/2, (1/2) * ((1/2) - (deltay/dy))**2, 0.0)
+    Sz1 = jnp.where(deltaz <= dz/2, (1/2) * ((1/2) - (deltaz/dz))**2, 0.0)
+
+    Sx_minus1 = jnp.where(deltax <= dx/2, (1/2) * ((1/2) + (deltax/dx))**2, 0.0)
+    Sy_minus1 = jnp.where(deltay <= dy/2, (1/2) * ((1/2) + (deltay/dy))**2, 0.0)
+    Sz_minus1 = jnp.where(deltaz <= dz/2, (1/2) * ((1/2) + (deltaz/dz))**2, 0.0)
+
+    x_weights = [Sx0, Sx1, Sx_minus1]
+    y_weights = [Sy0, Sy1, Sy_minus1]
+    z_weights = [Sz0, Sz1, Sz_minus1]
+
+    return x_weights, y_weights, z_weights
+
+
+def get_first_order_weights(deltax, deltay, deltaz, dx, dy, dz):
+    """
+    Calculate the first-order weights for particle current distribution.
+
+    Args:
+        deltax, deltay, deltaz (float): Particle position offsets from grid points.
+        dx, dy, dz (float): Grid spacings in x, y, and z directions.
+
+    Returns:
+        tuple: Weights for x, y, and z directions.
+    """
+    Sx0 = 1 - deltax / dx
+    Sy0 = 1 - deltay / dy
+    Sz0 = 1 - deltaz / dz
+
+    Sx1 = deltax / dx
+    Sy1 = deltay / dy
+    Sz1 = deltaz / dz
+
+    x_weights = [Sx0, Sx1]
+    y_weights = [Sy0, Sy1]
+    z_weights = [Sz0, Sz1]
+
+    return x_weights, y_weights, z_weights
