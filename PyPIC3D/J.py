@@ -62,9 +62,9 @@ def J_from_rhov(particles, J, rho, constants, world):
         shape_factor = species.get_shape()
 
         def add_to_J(particle, J):
-            x = particle_x.at[particle].get() - dx/2
-            y = particle_y.at[particle].get() - dy/2
-            z = particle_z.at[particle].get() - dz/2
+            x = particle_x.at[particle].get()
+            y = particle_y.at[particle].get()
+            z = particle_z.at[particle].get()
             # get the position of the particle
             vx_particle = vx.at[particle].get()
             vy_particle = vy.at[particle].get()
