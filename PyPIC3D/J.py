@@ -405,6 +405,7 @@ def Esirkepov_current(particles, J, constants, world):
 
     C = constants['C']
     # speed of light
+    eps = constants['eps']
 
     x_wind = world['x_wind']
     y_wind = world['y_wind']
@@ -412,6 +413,7 @@ def Esirkepov_current(particles, J, constants, world):
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
+    dt = world['dt']
     Nx = world['Nx']
     Ny = world['Ny']
     Nz = world['Nz']
@@ -423,6 +425,8 @@ def Esirkepov_current(particles, J, constants, world):
     for species in particles:
         q = species.get_charge()
         # get the charge of the species
+        m = species.get_mass()
+        # get the mass of the species
         old_x, old_y, old_z = species.get_old_position()
         # get the old position of the particles in the species
         x, y, z = species.get_position()
@@ -592,34 +596,36 @@ def Esirkepov_current(particles, J, constants, world):
 
         # Calculate the weights for the current density
 
-        Jx = Jx.at[x0, y0, z0].add(Jx[x_minus1, y0, z0] -
-                                                    Wx_minus1 * (q * vx), mode='drop')
+        scale_factor = q / (dx*dy)
+
+        # Jx = Jx.at[x0, y0, z0].add(Jx[x_minus1, y0, z0] -
+        #                                             Wx_minus1 * (scale_factor * vx), mode='drop')
 
         Jx = Jx.at[x1, y0, z0].add(Jx[x0, y0, z0] -
-                                                    Wx0 * (q * vx), mode='drop')
+                                                    Wx0 * (scale_factor * vx), mode='drop')
 
-        Jx = Jx.at[x2, y0, z0].add(Jx[x1, y0, z0] -
-                                                    Wx1 * (q * vx), mode='drop')
+        # Jx = Jx.at[x2, y0, z0].add(Jx[x1, y0, z0] -
+        #                                             Wx1 * (scale_factor * vx), mode='drop')
         # Update the current density in the x direction
 
-        Jy = Jy.at[x0, y0, z0].add(Jy[x0, y_minus1, z0] -
-                                                    Wy_minus1 * (q * vy), mode='drop')
+        # Jy = Jy.at[x0, y0, z0].add(Jy[x0, y_minus1, z0] -
+        #                                             Wy_minus1 * (scale_factor * vy), mode='drop')
 
         Jy = Jy.at[x0, y1, z0].add(Jy[x0, y0, z0] -
-                                                    Wy0 * (q * vy), mode='drop')
+                                                    Wy0 * (scale_factor * vy), mode='drop')
 
-        Jy = Jy.at[x0, y2, z0].add(Jy[x0, y1, z0] -
-                                                    Wy1 * (q * vy), mode='drop')
+        # Jy = Jy.at[x0, y2, z0].add(Jy[x0, y1, z0] -
+        #                                             Wy1 * (scale_factor * vy), mode='drop')
         # Update the current density in the y direction
 
-        Jz = Jz.at[x0, y0, z0].add(Jz[x0, y0, z_minus1] -
-                                                    Wz_minus1 * (q * vz), mode='drop')
+        # Jz = Jz.at[x0, y0, z0].add(Jz[x0, y0, z_minus1] -
+        #                                             Wz_minus1 * (scale_factor * vz), mode='drop')
 
         Jz = Jz.at[x0, y0, z1].add(Jz[x0, y0, z0] -
-                                                    Wz0 * (q * vz), mode='drop')
+                                                    Wz0 * (scale_factor * vz), mode='drop')
 
-        Jz = Jz.at[x0, y0, z2].add(Jz[x0, y0, z1] -
-                                                    Wz1 * (q * vz), mode='drop')
+        # Jz = Jz.at[x0, y0, z2].add(Jz[x0, y0, z1] -
+        #                                             Wz1 * (scale_factor * vz), mode='drop')
         # Update the current density in the z direction
 
     return (Jx, Jy, Jz)
