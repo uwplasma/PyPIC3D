@@ -427,7 +427,6 @@ def Esirkepov_current(particles, J, constants, world):
         x, y, z = species.get_position()
         # get the position of the particles in the species
 
-
         x0 = jnp.floor((x + x_wind / 2) / dx).astype(int)
         y0 = jnp.floor((y + y_wind / 2) / dy).astype(int)
         z0 = jnp.floor((z + z_wind / 2) / dz).astype(int)
@@ -584,30 +583,26 @@ def Esirkepov_current(particles, J, constants, world):
 
         # Calculate the weights for the current density
 
-        Jx = Jx.at[x0, y0, z0].add( Wx_minus1 * ( q / dy / dz / dt), mode='drop')
+        Jx = Jx.at[x0, y0, z0].add( -Wx_minus1 * ( q / dy / dz / dt), mode='drop')
 
-        Jx = Jx.at[x1, y0, z0].add(        Wx0 * (q / dy / dz / dt), mode='drop')
+        Jx = Jx.at[x1, y0, z0].add(        -Wx0 * (q / dy / dz / dt), mode='drop')
 
-        Jx = Jx.at[x2, y0, z0].add(        Wx1 * (q / dy / dz / dt), mode='drop')
+        Jx = Jx.at[x2, y0, z0].add(        -Wx1 * (q / dy / dz / dt), mode='drop')
         # Update the current density in the x direction
 
-        Jy = Jy.at[x0, y0, z0].add( Wy_minus1 * (q / dx / dz / dt), mode='drop')
+        Jy = Jy.at[x0, y0, z0].add( -Wy_minus1 * (q / dx / dz / dt), mode='drop')
 
-        Jy = Jy.at[x0, y1, z0].add(       Wy0 * (q / dx / dz / dt), mode='drop')
+        Jy = Jy.at[x0, y1, z0].add(       -Wy0 * (q / dx / dz / dt), mode='drop')
 
-        Jy = Jy.at[x0, y2, z0].add(       Wy1 * (q / dx / dz / dt), mode='drop')
+        Jy = Jy.at[x0, y2, z0].add(       -Wy1 * (q / dx / dz / dt), mode='drop')
         # Update the current density in the y direction
 
-        Jz = Jz.at[x0, y0, z0].add( Wz_minus1 * (q / dx / dy / dt), mode='drop')
+        Jz = Jz.at[x0, y0, z0].add( -Wz_minus1 * (q / dx / dy / dt), mode='drop')
 
-        Jz = Jz.at[x0, y0, z1].add(       Wz0 * (q / dx / dy / dt), mode='drop')
+        Jz = Jz.at[x0, y0, z1].add(       -Wz0 * (q / dx / dy / dt), mode='drop')
 
-        Jz = Jz.at[x0, y0, z2].add(       Wz1 * (q / dx / dy / dt), mode='drop')
+        Jz = Jz.at[x0, y0, z2].add(       -Wz1 * (q / dx / dy / dt), mode='drop')
         # Update the current density in the z direction
-
-        # Jx = Jx.at[x0, y0, z0].add( ( Wx_minus1 + Wx0 + Wx1 ) * (q / dy / dz / dt), mode='drop')
-        # Jy = Jy.at[x0, y0, z0].add( ( Wy_minus1 + Wy0 + Wy1 ) * (q / dx / dz / dt), mode='drop')
-        # Jz = Jz.at[x0, y0, z0].add( ( Wz_minus1 + Wz0 + Wz1 ) * (q / dx / dy / dt), mode='drop')
 
     return (Jx, Jy, Jz)
 
