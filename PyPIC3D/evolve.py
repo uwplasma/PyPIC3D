@@ -1,7 +1,6 @@
 # Christopher Woolford Dec 5, 2024
 # This contains the evolution loop for the 3D PIC code that calculates the electric and magnetic fields and updates the particles.
 
-#from memory_profiler import profile
 import jax.numpy as jnp
 import jax
 from jax import jit
@@ -11,16 +10,11 @@ from PyPIC3D.fields import (
     calculateE, update_B, update_E
 )
 
-from PyPIC3D.J import (
-    VB_correction, J_from_rhov, Esirkepov_current
-)
-
 from PyPIC3D.boris import (
     particle_push
 )
 
-#@profile
-@partial(jit, static_argnums=("curl_func", "J_func", "solver", "bc"))
+@partial(jit, static_argnames=("curl_func", "J_func", "solver", "bc"))
 def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc):
     """
     Perform a time loop for an electrostatic simulation.
@@ -67,7 +61,7 @@ def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world,
 
     return particles, E, B, J, phi, rho
 
-@partial(jit, static_argnums=("curl_func", "J_func", "solver", "bc"))
+@partial(jit, static_argnames=("curl_func", "J_func", "solver", "bc"))
 def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc):
     """
     Perform a time loop for electrodynamic simulation.
