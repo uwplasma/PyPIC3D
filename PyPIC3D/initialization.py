@@ -111,23 +111,6 @@ def setup_write_dir(simulation_parameters, plotting_parameters):
         # get the output directory from the simulation parameters
         make_dir(f'{output_dir}/data')
         # make the directory for the data
-        # if plotting_parameters['plotfields']:
-        #     make_dir( f"{output_dir}/data/E_slice" )
-        #     # make the directory for the electric field slices
-        #     make_dir( f"{output_dir}/data/B_slice" )
-        #     # make the directory for the magnetic field slices
-        #     make_dir( f"{output_dir}/data/Exy_slice" )
-        #     # make the directory for the electric field xy slices
-        #     make_dir( f"{output_dir}/data/Exz_slice" )
-        #     # make the directory for the electric field xz slices
-        #     make_dir( f"{output_dir}/data/Eyz_slice" )
-        #     # make the directory for the electric field yz slices
-        #     make_dir( f"{output_dir}/data/Bxy_slice" )
-        #     # make the directory for the magnetic field xy slices
-        #     make_dir( f"{output_dir}/data/Bxz_slice" )
-        #     # make the directory for the magnetic field xz slices
-        #     make_dir( f"{output_dir}/data/Byz_slice" )
-        #     # make the directory for the magnetic field yz slices
 
 
 #@profile

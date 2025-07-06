@@ -301,9 +301,6 @@ def J_second_order_weighting(q, x, y, z, vx, vy, vz, J, rho, dx, dy, dz, x_wind,
     return (Jx, Jy, Jz)
 
 
-
-
-
 @jit
 def wrap_around(ix, size):
     """Wrap around index (scalar or 1D array) to ensure it is within bounds."""
@@ -426,11 +423,27 @@ def Esirkepov_current(particles, J, constants, world):
         # get the old position of the particles in the species
         x, y, z = species.get_position()
         # get the position of the particles in the species
+        shape_factor = species.get_shape()
 
-        x0 = jnp.floor((x + x_wind / 2) / dx).astype(int)
-        y0 = jnp.floor((y + y_wind / 2) / dy).astype(int)
-        z0 = jnp.floor((z + z_wind / 2) / dz).astype(int)
+        x0 = jnp.floor((x + x_wind / 2 - dx/2) / dx).astype(int)
+        y0 = jnp.floor((y + y_wind / 2 - dy/2) / dy).astype(int)
+        z0 = jnp.floor((z + z_wind / 2 - dz/2) / dz).astype(int)
         # Calculate the nearest grid points
+
+        x1 = wrap_around(x0 + 1, Nx)
+        y1 = wrap_around(y0 + 1, Ny)
+        z1 = wrap_around(z0 + 1, Nz)
+        # Calculate the index of the next grid point
+
+        x_minus1 = wrap_around(x1 - 1, Nx)
+        y_minus1 = wrap_around(y1 - 1, Ny)
+        z_minus1 = wrap_around(z1 - 1, Nz)
+        # Calculate the index of the next grid point
+
+        xpts = [x_minus1, x0, x1]
+        ypts = [y_minus1, y0, y1]
+        zpts = [z_minus1, z0, z1]
+        # List of grid points in each direction
 
         old_deltax = old_x - jnp.floor(old_x / dx) * dx
         old_deltay = old_y - jnp.floor(old_y / dy) * dy
@@ -441,168 +454,52 @@ def Esirkepov_current(particles, J, constants, world):
         new_deltaz = z - jnp.floor(z / dz) * dz
         # Calculate the difference between the particle position and the nearest grid point
 
-        x1 = wrap_around(x0 + 1, Nx)
-        y1 = wrap_around(y0 + 1, Ny)
-        z1 = wrap_around(z0 + 1, Nz)
-        # Calculate the index of the next grid point
+        old_x_weights, old_y_weights, old_z_weights = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: get_first_order_weights(old_deltax, old_deltay, old_deltaz, dx, dy, dz),
+            lambda _: get_second_order_weights(old_deltax, old_deltay, old_deltaz, dx, dy, dz),
+            operand=None
+        )
+        x_weights, y_weights, z_weights = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: get_first_order_weights(new_deltax, new_deltay, new_deltaz, dx, dy, dz),
+            lambda _: get_second_order_weights(new_deltax, new_deltay, new_deltaz, dx, dy, dz),
+            operand=None
+        )
+        # Calculate the weights for the grid points
 
-        x2     = wrap_around(x1 + 1, Nx)
-        y2     = wrap_around(y1 + 1, Ny)
-        z2     = wrap_around(z1 + 1, Nz)
-        # Calculate the index of the next grid point
+        d_Sx = []
+        d_Sy = []
+        d_Sz = []
 
-        old_Sx0 = (3/4) - (old_deltax/dx)**2
-        old_Sy0 = (3/4) - (old_deltay/dy)**2
-        old_Sz0 = (3/4) - (old_deltaz/dz)**2
-        # Calculate the weights for the central grid points
-
-        new_Sx0 = (3/4) - (new_deltax/dx)**2
-        new_Sy0 = (3/4) - (new_deltay/dy)**2
-        new_Sz0 = (3/4) - (new_deltaz/dz)**2
-        # Calculate the weights for the central grid points
-
-        dSx0 = new_Sx0 - old_Sx0
-        dSy0 = new_Sy0 - old_Sy0
-        dSz0 = new_Sz0 - old_Sz0
+        for i in range(len(x_weights)):
+            d_Sx.append(x_weights[i] - old_x_weights[i])
+            d_Sy.append(y_weights[i] - old_y_weights[i])
+            d_Sz.append(z_weights[i] - old_z_weights[i])
         # Calculate the difference in weights for the central grid points
 
+        Wx = []
+        Wy = []
+        Wz = []
 
-        old_Sx1 = jnp.where(
-            old_deltax <= dx/2,
-            (1/2) * ((1/2) - (old_deltax/dx))**2,
-            0.0
-        )
-
-        new_Sx1 = jnp.where(
-            new_deltax <= dx/2,
-            (1/2) * ((1/2) - (new_deltax/dx))**2,
-            0.0
-        )
-        # Calculate the weights for the next grid points
-
-        old_Sy1 = jnp.where(
-            old_deltay <= dy/2,
-            (1/2) * ((1/2) - (old_deltay/dy))**2,
-            0.0
-        )
-
-        new_Sy1 = jnp.where(
-            new_deltay <= dy/2,
-            (1/2) * ((1/2) - (new_deltay/dy))**2,
-            0.0
-        )
-
-        # Calculate the weights for the next grid points
-
-        old_Sz1 = jnp.where(
-            old_deltaz <= dz/2,
-            (1/2) * ((1/2) - (old_deltaz/dz))**2,
-            0.0
-        )
-
-        new_Sz1 = jnp.where(
-            new_deltaz <= dz/2,
-            (1/2) * ((1/2) - (new_deltaz/dz))**2,
-            0.0
-        )
+        for i in range(len(x_weights)):
+            Wx.append( d_Sx[i] * ( old_y_weights[i] * old_z_weights[i] + 0.5 * d_Sy[i] * old_z_weights[i] \
+               + 0.5 * old_y_weights[i] * d_Sz[i] + d_Sy[i] * d_Sz[i] / 3))
+            Wy.append( d_Sy[i] * ( old_x_weights[i] * old_z_weights[i] + 0.5 * d_Sx[i] * old_z_weights[i] \
+               + 0.5 * old_x_weights[i] * d_Sz[i] + d_Sx[i] * d_Sz[i] / 3))
+            Wz.append( d_Sz[i] * ( old_x_weights[i] * old_y_weights[i] + 0.5 * d_Sx[i] * old_y_weights[i] \
+               + 0.5 * old_x_weights[i] * d_Sy[i] + d_Sx[i] * d_Sy[i] / 3))
 
 
-        dSx1 = new_Sx1 - old_Sx1
-        dSy1 = new_Sy1 - old_Sy1
-        dSz1 = new_Sz1 - old_Sz1
-        # Calculate the difference in weights for the next grid points
-
-        old_Sx_minus1 = jnp.where(
-            old_deltax <= dx/2,
-            (1/2) * ((1/2) + (old_deltax/dx))**2,
-            0.0
-        )
-
-        old_Sy_minus1 = jnp.where(
-            old_deltay <= dy/2,
-            (1/2) * ((1/2) + (old_deltay/dy))**2,
-            0.0
-        )
-
-        old_Sz_minus1 = jnp.where(
-            old_deltaz <= dz/2,
-            (1/2) * ((1/2) + (old_deltaz/dz))**2,
-            0.0
-        )
-
-        new_Sx_minus1 = jnp.where(
-            new_deltax <= dx/2,
-            (1/2) * ((1/2) + (new_deltax/dx))**2,
-            0.0
-        )
-        new_Sy_minus1 = jnp.where(
-            new_deltay <= dy/2,
-            (1/2) * ((1/2) + (new_deltay/dy))**2,
-            0.0
-        )
-
-        new_Sz_minus1 = jnp.where(
-            new_deltaz <= dz/2,
-            (1/2) * ((1/2) + (new_deltaz/dz))**2,
-            0.0
-        )
-
-        dSx_minus1 = new_Sx_minus1 - old_Sx_minus1
-        dSy_minus1 = new_Sy_minus1 - old_Sy_minus1
-        dSz_minus1 = new_Sz_minus1 - old_Sz_minus1
-        # Calculate the difference in weights for the previous grid points
-
-        Wx0 = dSx0 * (old_Sy0 * old_Sz0 + 0.5 * dSy0 * old_Sz0 \
-                      + 0.5 * old_Sy0 * dSz0 + dSy0 * dSz0 / 3)
-
-        Wx1 = dSx1 * (old_Sy1 * old_Sz1 + 0.5 * dSy1 * old_Sz1 \
-                      + 0.5 * old_Sy1 * dSz1 + dSy1 * dSz1 / 3)
-
-        Wx_minus1 = dSx_minus1 * (old_Sy_minus1 * old_Sz_minus1 + 0.5 * dSy_minus1 * old_Sz_minus1 \
-                                   + 0.5 * old_Sy_minus1 * dSz_minus1 + dSy_minus1 * dSz_minus1 / 3)
-
-
-        Wy0 = dSy0 * (old_Sx0 * old_Sz0 + 0.5 * dSx0 * old_Sz0 \
-                        + 0.5 * old_Sx0 * dSz0 + dSx0 * dSz0 / 3)
-
-        Wy1 = dSy1 * (old_Sx1 * old_Sz1 + 0.5 * dSx1 * old_Sz1 \
-                        + 0.5 * old_Sx1 * dSz1 + dSx1 * dSz1 / 3)
-
-        Wy_minus1 = dSy_minus1 * (old_Sx_minus1 * old_Sz_minus1 + 0.5 * dSx_minus1 * old_Sz_minus1 \
-                                    + 0.5 * old_Sx_minus1 * dSz_minus1 + dSx_minus1 * dSz_minus1 / 3)
-
-
-        Wz0 = dSz0 * (old_Sx0 * old_Sy0 + 0.5 * dSx0 * old_Sy0 \
-                        + 0.5 * old_Sx0 * dSy0 + dSx0 * dSy0 / 3)
-
-        Wz1 = dSz1 * (old_Sx1 * old_Sy1 + 0.5 * dSx1 * old_Sy1 \
-                        + 0.5 * old_Sx1 * dSy1 + dSx1 * dSy1 / 3)
-
-        Wz_minus1 = dSz_minus1 * (old_Sx_minus1 * old_Sy_minus1 + 0.5 * dSx_minus1 * old_Sy_minus1 \
-                                    + 0.5 * old_Sx_minus1 * dSy_minus1 + dSx_minus1 * dSy_minus1 / 3)
-
-        # Calculate the weights for the current density
-
-        Jx = Jx.at[x0, y0, z0].add( -Wx_minus1 * ( q / dy / dz / dt), mode='drop')
-
-        Jx = Jx.at[x1, y0, z0].add(        -Wx0 * (q / dy / dz / dt), mode='drop')
-
-        Jx = Jx.at[x2, y0, z0].add(        -Wx1 * (q / dy / dz / dt), mode='drop')
-        # Update the current density in the x direction
-
-        Jy = Jy.at[x0, y0, z0].add( -Wy_minus1 * (q / dx / dz / dt), mode='drop')
-
-        Jy = Jy.at[x0, y1, z0].add(       -Wy0 * (q / dx / dz / dt), mode='drop')
-
-        Jy = Jy.at[x0, y2, z0].add(       -Wy1 * (q / dx / dz / dt), mode='drop')
-        # Update the current density in the y direction
-
-        Jz = Jz.at[x0, y0, z0].add( -Wz_minus1 * (q / dx / dy / dt), mode='drop')
-
-        Jz = Jz.at[x0, y0, z1].add(       -Wz0 * (q / dx / dy / dt), mode='drop')
-
-        Jz = Jz.at[x0, y0, z2].add(       -Wz1 * (q / dx / dy / dt), mode='drop')
-        # Update the current density in the z direction
+        for i in range(len(xpts)):
+            x = xpts[i]
+            y = ypts[i]
+            z = zpts[i]
+            # Loop over the grid points in each direction
+            Jx = Jx.at[x, y, z].add( Wx[i] *  (q / dy / dz / dt), mode='drop')
+            Jy = Jy.at[x, y, z].add( Wy[i] *  (q / dx / dz / dt), mode='drop')
+            Jz = Jz.at[x, y, z].add( Wz[i] *  (q / dx / dy / dt), mode='drop')
+            # Distribute the current density to the grid points
 
     return (Jx, Jy, Jz)
 
@@ -630,9 +527,9 @@ def get_second_order_weights(deltax, deltay, deltaz, dx, dy, dz):
     Sy_minus1 = jnp.where(deltay <= dy/2, (1/2) * ((1/2) + (deltay/dy))**2, 0.0)
     Sz_minus1 = jnp.where(deltaz <= dz/2, (1/2) * ((1/2) + (deltaz/dz))**2, 0.0)
 
-    x_weights = [Sx0, Sx1, Sx_minus1]
-    y_weights = [Sy0, Sy1, Sy_minus1]
-    z_weights = [Sz0, Sz1, Sz_minus1]
+    x_weights = [Sx_minus1, Sx0, Sx1]
+    y_weights = [Sy_minus1, Sy0, Sy1]
+    z_weights = [Sz_minus1, Sz0, Sz1]
 
     return x_weights, y_weights, z_weights
 
@@ -648,16 +545,21 @@ def get_first_order_weights(deltax, deltay, deltaz, dx, dy, dz):
     Returns:
         tuple: Weights for x, y, and z directions.
     """
-    Sx0 = 1 - deltax / dx
-    Sy0 = 1 - deltay / dy
-    Sz0 = 1 - deltaz / dz
+    Sx0 = jnp.asarray(1 - deltax / dx)
+    Sy0 = jnp.asarray(1 - deltay / dy)
+    Sz0 = jnp.asarray(1 - deltaz / dz)
 
-    Sx1 = deltax / dx
-    Sy1 = deltay / dy
-    Sz1 = deltaz / dz
+    Sx1 = jnp.asarray(deltax / dx)
+    Sy1 = jnp.asarray(deltay / dy)
+    Sz1 = jnp.asarray(deltaz / dz)
 
-    x_weights = [Sx0, Sx1]
-    y_weights = [Sy0, Sy1]
-    z_weights = [Sz0, Sz1]
+    Sx_minus1 = jnp.zeros_like(Sx0)
+    Sy_minus1 = jnp.zeros_like(Sy0)
+    Sz_minus1 = jnp.zeros_like(Sz0)
+    # No second-order weights for first-order weighting
+
+    x_weights = [Sx_minus1, Sx0, Sx1]
+    y_weights = [Sy_minus1, Sy0, Sy1]
+    z_weights = [Sz_minus1, Sz0, Sz1]
 
     return x_weights, y_weights, z_weights
