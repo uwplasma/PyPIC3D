@@ -301,9 +301,6 @@ def J_second_order_weighting(q, x, y, z, vx, vy, vz, J, rho, dx, dy, dz, x_wind,
     return (Jx, Jy, Jz)
 
 
-
-
-
 @jit
 def wrap_around(ix, size):
     """Wrap around index (scalar or 1D array) to ensure it is within bounds."""
@@ -391,3 +388,178 @@ def VB_correction(particles, J, constants):
 
     return (Jx, Jy, Jz)
     # return the current corrections
+
+
+def Esirkepov_current(particles, J, constants, world):
+
+    Jx, Jy, Jz = J
+    # unpack the values of J
+
+    Jx = Jx.at[:, :, :].set(0)
+    Jy = Jy.at[:, :, :].set(0)
+    Jz = Jz.at[:, :, :].set(0)
+    # initialize the current arrays as 0
+
+    x_wind = world['x_wind']
+    y_wind = world['y_wind']
+    z_wind = world['z_wind']
+    # get the window parameters
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    # get the grid spacing parameters
+    dt = world['dt']
+    # get the time step
+    Nx = world['Nx']
+    Ny = world['Ny']
+    Nz = world['Nz']
+    # get the number of grid points in each direction
+
+
+    for species in particles:
+        q = species.get_charge()
+        # get the charge of the species
+        old_x, old_y, old_z = species.get_old_position()
+        # get the old position of the particles in the species
+        x, y, z = species.get_position()
+        # get the position of the particles in the species
+        shape_factor = species.get_shape()
+
+        x0 = jnp.floor((x + x_wind / 2 - dx/2) / dx).astype(int)
+        y0 = jnp.floor((y + y_wind / 2 - dy/2) / dy).astype(int)
+        z0 = jnp.floor((z + z_wind / 2 - dz/2) / dz).astype(int)
+        # Calculate the nearest grid points
+
+        x1 = wrap_around(x0 + 1, Nx)
+        y1 = wrap_around(y0 + 1, Ny)
+        z1 = wrap_around(z0 + 1, Nz)
+        # Calculate the index of the next grid point
+
+        x_minus1 = wrap_around(x1 - 1, Nx)
+        y_minus1 = wrap_around(y1 - 1, Ny)
+        z_minus1 = wrap_around(z1 - 1, Nz)
+        # Calculate the index of the next grid point
+
+        xpts = [x_minus1, x0, x1]
+        ypts = [y_minus1, y0, y1]
+        zpts = [z_minus1, z0, z1]
+        # List of grid points in each direction
+
+        old_deltax = old_x - jnp.floor(old_x / dx) * dx
+        old_deltay = old_y - jnp.floor(old_y / dy) * dy
+        old_deltaz = old_z - jnp.floor(old_z / dz) * dz
+        # Calculate the difference between the particle position and the nearest grid point
+        new_deltax = x - jnp.floor(x / dx) * dx
+        new_deltay = y - jnp.floor(y / dy) * dy
+        new_deltaz = z - jnp.floor(z / dz) * dz
+        # Calculate the difference between the particle position and the nearest grid point
+
+        old_x_weights, old_y_weights, old_z_weights = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: get_first_order_weights(old_deltax, old_deltay, old_deltaz, dx, dy, dz),
+            lambda _: get_second_order_weights(old_deltax, old_deltay, old_deltaz, dx, dy, dz),
+            operand=None
+        )
+        x_weights, y_weights, z_weights = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: get_first_order_weights(new_deltax, new_deltay, new_deltaz, dx, dy, dz),
+            lambda _: get_second_order_weights(new_deltax, new_deltay, new_deltaz, dx, dy, dz),
+            operand=None
+        )
+        # Calculate the weights for the grid points
+
+        d_Sx = []
+        d_Sy = []
+        d_Sz = []
+
+        for i in range(len(x_weights)):
+            d_Sx.append(x_weights[i] - old_x_weights[i])
+            d_Sy.append(y_weights[i] - old_y_weights[i])
+            d_Sz.append(z_weights[i] - old_z_weights[i])
+        # Calculate the difference in weights for the central grid points
+
+        Wx = []
+        Wy = []
+        Wz = []
+
+        for i in range(len(x_weights)):
+            Wx.append( d_Sx[i] * ( old_y_weights[i] * old_z_weights[i] + 0.5 * d_Sy[i] * old_z_weights[i] \
+               + 0.5 * old_y_weights[i] * d_Sz[i] + d_Sy[i] * d_Sz[i] / 3))
+            Wy.append( d_Sy[i] * ( old_x_weights[i] * old_z_weights[i] + 0.5 * d_Sx[i] * old_z_weights[i] \
+               + 0.5 * old_x_weights[i] * d_Sz[i] + d_Sx[i] * d_Sz[i] / 3))
+            Wz.append( d_Sz[i] * ( old_x_weights[i] * old_y_weights[i] + 0.5 * d_Sx[i] * old_y_weights[i] \
+               + 0.5 * old_x_weights[i] * d_Sy[i] + d_Sx[i] * d_Sy[i] / 3))
+
+
+        for i in range(len(xpts)):
+            x = xpts[i]
+            y = ypts[i]
+            z = zpts[i]
+            # Loop over the grid points in each direction
+            Jx = Jx.at[x, y, z].add( Wx[i] *  (q / dy / dz / dt), mode='drop')
+            Jy = Jy.at[x, y, z].add( Wy[i] *  (q / dx / dz / dt), mode='drop')
+            Jz = Jz.at[x, y, z].add( Wz[i] *  (q / dx / dy / dt), mode='drop')
+            # Distribute the current density to the grid points
+
+    return (Jx, Jy, Jz)
+
+
+def get_second_order_weights(deltax, deltay, deltaz, dx, dy, dz):
+    """
+    Calculate the second-order weights for particle current distribution.
+
+    Args:
+        deltax, deltay, deltaz (float): Particle position offsets from grid points.
+        dx, dy, dz (float): Grid spacings in x, y, and z directions.
+
+    Returns:
+        tuple: Weights for x, y, and z directions.
+    """
+    Sx0 = (3/4) - (deltax/dx)**2
+    Sy0 = (3/4) - (deltay/dy)**2
+    Sz0 = (3/4) - (deltaz/dz)**2
+
+    Sx1 = jnp.where(deltax <= dx/2, (1/2) * ((1/2) - (deltax/dx))**2, 0.0)
+    Sy1 = jnp.where(deltay <= dy/2, (1/2) * ((1/2) - (deltay/dy))**2, 0.0)
+    Sz1 = jnp.where(deltaz <= dz/2, (1/2) * ((1/2) - (deltaz/dz))**2, 0.0)
+
+    Sx_minus1 = jnp.where(deltax <= dx/2, (1/2) * ((1/2) + (deltax/dx))**2, 0.0)
+    Sy_minus1 = jnp.where(deltay <= dy/2, (1/2) * ((1/2) + (deltay/dy))**2, 0.0)
+    Sz_minus1 = jnp.where(deltaz <= dz/2, (1/2) * ((1/2) + (deltaz/dz))**2, 0.0)
+
+    x_weights = [Sx_minus1, Sx0, Sx1]
+    y_weights = [Sy_minus1, Sy0, Sy1]
+    z_weights = [Sz_minus1, Sz0, Sz1]
+
+    return x_weights, y_weights, z_weights
+
+
+def get_first_order_weights(deltax, deltay, deltaz, dx, dy, dz):
+    """
+    Calculate the first-order weights for particle current distribution.
+
+    Args:
+        deltax, deltay, deltaz (float): Particle position offsets from grid points.
+        dx, dy, dz (float): Grid spacings in x, y, and z directions.
+
+    Returns:
+        tuple: Weights for x, y, and z directions.
+    """
+    Sx0 = jnp.asarray(1 - deltax / dx)
+    Sy0 = jnp.asarray(1 - deltay / dy)
+    Sz0 = jnp.asarray(1 - deltaz / dz)
+
+    Sx1 = jnp.asarray(deltax / dx)
+    Sy1 = jnp.asarray(deltay / dy)
+    Sz1 = jnp.asarray(deltaz / dz)
+
+    Sx_minus1 = jnp.zeros_like(Sx0)
+    Sy_minus1 = jnp.zeros_like(Sy0)
+    Sz_minus1 = jnp.zeros_like(Sz0)
+    # No second-order weights for first-order weighting
+
+    x_weights = [Sx_minus1, Sx0, Sx1]
+    y_weights = [Sy_minus1, Sy0, Sy1]
+    z_weights = [Sz_minus1, Sz0, Sz1]
+
+    return x_weights, y_weights, z_weights

@@ -12,7 +12,7 @@ from PyPIC3D.fields import (
 )
 
 from PyPIC3D.J import (
-    VB_correction, J_from_rhov
+    VB_correction, J_from_rhov, Esirkepov_current
 )
 
 from PyPIC3D.boris import (
@@ -109,10 +109,12 @@ def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world
         # update the particle positions
 
     ################ FIELD UPDATE ################################################################################################
-    J, rho = J_from_rhov(particles, J, rho, constants, world)
+    # J, rho = J_from_rhov(particles, J, rho, constants, world)
     # calculate the current density from the particle positions and velocities
     # J = VB_correction(particles, J, constants)
-    # calculate the corrections for charge conservation using villasenor buneamn 1991
+    # calculate the current for charge conservation using villasenor buneamn 1991
+    J = Esirkepov_current(particles, J, constants, world)
+    # calculate the current for charge conservation using Esirkepov 2001
     E = update_E(E, B, J, world, constants, curl_func)
     # update the electric field using the curl of the magnetic field
     B = update_B(E, B, world, constants, curl_func)
