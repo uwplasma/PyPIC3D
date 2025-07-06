@@ -43,6 +43,10 @@ from PyPIC3D.evolve import (
     time_loop_electrodynamic, time_loop_electrostatic
 )
 
+from PyPIC3D.J import (
+    J_from_rhov, Esirkepov_current, VB_current
+)
+
 
 def default_parameters():
     """
@@ -91,7 +95,8 @@ def default_parameters():
         "ncpus": 1, # number of CPUs to use
         "cfl"  : 1, # CFL condition number
         "ds_per_debye" : None, # number of grid spacings per debye length
-        "shape_factor" : 1 # shape factor for the simulation (1 for 1st order, 2 for 2nd order)
+        "shape_factor" : 1, # shape factor for the simulation (1 for 1st order, 2 for 2nd order)
+        "current_calculation": "j_from_rhov",  # current calculation method: esirkepov, villasenor_buneman, j_from_rhov
     }
     # dictionary for simulation parameters
 
@@ -266,7 +271,15 @@ def initialize_simulation(toml_file):
 
     else:
         evolve_loop = time_loop_electrodynamic
+    # set the evolve loop function based on the electrostatic flag
+
+    if simulation_parameters['current_calculation'] == "esirkepov":
+        J_func = Esirkepov_current
+    elif simulation_parameters['current_calculation'] == "villasenor_buneman":
+        J_func = VB_current
+    elif simulation_parameters['current_calculation'] == "j_from_rhov":
+        J_func = J_from_rhov
 
     return evolve_loop, particles, E, B, J, phi, \
         rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, \
-            solver, bc, electrostatic, verbose, GPUs, Nt, curl_func
+            solver, bc, electrostatic, verbose, GPUs, Nt, curl_func, J_func

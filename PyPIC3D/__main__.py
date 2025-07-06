@@ -35,10 +35,10 @@ def run_PyPIC3D(config_file):
 
     loop, particles, E, B, J, \
         phi, rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, \
-            plasma_parameters, solver, bc, electrostatic, verbose, GPUs, Nt, curl_func = initialize_simulation(config_file)
+            plasma_parameters, solver, bc, electrostatic, verbose, GPUs, Nt, curl_func, J_func = initialize_simulation(config_file)
     # initialize the simulation
 
-    jit_loop = jax.jit(loop, static_argnames=('curl_func', 'solver', 'bc'))
+    jit_loop = jax.jit(loop, static_argnames=('curl_func', 'J_func','solver', 'bc'))
 
     dt = world['dt']
     output_dir = simulation_parameters['output_dir']
@@ -77,7 +77,7 @@ def run_PyPIC3D(config_file):
                 # plot_vtk_particles(particles, t, output_dir)
             # Plot the particles in VTK format
 
-        particles, E, B, J, phi, rho = jit_loop(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, curl_func, solver, bc)
+        particles, E, B, J, phi, rho = jit_loop(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc)
         # time loop to update the particles and fields
 
     ############################################################################################################

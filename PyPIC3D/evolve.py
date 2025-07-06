@@ -20,8 +20,8 @@ from PyPIC3D.boris import (
 )
 
 #@profile
-@partial(jit, static_argnums=(10, 11, 12))
-def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, curl_func, solver, bc):
+@partial(jit, static_argnums=("curl_func", "J_func", "solver", "bc"))
+def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc):
     """
     Perform a time loop for an electrostatic simulation.
 
@@ -67,8 +67,8 @@ def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world,
 
     return particles, E, B, J, phi, rho
 
-@partial(jit, static_argnums=(10, 11, 12))
-def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, curl_func, solver, bc):
+@partial(jit, static_argnums=("curl_func", "J_func", "solver", "bc"))
+def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc):
     """
     Perform a time loop for electrodynamic simulation.
 
@@ -109,12 +109,8 @@ def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world
         # update the particle positions
 
     ################ FIELD UPDATE ################################################################################################
-    # J, rho = J_from_rhov(particles, J, rho, constants, world)
-    # calculate the current density from the particle positions and velocities
-    # J = VB_correction(particles, J, constants)
-    # calculate the current for charge conservation using villasenor buneamn 1991
-    J = Esirkepov_current(particles, J, constants, world)
-    # calculate the current for charge conservation using Esirkepov 2001
+    J = J_func(particles, J, constants, world)
+    # calculate the current density based on the selected method
     E = update_E(E, B, J, world, constants, curl_func)
     # update the electric field using the curl of the magnetic field
     B = update_B(E, B, world, constants, curl_func)
