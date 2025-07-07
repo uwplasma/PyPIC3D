@@ -1,7 +1,7 @@
 import unittest
 import jax
 import jax.numpy as jnp
-from PyPIC3D.J import J_first_order_weighting, J_second_order_weighting, wrap_around, VB_correction
+from PyPIC3D.J import J_first_order_weighting, J_second_order_weighting, wrap_around
 
 jax.config.update("jax_enable_x64", True)
 
@@ -68,36 +68,6 @@ class TestJFunctions(unittest.TestCase):
         arr = jnp.array([2,3,4])
         result = wrap_around(arr, 3)
         self.assertTrue(jnp.all(result < 3))
-
-    # def test_VB_correction(self):
-    #     # Minimal mock for particles and constants
-    #     import types
-    #     from PyPIC3D import J as J_mod
-    #     # Remove JIT by copying the function source
-    #     import inspect
-    #     src = inspect.getsource(J_mod.VB_correction)
-    #     src = src.replace('@jit', '')
-    #     local_vars = {}
-    #     exec(src, J_mod.__dict__, local_vars)
-    #     VB_correction_nojit = local_vars['VB_correction']
-    #     # build a no-jit version of the function
-
-    #     class DummySpecies:
-    #         def get_charge(self): return 1.0
-    #         def get_subcell_position(self): return (0.1,0.2,0.1,0.2,0.1,0.2)
-    #         def get_resolution(self): return (0.1,0.1,0.1)
-    #         def get_index(self): return (1,1,1)
-    #     # create a dummy species class
-
-    #     particles = [DummySpecies() for _ in range(3)]
-    #     # build list of 3 dummy species
-    #     J = (jnp.zeros((3,3,3)), jnp.zeros((3,3,3)), jnp.zeros((3,3,3)))
-    #     constants = {'C': 1.0}
-    #     Jx, Jy, Jz = VB_correction_nojit(particles, J, constants)
-
-    #     self.assertEqual(Jx.shape, (3,3,3))
-    #     self.assertEqual(Jy.shape, (3,3,3))
-    #     self.assertEqual(Jz.shape, (3,3,3))
 
 if __name__ == '__main__':
     unittest.main()
