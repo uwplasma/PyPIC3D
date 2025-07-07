@@ -51,17 +51,19 @@ from PyPIC3D.J import (
 def run_PyPIC3D(config_file):
     ##################################### INITIALIZE SIMULATION ################################################
 
-    loop, particles, E, B, J, \
-        phi, rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, \
-            plasma_parameters, solver, bc, electrostatic, verbose, GPUs, Nt, curl_func = initialize_simulation(config_file)
+    loop, particles, fields, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, \
+            plasma_parameters, solver, bc, electrostatic, verbose, GPUs, Nt, curl_func, J_func = initialize_simulation(config_file)
     # initialize the simulation
 
-    jit_loop = jax.jit(loop, static_argnames=('curl_func', 'solver', 'bc'))
+    jit_loop = jax.jit(loop, static_argnames=('curl_func', 'J_func','solver', 'bc'))
 
     dt = world['dt']
     output_dir = simulation_parameters['output_dir']
 
     field_names = ["E_magnitude", "B_magnitude", "Ax", "Ay", "Az"]
+
+    E, B, J, rho, phi = fields
+    # unpack the fields
 
     A2, A1, A0 = initialize_vector_potential(J, world, constants)
     # initialize the vector potential A based on the current density J
@@ -74,6 +76,8 @@ def run_PyPIC3D(config_file):
         # plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters)
         # plot the data
         if t % plotting_parameters['plotting_interval'] == 0:
+            E, B, J, rho, phi = fields
+            # unpack the fields
             e_energy, b_energy, kinetic_energy = compute_energy(particles, E, B, world, constants)
             # Compute the energy of the system
             write_data(f"{output_dir}/data/total_energy.txt", t * dt, e_energy + b_energy + kinetic_energy)
@@ -94,15 +98,15 @@ def run_PyPIC3D(config_file):
             Ax_ = Ax[:,:,world['Nz']//2]
             Ay_ = Ay[:,:,world['Nz']//2]
             Az_ = Az[:,:,world['Nz']//2]
-            fields = [E_magnitude, B_magnitude, Ax_, Ay_, Az_]
-            plot_field_slice_vtk(fields, field_names, 2, E_grid, t, "fields", output_dir, world)
+            fields_mag = [E_magnitude, B_magnitude, Ax_, Ay_, Az_]
+            plot_field_slice_vtk(fields_mag, field_names, 2, E_grid, t, "fields", output_dir, world)
             # Plot the fields in VTK format
 
-            if plotting_parameters['plot_vtk_particles']:
-                plot_vtk_particles(particles, t, output_dir)
+            # if plotting_parameters['plot_vtk_particles']:
+                # plot_vtk_particles(particles, t, output_dir)
             # Plot the particles in VTK format
 
-        # particles, E, B, J, phi, rho = jit_loop(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, curl_func, solver, bc)
+        # particles, fields = jit_loop(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc)
         # time loop to update the particles and fields
 
 
@@ -152,7 +156,7 @@ def run_PyPIC3D(config_file):
 
     ############################################################################################################
 
-    return Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles, E, B, J, world
+    return Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles, fields, world
 
 def main():
     ###################### JAX SETTINGS ########################################################################
@@ -171,11 +175,14 @@ def main():
     start = time.time()
     # start the timer
 
-    Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles, E, B, J, world =  block_until_ready(run_PyPIC3D(toml_file))
+    Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles, fields, world =  block_until_ready(run_PyPIC3D(toml_file))
     # run the PyPIC3D simulation
 
     end = time.time()
     # end the timer
+
+    E, B, J, rho, phi = fields
+    # unpack the fields
 
     e_energy, b_energy, kinetic_energy = compute_energy(particles, E, B, world, constants)
     # compute the energy of the system

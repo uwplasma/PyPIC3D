@@ -1,7 +1,6 @@
 # Christopher Woolford Dec 5, 2024
 # This contains the evolution loop for the 3D PIC code that calculates the electric and magnetic fields and updates the particles.
 
-#from memory_profiler import profile
 import jax.numpy as jnp
 import jax
 from jax import jit
@@ -11,17 +10,12 @@ from PyPIC3D.fields import (
     calculateE, update_B, update_E
 )
 
-from PyPIC3D.J import (
-    VB_correction, J_from_rhov
-)
-
 from PyPIC3D.boris import (
     particle_push
 )
 
-#@profile
-@partial(jit, static_argnums=(10, 11, 12))
-def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, curl_func, solver, bc):
+@partial(jit, static_argnames=("curl_func", "J_func", "solver", "bc"))
+def time_loop_electrostatic(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc):
     """
     Perform a time loop for an electrostatic simulation.
 
@@ -52,6 +46,9 @@ def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world,
             current density components (Jx, Jy, Jz), electric potential (phi), and charge density (rho).
     """
 
+    E, B, J, rho, phi = fields
+    # unpack the fields
+
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
 
@@ -65,10 +62,13 @@ def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world,
     E, phi, rho = calculateE(world, particles, constants, rho, phi, solver, bc)
     # calculate the electric field using the Poisson equation
 
-    return particles, E, B, J, phi, rho
+    fields = (E, B, J, rho, phi)
+    # pack the fields into a tuple
 
-@partial(jit, static_argnums=(10, 11, 12))
-def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, curl_func, solver, bc):
+    return particles, fields
+
+@partial(jit, static_argnames=("curl_func", "J_func", "solver", "bc"))
+def time_loop_electrodynamic(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc):
     """
     Perform a time loop for electrodynamic simulation.
 
@@ -99,6 +99,9 @@ def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world
             current density components (Jx, Jy, Jz), electric potential (phi), and charge density (rho).
     """
 
+    E, B, J, rho, phi = fields
+    # unpack the fields
+
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
 
@@ -109,13 +112,14 @@ def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world
         # update the particle positions
 
     ################ FIELD UPDATE ################################################################################################
-    J, rho = J_from_rhov(particles, J, rho, constants, world)
-    # calculate the current density from the particle positions and velocities
-    # J = VB_correction(particles, J, constants)
-    # calculate the corrections for charge conservation using villasenor buneamn 1991
+    J = J_func(particles, J, constants, world)
+    # calculate the current density based on the selected method
     E = update_E(E, B, J, world, constants, curl_func)
     # update the electric field using the curl of the magnetic field
     B = update_B(E, B, world, constants, curl_func)
     # update the magnetic field using the curl of the electric field
 
-    return particles, E, B, J, phi, rho
+    fields = (E, B, J, rho, phi)
+    # pack the fields into a tuple
+
+    return particles, fields
