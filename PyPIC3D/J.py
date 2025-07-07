@@ -8,7 +8,7 @@ from jax import lax
 from PyPIC3D.rho import compute_rho
 
 @jit
-def J_from_rhov(particles, J, rho, constants, world):
+def J_from_rhov(particles, J, constants, world):
     """
     Compute the current density from the charge density and particle velocities.
 
@@ -32,13 +32,6 @@ def J_from_rhov(particles, J, rho, constants, world):
     y_wind = world['y_wind']
     z_wind = world['z_wind']
     # get the world parameters
-
-    new_rho = compute_rho(particles, rho, world)
-    old_rho = rho
-    # compute the charge density from the particles
-
-    rho = 0.5 * (new_rho + old_rho)
-    # average the charge density to ensure stability
 
     Jx, Jy, Jz = J
     # unpack the values of J
@@ -73,8 +66,8 @@ def J_from_rhov(particles, J, rho, constants, world):
 
             J = lax.cond(
                 shape_factor == 1,
-                lambda _: J_first_order_weighting(charge, x, y, z, vx_particle, vy_particle, vz_particle, J, rho, dx, dy, dz, x_wind, y_wind, z_wind),
-                lambda _: J_second_order_weighting(charge, x, y, z, vx_particle, vy_particle, vz_particle, J, rho, dx, dy, dz, x_wind, y_wind, z_wind),
+                lambda _: J_first_order_weighting(charge, x, y, z, vx_particle, vy_particle, vz_particle, J, dx, dy, dz, x_wind, y_wind, z_wind),
+                lambda _: J_second_order_weighting(charge, x, y, z, vx_particle, vy_particle, vz_particle, J, dx, dy, dz, x_wind, y_wind, z_wind),
                 operand=None
             )
             # use first-order weighting to distribute the current density
@@ -84,16 +77,16 @@ def J_from_rhov(particles, J, rho, constants, world):
         J = jax.lax.fori_loop(0, N_particles, add_to_J, J)
     # loop over all particles in the species and add their contribution to the current density
 
-    return J, new_rho
+    return J
 
 
 @jit
-def J_first_order_weighting(q, x, y, z, vx, vy, vz, J, rho, dx, dy, dz, x_wind, y_wind, z_wind):
+def J_first_order_weighting(q, x, y, z, vx, vy, vz, J, dx, dy, dz, x_wind, y_wind, z_wind):
 
     Jx, Jy, Jz = J
     # unpack the values of J
 
-    Nx, Ny, Nz = rho.shape
+    Nx, Ny, Nz = Jx.shape
     # get the shape of the charge density array
 
     x0 = jnp.floor((x + x_wind / 2) / dx).astype(int)
@@ -166,7 +159,7 @@ def J_first_order_weighting(q, x, y, z, vx, vy, vz, J, rho, dx, dy, dz, x_wind, 
 
 
 @jit
-def J_second_order_weighting(q, x, y, z, vx, vy, vz, J, rho, dx, dy, dz, x_wind, y_wind, z_wind):
+def J_second_order_weighting(q, x, y, z, vx, vy, vz, J, dx, dy, dz, x_wind, y_wind, z_wind):
     """
     Distribute the current of a particle to the surrounding grid points using second-order weighting.
 
@@ -184,7 +177,7 @@ def J_second_order_weighting(q, x, y, z, vx, vy, vz, J, rho, dx, dy, dz, x_wind,
     """
 
     Jx, Jy, Jz = J
-    Nx, Ny, Nz = rho.shape
+    Nx, Ny, Nz = Jx.shape
 
     x0 = jnp.floor((x + x_wind / 2) / dx).astype(int)
     y0 = jnp.floor((y + y_wind / 2) / dy).astype(int)
@@ -307,7 +300,7 @@ def wrap_around(ix, size):
     return jnp.where(ix > size - 1, ix - size, ix)
 
 @jit
-def VB_correction(particles, J, constants):
+def VB_current(particles, J, constants, world):
     """
     Apply Villasenor-Buneman correction to ensure rigorous charge conservation for local electromagnetic field solvers.
 
