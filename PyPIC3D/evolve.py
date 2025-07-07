@@ -14,36 +14,35 @@ from PyPIC3D.boris import (
     particle_push
 )
 
+from PyPIC3D.vector_potential import (
+    E_from_A, B_from_A, update_vector_potential
+)
+
 @partial(jit, static_argnames=("curl_func", "J_func", "solver", "bc"))
 def time_loop_electrostatic(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc):
     """
-    Perform a time loop for an electrostatic simulation.
+    Advances the simulation by one time step for an electrostatic Particle-In-Cell (PIC) loop.
+
+    This function performs the following steps:
+    1. Pushes all particles using the current electric and magnetic fields (typically with the Boris algorithm).
+    2. Updates particle positions.
+    3. Solves for the new electric field using the Poisson equation, updating the field and potential.
+    4. Packs the updated fields and returns the new particle and field states.
 
     Args:
-        t (float): Current time step.
-        particles (list): List of particle objects.
-        E (tuple): Electric field components (Ex, Ey, Ez).
-        B (tuple): Magnetic field components (Bx, By, Bz).
-        J (tuple): Current density components (Jx, Jy, Jz).
-        rho (array): Charge density.
-        phi (array): Electric potential.
-        E_grid (array): Electric field grid.
-        B_grid (array): Magnetic field grid.
-        world (dict): Simulation world parameters including 'dt', 'x_wind', 'y_wind', 'z_wind'.
-        constants (dict): Physical constants.
-        pecs (list): List of PEC (Perfect Electric Conductor) boundary conditions.
-        lasers (list): List of laser objects for injecting fields.
-        surfaces (list): List of material surface objects.
-        curl_func (function): Function to calculate the curl of a field.
-        M (array): Matrix for solving the Poisson equation.
-        solver (object): Solver object for the Poisson equation.
-        bc (dict): Boundary conditions.
-        verbose (bool): Flag for verbose output.
-        GPUs (list): List of GPU devices.
+        particles (list): List of particle objects to be advanced.
+        fields (tuple): Tuple containing the field arrays (E, B, J, rho, phi).
+        E_grid (ndarray): Grid representing the electric field.
+        B_grid (ndarray): Grid representing the magnetic field.
+        world (dict): Dictionary containing simulation parameters (e.g., time step 'dt').
+        constants (dict): Dictionary of physical constants used in the simulation.
+        curl_func (callable): Function to compute the curl of a field (not used in this function).
+        J_func (callable): Function to compute the current density (not used in this function).
+        solver (callable): Function or object to solve the Poisson equation for the electric field.
+        bc (object): Boundary condition object or function for the field solver.
 
     Returns:
-        tuple: Updated particles, electric field components (Ex, Ey, Ez), magnetic field components (Bx, By, Bz), 
-            current density components (Jx, Jy, Jz), electric potential (phi), and charge density (rho).
+        tuple: Updated particles list and fields tuple (E, B, J, rho, phi).
     """
 
     E, B, J, rho, phi = fields
@@ -67,36 +66,31 @@ def time_loop_electrostatic(particles, fields, E_grid, B_grid, world, constants,
 
     return particles, fields
 
+
 @partial(jit, static_argnames=("curl_func", "J_func", "solver", "bc"))
 def time_loop_electrodynamic(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc):
     """
-    Perform a time loop for electrodynamic simulation.
+    Advances the simulation by one time step using the electrodynamic Particle-In-Cell (PIC) method.
+
+    This function performs the following steps:
+        1. Pushes all particles using the Boris algorithm and updates their positions.
+        2. Computes the current density from the updated particle positions and velocities.
+        3. Updates the electric and magnetic fields using Maxwell's equations and the computed current density.
 
     Args:
-        t (float): Current time step.
-        particles (list): List of particle objects.
-        E (tuple): Electric field components (Ex, Ey, Ez).
-        B (tuple): Magnetic field components (Bx, By, Bz).
-        J (tuple): Current density components (Jx, Jy, Jz).
-        rho (array): Charge density.
-        phi (array): Electric potential.
-        E_grid (array): Electric field grid.
-        B_grid (array): Magnetic field grid.
-        world (dict): Dictionary containing simulation parameters such as 'dt', 'Nx', 'Ny', 'Nz', 'x_wind', 'y_wind', 'z_wind'.
-        constants (dict): Dictionary containing physical constants.
-        pecs (list): List of PEC (Perfect Electric Conductor) boundary condition objects.
-        lasers (list): List of laser pulse objects.
-        surfaces (list): List of material surface objects.
-        curl_func (function): Function to compute the curl of a field.
-        M (array): Mass matrix.
-        solver (object): Solver object for field equations.
-        bc (object): Boundary condition object.
-        verbose (bool): Flag to enable verbose output.
-        GPUs (list): List of GPU devices.
+        particles (list): List of particle objects to be updated.
+        fields (tuple): Tuple containing the field arrays (E, B, J, rho, phi).
+        E_grid (ndarray): Grid for the electric field.
+        B_grid (ndarray): Grid for the magnetic field.
+        world (dict): Dictionary containing simulation parameters (e.g., time step 'dt').
+        constants (dict): Dictionary of physical constants used in the simulation.
+        curl_func (callable): Function to compute the curl of a field.
+        J_func (callable): Function to compute the current density from particles.
+        solver (object): Field solver object (not used directly in this function).
+        bc (object): Boundary condition handler (not used directly in this function).
 
     Returns:
-        tuple: Updated particles, electric field components (Ex, Ey, Ez), magnetic field components (Bx, By, Bz),
-            current density components (Jx, Jy, Jz), electric potential (phi), and charge density (rho).
+        tuple: Updated particles list and fields tuple (E, B, J, rho, phi).
     """
 
     E, B, J, rho, phi = fields
@@ -112,7 +106,7 @@ def time_loop_electrodynamic(particles, fields, E_grid, B_grid, world, constants
         # update the particle positions
 
     ################ FIELD UPDATE ################################################################################################
-    J = J_func(particles, J, constants, world)
+    J = J_func(particles, J, constants, world, E_grid)
     # calculate the current density based on the selected method
     E = update_E(E, B, J, world, constants, curl_func)
     # update the electric field using the curl of the magnetic field
@@ -120,6 +114,65 @@ def time_loop_electrodynamic(particles, fields, E_grid, B_grid, world, constants
     # update the magnetic field using the curl of the electric field
 
     fields = (E, B, J, rho, phi)
+    # pack the fields into a tuple
+
+    return particles, fields
+
+
+@partial(jit, static_argnames=("curl_func", "J_func", "solver", "bc"))
+def time_loop_vector_potential(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc):
+    """
+    Advances the simulation by one time step using the vector potential formulation.
+
+    This function performs a single iteration of the main time loop for a particle-in-cell (PIC) simulation
+    using the vector potential approach. It updates particle positions and velocities, computes current density,
+    updates the vector potential, and recalculates electric and magnetic fields.
+
+    Args:
+        particles (list): List of particle objects to be updated.
+        fields (tuple): Tuple containing field arrays (E, B, J, rho, phi, A2, A1, A0).
+        E_grid (ndarray): Grid for the electric field.
+        B_grid (ndarray): Grid for the magnetic field.
+        world (dict): Simulation parameters, including time step ('dt') and grid information.
+        constants (dict): Physical constants used in the simulation.
+        curl_func (callable): Function to compute the curl of a field.
+        J_func (callable): Function to compute the current density from particles.
+        solver (callable): Function to solve field equations (not used directly in this function).
+        bc (object): Boundary condition handler (not used directly in this function).
+
+    Returns:
+        tuple: Updated particles and fields after one time step.
+    """
+
+    E, B, J, rho, phi, A2, A1, A0 = fields
+    # unpack the fields
+
+    ################ PARTICLE PUSH ########################################################################################
+    for i in range(len(particles)):
+
+        particles[i] = particle_push(particles[i], E, B, E_grid, B_grid, world['dt'], constants)
+        # use boris push for particle velocities
+
+        particles[i].update_position()
+        # update the particle positions
+
+    ################ FIELD UPDATE ################################################################################################
+    J = J_func(particles, J, constants, world, E_grid)
+    # calculate the current density using the selected method
+
+    A0 = A1
+    A1 = A2
+    # update the vector potential for the next iteration
+    A2 = update_vector_potential(J, world, constants, A1, A0)
+    # update the vector potential based on the current density J
+
+    E = E_from_A(A2, A0, world)
+    # calculate the electric field from the vector potential using centered finite difference
+    B = B_from_A(A1, world)
+    # calculate the magnetic field from the vector potential using centered finite difference
+
+
+    fields = (E, B, J, rho, phi, A2, A1, A0)
     # pack the fields into a tuple
 
     return particles, fields

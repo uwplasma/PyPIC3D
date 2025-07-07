@@ -22,33 +22,6 @@ def initialize_vector_potential(J, world, constants):
         tuple: Initial vector potential components (Ax, Ay, Az).
     """
     Jx, Jy, Jz = J
-    dx, dy, dz = world['dx'], world['dy'], world['dz']
-    mu = constants['mu']
-
-    # Jx_k = jnp.fft.fftn(Jx)
-    # Jy_k = jnp.fft.fftn(Jy)
-    # Jz_k = jnp.fft.fftn(Jz)
-    # # compute the Fourier transform of the current density
-
-    # kx = jnp.fft.fftfreq(Jx.shape[0], d=dx) * (2 * jnp.pi)
-    # ky = jnp.fft.fftfreq(Jy.shape[1], d=dy) * (2 * jnp.pi)
-    # kz = jnp.fft.fftfreq(Jz.shape[2], d=dz) * (2 * jnp.pi)
-    # # compute the wave numbers in each direction
-    # k = jnp.meshgrid(kx, ky, kz, indexing='ij')
-
-    # k2 = k[0]**2 + k[1]**2 + k[2]**2
-    # # compute the square of the wave numbers
-    # k2 = k2.at[0,0,0].set(1)  # Avoid division by zero at the origin
-
-    # Ax_k = -1 * mu / k2 * Jx_k
-    # Ay_k = -1 * mu / k2 * Jy_k
-    # Az_k = -1 * mu / k2 * Jz_k
-    # # compute the Fourier transform of the vector potential
-
-    # Ax = jnp.fft.ifftn(Ax_k).real
-    # Ay = jnp.fft.ifftn(Ay_k).real
-    # Az = jnp.fft.ifftn(Az_k).real
-    # # compute the inverse Fourier transform to get the vector potential in real space
 
     Ax = jnp.zeros_like(Jx)
     Ay = jnp.zeros_like(Jy)
