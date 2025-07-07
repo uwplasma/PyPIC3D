@@ -265,12 +265,15 @@ def initialize_simulation(toml_file):
     # print the initial energy of the system
 
     if electrostatic:
+        print("Using electrostatic solver\n")
         evolve_loop = time_loop_electrostatic
 
     elif solver == "vector_potential":
+        print("Using vector potential solver\n")
         evolve_loop = time_loop_vector_potential
 
     else:
+        print(f"Using electrodynamic solver with: {solver}\n")
         evolve_loop = time_loop_electrodynamic
     # set the evolve loop function based on the electrostatic flag
 
@@ -281,7 +284,7 @@ def initialize_simulation(toml_file):
         print("Using Villasenor-Buneman current calculation method\n")
         J_func = VB_current
     elif simulation_parameters['current_calculation'] == "j_from_rhov":
-        print("Using J from rho and v current calculation method\n")
+        print("Using J from rhov current calculation method\n")
         J_func = J_from_rhov
 
 
