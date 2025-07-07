@@ -36,7 +36,7 @@ class TestJFunctions(unittest.TestCase):
         # build expected J arrays with non-zero values at the center of the grid
 
     def test_J_first_order_weighting(self):
-        Jx, Jy, Jz = J_first_order_weighting(self.q, self.x, self.y, self.z, self.vx, self.vy, self.vz, self.num_J, self.rho, self.dx, self.dy, self.dz, self.x_wind, self.y_wind, self.z_wind)
+        Jx, Jy, Jz = J_first_order_weighting(self.q, self.x, self.y, self.z, self.vx, self.vy, self.vz, self.num_J, self.dx, self.dy, self.dz, self.x_wind, self.y_wind, self.z_wind)
         # compute Jx, Jy, Jz using first order weighting
 
         self.assertEqual(Jx.shape, (10,10,10))
@@ -51,7 +51,7 @@ class TestJFunctions(unittest.TestCase):
 
     def test_J_second_order_weighting(self):
         # Use scalar values for all inputs to avoid JAX array predicate issues
-        Jx, Jy, Jz = J_second_order_weighting(self.q, float(self.x[0]), float(self.y[0]), float(self.z[0]), float(self.vx[0]), float(self.vy[0]), float(self.vz[0]), self.J, self.rho, self.dx, self.dy, self.dz, self.x_wind, self.y_wind, self.z_wind)
+        Jx, Jy, Jz = J_second_order_weighting(self.q, float(self.x[0]), float(self.y[0]), float(self.z[0]), float(self.vx[0]), float(self.vy[0]), float(self.vz[0]), self.J, self.dx, self.dy, self.dz, self.x_wind, self.y_wind, self.z_wind)
         self.assertEqual(Jx.shape, (10,10,10))
         self.assertEqual(Jy.shape, (10,10,10))
         self.assertEqual(Jz.shape, (10,10,10))
