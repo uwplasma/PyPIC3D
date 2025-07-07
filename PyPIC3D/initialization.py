@@ -40,12 +40,13 @@ from PyPIC3D.plotting import (
 
 
 from PyPIC3D.evolve import (
-    time_loop_electrodynamic, time_loop_electrostatic
+    time_loop_electrodynamic, time_loop_electrostatic, time_loop_vector_potential
 )
 
 from PyPIC3D.J import (
     J_from_rhov, Esirkepov_current, VB_current
 )
+from PyPIC3D.vector_potential import initialize_vector_potential
 
 
 def default_parameters():
@@ -76,7 +77,7 @@ def default_parameters():
     simulation_parameters = {
         "name": "Default Simulation",
         "output_dir": ".",
-        "solver": "spectral",  # solver: spectral, fdtd, autodiff
+        "solver": "spectral",  # solver: spectral, fdtd, vector_potential
         "bc": "spectral",  # boundary conditions: periodic, dirichlet, neumann
         "Nx": 30,  # number of array spacings in x
         "Ny": 30,  # number of array spacings in y
@@ -240,9 +241,6 @@ def initialize_simulation(toml_file):
     E, B, J, phi, rho = initialize_fields(Nx, Ny, Nz)
     # initialize the electric and magnetic fields
 
-    # E, phi, rho = calculateE(world, particles, constants, rho, phi, solver, bc)
-    # calculate the electric field using the Poisson equation
-
     # load any external fields
     fields = [component for field in [E, B, J] for component in field]
     # convert the E, B, and J tuples into one big list
@@ -253,7 +251,7 @@ def initialize_simulation(toml_file):
 
     if solver == "spectral":
         curl_func = functools.partial(spectral_curl, world=world)
-    elif solver == "fdtd":
+    else:
         curl_func = functools.partial(centered_finite_difference_curl, dx=dx, dy=dy, dz=dz, bc=bc)
 
 
@@ -269,19 +267,30 @@ def initialize_simulation(toml_file):
     if electrostatic:
         evolve_loop = time_loop_electrostatic
 
+    elif solver == "vector_potential":
+        evolve_loop = time_loop_vector_potential
+
     else:
         evolve_loop = time_loop_electrodynamic
     # set the evolve loop function based on the electrostatic flag
 
     if simulation_parameters['current_calculation'] == "esirkepov":
+        print("Using Esirkepov current calculation method\n")
         J_func = Esirkepov_current
     elif simulation_parameters['current_calculation'] == "villasenor_buneman":
+        print("Using Villasenor-Buneman current calculation method\n")
         J_func = VB_current
     elif simulation_parameters['current_calculation'] == "j_from_rhov":
+        print("Using J from rho and v current calculation method\n")
         J_func = J_from_rhov
 
 
-    fields = (E, B, J, rho, phi)
+    if solver == "vector_potential":
+        A2, A1, A0 = initialize_vector_potential(J, world, constants)
+        # initialize the vector potential A based on the current density J
+        fields = (E, B, J, rho, phi, A2, A1, A0)
+    else:
+        fields = (E, B, J, rho, phi)
 
     return evolve_loop, particles, fields, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, \
         solver, bc, electrostatic, verbose, GPUs, Nt, curl_func, J_func
