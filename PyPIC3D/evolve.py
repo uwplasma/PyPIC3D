@@ -15,7 +15,7 @@ from PyPIC3D.boris import (
 )
 
 @partial(jit, static_argnames=("curl_func", "J_func", "solver", "bc"))
-def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc):
+def time_loop_electrostatic(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc):
     """
     Perform a time loop for an electrostatic simulation.
 
@@ -46,6 +46,9 @@ def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world,
             current density components (Jx, Jy, Jz), electric potential (phi), and charge density (rho).
     """
 
+    E, B, J, rho, phi = fields
+    # unpack the fields
+
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
 
@@ -59,10 +62,13 @@ def time_loop_electrostatic(particles, E, B, J, rho, phi, E_grid, B_grid, world,
     E, phi, rho = calculateE(world, particles, constants, rho, phi, solver, bc)
     # calculate the electric field using the Poisson equation
 
-    return particles, E, B, J, phi, rho
+    fields = (E, B, J, rho, phi)
+    # pack the fields into a tuple
+
+    return particles, fields
 
 @partial(jit, static_argnames=("curl_func", "J_func", "solver", "bc"))
-def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc):
+def time_loop_electrodynamic(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc):
     """
     Perform a time loop for electrodynamic simulation.
 
@@ -93,6 +99,9 @@ def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world
             current density components (Jx, Jy, Jz), electric potential (phi), and charge density (rho).
     """
 
+    E, B, J, rho, phi = fields
+    # unpack the fields
+
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
 
@@ -110,4 +119,7 @@ def time_loop_electrodynamic(particles, E, B, J, rho, phi, E_grid, B_grid, world
     B = update_B(E, B, world, constants, curl_func)
     # update the magnetic field using the curl of the electric field
 
-    return particles, E, B, J, phi, rho
+    fields = (E, B, J, rho, phi)
+    # pack the fields into a tuple
+
+    return particles, fields

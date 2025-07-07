@@ -280,6 +280,8 @@ def initialize_simulation(toml_file):
     elif simulation_parameters['current_calculation'] == "j_from_rhov":
         J_func = J_from_rhov
 
-    return evolve_loop, particles, E, B, J, phi, \
-        rho, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, \
-            solver, bc, electrostatic, verbose, GPUs, Nt, curl_func, J_func
+
+    fields = (E, B, J, rho, phi)
+
+    return evolve_loop, particles, fields, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, \
+        solver, bc, electrostatic, verbose, GPUs, Nt, curl_func, J_func
