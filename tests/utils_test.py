@@ -1,7 +1,7 @@
 import unittest
 import jax
 import jax.numpy as jnp
-from PyPIC3D.utils import print_stats, build_yee_grid, build_coallocated_grid, check_stability, particle_sanity_check
+from PyPIC3D.utils import print_stats, build_yee_grid, build_collocated_grid, check_stability, particle_sanity_check
 
 jax.config.update("jax_enable_x64", True)
 
