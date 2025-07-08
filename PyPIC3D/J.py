@@ -404,10 +404,6 @@ def Esirkepov_current(particles, J, constants, world, grid):
     Jz = Jz.at[:, :, :].set(0)
     # initialize the current arrays as 0
 
-    x_wind = world['x_wind']
-    y_wind = world['y_wind']
-    z_wind = world['z_wind']
-    # get the window parameters
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
@@ -423,12 +419,15 @@ def Esirkepov_current(particles, J, constants, world, grid):
     for species in particles:
         q = species.get_charge()
         # get the charge of the species
+
         old_x, old_y, old_z = species.get_old_position()
         # get the old position of the particles in the species
         x, y, z = species.get_position()
         # get the position of the particles in the species
+
         shape_factor = species.get_shape()
         # get the shape factor of the species
+
         x0 = jnp.floor((x - grid[0][0]) / dx).astype(int)
         y0 = jnp.floor((y - grid[1][0]) / dy).astype(int)
         z0 = jnp.floor((z - grid[2][0]) / dz).astype(int)
