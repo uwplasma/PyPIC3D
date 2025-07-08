@@ -676,7 +676,7 @@ class particle_species:
 
         subcells = zeta1, zeta2, eta1, eta2, xi1, xi2
 
-        return cls(
+        obj = cls(
             name=name,
             N_particles=N_particles,
             charge=charge,
@@ -708,3 +708,5 @@ class particle_species:
             shape=shape,
             dt=dt
         )
+
+        return obj

@@ -193,13 +193,15 @@ def relativistic_boris_single_particle(vx, vy, vz, efield_atx, efield_aty, efiel
     v = jnp.array([vx, vy, vz])
     # convert v into an array
 
-    gamma = 1 / jnp.sqrt( 1  - (  (v[0]**2 + v[1]**2 + v[2]**2) / C**2 ) )
+    gamma = jnp.sqrt( 1  + (  (v[0]**2 + v[1]**2 + v[2]**2) / C**2 ) )
     # define the gamma factor
 
     vminus = v * gamma + q*dt/(2*m)*jnp.array([efield_atx, efield_aty, efield_atz])
     # get v minus vector
 
-    t = q*dt/(2*m)*jnp.array([bfield_atx, bfield_aty, bfield_atz]) / gamma
+    gamma_minus = jnp.sqrt( 1  + (  (vminus[0]**2 + vminus[1]**2 + vminus[2]**2) / C**2 ) )
+
+    t = q*dt/(2*m)*jnp.array([bfield_atx, bfield_aty, bfield_atz]) / gamma_minus
     # calculate the t vector
     vprime = vminus + jnp.cross(vminus, t)
     # calculate the v prime vector
@@ -212,7 +214,7 @@ def relativistic_boris_single_particle(vx, vy, vz, efield_atx, efield_aty, efiel
     newv = vplus + q*dt/(2*m)*jnp.array([efield_atx, efield_aty, efield_atz])
     # calculate the new velocity
 
-    new_gamma = 1 / jnp.sqrt( 1  -  (  (newv[0]**2 + newv[1]**2 + newv[2]**2) / C**2 ) )
+    new_gamma = jnp.sqrt( 1  +  (  (newv[0]**2 + newv[1]**2 + newv[2]**2) / C**2 ) )
     # define the new gamma factor
 
     return newv[0] / new_gamma, newv[1] / new_gamma, newv[2] / new_gamma
