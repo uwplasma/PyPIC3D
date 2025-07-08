@@ -28,6 +28,9 @@ def J_from_rhov(particles, J, constants, world, grid):
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
+    x_wind = world['x_wind']
+    y_wind = world['y_wind']
+    z_wind = world['z_wind']
     # get the world parameters
 
     Jx, Jy, Jz = J
@@ -63,7 +66,7 @@ def J_from_rhov(particles, J, constants, world, grid):
 
             J = lax.cond(
                 shape_factor == 1,
-                lambda _: J_first_order_weighting(charge, x, y, z, vx_particle, vy_particle, vz_particle, J, dx, dy, dz, grid),
+                lambda _: J_first_order_weighting(charge, x, y, z, vx_particle, vy_particle, vz_particle, J, dx, dy, dz, x_wind, y_wind, z_wind, grid),
                 lambda _: J_second_order_weighting(charge, x, y, z, vx_particle, vy_particle, vz_particle, J, dx, dy, dz, grid),
                 operand=None
             )
@@ -78,7 +81,7 @@ def J_from_rhov(particles, J, constants, world, grid):
 
 
 @jit
-def J_first_order_weighting(q, x, y, z, vx, vy, vz, J, dx, dy, dz, grid):
+def J_first_order_weighting(q, x, y, z, vx, vy, vz, J, dx, dy, dz, x_wind, y_wind, z_wind, grid):
 
     Jx, Jy, Jz = J
     # unpack the values of J
@@ -86,9 +89,9 @@ def J_first_order_weighting(q, x, y, z, vx, vy, vz, J, dx, dy, dz, grid):
     Nx, Ny, Nz = Jx.shape
     # get the shape of the charge density array
 
-    x0 = jnp.floor((x - grid[0][0]) / dx).astype(int)
-    y0 = jnp.floor((y - grid[1][0]) / dy).astype(int)
-    z0 = jnp.floor((z - grid[2][0]) / dz).astype(int)
+    x0 = jnp.floor((x + x_wind / 2) / dx).astype(int)
+    y0 = jnp.floor((y + y_wind / 2) / dy).astype(int)
+    z0 = jnp.floor((z + z_wind / 2) / dz).astype(int)
     # Calculate the nearest grid points
 
     deltax = x - jnp.floor(x / dx) * dx
@@ -181,9 +184,10 @@ def J_second_order_weighting(q, x, y, z, vx, vy, vz, J, dx, dy, dz, grid):
     z0 = jnp.floor((z - grid[2][0]) / dz).astype(int)
     # Calculate the nearest grid points
 
-    deltax = x - jnp.floor(x / dx) * dx
-    deltay = y - jnp.floor(y / dy) * dy
-    deltaz = z - jnp.floor(z / dz) * dz
+    deltax = x - dx/2 - jnp.floor( (x - dx/2) / dx) * dx
+    deltay = y - dy/2 - jnp.floor( (y - dy/2) / dy) * dy
+    deltaz = z - dz/2 - jnp.floor( (z - dz/2) / dz) * dz
+    # Calculate the difference between the particle position and the nearest grid point
 
     x1 = wrap_around(x0 + 1, Nx)
     y1 = wrap_around(y0 + 1, Ny)
