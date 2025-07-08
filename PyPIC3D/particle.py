@@ -676,7 +676,7 @@ class particle_species:
 
         subcells = zeta1, zeta2, eta1, eta2, xi1, xi2
 
-        obj =  cls(
+        obj = cls(
             name=name,
             N_particles=N_particles,
             charge=charge,
@@ -708,16 +708,5 @@ class particle_species:
             shape=shape,
             dt=dt
         )
-
-        obj.x1_back = x1_back
-        obj.x2_back = x2_back
-        obj.x3_back = x3_back
-        obj.x1_forward = x1_forward
-        obj.x2_forward = x2_forward
-        obj.x3_forward = x3_forward
-        obj.old_x1 = old_x1
-        obj.old_x2 = old_x2
-        obj.old_x3 = old_x3
-        # reconstruct the object from the flattened data
 
         return obj
