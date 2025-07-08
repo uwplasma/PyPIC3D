@@ -420,7 +420,7 @@ def build_yee_grid(world):
     z_wind = world['z_wind']
     # get the grid parameters
     grid = jnp.arange(-x_wind/2, x_wind/2, dx), jnp.arange(-y_wind/2, y_wind/2, dy), jnp.arange(-z_wind/2, z_wind/2, dz)
-    staggered_grid = jnp.arange(-x_wind/2 + dx/2, x_wind/2 + dx/2, dx), jnp.arange(-y_wind/2 + dy/2, y_wind/2 + dy/2, dy), jnp.arange(-z_wind/2 + dz/2, z_wind/2 + dz/2, dz)
+    staggered_grid = jnp.arange(-x_wind/2 - dx/2, x_wind/2 - dx/2, dx), jnp.arange(-y_wind/2 - dy/2, y_wind/2 - dy/2, dy), jnp.arange(-z_wind/2 - dz/2, z_wind/2 - dz/2, dz)
     # create the grid space
     return grid, staggered_grid
 
