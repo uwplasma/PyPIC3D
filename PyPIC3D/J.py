@@ -185,9 +185,9 @@ def J_second_order_weighting(q, x, y, z, vx, vy, vz, J, dx, dy, dz, grid):
     z0 = jnp.floor((z - grid[2][0]) / dz).astype(int)
     # Calculate the nearest grid points
 
-    deltax = x - dx/2 - jnp.floor( (x - dx/2) / dx) * dx
-    deltay = y - dy/2 - jnp.floor( (y - dy/2) / dy) * dy
-    deltaz = z - dz/2 - jnp.floor( (z - dz/2) / dz) * dz
+    deltax = x - jnp.floor( x / dx) * dx
+    deltay = y - jnp.floor( y / dy) * dy
+    deltaz = z - jnp.floor( z / dz) * dz
     # Calculate the difference between the particle position and the nearest grid point
 
     x1 = wrap_around(x0 + 1, Nx)
