@@ -89,14 +89,14 @@ def J_first_order_weighting(q, x, y, z, vx, vy, vz, J, dx, dy, dz, x_wind, y_win
     Nx, Ny, Nz = Jx.shape
     # get the shape of the charge density array
 
-    x0 = jnp.floor((x + x_wind / 2) / dx).astype(int)
-    y0 = jnp.floor((y + y_wind / 2) / dy).astype(int)
-    z0 = jnp.floor((z + z_wind / 2) / dz).astype(int)
+    x0 = jnp.floor((x - grid[0][0]) / dx).astype(int)
+    y0 = jnp.floor((y - grid[1][0]) / dy).astype(int)
+    z0 = jnp.floor((z - grid[2][0]) / dz).astype(int)
     # Calculate the nearest grid points
 
-    deltax = x - jnp.floor(x / dx) * dx
-    deltay = y - jnp.floor(y / dy) * dy
-    deltaz = z - jnp.floor(z / dz) * dz
+    deltax = x - dx/2 - jnp.floor( (x - dx/2) / dx) * dx
+    deltay = y - dy/2 - jnp.floor( (y - dy/2) / dy) * dy
+    deltaz = z - dz/2 - jnp.floor( (z - dz/2) / dz) * dz
     # Calculate the difference between the particle position and the nearest grid point
 
     x1 = wrap_around(x0 + 1, Nx)
