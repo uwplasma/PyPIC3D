@@ -89,9 +89,9 @@ def J_first_order_weighting(q, x, y, z, vx, vy, vz, J, dx, dy, dz, x_wind, y_win
     Nx, Ny, Nz = Jx.shape
     # get the shape of the charge density array
 
-    x0 = jnp.floor((x + x_wind / 2) / dx).astype(int)
-    y0 = jnp.floor((y + y_wind / 2) / dy).astype(int)
-    z0 = jnp.floor((z + z_wind / 2) / dz).astype(int)
+    x0 = ((x - grid[0][0]) // dx).astype(int)
+    y0 = ((y - grid[1][0]) // dy).astype(int)
+    z0 = ((z - grid[2][0]) // dz).astype(int)
     # Calculate the nearest grid points
 
     deltax = x - grid[0][x0]
@@ -179,23 +179,27 @@ def J_second_order_weighting(q, x, y, z, vx, vy, vz, J, dx, dy, dz, x_wind, y_wi
     Jx, Jy, Jz = J
     Nx, Ny, Nz = Jx.shape
 
-    x0 = jnp.floor((x + x_wind / 2) / dx).astype(int)
-    y0 = jnp.floor((y + y_wind / 2) / dy).astype(int)
-    z0 = jnp.floor((z + z_wind / 2) / dz).astype(int)
+    x0 = ((x - grid[0][0]) // dx).astype(int)
+    y0 = ((y - grid[1][0]) // dy).astype(int)
+    z0 = ((z - grid[2][0]) // dz).astype(int)
+    # Calculate the nearest grid points
 
     deltax = x - grid[0][x0]
     deltay = y - grid[1][y0]
     deltaz = z - grid[2][z0]
+    # Calculate the difference between the particle position and the nearest grid point
 
     x1 = wrap_around(x0 + 1, Nx)
     y1 = wrap_around(y0 + 1, Ny)
     z1 = wrap_around(z0 + 1, Nz)
-
+    # Calculate the index of the next grid point
     x_minus1 = x0 - 1
     y_minus1 = y0 - 1
     z_minus1 = z0 - 1
+    # Calculate the index of the previous grid point
 
     dv = dx * dy * dz
+    # Calculate volume of each grid point
 
     # Weighting factors
     Sx0 = (3/4) - (deltax/dx)**2
@@ -431,12 +435,13 @@ def Esirkepov_current(particles, J, constants, world, grid):
         # get the position of the particles in the species
         shape_factor = species.get_shape()
 
-        x0 = jnp.floor((x + x_wind / 2) / dx).astype(int)
-        y0 = jnp.floor((y + y_wind / 2) / dy).astype(int)
-        z0 = jnp.floor((z + z_wind / 2) / dz).astype(int)
-        old_x0 = jnp.floor((old_x + x_wind / 2) / dx).astype(int)
-        old_y0 = jnp.floor((old_y + y_wind / 2) / dy).astype(int)
-        old_z0 = jnp.floor((old_z + z_wind / 2) / dz).astype(int)
+        x0 = ((x - grid[0][0]) // dx).astype(int)
+        y0 = ((y - grid[1][0]) // dy).astype(int)
+        z0 = ((z - grid[2][0]) // dz).astype(int)
+        # Calculate the nearest grid points
+        old_x0 = ((old_x - grid[0][0]) // dx).astype(int)
+        old_y0 = ((old_y - grid[1][0]) // dy).astype(int)
+        old_z0 = ((old_z - grid[2][0]) // dz).astype(int)
         # Calculate the nearest grid points
 
         x1 = wrap_around(x0 + 1, Nx)
