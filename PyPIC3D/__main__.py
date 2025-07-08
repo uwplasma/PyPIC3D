@@ -52,9 +52,7 @@ def run_PyPIC3D(config_file):
         # plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters)
         # plot the data
         if t % plotting_parameters['plotting_interval'] == 0:
-            E = fields[0]
-            B = fields[1]
-            J = fields[2]
+            E, B, J, *rest = fields
             # unpack the fields
             e_energy, b_energy, kinetic_energy = compute_energy(particles, E, B, world, constants)
             # Compute the energy of the system
@@ -108,9 +106,7 @@ def main():
     end = time.time()
     # end the timer
 
-    E = fields[0]
-    B = fields[1]
-    J = fields[2]
+    E, B, J, *rest = fields
     # unpack the fields
 
     e_energy, b_energy, kinetic_energy = compute_energy(particles, E, B, world, constants)
