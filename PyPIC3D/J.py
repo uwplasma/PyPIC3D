@@ -86,9 +86,9 @@ def J_first_order_weighting(q, x, y, z, vx, vy, vz, J, dx, dy, dz, grid):
     Nx, Ny, Nz = Jx.shape
     # get the shape of the charge density array
 
-    x0 = ((x - grid[0][0]) // dx).astype(int)
-    y0 = ((y - grid[1][0]) // dy).astype(int)
-    z0 = ((z - grid[2][0]) // dz).astype(int)
+    x0 = jnp.floor((x - grid[0][0]) / dx).astype(int)
+    y0 = jnp.floor((y - grid[1][0]) / dy).astype(int)
+    z0 = jnp.floor((z - grid[2][0]) / dz).astype(int)
     # Calculate the nearest grid points
 
     deltax = x - jnp.floor(x / dx) * dx
@@ -394,7 +394,6 @@ def VB_current(particles, J, constants, world, grid):
     return (Jx, Jy, Jz)
     # return the current corrections
 
-
 def Esirkepov_current(particles, J, constants, world, grid):
 
     Jx, Jy, Jz = J
@@ -420,6 +419,7 @@ def Esirkepov_current(particles, J, constants, world, grid):
     Nz = world['Nz']
     # get the number of grid points in each direction
 
+
     for species in particles:
         q = species.get_charge()
         # get the charge of the species
@@ -428,14 +428,10 @@ def Esirkepov_current(particles, J, constants, world, grid):
         x, y, z = species.get_position()
         # get the position of the particles in the species
         shape_factor = species.get_shape()
-
-        x0 = ((x - grid[0][0]) // dx).astype(int)
-        y0 = ((y - grid[1][0]) // dy).astype(int)
-        z0 = ((z - grid[2][0]) // dz).astype(int)
-        # Calculate the nearest grid points
-        old_x0 = ((old_x - grid[0][0]) // dx).astype(int)
-        old_y0 = ((old_y - grid[1][0]) // dy).astype(int)
-        old_z0 = ((old_z - grid[2][0]) // dz).astype(int)
+        # get the shape factor of the species
+        x0 = jnp.floor((x - grid[0][0]) / dx).astype(int)
+        y0 = jnp.floor((y - grid[1][0]) / dy).astype(int)
+        z0 = jnp.floor((z - grid[2][0]) / dz).astype(int)
         # Calculate the nearest grid points
 
         x1 = wrap_around(x0 + 1, Nx)
@@ -453,13 +449,13 @@ def Esirkepov_current(particles, J, constants, world, grid):
         zpts = [z_minus1, z0, z1]
         # List of grid points in each direction
 
-        new_deltax = x - jnp.floor(x / dx) * dx
-        new_deltay = y - jnp.floor(y / dy) * dy
-        new_deltaz = z - jnp.floor(z / dz) * dz
-        # Calculate the difference between the old particle position and the nearest grid point
         old_deltax = old_x - jnp.floor(old_x / dx) * dx
         old_deltay = old_y - jnp.floor(old_y / dy) * dy
         old_deltaz = old_z - jnp.floor(old_z / dz) * dz
+        # Calculate the difference between the particle position and the nearest grid point
+        new_deltax = x - jnp.floor(x / dx) * dx
+        new_deltay = y - jnp.floor(y / dy) * dy
+        new_deltaz = z - jnp.floor(z / dz) * dz
         # Calculate the difference between the particle position and the nearest grid point
 
         old_x_weights, old_y_weights, old_z_weights = jax.lax.cond(
@@ -510,7 +506,6 @@ def Esirkepov_current(particles, J, constants, world, grid):
             # Distribute the current density to the grid points
 
     return (Jx, Jy, Jz)
-
 
 def get_second_order_weights(deltax, deltay, deltaz, dx, dy, dz):
     """
