@@ -52,7 +52,7 @@ def run_PyPIC3D(config_file):
         # plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters)
         # plot the data
         if t % plotting_parameters['plotting_interval'] == 0:
-            E, B, J, rho, phi = fields
+            E, B, J, *rest = fields
             # unpack the fields
             e_energy, b_energy, kinetic_energy = compute_energy(particles, E, B, world, constants)
             # Compute the energy of the system
@@ -70,8 +70,8 @@ def run_PyPIC3D(config_file):
 
             E_magnitude = jnp.sqrt(E[0]**2 + E[1]**2 + E[2]**2)[:,:,world['Nz']//2]
             B_magnitude = jnp.sqrt(B[0]**2 + B[1]**2 + B[2]**2)[:,:,world['Nz']//2]
-            fields_mags = [E_magnitude, B_magnitude]
-            plot_field_slice_vtk(fields_mags, field_names, 2, E_grid, t, "fields", output_dir, world)
+            fields_mag = [E_magnitude, B_magnitude]
+            plot_field_slice_vtk(fields_mag, field_names, 2, E_grid, t, "fields", output_dir, world)
             # Plot the fields in VTK format
 
             # if plotting_parameters['plot_vtk_particles']:
@@ -80,8 +80,6 @@ def run_PyPIC3D(config_file):
 
         particles, fields = jit_loop(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc)
         # time loop to update the particles and fields
-
-    ############################################################################################################
 
     return Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles, fields, world
 
@@ -108,7 +106,7 @@ def main():
     end = time.time()
     # end the timer
 
-    E, B, J, rho, phi = fields
+    E, B, J, *rest = fields
     # unpack the fields
 
     e_energy, b_energy, kinetic_energy = compute_energy(particles, E, B, world, constants)
