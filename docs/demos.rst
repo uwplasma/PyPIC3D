@@ -24,7 +24,5 @@ To run the demo, do the following:
 
     # Navigate to the two_stream demo directory
     cd demos/two_stream
-    # Generate the initial particle distribution
-    python gen_data.py
     # Run the main simulation with the configuration file
     python main.py --config demos/two_stream/two_stream.toml
