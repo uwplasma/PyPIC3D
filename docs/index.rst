@@ -11,7 +11,7 @@ Welcome to PyPIC3D's documentation!
    usage
    solvers
    chargeconservation
-   yee
+   grid
    particles
    experiments
    demos
