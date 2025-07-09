@@ -1,0 +1,8 @@
+sphinx
+jax
+matplotlib
+plotly
+toml
+tqdm
+epyc
+pyevtk
