@@ -13,7 +13,7 @@ y_wind = 1
 z_wind = 1
 verbose = false
 electrostatic = false
-cfl = 0.99
+cfl = 0.9
 shape_factor = 2
 current_calculation = "j_from_rhov"
 
