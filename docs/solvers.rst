@@ -84,9 +84,9 @@ Second Order Vector Potential Solver
 PyPIC3D also has a second order solver that evolves the vector potential instead of the electric and magnetic fields under the temporal gauge:
 
 .. math::
-    \mathbf{A_0} = 0
+    \mathbf{A}_0 = 0
 
-    \frac{\partial^2_t \mathbf{A}}{c^2} - \nabla^2 \mathbf{A} = \mu \mathbf{J} - \nabla (\nabla \cdot \mathbf{A})
+    \frac{\partial^2_t \mathbf{A}}{c^2} - \nabla^2 \mathbf{A} = \mu_0 \mathbf{J} - \nabla (\nabla \cdot \mathbf{A})
 
 
 Under this formulation, the electric and magnetic fields are calculated from the vector potential as the following:

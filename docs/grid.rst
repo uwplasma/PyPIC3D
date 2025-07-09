@@ -1,5 +1,5 @@
 Discrete Grids
---------
+--------------
 
 PYPIC3D contains both staggered and collocated grids. PyPIC3D defaults to the Yee grid when using the first order solvers and the collocated grid when using the 2nd order vector potential solver.
 
