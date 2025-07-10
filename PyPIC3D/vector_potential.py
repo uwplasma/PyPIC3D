@@ -7,6 +7,7 @@ from PyPIC3D.fdtd import (
     centered_finite_difference_divergence,
     centered_finite_difference_gradient
 )
+from PyPIC3D.boris import create_trilinear_interpolator, create_quadratic_interpolator
 
 
 def initialize_vector_potential(J, world, constants):
@@ -91,7 +92,7 @@ def E_from_A(A2, A0, world):
     return Ex, Ey, Ez
 
 @jax.jit
-def B_from_A(A, world):
+def B_from_A(A, world, E_grid, B_grid):
     """
     Calculate the magnetic field B from the vector potential A using centered finite difference.
 
@@ -107,4 +108,41 @@ def B_from_A(A, world):
 
     Bx, By, Bz = centered_finite_difference_curl(Ax, Ay, Az, dx, dy, dz, 'periodic')
 
+    Bx = interpolate_field(Bx, E_grid, B_grid, interpolation_order=2)
+    By = interpolate_field(By, E_grid, B_grid, interpolation_order=2)
+    Bz = interpolate_field(Bz, E_grid, B_grid, interpolation_order=2)
+    # interpolate the magnetic field components to the yee grid
+
     return Bx, By, Bz
+
+def interpolate_field(field, grid, target_grid, interpolation_order=1):
+
+    # Choose interpolation method based on order
+    # if interpolation_order == 1:
+        # interpolator_func = create_trilinear_interpolator
+    # elif interpolation_order == 2:
+    interpolator_func = create_quadratic_interpolator
+    # else:
+        # raise ValueError("interpolation_order must be 1 (trilinear) or 2 (quadratic)")
+
+    interpolator = interpolator_func(field, grid, periodic=True)
+    # Create interpolator for the field
+
+    x, y, z = target_grid
+    # Unpack target grid coordinates
+
+    X_target, Y_target, Z_target = jnp.meshgrid(x, y, z, indexing='ij')
+    # Create a meshgrid for target coordinates
+
+    x_flat = X_target.flatten()
+    y_flat = Y_target.flatten()
+    z_flat = Z_target.flatten()
+    # Flatten target coordinates for vectorized interpolation
+
+
+    interp_flat = interpolator(x_flat, y_flat, z_flat)
+    # Interpolate field at target grid points
+    interp_field = interp_flat.reshape(X_target.shape)
+    # Reshape back to the target grid shape
+
+    return interp_field
