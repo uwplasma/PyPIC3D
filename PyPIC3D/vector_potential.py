@@ -36,20 +36,24 @@ def initialize_vector_potential(J, world, constants):
 @jax.jit
 def update_vector_potential(J, world, constants, A1, A0):
     """
-    Update the vector potential A based on the magnetic field B using centered finite difference.
+    Updates the vector potential components (Ax, Ay, Az) using the finite difference method.
 
-    Args:
-        A (tuple): Vector potential components (Ax, Ay, Az).
-        J (tuple): Current density components (Jx, Jy, Jz).
-        dt (float): Time step.
-        dx (float): Grid spacing in the x-direction.
-        dy (float): Grid spacing in the y-direction.
-        dz (float): Grid spacing in the z-direction.
-        bc (str): Boundary condition type ('periodic', 'neumann', 'dirichlet').
+    This function advances the vector potential in time based on the current density,
+    the previous two time steps of the vector potential, and physical constants. It uses
+    centered finite difference schemes to compute the Laplacian, divergence, and gradient
+    of the vector potential, assuming periodic boundary conditions.
+
+    Parameters:
+        J (tuple of ndarray): The current density components (Jx, Jy, Jz).
+        world (dict): Simulation parameters, must contain 'dx', 'dy', 'dz', and 'dt'.
+        constants (dict): Physical constants, must contain 'mu' (permeability) and 'C' (speed of light).
+        A1 (tuple of ndarray): The vector potential components (Ax, Ay, Az) at the current time step.
+        A0 (tuple of ndarray): The vector potential components (Ax0, Ay0, Az0) at the previous time step.
 
     Returns:
-        tuple: Updated vector potential components (Ax_new, Ay_new, Az_new).
+        tuple of ndarray: The updated vector potential components (Ax_new, Ay_new, Az_new).
     """
+
     Ax0, Ay0, Az0 = A0
     Ax, Ay, Az = A1
     Jx, Jy, Jz = J
@@ -80,6 +84,16 @@ def update_vector_potential(J, world, constants, A1, A0):
 
 @jax.jit
 def E_from_A(A2, A0, world):
+    """
+    Calculate the electric field components from the vector potential using a centered finite difference.
+    Args:
+        A2 (tuple or list of ndarray): The vector potential components (Ax, Ay, Az) at the next time step.
+        A0 (tuple or list of ndarray): The vector potential components (Ax0, Ay0, Az0) at the previous time step.
+        world (dict): Dictionary containing simulation parameters. Must include the time step 'dt'.
+    Returns:
+        tuple of ndarray: The electric field components (Ex, Ey, Ez) computed from the vector potential.
+    """
+
     Ax, Ay, Az = A2
     Ax0, Ay0, Az0 = A0
     dt = world['dt']
@@ -92,41 +106,68 @@ def E_from_A(A2, A0, world):
     return Ex, Ey, Ez
 
 @jax.jit
-def B_from_A(A, world, E_grid, B_grid):
+def B_from_A(A, world, E_grid, B_grid, interpolation_order=2):
     """
-    Calculate the magnetic field B from the vector potential A using centered finite difference.
+    Computes the magnetic field components (Bx, By, Bz) from the vector potential (A)
+    using a centered finite difference curl and interpolates the result to the Yee grid.
 
-    Args:
-        A (tuple): Vector potential components (Ax, Ay, Az).
-        world (dict): Simulation world parameters including 'dx', 'dy', 'dz'.
+    Parameters
+    ----------
+    A : tuple of ndarray
+        The vector potential components (Ax, Ay, Az) as 3D arrays.
+    world : dict
+        Dictionary containing grid spacing with keys 'dx', 'dy', 'dz'.
+    E_grid : tuple or ndarray
+        The grid on which the electric field is defined.
+    B_grid : tuple or ndarray
+        The grid on which the magnetic field is to be interpolated.
+    interpolation_order : int, optional
+        The order of interpolation to use when mapping the magnetic field to the Yee grid (default is 2).
 
-    Returns:
-        tuple: Magnetic field components (Bx, By, Bz).
+    Returns
+    -------
+    Bx, By, Bz : ndarray
+        The interpolated magnetic field components on the Yee grid.
     """
+
     Ax, Ay, Az = A
     dx, dy, dz = world['dx'], world['dy'], world['dz']
 
     Bx, By, Bz = centered_finite_difference_curl(Ax, Ay, Az, dx, dy, dz, 'periodic')
 
-    Bx = interpolate_field(Bx, E_grid, B_grid, interpolation_order=2)
-    By = interpolate_field(By, E_grid, B_grid, interpolation_order=2)
-    Bz = interpolate_field(Bz, E_grid, B_grid, interpolation_order=2)
+    Bx = interpolate_field(Bx, E_grid, B_grid, interpolation_order)
+    By = interpolate_field(By, E_grid, B_grid, interpolation_order)
+    Bz = interpolate_field(Bz, E_grid, B_grid, interpolation_order)
     # interpolate the magnetic field components to the yee grid
 
     return Bx, By, Bz
 
 def interpolate_field(field, grid, target_grid, interpolation_order=1):
+    """
+    Interpolates a 3D field from a source grid onto a target grid using the specified interpolation order.
 
-    # Choose interpolation method based on order
-    # if interpolation_order == 1:
-        # interpolator_func = create_trilinear_interpolator
-    # elif interpolation_order == 2:
-    interpolator_func = create_quadratic_interpolator
-    # else:
-        # raise ValueError("interpolation_order must be 1 (trilinear) or 2 (quadratic)")
+    Parameters
+    ----------
+    field : array-like
+        The 3D array representing the field values on the source grid.
+    grid : tuple of array-like
+        The source grid coordinates as (x, y, z).
+    target_grid : tuple of array-like
+        The target grid coordinates as (x, y, z) onto which the field will be interpolated.
+    interpolation_order : int, optional
+        The order of interpolation to use: 1 for trilinear, 2 for quadratic. Default is 1 (trilinear).
 
-    interpolator = interpolator_func(field, grid, periodic=True)
-    # Create interpolator for the field
+    Returns
+    -------
+    interp_field : ndarray
+        The interpolated field values on the target grid, with shape matching the meshgrid of target_grid.
+
+    Notes
+    -----
+    - Assumes periodic boundary conditions for the interpolation.
+    - Requires `jax` and `jnp` (JAX NumPy) for computation.
+    - Helper functions `create_trilinear_interpolator` and `create_quadratic_interpolator` must be defined.
+    """
 
     x, y, z = target_grid
     # Unpack target grid coordinates
@@ -139,9 +180,13 @@ def interpolate_field(field, grid, target_grid, interpolation_order=1):
     z_flat = Z_target.flatten()
     # Flatten target coordinates for vectorized interpolation
 
+    interp_flat = jax.lax.cond(
+        interpolation_order == 1,
+        lambda _: create_trilinear_interpolator(field, grid, periodic=True)(x_flat, y_flat, z_flat),
+        lambda _: create_quadratic_interpolator(field, grid, periodic=True)(x_flat, y_flat, z_flat),
+        operand=None
+    )
 
-    interp_flat = interpolator(x_flat, y_flat, z_flat)
-    # Interpolate field at target grid points
     interp_field = interp_flat.reshape(X_target.shape)
     # Reshape back to the target grid shape
 
