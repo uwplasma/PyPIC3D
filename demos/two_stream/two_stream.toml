@@ -1,9 +1,8 @@
 # This is a configuration file for PyPIC3D
 [simulation_parameters]
 name = "Demo of a TS instability with 3,000 electrons"
-dt   = 5.413581217150337e-11
-Nt   = 1000
-output_dir = "/home/christopherwoolford/Documents/Research/PyPIC_DevResearch/demo_dev"
+t_wind = 5.413e-8
+output_dir = "/home/christopherwoolford/Documents/ResearchCodes/PyPIC3D/demos/two_stream"
 bc = 'periodic'
 solver = 'fdtd'
 Nx = 61
@@ -14,7 +13,7 @@ y_wind = 1
 z_wind = 1
 verbose = false
 electrostatic = false
-cfl = 0.99
+cfl = 0.9
 shape_factor = 2
 current_calculation = "j_from_rhov"
 

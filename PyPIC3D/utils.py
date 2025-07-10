@@ -649,8 +649,6 @@ def interpolate_field(field, grid, x, y, z):
     return interpolate(points)
 
 
-
-
 def courant_condition(courant_number, dx, dy, dz, simulation_parameters, constants):
     """
     Calculate the Courant condition for a given grid spacing and wave speed.
@@ -668,11 +666,18 @@ def courant_condition(courant_number, dx, dy, dz, simulation_parameters, constan
         float: The maximum allowable time step for stability.
     """
 
-    solver = simulation_parameters['solver']
-
-    #if solver == 'fdtd':
     C = constants['C']
-    return courant_number / (C * ( (1/dx) + (1/dy) + (1/dz) ) )
+
+    # Build dxs list with only components that are not 1
+    dx_inv = list(1/d for d in (dz, dy, dx) if d != 1)
+
+    dx_inv = sum(dx_inv)
+    # sum all the inverse spatial steps
+
+    dt = courant_number / (C * dx_inv)
+    # compute the maximum allowed timestep
+
+    return dt
 
 
 def plasma_frequency(particle_species, world, constants):

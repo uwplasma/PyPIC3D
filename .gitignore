@@ -21,3 +21,4 @@ build/
 run_dir/
 test_output/
 .coverage
+demos/two_stream/*/
