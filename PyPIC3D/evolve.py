@@ -165,7 +165,7 @@ def time_loop_vector_potential(particles, fields, E_grid, B_grid, world, constan
 
     E = E_from_A(A2, A0, world)
     # calculate the electric field from the vector potential using centered finite difference
-    B = B_from_A(A1, world)
+    B = B_from_A(A1, world, E_grid, B_grid)
     # calculate the magnetic field from the vector potential using centered finite difference
     J = J_func(particles, J, constants, world, E_grid)
     # calculate the current density using the selected method
