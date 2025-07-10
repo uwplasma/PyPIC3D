@@ -70,9 +70,9 @@ def update_vector_potential(J, world, constants, A1, A0):
     gradx, grady, gradz = centered_finite_difference_gradient(divA, dx, dy, dz, 'periodic')
     # calculate the gradient of the divergence of the vector potential using centered finite difference
 
-    Ax_new = 2 * Ax - Ax0 + C**2 * dt**2 * ( mu * Jx  + laplacian_Ax + gradx )
-    Ay_new = 2 * Ay - Ay0 + C**2 * dt**2 * ( mu * Jy  + laplacian_Ay + grady )
-    Az_new = 2 * Az - Az0 + C**2 * dt**2 * ( mu * Jz  + laplacian_Az + gradz )
+    Ax_new = 2 * Ax - Ax0 + C**2 * dt**2 * ( mu * Jx  + laplacian_Ax - gradx )
+    Ay_new = 2 * Ay - Ay0 + C**2 * dt**2 * ( mu * Jy  + laplacian_Ay - grady )
+    Az_new = 2 * Az - Az0 + C**2 * dt**2 * ( mu * Jz  + laplacian_Az - gradz )
     # update the vector potential using centered finite difference
 
     return Ax_new, Ay_new, Az_new
@@ -83,9 +83,9 @@ def E_from_A(A2, A0, world):
     Ax0, Ay0, Az0 = A0
     dt = world['dt']
 
-    Ex = -1 * (Ax - Ax0) / (2 * dt )
-    Ey = -1 * (Ay - Ay0) / (2 * dt )
-    Ez = -1 * (Az - Az0) / (2 * dt )
+    Ex = -1 * (Ax - Ax0) / ( 2 * dt )
+    Ey = -1 * (Ay - Ay0) / ( 2 * dt )
+    Ez = -1 * (Az - Az0) / ( 2 * dt )
     # calculate the electric field from the vector potential using centered finite difference
 
     return Ex, Ey, Ez
