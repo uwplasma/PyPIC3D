@@ -20,3 +20,5 @@ from . import fdtd
 from . import boris
 from . import rho
 from . import evolve
+from . import vector_potential
+from . import curl_curl_form
