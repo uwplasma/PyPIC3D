@@ -157,9 +157,6 @@ def time_loop_vector_potential(particles, fields, E_grid, B_grid, world, constan
         # update the particle positions
 
     ################ FIELD UPDATE ################################################################################################
-    J = J_func(particles, J, constants, world, E_grid)
-    # calculate the current density using the selected method
-
     A0 = A1
     A1 = A2
     # update the vector potential for the next iteration
@@ -170,6 +167,9 @@ def time_loop_vector_potential(particles, fields, E_grid, B_grid, world, constan
     # calculate the electric field from the vector potential using centered finite difference
     B = B_from_A(A1, world)
     # calculate the magnetic field from the vector potential using centered finite difference
+    J = J_func(particles, J, constants, world, E_grid)
+    # calculate the current density using the selected method
+
 
 
     fields = (E, B, J, rho, phi, A2, A1, A0)
