@@ -182,9 +182,9 @@ def update_E(E, B, J, world, constants, curl_func):
     curlx, curly, curlz = curl_func(Bx, By, Bz)
     # calculate the curl of the magnetic field
 
-    Ex = Ex + ( C**2 * curlx - Jx / eps ) * dt
-    Ey = Ey + ( C**2 * curly - Jy / eps ) * dt
-    Ez = Ez + ( C**2 * curlz - Jz / eps ) * dt
+    Ex = Ex + ( 2 * C**2 * curlx - Jx / eps ) * dt
+    Ey = Ey + ( 2 * C**2 * curly - Jy / eps ) * dt
+    Ez = Ez + ( 2 * C**2 * curlz - Jz / eps ) * dt
     # update the electric field from Maxwell's equations
 
     return (Ex, Ey, Ez)
@@ -218,9 +218,9 @@ def update_B(E, B, world, constants, curl_func):
     curlx, curly, curlz = curl_func(Ex, Ey, Ez)
     # calculate the curl of the electric field
 
-    Bx = Bx - dt*curlx
-    By = By - dt*curly
-    Bz = Bz - dt*curlz
+    Bx = Bx - 2*dt*curlx
+    By = By - 2*dt*curly
+    Bz = Bz - 2*dt*curlz
     # update the magnetic field from Maxwell's equations
 
     return (Bx, By, Bz)
