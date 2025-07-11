@@ -23,8 +23,8 @@ from PyPIC3D.curl_curl_form import (
     update_B_second_order, update_E_second_order
 )
 
-@partial(jit, static_argnames=("curl_func", "J_func", "solver", "bc"))
-def time_loop_electrostatic(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc):
+@partial(jit, static_argnames=("curl_func", "J_func", "solver", "bc", "relativistic"))
+def time_loop_electrostatic(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc, relativistic=True):
     """
     Advances the simulation by one time step for an electrostatic Particle-In-Cell (PIC) loop.
 
@@ -56,7 +56,7 @@ def time_loop_electrostatic(particles, fields, E_grid, B_grid, world, constants,
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
 
-        particles[i] = particle_push(particles[i], E, B, E_grid, B_grid, world['dt'], constants)
+        particles[i] = particle_push(particles[i], E, B, E_grid, B_grid, world['dt'], constants, relativistic=relativistic)
         # use boris push for particle velocities
 
         particles[i].update_position()
@@ -72,8 +72,8 @@ def time_loop_electrostatic(particles, fields, E_grid, B_grid, world, constants,
     return particles, fields
 
 
-@partial(jit, static_argnames=("curl_func", "J_func", "solver", "bc"))
-def time_loop_electrodynamic(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc):
+@partial(jit, static_argnames=("curl_func", "J_func", "solver", "bc", "relativistic"))
+def time_loop_electrodynamic(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc, relativistic=True):
     """
     Advances the simulation by one time step using the electrodynamic Particle-In-Cell (PIC) method.
 
@@ -104,7 +104,7 @@ def time_loop_electrodynamic(particles, fields, E_grid, B_grid, world, constants
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
 
-        particles[i] = particle_push(particles[i], E, B, E_grid, B_grid, world['dt'], constants)
+        particles[i] = particle_push(particles[i], E, B, E_grid, B_grid, world['dt'], constants, relativistic=relativistic)
         # use boris push for particle velocities
 
         particles[i].update_position()
@@ -124,8 +124,8 @@ def time_loop_electrodynamic(particles, fields, E_grid, B_grid, world, constants
     return particles, fields
 
 
-@partial(jit, static_argnames=("curl_func", "J_func", "solver", "bc"))
-def time_loop_vector_potential(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc):
+@partial(jit, static_argnames=("curl_func", "J_func", "solver", "bc", "relativistic"))
+def time_loop_vector_potential(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc, relativistic=True):
     """
     Advances the simulation by one time step using the vector potential formulation.
 
@@ -155,7 +155,7 @@ def time_loop_vector_potential(particles, fields, E_grid, B_grid, world, constan
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
 
-        particles[i] = particle_push(particles[i], E, B, E_grid, B_grid, world['dt'], constants)
+        particles[i] = particle_push(particles[i], E, B, E_grid, B_grid, world['dt'], constants, relativistic=relativistic)
         # use boris push for particle velocities
 
         particles[i].update_position()
@@ -182,8 +182,8 @@ def time_loop_vector_potential(particles, fields, E_grid, B_grid, world, constan
     return particles, fields
 
 
-@partial(jit, static_argnames=("curl_func", "J_func", "solver", "bc"))
-def time_loop_curl_curl(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc):
+@partial(jit, static_argnames=("curl_func", "J_func", "solver", "bc", "relativistic"))
+def time_loop_curl_curl(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc, relativistic=True):
     """
     Advances the simulation by one time step using the curl-curl formulation.
 
@@ -213,7 +213,7 @@ def time_loop_curl_curl(particles, fields, E_grid, B_grid, world, constants, cur
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
 
-        particles[i] = particle_push(particles[i], E, B, E_grid, B_grid, world['dt'], constants)
+        particles[i] = particle_push(particles[i], E, B, E_grid, B_grid, world['dt'], constants, relativistic=relativistic)
         # use boris push for particle velocities
 
         particles[i].update_position()

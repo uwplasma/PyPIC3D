@@ -90,6 +90,7 @@ def default_parameters():
         "dt": None,  # time step in seconds
         "Nt": None,  # number of time steps
         "electrostatic": False,  # boolean for electrostatic simulation
+        "relativistic": True,  # boolean for relativistic simulation
         "benchmark": False, # boolean for using the profiler
         "verbose": False, # boolean for printing verbose output
         "GPUs": False, # boolean for using GPUs
@@ -171,6 +172,7 @@ def initialize_simulation(toml_file):
     electrostatic = simulation_parameters['electrostatic']
     solver = simulation_parameters['solver']
     bc = simulation_parameters['bc']
+    relativistic = simulation_parameters['relativistic']
     verbose = simulation_parameters['verbose']
     GPUs = simulation_parameters['GPUs']
     #ncores = simulation_parameters['ncores']
@@ -269,31 +271,36 @@ def initialize_simulation(toml_file):
     print(f"Total Initial Energy: {e_energy + b_energy + kinetic_energy:.2e} J\n")
     # print the initial energy of the system
 
+    if relativistic:
+        print("Relativistic simulation")
+    else:
+        print("Non-relativistic simulation")
+
     if electrostatic:
-        print("Using electrostatic solver\n")
+        print("Using electrostatic solver")
         evolve_loop = time_loop_electrostatic
 
     elif solver == "vector_potential":
-        print("Using vector potential solver\n")
+        print("Using vector potential solver")
         evolve_loop = time_loop_vector_potential
 
     elif solver == "curl_curl":
-        print("Using curl-curl solver\n")
+        print("Using curl-curl solver")
         evolve_loop = time_loop_curl_curl
 
     else:
-        print(f"Using electrodynamic solver with: {solver}\n")
+        print(f"Using electrodynamic solver with: {solver}")
         evolve_loop = time_loop_electrodynamic
     # set the evolve loop function based on the electrostatic flag
 
     if simulation_parameters['current_calculation'] == "esirkepov":
-        print("Using Esirkepov current calculation method\n")
+        print("Using Esirkepov current calculation method")
         J_func = Esirkepov_current
     elif simulation_parameters['current_calculation'] == "villasenor_buneman":
-        print("Using Villasenor-Buneman current calculation method\n")
+        print("Using Villasenor-Buneman current calculation method")
         J_func = VB_current
     elif simulation_parameters['current_calculation'] == "j_from_rhov":
-        print("Using J from rhov current calculation method\n")
+        print("Using J from rhov current calculation method")
         J_func = J_from_rhov
 
 
@@ -311,4 +318,4 @@ def initialize_simulation(toml_file):
 
 
     return evolve_loop, particles, fields, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, \
-        solver, bc, electrostatic, verbose, GPUs, Nt, curl_func, J_func
+        solver, bc, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic

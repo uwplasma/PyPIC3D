@@ -4,7 +4,7 @@ import jax.numpy as jnp
 
 
 @jit
-def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic=True):
+def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic=True, relativistic=True):
     """
     Updates the velocities of particles using the Boris algorithm.
 
@@ -103,8 +103,19 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic
     )
     # calculate the magnetic field at the particle positions
 
-    boris_vmap = jax.vmap(relativistic_boris_single_particle, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None, None))
-    newvx, newvy, newvz = boris_vmap(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, q, m, dt, constants)
+    boris_vmap              = jax.vmap(boris_single_particle, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None, None))
+    relativistic_boris_vmap = jax.vmap(relativistic_boris_single_particle, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None, None))
+    # vectorize the Boris algorithm for batch processing
+
+    # newvx, newvy, newvz = boris_vmap(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, q, m, dt, constants)
+
+
+    newvx, newvy, newvz = jax.lax.cond(
+        relativistic == True,
+        lambda _: relativistic_boris_vmap(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, q, m, dt, constants),
+        lambda _: boris_vmap(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, q, m, dt, constants),
+        operand=None
+    )
     # apply the Boris algorithm to update the velocities of the particles
 
     particles.set_velocity(newvx, newvy, newvz)
