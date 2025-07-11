@@ -40,7 +40,8 @@ from PyPIC3D.plotting import (
 
 
 from PyPIC3D.evolve import (
-    time_loop_electrodynamic, time_loop_electrostatic, time_loop_vector_potential
+    time_loop_electrodynamic, time_loop_electrostatic, time_loop_vector_potential,
+    time_loop_curl_curl
 )
 
 from PyPIC3D.J import (
@@ -207,11 +208,11 @@ def initialize_simulation(toml_file):
     plotting_parameters = convert_to_jax_compatible(plotting_parameters)
     # convert the world parameters to jax compatible format
 
-    if solver == "vector_potential":
-        B_grid, E_grid = build_collocated_grid(world)
+    # if solver == "vector_potential":
+        # B_grid, E_grid = build_collocated_grid(world)
         # build the grid for the fields
-    else:
-        B_grid, E_grid = build_yee_grid(world)
+    # else:
+    B_grid, E_grid = build_yee_grid(world)
         # build the Yee grid for the fields
 
     if not os.path.exists(f"{simulation_parameters['output_dir']}/data"):
@@ -276,6 +277,10 @@ def initialize_simulation(toml_file):
         print("Using vector potential solver\n")
         evolve_loop = time_loop_vector_potential
 
+    elif solver == "curl_curl":
+        print("Using curl-curl solver\n")
+        evolve_loop = time_loop_curl_curl
+
     else:
         print(f"Using electrodynamic solver with: {solver}\n")
         evolve_loop = time_loop_electrodynamic
@@ -296,8 +301,14 @@ def initialize_simulation(toml_file):
         A2, A1, A0 = initialize_vector_potential(J, world, constants)
         # initialize the vector potential A based on the current density J
         fields = (E, B, J, rho, phi, A2, A1, A0)
+        # define the fields tuple for the vector potential solver
+    elif solver == "curl_curl":
+        fields = (E, B, J, rho, phi, E, B, E, B, J)
+        # add the additional fields for the curl-curl solver
     else:
         fields = (E, B, J, rho, phi)
+        # define the fields tuple for the electrodynamic and electrostatic solvers
+
 
     return evolve_loop, particles, fields, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, \
         solver, bc, electrostatic, verbose, GPUs, Nt, curl_func, J_func
