@@ -182,6 +182,7 @@ def time_loop_vector_potential(particles, fields, E_grid, B_grid, world, constan
     return particles, fields
 
 
+@partial(jit, static_argnames=("curl_func", "J_func", "solver", "bc"))
 def time_loop_curl_curl(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc):
     """
     Advances the simulation by one time step using the curl-curl formulation.
