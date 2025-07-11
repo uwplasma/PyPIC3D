@@ -4,8 +4,8 @@ name = "Demo of a TS instability with 3,000 electrons"
 t_wind = 5.413e-8
 output_dir = "/home/christopherwoolford/Documents/ResearchCodes/PyPIC3D/demos/two_stream"
 bc = 'periodic'
-solver = 'vector_potential'
-Nx = 61
+solver = 'fdtd'
+Nx = 100
 Ny = 1
 Nz = 1
 x_wind = 1
@@ -19,7 +19,7 @@ current_calculation = "j_from_rhov"
 
 
 [plotting]
-plotting_interval = 1
+plotting_interval = 8
 
 
 [particle1]
