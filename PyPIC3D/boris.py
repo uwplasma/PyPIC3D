@@ -103,7 +103,7 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic
     )
     # calculate the magnetic field at the particle positions
 
-    boris_vmap = jax.vmap(boris_single_particle, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None, None))
+    boris_vmap = jax.vmap(relativistic_boris_single_particle, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None, None))
     newvx, newvy, newvz = boris_vmap(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, q, m, dt, constants)
     # apply the Boris algorithm to update the velocities of the particles
 
@@ -193,31 +193,35 @@ def relativistic_boris_single_particle(vx, vy, vz, efield_atx, efield_aty, efiel
     v = jnp.array([vx, vy, vz])
     # convert v into an array
 
-    gamma = jnp.sqrt( 1  + (  (v[0]**2 + v[1]**2 + v[2]**2) / C**2 ) )
+    gamma = 1 / jnp.sqrt( 1  - (  (v[0]**2 + v[1]**2 + v[2]**2) / C**2 ) )
     # define the gamma factor
 
-    vminus = v * gamma + q*dt/(2*m)*jnp.array([efield_atx, efield_aty, efield_atz])
-    # get v minus vector
+    uminus = v * gamma + q*dt/(2*m)*jnp.array([efield_atx, efield_aty, efield_atz])
+    # get the u minus vector
 
-    gamma_minus = jnp.sqrt( 1  + (  (vminus[0]**2 + vminus[1]**2 + vminus[2]**2) / C**2 ) )
+    gamma_minus = jnp.sqrt( 1  + (  (uminus[0]**2 + uminus[1]**2 + uminus[2]**2) / C**2 ) )
+    # define the gamma minus factor
 
     t = q*dt/(2*m)*jnp.array([bfield_atx, bfield_aty, bfield_atz]) / gamma_minus
     # calculate the t vector
-    vprime = vminus + jnp.cross(vminus, t)
-    # calculate the v prime vector
+    uprime = uminus + jnp.cross(uminus, t)
+    # calculate the u prime vector
 
     s = 2*t / (1 + t[0]**2 + t[1]**2 + t[2]**2)
     # calculate the s vector
-    vplus = vminus + jnp.cross(vprime, s)
-    # calculate the v plus vector
+    uplus = uminus + jnp.cross(uprime, s)
+    # calculate the u plus vector
 
-    newv = vplus + q*dt/(2*m)*jnp.array([efield_atx, efield_aty, efield_atz])
+    newu = uplus + q*dt/(2*m)*jnp.array([efield_atx, efield_aty, efield_atz])
     # calculate the new velocity
 
-    new_gamma = jnp.sqrt( 1  +  (  (newv[0]**2 + newv[1]**2 + newv[2]**2) / C**2 ) )
+    new_gamma = jnp.sqrt( 1  +  (  (newu[0]**2 + newu[1]**2 + newu[2]**2) / C**2 ) )
     # define the new gamma factor
 
-    return newv[0] / new_gamma, newv[1] / new_gamma, newv[2] / new_gamma
+    newv = newu / new_gamma
+    # convert the relativistic velocity back to the lab frame
+
+    return newv[0], newv[1], newv[2]
 
 
 
