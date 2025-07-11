@@ -107,9 +107,6 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic
     relativistic_boris_vmap = jax.vmap(relativistic_boris_single_particle, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None, None))
     # vectorize the Boris algorithm for batch processing
 
-    # newvx, newvy, newvz = boris_vmap(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, q, m, dt, constants)
-
-
     newvx, newvy, newvz = jax.lax.cond(
         relativistic == True,
         lambda _: relativistic_boris_vmap(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, q, m, dt, constants),
