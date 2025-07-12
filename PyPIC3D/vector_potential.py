@@ -132,13 +132,15 @@ def B_from_A(A, world, E_grid, B_grid, interpolation_order=2):
 
     Ax, Ay, Az = A
     dx, dy, dz = world['dx'], world['dy'], world['dz']
+    A_grid = (B_grid[0] + dx/2, B_grid[1] + dy/2, B_grid[2] + dz/2)
 
-    Bx, By, Bz = centered_finite_difference_curl(Ax, Ay, Az, dx, dy, dz, 'periodic')
+    Ax = interpolate_field(Ax, E_grid, A_grid, interpolation_order)
+    Ay = interpolate_field(Ay, E_grid, A_grid, interpolation_order)
+    Az = interpolate_field(Az, E_grid, A_grid, interpolation_order)
+    # interpolate the vector potential to the Yee grid
 
-    Bx = interpolate_field(Bx, E_grid, B_grid, interpolation_order)
-    By = interpolate_field(By, E_grid, B_grid, interpolation_order)
-    Bz = interpolate_field(Bz, E_grid, B_grid, interpolation_order)
-    # interpolate the magnetic field components to the yee grid
+    Bx, By, Bz = centered_finite_difference_curl(2*Ax, 2*Ay, 2*Az, dx, dy, dz, 'periodic')
+    # calculate the magnetic field from the vector potential using centered finite difference curl
 
     return Bx, By, Bz
 
