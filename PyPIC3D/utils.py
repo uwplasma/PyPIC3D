@@ -516,6 +516,10 @@ def load_external_fields_from_toml(fields, config):
 
         external_field = jnp.load(field_path)
 
+        # Check if the external field shape matches the existing field shape
+        if external_field.shape != fields[field_type].shape:
+            raise ValueError(f"Shape mismatch for field '{field_name}': external field shape {external_field.shape} does not match expected shape {fields[field_type].shape}")
+
         fields[field_type] = fields[field_type] + external_field
         print(f"Field loaded successfully: {field_name}")
 
