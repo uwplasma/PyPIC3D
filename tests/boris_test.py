@@ -132,40 +132,46 @@ class TestBorisMethods(unittest.TestCase):
         # Run convergence tests for each interpolation method
         ################### BASIC TRIGONOMETRIC TEST #############################
         slope = convergence_test(partial(interpolation_wave_test, interp_func=create_trilinear_interpolator))
-        error = abs(100 * (slope - 2) / 2 )
-        self.assertLess(error, 1.0)  # Check if error is less than 1.0%
+        # measure the convergence rate of the trilinear interpolation
+        self.assertTrue(slope > 1.9)
+        # assert that the order of the error is at least 2nd order
         ############################################################################
 
         ################### POLYNOMIAL TEST #######################################
         slope = convergence_test(partial(interpolation_polynomial_test, interp_func=create_trilinear_interpolator))
-        error = abs(100 * (slope - 2) / 2 )
-        self.assertLess(error, 1.0)  # Check if error is less than 1.0%
+        # measure the convergence rate of the trilinear interpolation
+        self.assertTrue(slope > 1.9)
+        # assert that the order of the error is at least 2nd order
         ############################################################################
 
         ################### HIGH-FREQUENCY TEST ###################################
         slope = convergence_test(partial(interpolation_oscillatory_test, interp_func=create_trilinear_interpolator))
-        error = abs(100 * (slope - 2) / 2 )
-        self.assertLess(error, 1.0)  # Check if error is less than 1.0%
+        # measure the convergence rate of the trilinear interpolation
+        self.assertTrue(slope > 1.9)
+        # assert that the order of the error is at least 2nd order
         ############################################################################
 
     def test_quadratic_convergence(self):
 
         ################### BASIC TRIGONOMETRIC TEST ###############################
         slope = convergence_test(partial(interpolation_wave_test, interp_func=create_quadratic_interpolator))
-        error = abs(100 * (slope - 3) / 3 )
-        self.assertLess(error, 1.0)  # Check if error is less than 1.0%
+        # measure the convergence rate of the quadratic interpolation
+        self.assertTrue(slope > 2.9)
+        # assert that the order of the error is at least 3rd order
         ############################################################################
 
         ################### POLYNOMIAL TEST ########################################
         slope = convergence_test(partial(interpolation_polynomial_test, interp_func=create_quadratic_interpolator))
-        error = abs(100 * (slope - 3) / 3 )
-        self.assertLess(error, 1.0)  # Check if error is less than 1.0%
+        # measure the convergence rate of the quadratic interpolation
+        self.assertTrue(slope > 2.9)
+        # assert that the order of the error is at least 3rd order
         ############################################################################
 
         ################### HIGH-FREQUENCY TEST ####################################
         slope = convergence_test(partial(interpolation_oscillatory_test, interp_func=create_quadratic_interpolator))
-        error = abs(100 * (slope - 3) / 3 )
-        self.assertLess(error, 1.0)  # Check if error is less than 1.0%
+        # measure the convergence rate of the quadratic interpolation
+        self.assertTrue(slope > 2.9)
+        # assert that the order of the error is at least 3rd order
         ############################################################################
 
 

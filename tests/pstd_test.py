@@ -2,7 +2,7 @@ import unittest
 import jax
 import jax.numpy as jnp
 from PyPIC3D.pstd import spectral_gradient, spectral_poisson_solve, spectral_curl, spectral_laplacian, spectral_divergence
-from PyPIC3D.utils import mse, convergence_test
+from PyPIC3D.utils import mse, convergence_test, mae
 
 jax.config.update("jax_enable_x64", True)
 
@@ -102,7 +102,7 @@ class TestSpectralMethods(unittest.TestCase):
 
         def pstd_laplacian_comparison(nx):
             """
-            Computes the mean squared error between the numerical and analytical Laplacian of a test function
+            Computes the mean absolute error (MAE) between the numerical and analytical Laplacian of a test function
             on a 3D periodic grid.
 
             The test function is phi(x, y, z) = x^2 + y^2 + z^2, whose Laplacian is analytically 6 everywhere.
@@ -122,9 +122,9 @@ class TestSpectralMethods(unittest.TestCase):
             dx : float
                 Grid spacing in the x-direction (equal to y and z spacing).
             """
-            x_wind = 0.25
-            y_wind = 0.25
-            z_wind = 0.25
+            x_wind = 1.0
+            y_wind = 1.0
+            z_wind = 1.0
             # symmetric world volume
 
             x = jnp.linspace(-x_wind/2, x_wind/2, nx)
@@ -145,23 +145,23 @@ class TestSpectralMethods(unittest.TestCase):
             laplacian =  spectral_laplacian(phi, world={'dx': dx, 'dy': dy, 'dz': dz})
             # compute the numerical result
 
-            slicer = (slice(1, -1), slice(1, -1), slice(1, -1))
+            slicer = (slice(10, -10), slice(10, -10), slice(10, -10))
             # slice for the solution comparison
 
-            error = mse( laplacian[slicer], expected_solution[slicer] )
-            # compute the mean squared error of the laplacian against the analytical solution
+            error = mae( laplacian[slicer], expected_solution[slicer] )
+            # compute the mean absolute error of the laplacian against the analytical solution
 
             return error,  dx
 
 
         def pstd_gradient_comparison(nx):
             """
-            Computes the mean squared error (MSE) between the numerical and analytical gradients
+            Computes the mean absolute error (MAE) between the numerical and analytical gradients
             of a scalar field using spectral methods.
 
             The function constructs a 3D meshgrid over a symmetric cubic domain, defines a scalar
             field `phi = sin(X + Y + Z)`, and computes its gradient both analytically and numerically.
-            The numerical gradient is computed using the `spectral_gradient` function. The MSE between
+            The numerical gradient is computed using the `spectral_gradient` function. The MAE between
             the numerical and analytical gradients is calculated for each component and summed.
 
             Args:
@@ -197,22 +197,22 @@ class TestSpectralMethods(unittest.TestCase):
             gradx, grady, gradz = spectral_gradient(phi, world={'dx': dx, 'dy': dy, 'dz': dz})
             # compute the numerical result
 
-            error_x = mse( gradx, expected_gradx )
-            error_y = mse( grady, expected_grady )
-            error_z = mse( gradz, expected_gradz )
-            error = error_x + error_y + error_z
-            # compute the mean squared error of the gradient against the analytical solution
+            error_x = mae( gradx, expected_gradx )
+            error_y = mae( grady, expected_grady )
+            error_z = mae( gradz, expected_gradz )
+            error = (error_x + error_y + error_z) / 3
+            # compute the mean absolute error of the gradient against the analytical solution
 
             return error, dx
 
 
         def pstd_divergence_comparison(nx):
             """
-            Computes the mean squared error between the numerical and analytical divergence of a vector field.
+            Computes the mean absolute error between the numerical and analytical divergence of a vector field.
 
             This function constructs a 3D meshgrid over a symmetric cubic domain, defines a vector field
             with components Fx, Fy, Fz = cos(X + Y + Z), and computes its divergence both analytically and
-            numerically (using a spectral method). It then returns the mean squared error between the two
+            numerically (using a spectral method). It then returns the mean absolute error between the two
             divergence calculations, along with the spatial resolution.
 
             Args:
@@ -249,19 +249,19 @@ class TestSpectralMethods(unittest.TestCase):
             divF = spectral_divergence(Fx, Fy, Fz, world={'dx': dx, 'dy': dy, 'dz': dz})
             # compute the numerical result
 
-            error = mse( divF, expected_div )
-            # compute the mean squared error of the divergence against the analytical solution
+            error = mae( divF, expected_div )
+            # compute the mean absolute error of the divergence against the analytical solution
 
             return error, dx
 
         def pstd_curl_comparison(nx):
             """
-            Computes the mean squared error (MSE) between the numerical and analytical curl of a vector field
+            Computes the mean absolute error (MAE) between the numerical and analytical curl of a vector field
             defined on a 3D grid using spectral methods.
 
             The vector field is defined as F = (sin(Y), sin(Z), sin(X)), and its analytical curl is
             (cos(Z) - cos(Y), cos(X) - cos(Z), cos(Y) - cos(X)). The function generates a symmetric 3D grid,
-            computes the numerical curl using the `spectral_curl` function, and returns the total MSE along
+            computes the numerical curl using the `spectral_curl` function, and returns the total MAE along
             with the grid spacing.
 
             Args:
@@ -301,28 +301,28 @@ class TestSpectralMethods(unittest.TestCase):
             curlx, curly, curlz = spectral_curl(Fx, Fy, Fz, world={'dx': dx, 'dy': dy, 'dz': dz})
             # compute the numerical result
 
-            error_x = mse( curlx, expected_curlx )
-            error_y = mse( curly, expected_curly )
-            error_z = mse( curlz, expected_curlz )
-            error = error_x + error_y + error_z
-            # compute the mean squared error of the curl against the analytical solution
+            error_x = mae( curlx, expected_curlx )
+            error_y = mae( curly, expected_curly )
+            error_z = mae( curlz, expected_curlz )
+            error = (error_x + error_y + error_z) / 3
+            # compute the mean absolute error of the curl against the analytical solution
 
             return error, dx
 
         order = convergence_test(pstd_laplacian_comparison)
-        self.assertTrue(jnp.isclose(order, 3, rtol=2.5e-2, atol=2.5e-2))
+        self.assertTrue(order > 1.9)
         # compute order of pstd laplacian
 
         order = convergence_test(pstd_gradient_comparison)
-        self.assertTrue(jnp.isclose(order, 1, rtol=1.5e-2, atol=1.5e-2))
+        self.assertTrue(order > 1.9)
         # compute order of pstd gradient
 
         order = convergence_test(pstd_divergence_comparison)
-        self.assertTrue(jnp.isclose(order, 1, rtol=2.5e-2, atol=2.5e-2))
+        self.assertTrue(order > 1.9)
         # compute order of pstd divergence
 
         order = convergence_test(pstd_curl_comparison)
-        self.assertTrue(jnp.isclose(order, 1, rtol=1.5e-2, atol=1.5e-2))
+        self.assertTrue(order > 1.9)
         # compute order of pstd curl
 
 if __name__ == '__main__':

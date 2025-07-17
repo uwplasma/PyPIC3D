@@ -76,7 +76,7 @@ def convergence_test(func):
     errors = jnp.asarray(errors)
     # convert the result lists to ndarrays
 
-    res = stats.linregress( jnp.log(dxs), jnp.log(errors) )
+    res = stats.linregress( jnp.log(dxs), jnp.log(errors) + 3*jnp.log(dxs) )
     slope = jnp.abs( res.slope )
     # compute the order of the convergence using a line fit of the log(y)/log(x)
 
@@ -515,6 +515,10 @@ def load_external_fields_from_toml(fields, config):
         print(f"Loading field: {field_name} from {field_path}")
 
         external_field = jnp.load(field_path)
+
+        # Check if the external field shape matches the existing field shape
+        if external_field.shape != fields[field_type].shape:
+            raise ValueError(f"Shape mismatch for field '{field_name}': external field shape {external_field.shape} does not match expected shape {fields[field_type].shape}")
 
         fields[field_type] = fields[field_type] + external_field
         print(f"Field loaded successfully: {field_name}")

@@ -43,6 +43,10 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
     y_wind = world['y_wind']
     z_wind = world['z_wind']
     # get the world dimensions
+    Nx = world['Nx']
+    Ny = world['Ny']
+    Nz = world['Nz']
+    # get the number of grid points in each dimension
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
@@ -71,6 +75,7 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         i += 3
         # build the particle random number generator keys
         particle_name = config[toml_key]['name']
+        print(f"\nInitializing particle species: {particle_name}")
         charge=config[toml_key]['charge']
         mass=config[toml_key]['mass']
 
@@ -93,6 +98,11 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
             vth = T_to_vth(T, mass, kb)
         # set the temperature of the particle species
 
+        Tx = read_value('Tx', toml_key, config, T)
+        Ty = read_value('Ty', toml_key, config, T)
+        Tz = read_value('Tz', toml_key, config, T)
+        # set the temperature of the particle species in each dimension
+
         xmin = read_value('xmin', toml_key, config, -x_wind / 2)
         xmax = read_value('xmax', toml_key, config, x_wind / 2)
         ymin = read_value('ymin', toml_key, config, -y_wind / 2)
@@ -100,7 +110,7 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         zmin = read_value('zmin', toml_key, config, -z_wind / 2)
         zmax = read_value('zmax', toml_key, config, z_wind / 2)
         # set the bounds for the particle species
-        x, y, z, vx, vy, vz = initial_particles(N_per_cell, N_particles, xmin, xmax, ymin, ymax, zmin, zmax, mass, T, kb, key1, key2, key3)
+        x, y, z, vx, vy, vz = initial_particles(N_per_cell, N_particles, xmin, xmax, ymin, ymax, zmin, zmax, mass, Tx, Ty, Tz, kb, key1, key2, key3)
         # initialize the positions and velocities of the particles
 
         bc = 'periodic'
@@ -108,9 +118,9 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
             bc = config[toml_key]['bc']
         # set the boundary condition
 
-        x = load_initial_positions('initial_x', config, toml_key, x, N_particles, dx, key1)
-        y = load_initial_positions('initial_y', config, toml_key, y, N_particles, dy, key2)
-        z = load_initial_positions('initial_z', config, toml_key, z, N_particles, dz, key3)
+        x = load_initial_positions('initial_x', config, toml_key, x, N_particles, dx, Nx, key1)
+        y = load_initial_positions('initial_y', config, toml_key, y, N_particles, dy, Ny, key2)
+        z = load_initial_positions('initial_z', config, toml_key, z, N_particles, dz, Nz, key3)
         # load the initial positions of the particles from the toml file, if specified
         # otherwise, use the initialized positions
         vx = load_initial_velocities('initial_vx', config, toml_key, vx, N_particles)
@@ -118,6 +128,12 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         vz = load_initial_velocities('initial_vz', config, toml_key, vz, N_particles)
         # load the initial velocities of the particles from the toml file, if specified
         # otherwise, use the initialized velocities
+
+        # Calculate the temperature from the velocities if not explicitly set
+        if 'temperature' not in config[toml_key]:
+            T = (mass / (3 * kb * N_particles)) * (
+                jnp.sum(vx ** 2) + jnp.sum(vy ** 2) + jnp.sum(vz ** 2)
+            )
 
         if "weight" in config[toml_key]:
             weight = config[toml_key]['weight']
@@ -181,7 +197,6 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
 
         pf = plasma_frequency(particle, world, constants)
         dl = debye_length(particle, world, constants)
-        print(f"\nInitializing particle species: {particle_name}")
         print(f"Number of particles: {N_particles}")
         print(f"Number of particles per cell: {N_per_cell}")
         print(f"Charge: {charge}")
@@ -221,7 +236,7 @@ def read_value(param, key, config, default_value):
         return default_value
 
 
-def load_initial_positions(param, config, key, default, N_particles, ds, key1):
+def load_initial_positions(param, config, key, default, N_particles, ds, ns, key1):
     """
     Load initial positions for particles based on the provided configuration.
 
@@ -252,7 +267,10 @@ def load_initial_positions(param, config, key, default, N_particles, ds, key1):
         else:
             #return jnp.full(N_particles, config[key][param])
             val = config[key][param]
-            return jax.random.uniform(key1, shape = (N_particles,), minval=val-(ds/2), maxval=val+(ds/2))
+            if ns == 1:
+                return val * jnp.ones(N_particles)
+            else:
+                return jax.random.uniform(key1, shape=(N_particles,), minval=val-(ds/2), maxval=val+(ds/2))
             # if the value is a number, fill the array with that value with some noise in the subcell position
     else:
         return default
@@ -333,7 +351,7 @@ def compute_macroparticle_weight(config, particle_keys, simulation_parameters, w
 
     return weight
 
-def initial_particles(N_per_cell, N_particles, minx, maxx, miny, maxy, minz, maxz, mass, T, kb, key1, key2, key3):
+def initial_particles(N_per_cell, N_particles, minx, maxx, miny, maxy, minz, maxz, mass, Tx, Ty, Tz, kb, key1, key2, key3):
     """
     Initializes the velocities and positions of the particles.
 
@@ -370,10 +388,12 @@ def initial_particles(N_per_cell, N_particles, minx, maxx, miny, maxy, minz, max
         # z = jnp.repeat(jax.random.uniform(key3, shape=(N_particles // N_per_cell,), minval=minz, maxval=maxz), N_per_cell)
         # initialize the positions of the particles, giving every N_per_cell particles the same position
     #std = jnp.sqrt( kb * T / mass )
-    std = T_to_vth( T, mass, kb )
-    v_x = np.random.normal(0, std, N_particles)
-    v_y = np.random.normal(0, std, N_particles)
-    v_z = np.random.normal(0, std, N_particles)
+    std_x = T_to_vth( Tx, mass, kb )
+    std_y = T_to_vth( Ty, mass, kb )
+    std_z = T_to_vth( Tz, mass, kb )
+    v_x = np.random.normal(0, std_x, N_particles)
+    v_y = np.random.normal(0, std_y, N_particles)
+    v_z = np.random.normal(0, std_z, N_particles)
     # initialize the particles with a maxwell boltzmann distribution.
     return x, y, z, v_x, v_y, v_z
 

@@ -681,7 +681,7 @@ def plot_vtk_particles(particles, t, path):
         # Get the charge of the particles
 
         pointsToVTK(f"{path}/data/particles/{name}.{t:09}", x, y, z, \
-                {"vx": vx, "vy": vy, "vz": vz, "q": q})
+                {"v": (vx, vy, vz), "q": q})
         # save the particles in the vtk file format
 
 def plot_field_slice_vtk(field_slices, field_names, slice, grid, t, name, path, world):
@@ -716,8 +716,12 @@ def plot_field_slice_vtk(field_slices, field_names, slice, grid, t, name, path, 
         os.makedirs(f"{path}/data/{name}_slice")
     # Create directory if it doesn't exist
 
-    slices = [np.expand_dims(np.asarray(slice_), axis=slice) for slice_ in field_slices]
-    # add a new axis to the field slices to match the grid dimensions
+    if slice != 3:
+        slices = [np.expand_dims(np.asarray(slice_), axis=slice) for slice_ in field_slices]
+        # add a new axis to the field slices to match the grid dimensions
+    else:
+        slices = [np.asarray(slice_) for slice_ in field_slices]
+        # do not add a new axis to the field slices if slice is 3
 
     cell_data = { f"{field_names[i]}": slice_ for i, slice_ in enumerate(slices) }
     # loop over the field slices and save them as separate entries in cellData

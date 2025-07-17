@@ -74,8 +74,8 @@ def run_PyPIC3D(config_file):
             plot_field_slice_vtk(fields_mag, field_names, 2, E_grid, t, "fields", output_dir, world)
             # Plot the fields in VTK format
 
-            # if plotting_parameters['plot_vtk_particles']:
-                # plot_vtk_particles(particles, t, output_dir)
+            if plotting_parameters['plot_vtk_particles']:
+                plot_vtk_particles(particles, t, output_dir)
             # Plot the particles in VTK format
 
         particles, fields = jit_loop(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc, relativistic=relativistic)
