@@ -75,6 +75,7 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         i += 3
         # build the particle random number generator keys
         particle_name = config[toml_key]['name']
+        print(f"\nInitializing particle species: {particle_name}")
         charge=config[toml_key]['charge']
         mass=config[toml_key]['mass']
 
@@ -127,6 +128,12 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         vz = load_initial_velocities('initial_vz', config, toml_key, vz, N_particles)
         # load the initial velocities of the particles from the toml file, if specified
         # otherwise, use the initialized velocities
+
+        # Calculate the temperature from the velocities if not explicitly set
+        if 'temperature' not in config[toml_key]:
+            T = (mass / (3 * kb * N_particles)) * (
+                jnp.sum(vx ** 2) + jnp.sum(vy ** 2) + jnp.sum(vz ** 2)
+            )
 
         if "weight" in config[toml_key]:
             weight = config[toml_key]['weight']
@@ -190,7 +197,6 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
 
         pf = plasma_frequency(particle, world, constants)
         dl = debye_length(particle, world, constants)
-        print(f"\nInitializing particle species: {particle_name}")
         print(f"Number of particles: {N_particles}")
         print(f"Number of particles per cell: {N_per_cell}")
         print(f"Charge: {charge}")
