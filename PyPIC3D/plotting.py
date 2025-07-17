@@ -681,7 +681,7 @@ def plot_vtk_particles(particles, t, path):
         # Get the charge of the particles
 
         pointsToVTK(f"{path}/data/particles/{name}.{t:09}", x, y, z, \
-                {"vx": vx, "vy": vy, "vz": vz, "q": q})
+                {"v": (vx, vy, vz), "q": q})
         # save the particles in the vtk file format
 
 def plot_field_slice_vtk(field_slices, field_names, slice, grid, t, name, path, world):
