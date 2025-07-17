@@ -76,7 +76,7 @@ def convergence_test(func):
     errors = jnp.asarray(errors)
     # convert the result lists to ndarrays
 
-    res = stats.linregress( jnp.log(dxs), jnp.log(errors) )
+    res = stats.linregress( jnp.log(dxs), jnp.log(errors) + 3*jnp.log(dxs) )
     slope = jnp.abs( res.slope )
     # compute the order of the convergence using a line fit of the log(y)/log(x)
 
