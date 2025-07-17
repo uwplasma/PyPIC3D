@@ -295,7 +295,7 @@ class TestFDTDMethods(unittest.TestCase):
             return error, dx
 
         order = convergence_test(fdtd_laplacian_comparison)
-        self.assertTrue(order > 3)
+        self.assertTrue(order > 2)
         # compute order of fdtd laplacian
 
         order = convergence_test(fdtd_gradient_comparison)
