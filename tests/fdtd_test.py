@@ -295,19 +295,19 @@ class TestFDTDMethods(unittest.TestCase):
             return error, dx
 
         order = convergence_test(fdtd_laplacian_comparison)
-        self.assertTrue(jnp.isclose(order, 2, rtol=1.5e-2, atol=1.5e-2))
+        self.assertTrue(order > 3)
         # compute order of fdtd laplacian
 
         order = convergence_test(fdtd_gradient_comparison)
-        self.assertTrue(jnp.isclose(order, 1, rtol=1.5e-2, atol=1.5e-2))
+        self.assertTrue(order > 2)
         # compute order of fdtd gradient
 
         order = convergence_test(fdtd_divergence_comparison)
-        self.assertTrue(jnp.isclose(order, 1, rtol=6.5e-2, atol=6.5e-2))
+        self.assertTrue(order > 2)
         # compute order of fdtd divergence
 
         order = convergence_test(fdtd_curl_comparison)
-        self.assertTrue(jnp.isclose(order, 1, rtol=2.5e-2, atol=2.5e-2))
+        self.assertTrue(order > 2)
         # compute order of fdtd curl
 
 if __name__ == '__main__':

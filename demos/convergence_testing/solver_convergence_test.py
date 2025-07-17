@@ -274,7 +274,7 @@ def pstd_laplacian_comparison(nx):
     laplacian =  spectral_laplacian(phi, world={'dx': dx, 'dy': dy, 'dz': dz})
     # compute the numerical result
 
-    slicer = (slice(1, -1), slice(1, -1), slice(1, -1))
+    slicer = (slice(10, -10), slice(10, -10), slice(10, -10))
     # slice for the solution comparison
 
     error = mae( laplacian[slicer], expected_solution[slicer] )
@@ -447,9 +447,9 @@ if __name__ == "__main__":
 
     ################### LAPLACIAN CONVERGENCE TEST #############################
     slope = convergence_test(fdtd_laplacian_comparison)
-    print(f"\nExpected Order of Laplacian Method: 3")
+    print(f"\nExpected Order of Laplacian Method: 2")
     print(f"Calculated Order of Laplacian Method: {slope}")
-    print(f"Error in Order: {jnp.abs( 100 * (slope - 3) / 3 )} %")
+    print(f"Error in Order: {jnp.abs( 100 * (slope - 2) / 2 )} %")
     ############################################################################
 
 
@@ -485,9 +485,9 @@ if __name__ == "__main__":
 
     ################### LAPLACIAN CONVERGENCE TEST #############################
     slope = convergence_test(pstd_laplacian_comparison)
-    print(f"\nExpected Order of Laplacian Method: 3")
+    print(f"\nExpected Order of Laplacian Method: 2")
     print(f"Calculated Order of Laplacian Method: {slope}")
-    print(f"Error in Order: {jnp.abs( 100 * (slope - 3) / 3 )} %")
+    print(f"Error in Order: {jnp.abs( 100 * (slope - 2) / 2 )} %")
     ############################################################################
 
     ################## GRADIENT CONVERGENCE TEST ###############################
