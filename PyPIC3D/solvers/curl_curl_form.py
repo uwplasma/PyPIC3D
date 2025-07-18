@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from PyPIC3D.fdtd import (
+from PyPIC3D.solvers.fdtd import (
     centered_finite_difference_curl,
     centered_finite_difference_laplacian,
     centered_finite_difference_divergence,
