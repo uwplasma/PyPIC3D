@@ -15,6 +15,23 @@ import importlib.metadata
 from scipy import stats
 # import external libraries
 
+@partial(jit, static_argnames=("alpha"))
+def digital_filter(phi, alpha):
+    """
+    Apply a digital filter to the electric potential array.
+
+    Args:
+        phi (ndarray): Electric potential array.
+        alpha (float): Filter coefficient.
+
+    Returns:
+        ndarray: Filtered electric potential array.
+    """
+    filter_phi = alpha * phi +  (  (1 - alpha) / 6 ) * (  jnp.roll(phi, shift=1, axis=0) + jnp.roll(phi, shift=-1, axis=0) + \
+                                                            jnp.roll(phi, shift=1, axis=1) + jnp.roll(phi, shift=-1, axis=1) + \
+                                                                jnp.roll(phi, shift=1, axis=2) + jnp.roll(phi, shift=-1, axis=2) )
+    return filter_phi
+
 def mae(x, y):
     """
     Calculates the mean absolute error (MAE) between two arrays.

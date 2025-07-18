@@ -42,7 +42,7 @@ def run_PyPIC3D(config_file):
     dt = world['dt']
     output_dir = simulation_parameters['output_dir']
 
-    field_names = ["E_magnitude", "B_magnitude"]
+    field_names = ["E_magnitude", "B_magnitude", "Jz"]
 
     ############################################################################################################
 
@@ -70,7 +70,7 @@ def run_PyPIC3D(config_file):
 
             E_magnitude = jnp.sqrt(E[0]**2 + E[1]**2 + E[2]**2)[:,:,world['Nz']//2]
             B_magnitude = jnp.sqrt(B[0]**2 + B[1]**2 + B[2]**2)[:,:,world['Nz']//2]
-            fields_mag = [E_magnitude, B_magnitude]
+            fields_mag = [E_magnitude, B_magnitude, J[2][:,:,world['Nz']//2]]
             plot_field_slice_vtk(fields_mag, field_names, 2, E_grid, t, "fields", output_dir, world)
             # Plot the fields in VTK format
 

@@ -21,15 +21,16 @@ from PyPIC3D.utils import (
     make_dir, compute_energy, build_collocated_grid
 )
 
-from PyPIC3D.fields import (
-    calculateE, initialize_fields
+
+from PyPIC3D.solvers.first_order_yee import (
+    calculateE
 )
 
-from PyPIC3D.pstd import (
+from PyPIC3D.solvers.pstd import (
     spectral_curl
 )
 
-from PyPIC3D.fdtd import (
+from PyPIC3D.solvers.fdtd import (
     centered_finite_difference_curl
 )
 
@@ -47,7 +48,7 @@ from PyPIC3D.evolve import (
 from PyPIC3D.J import (
     J_from_rhov, Esirkepov_current, VB_current
 )
-from PyPIC3D.vector_potential import initialize_vector_potential
+from PyPIC3D.solvers.vector_potential import initialize_vector_potential
 
 
 def default_parameters():
@@ -319,3 +320,45 @@ def initialize_simulation(toml_file):
 
     return evolve_loop, particles, fields, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, \
         solver, bc, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic
+
+
+
+def initialize_fields(Nx, Ny, Nz):
+    """
+    Initializes the electric and magnetic field arrays, as well as the electric potential and charge density arrays.
+
+    Args:
+        Nx (int): Number of grid points in the x-direction.
+        Ny (int): Number of grid points in the y-direction.
+        Nz (int): Number of grid points in the z-direction.
+
+    Returns:
+        Ex (ndarray): Electric field array in the x-direction.
+        Ey (ndarray): Electric field array in the y-direction.
+        Ez (ndarray): Electric field array in the z-direction.
+        Bx (ndarray): Magnetic field array in the x-direction.
+        By (ndarray): Magnetic field array in the y-direction.
+        Bz (ndarray): Magnetic field array in the z-direction.
+        phi (ndarray): Electric potential array.
+        rho (ndarray): Charge density array.
+    """
+    # get the number of grid points in each direction
+    Ex = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+    Ey = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+    Ez = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+    # initialize the electric field arrays as 0
+    Bx = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+    By = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+    Bz = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+    # initialize the magnetic field arrays as 0
+
+    Jx = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+    Jy = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+    Jz = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+    # initialize the current density arrays as 0
+
+    phi = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+    rho = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+    # initialize the electric potential and charge density arrays as 0
+
+    return (Ex, Ey, Ez), (Bx, By, Bz), (Jx, Jy, Jz), phi, rho

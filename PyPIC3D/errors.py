@@ -3,8 +3,8 @@ import jax.numpy as jnp
 from functools import partial
 # import external libraries
 
-from PyPIC3D.pstd import spectral_laplacian, spectral_divergence
-from PyPIC3D.fdtd import centered_finite_difference_laplacian, centered_finite_difference_divergence
+from PyPIC3D.solvers.pstd import spectral_laplacian, spectral_divergence
+from PyPIC3D.solvers.fdtd import centered_finite_difference_laplacian, centered_finite_difference_divergence
 # import functions from the PyPIC3D package
 
 @partial(jit, static_argnums=(4, 5))
