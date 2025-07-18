@@ -4,14 +4,12 @@ import jax.numpy as jnp
 import sys
 import os
 
-# # Add the parent directory to the sys.path
-# sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from PyPIC3D.fields import initialize_fields, solve_poisson, calculateE, update_E, update_B
+from PyPIC3D.initialization import initialize_fields
+from PyPIC3D.solvers.first_order_yee import update_E, update_B
 from PyPIC3D.utils import build_yee_grid
 
-from PyPIC3D.pstd import spectral_gradient
-from PyPIC3D.fdtd import centered_finite_difference_gradient, centered_finite_difference_curl
+from PyPIC3D.solvers.fdtd import centered_finite_difference_curl
 
 jax.config.update("jax_enable_x64", True)
 
@@ -85,69 +83,6 @@ class TestFieldsMethods(unittest.TestCase):
         self.assertEqual(self.Jz.shape, (100, 100, 100))
         self.assertEqual(self.phi.shape, (100, 100, 100))
         self.assertEqual(self.rho.shape, (100, 100, 100))
-
-    # def test_solve_poisson(self):
-    #     phi = solve_poisson(self.rho, self.constants, self.world, self.phi, solver='fdtd')
-    #     self.assertEqual(phi.shape, (100, 100, 100))
-    #     self.assertTrue( jnp.allclose(phi, self.real_phi, atol=1e-4) )
-    #     # test if the solution is close to the analytical solution with finite difference method
-    #     phi = solve_poisson(self.rho, self.constants, self.world, self.phi, solver='spectral')
-    #     self.assertEqual(phi.shape, (100, 100, 100))
-    #     self.assertTrue( jnp.allclose(phi, self.real_phi, atol=1e-4) )
-    #     # test if the solution is close to the analytical solution with spectral method
-
-    # def test_calculateE(self):
-    #     """Test calculateE function with analytical solutions"""
-
-    #     # Test 2: Test calculateE with empty particles (knowing rho will be zeroed)
-    #     particles = []
-
-    #     # Test with both solvers
-    #     for solver_name in ['fdtd', 'spectral']:
-    #         E, phi, rho = calculateE(self.world, particles, self.constants, self.rho, self.phi, solver_name, 'periodic')
-    #         Ex, Ey, Ez = E
-
-    #         # Check shapes
-    #         self.assertEqual(Ex.shape, (100, 100, 100))
-    #         self.assertEqual(Ey.shape, (100, 100, 100))
-    #         self.assertEqual(Ez.shape, (100, 100, 100))
-    #         self.assertEqual(phi.shape, (100, 100, 100))
-    #         self.assertEqual(rho.shape, (100, 100, 100))
-
-    #         # With empty particles, rho should be zero, so phi should also be zero
-    #         print(f"Max phi value with no charge ({solver_name}): {jnp.max(jnp.abs(phi))}")
-    #         print(f"Max E field value with no charge ({solver_name}): {jnp.max(jnp.abs(Ex))}")
-
-    #         # Check that with zero charge density, phi and E are small
-    #         self.assertLess(jnp.max(jnp.abs(phi)), 1e-10, f"Phi should be near zero with no charge ({solver_name})")
-    #         self.assertLess(jnp.max(jnp.abs(Ex)), 1e-10, f"Ex should be near zero with no charge ({solver_name})")
-    #         self.assertLess(jnp.max(jnp.abs(Ey)), 1e-10, f"Ey should be near zero with no charge ({solver_name})")
-    #         self.assertLess(jnp.max(jnp.abs(Ez)), 1e-10, f"Ez should be near zero with no charge ({solver_name})")
-
-
-    #     # Test gradient calculation with analytical phi
-    #     Ex_grad_fdtd, Ey_grad_fdtd, Ez_grad_fdtd = centered_finite_difference_gradient(
-    #         -1*self.real_phi, self.world['dx'], self.world['dy'], self.world['dz'], 'periodic')
-
-    #     Ex_grad_spectral, Ey_grad_spectral, Ez_grad_spectral = spectral_gradient(-1*self.real_phi, self.world)
-
-    #     # self.assertTrue( jnp.allclose(Ex_grad_fdtd, self.real_Ex, rtol=1e-4, atol=1e-4) )
-    #     # self.assertTrue( jnp.allclose(Ey_grad_fdtd, self.real_Ey, rtol=1e-4, atol=1e-4) )
-    #     # self.assertTrue( jnp.allclose(Ez_grad_fdtd, self.real_Ez, rtol=1e-4, atol=1e-4) )
-
-    #     # self.assertTrue( jnp.allclose(Ex_grad_spectral, self.real_Ex, rtol=1e-4, atol=1e-4) )
-    #     # self.assertTrue( jnp.allclose(Ey_grad_spectral, self.real_Ey, rtol=1e-4, atol=1e-4) )
-    #     # self.assertTrue( jnp.allclose(Ez_grad_spectral, self.real_Ez, rtol=1e-4, atol=1e-4) )
-    #     # ensure that the gradients match the analytical solution
-
-    #     phi_computed = solve_poisson(self.rho, self.constants, self.world, self.phi, solver='spectral')
-    #     # Use the computed phi from Poisson solver to get E field
-    #     Ex_from_phi, Ey_from_phi, Ez_from_phi = spectral_gradient(-1*phi_computed, self.world)
-
-    #     self.assertTrue( jnp.allclose(Ex_from_phi, self.real_Ex, rtol=1e-4, atol=1e-4) )
-    #     self.assertTrue( jnp.allclose(Ey_from_phi, self.real_Ey, rtol=1e-4, atol=1e-4) )
-    #     self.assertTrue( jnp.allclose(Ez_from_phi, self.real_Ez, rtol=1e-4, atol=1e-4) )
-    #     # Ensure the computed E field matches the analytical solution
 
     def test_update_E(self):
         """Test update_E against analytical electromagnetic wave solution"""

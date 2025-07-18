@@ -1,12 +1,12 @@
 import jax.numpy as jnp
 from scipy import stats
 
-from PyPIC3D.fdtd import (
+from PyPIC3D.solvers.fdtd import (
     centered_finite_difference_laplacian, centered_finite_difference_gradient,
     centered_finite_difference_divergence, centered_finite_difference_curl
 )
 
-from PyPIC3D.pstd import (
+from PyPIC3D.solvers.pstd import (
     spectral_laplacian, spectral_gradient,
     spectral_divergence, spectral_curl
 )

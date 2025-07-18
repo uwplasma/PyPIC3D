@@ -1,7 +1,7 @@
 import unittest
 import jax
 import jax.numpy as jnp
-from PyPIC3D.pstd import spectral_gradient, spectral_poisson_solve, spectral_curl, spectral_laplacian, spectral_divergence
+from PyPIC3D.solvers.pstd import spectral_gradient, spectral_poisson_solve, spectral_curl, spectral_laplacian, spectral_divergence
 from PyPIC3D.utils import mse, convergence_test, mae
 
 jax.config.update("jax_enable_x64", True)
