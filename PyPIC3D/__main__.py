@@ -25,6 +25,8 @@ from PyPIC3D.initialization import (
     initialize_simulation
 )
 
+from PyPIC3D.rho import compute_rho
+
 
 # Importing functions from the PyPIC3D package
 ############################################################################################################
@@ -42,7 +44,7 @@ def run_PyPIC3D(config_file):
     dt = world['dt']
     output_dir = simulation_parameters['output_dir']
 
-    field_names = ["E_magnitude", "B_magnitude", "Jz"]
+    field_names = ["E_magnitude", "B_magnitude", "Jz", "rho"]
 
     ############################################################################################################
 
@@ -52,7 +54,7 @@ def run_PyPIC3D(config_file):
         # plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters)
         # plot the data
         if t % plotting_parameters['plotting_interval'] == 0:
-            E, B, J, *rest = fields
+            E, B, J, rho, *rest = fields
             # unpack the fields
             e_energy, b_energy, kinetic_energy = compute_energy(particles, E, B, world, constants)
             # Compute the energy of the system
@@ -68,9 +70,13 @@ def run_PyPIC3D(config_file):
 
             write_particles_phase_space(particles, t, output_dir)
 
+
+            rho = compute_rho(particles, rho, world)
+            # calculate the charge density based on the particle positions
+
             E_magnitude = jnp.sqrt(E[0]**2 + E[1]**2 + E[2]**2)[:,:,world['Nz']//2]
             B_magnitude = jnp.sqrt(B[0]**2 + B[1]**2 + B[2]**2)[:,:,world['Nz']//2]
-            fields_mag = [E_magnitude, B_magnitude, J[2][:,:,world['Nz']//2]]
+            fields_mag = [E_magnitude, B_magnitude, J[2][:,:,world['Nz']//2], rho[:,:,world['Nz']//2]]
             plot_field_slice_vtk(fields_mag, field_names, 2, E_grid, t, "fields", output_dir, world)
             # Plot the fields in VTK format
 
