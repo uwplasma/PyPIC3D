@@ -18,7 +18,8 @@ dependencies = [
     "toml",
     "tqdm",
     "epyc",
-    "pyevtk"
+    "pyevtk",
+    "vtk"
 ]
 
 [tool.setuptools]

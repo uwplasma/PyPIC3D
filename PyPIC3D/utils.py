@@ -15,6 +15,23 @@ import importlib.metadata
 from scipy import stats
 # import external libraries
 
+@jit
+def digital_filter(phi, alpha):
+    """
+    Apply a digital filter to a field.
+
+    Args:
+        phi (ndarray): Field array.
+        alpha (float): Filter coefficient.
+
+    Returns:
+        ndarray: Filtered field array.
+    """
+    filter_phi = alpha * phi +  (  (1 - alpha) / 6 ) * (  jnp.roll(phi, shift=1, axis=0) + jnp.roll(phi, shift=-1, axis=0) + \
+                                                            jnp.roll(phi, shift=1, axis=1) + jnp.roll(phi, shift=-1, axis=1) + \
+                                                                jnp.roll(phi, shift=1, axis=2) + jnp.roll(phi, shift=-1, axis=2) )
+    return filter_phi
+
 def mae(x, y):
     """
     Calculates the mean absolute error (MAE) between two arrays.

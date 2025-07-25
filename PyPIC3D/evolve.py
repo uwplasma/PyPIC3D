@@ -6,20 +6,24 @@ import jax
 from jax import jit
 from functools import partial
 
-from PyPIC3D.fields import (
-    calculateE, update_B, update_E
-)
+# from PyPIC3D.fields import (
+#     calculateE, update_B, update_E
+# )
 
 from PyPIC3D.boris import (
     particle_push
 )
 
-from PyPIC3D.vector_potential import (
+from PyPIC3D.solvers.first_order_yee import (
+    update_E, update_B, calculateE
+)
+
+from PyPIC3D.solvers.vector_potential import (
     E_from_A, B_from_A, update_vector_potential
 )
 
 
-from PyPIC3D.curl_curl_form import (
+from PyPIC3D.solvers.curl_curl_form import (
     update_B_second_order, update_E_second_order
 )
 

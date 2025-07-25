@@ -7,9 +7,10 @@ import jax.numpy as jnp
 from pyevtk.hl import gridToVTK, pointsToVTK
 import os
 import plotly.graph_objects as go
-# from PyPIC3D.rho import update_rho
 import jax
 from functools import partial
+import vtk
+from vtk.util import numpy_support
 
 from PyPIC3D.utils import compute_energy
 
@@ -684,16 +685,20 @@ def plot_vtk_particles(particles, t, path):
                 {"v": (vx, vy, vz), "q": q})
         # save the particles in the vtk file format
 
+
 def plot_field_slice_vtk(field_slices, field_names, slice, grid, t, name, path, world):
     """
-    Plot a slice of a field in VTK format.
+    Plot a slice of a field in VTK format using Python VTK library.
 
     Args:
-        field_slice (ndarray): The 2D slice of the field to be plotted.
-        grid (tuple): The grid dimensions (x, y).
+        field_slices (list): List of 2D field slices to be plotted.
+        field_names (list): List of field names corresponding to the slices.
+        slice (int): Slice direction (0=x-slice, 1=y-slice, 2=z-slice, 3=full 3D).
+        grid (tuple): The grid dimensions (x, y, z).
         t (int): The time step.
         name (str): The name of the field.
         path (str): The path to save the plot.
+        world (dict): World parameters containing grid information.
 
     Returns:
         None
@@ -703,29 +708,46 @@ def plot_field_slice_vtk(field_slices, field_names, slice, grid, t, name, path, 
     nx, ny, nz = world['Nx'], world['Ny'], world['Nz']
     dx, dy, dz = world['dx'], world['dy'], world['dz']
 
-    if slice == 0:
-        x = np.array([x[nx//2]])
-    elif slice == 1:
-        y = np.array([y[ny//2]])
-    elif slice == 2:
-        z = np.array([z[nz//2]])
-
-    X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
-
     if not os.path.exists(f"{path}/data/{name}_slice"):
         os.makedirs(f"{path}/data/{name}_slice")
     # Create directory if it doesn't exist
 
-    if slice != 3:
-        slices = [np.expand_dims(np.asarray(slice_), axis=slice) for slice_ in field_slices]
-        # add a new axis to the field slices to match the grid dimensions
-    else:
-        slices = [np.asarray(slice_) for slice_ in field_slices]
-        # do not add a new axis to the field slices if slice is 3
+    # Create VTK structured grid
+    structured_grid = vtk.vtkStructuredGrid()
 
-    cell_data = { f"{field_names[i]}": slice_ for i, slice_ in enumerate(slices) }
-    # loop over the field slices and save them as separate entries in cellData
+    if slice == 0:
+        x = np.asarray([x[nx//2]])
+    elif slice == 1:
+        y = np.asarray([y[ny//2]])
+    elif slice == 2:
+        z = np.asarray([z[nz//2]])
 
-    gridToVTK(f"{path}/data/{name}_slice/{name}_slice_{t:09}", X, Y, Z, \
-            cellData=cell_data)
-    # save the field slices in the vtk file format
+    structured_grid.SetDimensions(x.shape[0], y.shape[0], z.shape[0])
+    # Set the dimensions of the structured grid based on the slice type
+
+    # Efficiently create all grid points using numpy meshgrid and bulk insert
+    X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
+    coords = np.column_stack((Z.ravel(), Y.ravel(), X.ravel()))
+    points = vtk.vtkPoints()
+    points.SetData(numpy_support.numpy_to_vtk(coords, deep=True))
+    structured_grid.SetPoints(points)
+    # Create points for the structured grid based on the slice type
+
+    for idx, (field_slice, field_name) in enumerate(zip(field_slices, field_names)):
+        # Ensure field_slice is 2D and handle VTK ordering
+        field_data = np.asarray(field_slice)
+        if field_data.ndim == 2:
+            # VTK expects data in (k,j,i) order, but our slice is typically (j,k)
+            field_data = field_data.T.flatten()
+        else:
+            field_data = field_data.flatten()
+
+        vtk_array = numpy_support.numpy_to_vtk(field_data)
+        vtk_array.SetName(field_name)
+        structured_grid.GetPointData().AddArray(vtk_array)
+
+    # Write the VTK file
+    writer = vtk.vtkStructuredGridWriter()
+    writer.SetFileName(f"{path}/data/{name}_slice/{name}_slice_{t:09}.vtk")
+    writer.SetInputData(structured_grid)
+    writer.Write()
