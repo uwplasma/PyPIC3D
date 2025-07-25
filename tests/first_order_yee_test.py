@@ -33,7 +33,8 @@ class TestFieldsMethods(unittest.TestCase):
         self.constants = {
             'eps': 1.0,  # Normalized permittivity
             'mu': 1.0,
-            'C': 1.0
+            'C': 1.0,
+            'alpha': 1.0,  # Digital filter alpha value
         }
         self.grid, self.staggered_grid = build_yee_grid(self.world)
         Nx = self.world['Nx']
