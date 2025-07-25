@@ -49,6 +49,12 @@ def update_E(E, B, J, world, constants, curl_func):
     Ez = Ez + ( 2 * C**2 * curlz - Jz / eps ) * dt
     # update the electric field from Maxwell's equations
 
+    alpha = constants['alpha']
+    Ex = digital_filter(Ex, alpha)
+    Ey = digital_filter(Ey, alpha)
+    Ez = digital_filter(Ez, alpha)
+    # apply a digital filter to the electric field components
+
     return (Ex, Ey, Ez)
 
 
@@ -85,6 +91,12 @@ def update_B(E, B, world, constants, curl_func):
     Bz = Bz - 2*dt*curlz
     # update the magnetic field from Maxwell's equations
 
+    alpha = constants['alpha']
+    Bx = digital_filter(Bx, alpha)
+    By = digital_filter(By, alpha)
+    Bz = digital_filter(Bz, alpha)
+    # apply a digital filter to the magnetic field components
+
     return (Bx, By, Bz)
 
 
@@ -116,13 +128,14 @@ def calculateE(world, particles, constants, rho, phi, solver, bc):
     dz = world['dz']
     # get resolution
 
-    rho = compute_rho(particles, rho, world)
+    rho = compute_rho(particles, rho, world, constants)
     # calculate the charge density based on the particle positions
 
     phi = spectral_poisson_solve(rho, constants, world)
     # solve the Poisson equation to get the electric potential
 
-    phi = digital_filter(phi, 0.5)
+    alpha = constants['alpha']
+    phi = digital_filter(phi, alpha)
     # apply a digital filter to the electric potential
     # alpha = 0.5 is a bilinear filter for the electric potential
 

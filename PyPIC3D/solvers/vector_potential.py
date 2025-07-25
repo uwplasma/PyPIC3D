@@ -9,6 +9,8 @@ from PyPIC3D.solvers.fdtd import (
 )
 from PyPIC3D.boris import create_trilinear_interpolator, create_quadratic_interpolator
 
+from PyPIC3D.utils import digital_filter
+
 
 def initialize_vector_potential(J, world, constants):
     """
@@ -79,6 +81,12 @@ def update_vector_potential(J, world, constants, A1, A0):
     Ay_new = 2 * Ay - Ay0 + C**2 * dt**2 * ( mu * Jy  + laplacian_Ay - grady )
     Az_new = 2 * Az - Az0 + C**2 * dt**2 * ( mu * Jz  + laplacian_Az - gradz )
     # update the vector potential using centered finite difference
+
+    alpha = constants['alpha']
+    Ax_new = digital_filter(Ax_new, alpha)
+    Ay_new = digital_filter(Ay_new, alpha)
+    Az_new = digital_filter(Az_new, alpha)
+    # apply a digital filter to the vector potential components
 
     return Ax_new, Ay_new, Az_new
 

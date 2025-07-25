@@ -7,6 +7,8 @@ from jax import lax
 
 from PyPIC3D.rho import compute_rho
 
+from PyPIC3D.utils import digital_filter
+
 @jit
 def J_from_rhov(particles, J, constants, world, grid):
     """
@@ -76,6 +78,14 @@ def J_from_rhov(particles, J, constants, world, grid):
         # add the particle species to the charge density array
         J = jax.lax.fori_loop(0, N_particles, add_to_J, J)
     # loop over all particles in the species and add their contribution to the current density
+
+    alpha = constants['alpha']
+    Jx, Jy, Jz = J
+    Jx = digital_filter(Jx, alpha)
+    Jy = digital_filter(Jy, alpha)
+    Jz = digital_filter(Jz, alpha)
+    J = (Jx, Jy, Jz)
+    # apply a digital filter to the current density arrays
 
     return J
 

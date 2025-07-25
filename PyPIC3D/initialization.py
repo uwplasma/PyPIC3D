@@ -109,6 +109,7 @@ def default_parameters():
         "mu" : 1.25663706e-6, # permeability of free space
         "C": 2.99792458e8,  # Speed of light in m/s
         "kb": 1.380649e-23,  # Boltzmann's constant in J/K
+        'alpha': 1.0,  # digital filter alpha value
     }
 
     return plotting_parameters, simulation_parameters, constants

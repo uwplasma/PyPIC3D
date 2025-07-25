@@ -4,8 +4,11 @@ import jax.numpy as jnp
 from jax import lax
 # import external libraries
 
+from PyPIC3D.utils import digital_filter
+# import internal libraries
+
 @jit
-def compute_rho(particles, rho, world):
+def compute_rho(particles, rho, world, constants):
     """
     Compute the charge density (rho) for a given set of particles in a simulation world.
     Parameters:
@@ -57,6 +60,10 @@ def compute_rho(particles, rho, world):
         # add the particle species to the charge density array
         rho = jax.lax.fori_loop(0, N_particles, add_to_rho, rho)
     # The above loop iterates over each species of particles and updates the charge density array rho
+
+    alpha = constants['alpha']
+    rho = digital_filter(rho, alpha)
+    # apply a digital filter to the charge density array
 
     return rho
 
@@ -257,3 +264,61 @@ def wrap_around(ix, size):
         lambda _: ix,
         operand=None
     )
+
+
+@jit
+def compute_mass_density(particles, rho, world):
+    """
+    Compute the mass density (rho) for a given set of particles in a simulation world.
+    Parameters:
+    particles (list): A list of particle species, each containing methods to get the number of particles,
+                      their positions, and their mass.
+    rho (ndarray): The initial mass density array to be updated.
+    world (dict): A dictionary containing the simulation world parameters, including:
+                  - 'dx': Grid spacing in the x-direction.
+                  - 'dy': Grid spacing in the y-direction.
+                  - 'dz': Grid spacing in the z-direction.
+                  - 'x_wind': Window size in the x-direction.
+                  - 'y_wind': Window size in the y-direction.
+                  - 'z_wind': Window size in the z-direction.
+    Returns:
+    ndarray: The updated charge density array.
+    """
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    x_wind = world['x_wind']
+    y_wind = world['y_wind']
+    z_wind = world['z_wind']
+
+    rho = jnp.zeros_like(rho)
+    # reset rho to zero
+
+    for species in particles:
+        shape_factor = species.get_shape()
+        # get the shape factor of the species, which determines the weighting function
+        N_particles = species.get_number_of_particles()
+        mass = species.get_mass()
+        # get the number of particles and their mass
+        particle_x, particle_y, particle_z = species.get_position()
+        # get the position of the particles in the species
+
+        def add_to_rho(particle, rho):
+            x = particle_x.at[particle].get()
+            y = particle_y.at[particle].get()
+            z = particle_z.at[particle].get()
+            # get the position of the particle
+            rho = first_order_weighting(mass, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind)
+            # lax.cond(
+            #     shape_factor == 1,
+            #     lambda _: first_order_weighting(mass, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind),
+            #     lambda _: second_order_weighting(mass, x, y, z, rho, dx, dy, dz, x_wind, y_wind, z_wind),
+            #     operand=None
+            # )
+            # use the shape factor to determine which weighting function to use and update rho accordingly
+            return rho
+        # add the particle species to the mass density array
+        rho = jax.lax.fori_loop(0, N_particles, add_to_rho, rho)
+    # The above loop iterates over each species of particles and updates the mass density array rho
+
+    return rho

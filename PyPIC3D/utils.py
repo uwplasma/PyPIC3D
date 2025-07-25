@@ -15,17 +15,17 @@ import importlib.metadata
 from scipy import stats
 # import external libraries
 
-@partial(jit, static_argnames=("alpha"))
+@jit
 def digital_filter(phi, alpha):
     """
-    Apply a digital filter to the electric potential array.
+    Apply a digital filter to a field.
 
     Args:
-        phi (ndarray): Electric potential array.
+        phi (ndarray): Field array.
         alpha (float): Filter coefficient.
 
     Returns:
-        ndarray: Filtered electric potential array.
+        ndarray: Filtered field array.
     """
     filter_phi = alpha * phi +  (  (1 - alpha) / 6 ) * (  jnp.roll(phi, shift=1, axis=0) + jnp.roll(phi, shift=-1, axis=0) + \
                                                             jnp.roll(phi, shift=1, axis=1) + jnp.roll(phi, shift=-1, axis=1) + \
