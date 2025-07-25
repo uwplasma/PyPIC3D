@@ -16,6 +16,7 @@ electrostatic = false
 cfl = 0.9
 shape_factor = 2
 current_calculation = "j_from_rhov"
+alpha = 1.0
 
 
 [plotting]
