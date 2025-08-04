@@ -15,9 +15,9 @@ verbose = false
 electrostatic = false
 cfl = 0.9
 shape_factor = 2
-current_calculation = "j_from_rhov"
+current_calculation = "esirkepov"
 alpha = 1.0
-
+relativistic = true
 
 [plotting]
 plotting_interval = 8
