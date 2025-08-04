@@ -71,7 +71,7 @@ def run_PyPIC3D(config_file):
             write_particles_phase_space(particles, t, output_dir)
 
 
-            rho = compute_rho(particles, rho, world)
+            rho = compute_rho(particles, rho, world, constants)
             # calculate the charge density based on the particle positions
 
             E_magnitude = jnp.sqrt(E[0]**2 + E[1]**2 + E[2]**2)[:,:,world['Nz']//2]
