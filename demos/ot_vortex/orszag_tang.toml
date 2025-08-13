@@ -2,7 +2,7 @@
 [simulation_parameters]
 name = "Demo of a Orszag_TangVortex with 50,000 electrons"
 t_wind = 2.5e-8
-output_dir = "/home/christopherwoolford/Documents/Research/Orszag_TangVortex"
+output_dir = "/home/christopherwoolford/Documents/ResearchCodes/PyPIC3D/demos/ot_vortex"
 bc = 'periodic'
 solver = 'fdtd'
 Nx = 100

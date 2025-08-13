@@ -3,8 +3,8 @@ import numpy as np
 
 x_wind = 1
 y_wind = 1
-nx = 50
-ny = 50
+nx = 75
+ny = 75
 dx = x_wind / nx
 dy = y_wind / ny
 # spatial resolution

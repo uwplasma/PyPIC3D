@@ -1,12 +1,12 @@
 # This is a configuration file for PyPIC3D
 [simulation_parameters]
 name = "Demo of a Weibel instability with 20,000 electrons"
-t_wind = 50e-9
+t_wind = 100e-9
 output_dir = "/home/christopherwoolford/Documents/ResearchCodes/PyPIC3D/demos/weibel"
 bc = 'periodic'
 solver = 'fdtd'
-Nx = 50
-Ny = 50
+Nx = 120
+Ny = 120
 Nz = 1
 x_wind = 1
 y_wind = 1
@@ -30,9 +30,9 @@ mass   = 9.1093837e-31
 Tx      = 1185374.44057971
 Ty      = 11853.7444057971
 Tz      = 0.0
-ds_per_debye = 6.0
-initial_vx = 'electron1_vx.npy'
-initial_z  = 'electron1_z.npy'
+ds_per_debye = 8.0
+initial_vx = 'electron_vx.npy'
+initial_z  = 'electron_z.npy'
 
 [particle2]
 name = "ion1"

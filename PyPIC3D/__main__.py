@@ -25,7 +25,7 @@ from PyPIC3D.initialization import (
     initialize_simulation
 )
 
-from PyPIC3D.rho import compute_rho
+from PyPIC3D.rho import compute_rho, compute_mass_density
 
 
 # Importing functions from the PyPIC3D package
@@ -44,7 +44,7 @@ def run_PyPIC3D(config_file):
     dt = world['dt']
     output_dir = simulation_parameters['output_dir']
 
-    field_names = ["E_magnitude", "B_magnitude", "Jz", "rho"]
+    field_names = ["E_magnitude", "B_magnitude", "Jz", "rho", "Ex", "Ey", "Bz", "mass_density"]
 
     ############################################################################################################
 
@@ -74,9 +74,16 @@ def run_PyPIC3D(config_file):
             rho = compute_rho(particles, rho, world, constants)
             # calculate the charge density based on the particle positions
 
+            mass_density = compute_mass_density(particles, rho, world)
+            # calculate the mass density based on the particle positions
+
             E_magnitude = jnp.sqrt(E[0]**2 + E[1]**2 + E[2]**2)[:,:,world['Nz']//2]
             B_magnitude = jnp.sqrt(B[0]**2 + B[1]**2 + B[2]**2)[:,:,world['Nz']//2]
-            fields_mag = [E_magnitude, B_magnitude, J[2][:,:,world['Nz']//2], rho[:,:,world['Nz']//2]]
+            Ex_slice = E[0][:,:,world['Nz']//2]
+            Ey_slice = E[1][:,:,world['Nz']//2]
+            Bz_slice = B[2][:,:,world['Nz']//2]
+            # Calculate the magnitudes of the electric and magnetic fields, and the Bz component
+            fields_mag = [E_magnitude, B_magnitude, J[2][:,:,world['Nz']//2], rho[:,:,world['Nz']//2], Ex_slice, Ey_slice, Bz_slice, mass_density[:,:,world['Nz']//2]]
             plot_field_slice_vtk(fields_mag, field_names, 2, E_grid, t, "fields", output_dir, world)
             # Plot the fields in VTK format
 
