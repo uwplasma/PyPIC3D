@@ -2,7 +2,6 @@
 [simulation_parameters]
 name = "Demo of a TS instability with 3,000 electrons"
 t_wind = 5.413e-8
-output_dir = "/home/christopherwoolford/Documents/ResearchCodes/PyPIC3D/demos/two_stream"
 bc = 'periodic'
 solver = 'fdtd'
 Nx = 100

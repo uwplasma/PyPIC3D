@@ -2,7 +2,6 @@
 [simulation_parameters]
 name = "Demo of Plasma Oscillations with 10,000 electrons"
 t_wind = 1000e-12
-output_dir = "/home/christopherwoolford/Documents/PyPIC3D"
 bc = 'periodic'
 solver = 'spectral'
 Nx = 100

@@ -2,7 +2,6 @@
 [simulation_parameters]
 name = "Demo of a Weibel instability with 20,000 electrons"
 t_wind = 100e-9
-output_dir = "/home/christopherwoolford/Documents/ResearchCodes/PyPIC3D/demos/weibel"
 bc = 'periodic'
 solver = 'fdtd'
 Nx = 120

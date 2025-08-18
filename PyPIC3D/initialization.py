@@ -78,7 +78,7 @@ def default_parameters():
 
     simulation_parameters = {
         "name": "Default Simulation",
-        "output_dir": ".",
+        "output_dir": os.getcwd(),
         "solver": "spectral",  # solver: spectral, fdtd, vector_potential
         "bc": "spectral",  # boundary conditions: periodic, dirichlet, neumann
         "Nx": 30,  # number of array spacings in x
