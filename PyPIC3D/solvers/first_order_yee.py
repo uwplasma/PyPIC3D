@@ -12,6 +12,8 @@ from PyPIC3D.rho import compute_rho
 from PyPIC3D.utils import digital_filter
 # import internal libraries
 
+
+
 @partial(jit, static_argnames=("curl_func"))
 def update_E(E, B, J, world, constants, curl_func):
     """
@@ -37,16 +39,28 @@ def update_E(E, B, J, world, constants, curl_func):
     # unpack the E, B, and J fields
 
     dt = world['dt']
+    dx, dy, dz = world['dx'], world['dy'], world['dz']
+    # get the time resolution and grid spacings
     C = constants['C']
     eps = constants['eps']
     # get the time resolution and necessary constants
 
-    curlx, curly, curlz = curl_func(Bx, By, Bz)
+
+    dBz_dy = (jnp.roll(Bz, shift=-1, axis=1) - Bz) / dy
+    dBx_dy = (jnp.roll(Bx, shift=-1, axis=1) - Bx) / dy
+    dBy_dz = (jnp.roll(By, shift=-1, axis=2) - By) / dz
+    dBx_dz = (jnp.roll(Bx, shift=-1, axis=2) - Bx) / dz
+    dBz_dx = (jnp.roll(Bz, shift=-1, axis=0) - Bz) / dx
+    dBy_dx = (jnp.roll(By, shift=-1, axis=0) - By) / dx
+
+    curl_x = dBz_dy - dBy_dz
+    curl_y = dBx_dz - dBz_dx
+    curl_z = dBy_dx - dBx_dy
     # calculate the curl of the magnetic field
 
-    Ex = Ex + ( 2 * C**2 * curlx - Jx / eps ) * dt
-    Ey = Ey + ( 2 * C**2 * curly - Jy / eps ) * dt
-    Ez = Ez + ( 2 * C**2 * curlz - Jz / eps ) * dt
+    Ex = Ex + ( C**2 * curl_x - Jx / eps ) * dt
+    Ey = Ey + ( C**2 * curl_y - Jy / eps ) * dt
+    Ez = Ez + ( C**2 * curl_z - Jz / eps ) * dt
     # update the electric field from Maxwell's equations
 
     alpha = constants['alpha']
@@ -78,17 +92,30 @@ def update_B(E, B, world, constants, curl_func):
 
     dt = world['dt']
     # get the time resolution
+    dx, dy, dz = world['dx'], world['dy'], world['dz']
+    # get the grid spacings
 
     Ex, Ey, Ez = E
     Bx, By, Bz = B
     # unpack the E and B fields
 
-    curlx, curly, curlz = curl_func(Ex, Ey, Ez)
-    # calculate the curl of the electric field
 
-    Bx = Bx - 2*dt*curlx
-    By = By - 2*dt*curly
-    Bz = Bz - 2*dt*curlz
+    dEz_dy = (Ez - jnp.roll(Ez, shift=1, axis=1)) / dy
+    dEx_dy = (Ex - jnp.roll(Ex, shift=1, axis=1)) / dy
+    dEy_dz = (Ey - jnp.roll(Ey, shift=1, axis=2)) / dz
+    dEx_dz = (Ex - jnp.roll(Ex, shift=1, axis=2)) / dz
+    dEz_dx = (Ez - jnp.roll(Ez, shift=1, axis=0)) / dx
+    dEy_dx = (Ey - jnp.roll(Ey, shift=1, axis=0)) / dx
+
+
+    curl_x = dEz_dy - dEy_dz
+    curl_y = dEx_dz - dEz_dx
+    curl_z = dEy_dx - dEx_dy
+    # calculate the curl of the field
+
+    Bx = Bx - dt*curl_x
+    By = By - dt*curl_y
+    Bz = Bz - dt*curl_z
     # update the magnetic field from Maxwell's equations
 
     alpha = constants['alpha']

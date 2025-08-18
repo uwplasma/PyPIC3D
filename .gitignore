@@ -22,3 +22,6 @@ run_dir/
 test_output/
 .coverage
 demos/two_stream/*/
+demos/weibel/*/
+demos/ot_vortex/*/
+*.mpg

@@ -2,7 +2,6 @@
 [simulation_parameters]
 name = "Demo of a TS instability with 3,000 electrons"
 t_wind = 5.413e-8
-output_dir = "/home/christopherwoolford/Documents/ResearchCodes/PyPIC3D/demos/two_stream"
 bc = 'periodic'
 solver = 'fdtd'
 Nx = 100
@@ -17,7 +16,7 @@ cfl = 0.9
 shape_factor = 2
 current_calculation = "j_from_rhov"
 alpha = 1.0
-
+relativistic = true
 
 [plotting]
 plotting_interval = 8
@@ -29,7 +28,7 @@ N_particles = 1500
 charge = -1.602e-19
 mass   = 9.1093837e-31
 vth = 14989622.9
-weight     = 175132507754.26556
+ds_per_debye = 6.0
 initial_vx = 1e8
 
 [particle2]
@@ -38,7 +37,6 @@ N_particles = 1500
 charge = -1.602e-19
 mass   = 9.1093837e-31
 vth = 14989622.9
-weight     = 175132507754.26556
 initial_vx = -1e8
 
 [particle3]
@@ -47,4 +45,3 @@ N_particles = 3000
 charge = 1.602e-19
 mass = 1.67e-27
 vth = 34982.78402326697
-weight     = 175132507754.26556
