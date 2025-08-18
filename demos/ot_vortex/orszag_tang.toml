@@ -1,6 +1,6 @@
 # This is a configuration file for PyPIC3D
 [simulation_parameters]
-name = "Demo of a Orszag_TangVortex with 50,000 electrons"
+name = "Demo of a Orszag_TangVortex with 30,000 electrons"
 t_wind = 2.5e-8
 bc = 'periodic'
 solver = 'fdtd'
