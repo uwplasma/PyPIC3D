@@ -126,7 +126,7 @@ class TestFieldsMethods(unittest.TestCase):
         Ez_analytical = jnp.zeros_like(Ex_analytical)
 
         # Use curl function
-        curl_func = lambda Bx, By, Bz: centered_finite_difference_curl(Bx, By, Bz, dx, dy, dz, 'periodic')
+        curl_func = lambda Ex, Ey, Ez: None  # curl function already defined in update_E
 
         # Test update_E
         E_initial = (Ex_initial, Ey_initial, Ez_initial)
@@ -153,7 +153,7 @@ class TestFieldsMethods(unittest.TestCase):
 
         # Ex should evolve correctly (tolerance accounts for discretization)
         relative_error = Ex_error / E0
-        self.assertLess(relative_error, 5e-2, "Ex evolution should match analytical solution within 5%")
+        self.assertLess(relative_error, 5e-3, "Ex evolution should match analytical solution within 0.5%")
 
     def test_update_B(self):
         """Test update_B against analytical electromagnetic wave solution"""
@@ -187,7 +187,7 @@ class TestFieldsMethods(unittest.TestCase):
         Bz_analytical = jnp.zeros_like(By_analytical)
 
         # Use curl function
-        curl_func = lambda Ex, Ey, Ez: centered_finite_difference_curl(Ex, Ey, Ez, dx, dy, dz, 'periodic')
+        curl_func = lambda Ex, Ey, Ez: None  # curl function already defined in update_B
 
         # Test update_B
         E_initial = (Ex_initial, Ey_initial, Ez_initial)
@@ -214,7 +214,7 @@ class TestFieldsMethods(unittest.TestCase):
         # By should evolve correctly
         B0 = E0 / c
         relative_error = By_error / B0
-        self.assertLess(relative_error, 5e-2, "By evolution should match analytical solution within 5%")
+        self.assertLess(relative_error, 5e-3, "By evolution should match analytical solution within 0.5%")
 
 if __name__ == '__main__':
     unittest.main()
