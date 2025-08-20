@@ -95,9 +95,9 @@ def default_parameters():
         "benchmark": False, # boolean for using the profiler
         "verbose": False, # boolean for printing verbose output
         "GPUs": False, # boolean for using GPUs
-        "ncores": 4, # number of cores to use
-        "ncpus": 1, # number of CPUs to use
-        "cfl"  : 1, # CFL condition number
+        # "ncores": 4, # number of cores to use
+        # "ncpus": 1, # number of CPUs to use
+        "cfl"  : 1.0, # CFL condition number
         "ds_per_debye" : None, # number of grid spacings per debye length
         "shape_factor" : 1, # shape factor for the simulation (1 for 1st order, 2 for 2nd order)
         "current_calculation": "j_from_rhov",  # current calculation method: esirkepov, villasenor_buneman, j_from_rhov
@@ -177,12 +177,10 @@ def initialize_simulation(toml_file):
     relativistic = simulation_parameters['relativistic']
     verbose = simulation_parameters['verbose']
     GPUs = simulation_parameters['GPUs']
-    #ncores = simulation_parameters['ncores']
-    ncpus = simulation_parameters['ncpus']
     # set the simulation parameters
 
-    if 'ncores' in simulation_parameters:
-        os.environ["XLA_FLAGS"] = f'--xla_force_host_platform_device_count={simulation_parameters['ncores']}'
+    # if 'ncores' in simulation_parameters:
+        # os.environ["XLA_FLAGS"] = f'--xla_force_host_platform_device_count={simulation_parameters['ncores']}'
     # set the number of cores to use
 
     setup_write_dir(simulation_parameters, plotting_parameters)
