@@ -216,38 +216,38 @@ def J_second_order_weighting(q, x, y, z, vx, vy, vz, J, dx, dy, dz, grid):
     Sz0 = (3/4) - (deltaz/dz)**2
 
     Sx1 = jax.lax.cond(
-        deltax <= dx/2,
+        jnp.abs(deltax) <= dx/2,
         lambda _: (1/2) * ((1/2) - (deltax/dx))**2,
         lambda _: jnp.array(0.0, dtype=deltax.dtype),
         operand=None
     )
     Sy1 = jax.lax.cond(
-        deltay <= dy/2,
+        jnp.abs(deltay) <= dy/2,
         lambda _: (1/2) * ((1/2) - (deltay/dy))**2,
         lambda _: jnp.array(0.0, dtype=deltay.dtype),
         operand=None
     )
     Sz1 = jax.lax.cond(
-        deltaz <= dz/2,
+        jnp.abs(deltaz) <= dz/2,
         lambda _: (1/2) * ((1/2) - (deltaz/dz))**2,
         lambda _: jnp.array(0.0, dtype=deltaz.dtype),
         operand=None
     )
 
     Sx_minus1 = jax.lax.cond(
-        deltax <= dx/2,
+        jnp.abs(deltax) <= dx/2,
         lambda _: (1/2) * ((1/2) + (deltax/dx))**2,
         lambda _: jnp.array(0.0, dtype=deltax.dtype),
         operand=None
     )
     Sy_minus1 = jax.lax.cond(
-        deltay <= dy/2,
+        jnp.abs(deltay) <= dy/2,
         lambda _: (1/2) * ((1/2) + (deltay/dy))**2,
         lambda _: jnp.array(0.0, dtype=deltay.dtype),
         operand=None
     )
     Sz_minus1 = jax.lax.cond(
-        deltaz <= dz/2,
+        jnp.abs(deltaz) <= dz/2,
         lambda _: (1/2) * ((1/2) + (deltaz/dz))**2,
         lambda _: jnp.array(0.0, dtype=deltaz.dtype),
         operand=None
@@ -413,11 +413,12 @@ def Esirkepov_current(particles, J, constants, world, grid):
 
     Jx, Jy, Jz = J
     # unpack the values of J
-
     Jx = Jx.at[:, :, :].set(0)
     Jy = Jy.at[:, :, :].set(0)
     Jz = Jz.at[:, :, :].set(0)
     # initialize the current arrays as 0
+    # J = (Jx, Jy, Jz)
+    # initialize the current density as a tuple
 
     dx = world['dx']
     dy = world['dy']
@@ -425,10 +426,8 @@ def Esirkepov_current(particles, J, constants, world, grid):
     # get the grid spacing parameters
     dt = world['dt']
     # get the time step
-    Nx = world['Nx']
-    Ny = world['Ny']
-    Nz = world['Nz']
-    # get the number of grid points in each direction
+    Nx, Ny, Nz = Jx.shape
+    # get the shape of the charge density array
 
 
     for species in particles:
@@ -439,29 +438,57 @@ def Esirkepov_current(particles, J, constants, world, grid):
         # get the old position of the particles in the species
         x, y, z = species.get_position()
         # get the position of the particles in the species
+        vx, vy, vz = species.get_velocity()
+        # get the velocity of the particles in the species
 
         shape_factor = species.get_shape()
         # get the shape factor of the species
 
-        x0 = jnp.floor((x - grid[0][0]) / dx).astype(int)
-        y0 = jnp.floor((y - grid[1][0]) / dy).astype(int)
-        z0 = jnp.floor((z - grid[2][0]) / dz).astype(int)
-        # Calculate the nearest grid points
+        N_particles = species.get_number_of_particles()
+        # get the total number of particles in the species
 
-        x1 = wrap_around(x0 + 1, Nx)
-        y1 = wrap_around(y0 + 1, Ny)
-        z1 = wrap_around(z0 + 1, Nz)
-        # Calculate the index of the next grid point
 
-        x_minus1 = wrap_around(x1 - 1, Nx)
-        y_minus1 = wrap_around(y1 - 1, Ny)
-        z_minus1 = wrap_around(z1 - 1, Nz)
-        # Calculate the index of the next grid point
+        dJx = jax.lax.cond(
+            Nx == 1,
+            lambda _: q * vx / (dx*dy*dz),
+            lambda _: q / (dy*dz) / dt * jnp.ones(N_particles),
+            operand=None
+        )
+
+        dJy = jax.lax.cond(
+            Ny == 1,
+            lambda _: q * vy / (dx*dy*dz),
+            lambda _: q / (dx*dz) / dt * jnp.ones(N_particles),
+            operand=None
+        )
+
+        dJz = jax.lax.cond(
+            Nz == 1,
+            lambda _: q * vz / (dx*dy*dz),
+            lambda _: q / (dx*dy) / dt * jnp.ones(N_particles),
+            operand=None
+        )
+        # calculate the current differential
+
+        x0 = jnp.floor( (x - grid[0][0]) / dx).astype(int)
+        y0 = jnp.floor( (y - grid[1][0]) / dy).astype(int)
+        z0 = jnp.floor( (z - grid[2][0]) / dz).astype(int)
+        # calculate the nearest grid point
+
+        x1 = wrap_around(x0+1, Nx)
+        y1 = wrap_around(y0+1, Ny)
+        z1 = wrap_around(z0+1, Nz)
+        # calculate the right grid point
+
+        x_minus1 = x0 - 1
+        y_minus1 = y0 - 1
+        z_minus1 = z0 - 1
+        # calculate the left grid point
 
         xpts = [x_minus1, x0, x1]
         ypts = [y_minus1, y0, y1]
         zpts = [z_minus1, z0, z1]
-        # List of grid points in each direction
+        # place all the points in a list
 
         old_deltax = old_x - jnp.floor(old_x / dx) * dx
         old_deltay = old_y - jnp.floor(old_y / dy) * dy
@@ -496,28 +523,186 @@ def Esirkepov_current(particles, J, constants, world, grid):
             d_Sz.append(z_weights[i] - old_z_weights[i])
         # Calculate the difference in weights for the central grid points
 
-        Wx = []
-        Wy = []
-        Wz = []
+        Wx_ = jnp.zeros( (len(x_weights),len(y_weights),len(z_weights), N_particles) )
+        Wy_ = jnp.zeros( (len(y_weights),len(x_weights),len(z_weights), N_particles) )
+        Wz_ = jnp.zeros( (len(z_weights),len(x_weights),len(y_weights), N_particles) )
+
 
         for i in range(len(x_weights)):
-            Wx.append( d_Sx[i] * ( old_y_weights[i] * old_z_weights[i] + 0.5 * d_Sy[i] * old_z_weights[i] \
-               + 0.5 * old_y_weights[i] * d_Sz[i] + d_Sy[i] * d_Sz[i] / 3))
-            Wy.append( d_Sy[i] * ( old_x_weights[i] * old_z_weights[i] + 0.5 * d_Sx[i] * old_z_weights[i] \
-               + 0.5 * old_x_weights[i] * d_Sz[i] + d_Sx[i] * d_Sz[i] / 3))
-            Wz.append( d_Sz[i] * ( old_x_weights[i] * old_y_weights[i] + 0.5 * d_Sx[i] * old_y_weights[i] \
-               + 0.5 * old_x_weights[i] * d_Sy[i] + d_Sx[i] * d_Sy[i] / 3))
+            for j in range(len(y_weights)):
+                for k in range(len(z_weights)):
+                    Wx_ = Wx_.at[i, j, k, :].set(   d_Sx[i] * (  (old_y_weights[j] * old_z_weights[k]) + (d_Sy[j] * old_z_weights[k] / 2) \
+                        + (old_y_weights[j] * d_Sz[k] / 2)     +      (d_Sy[j] * d_Sz[k] / 3)      ))
+
+                    Wy_ = Wy_.at[i, j, k, :].set(   d_Sy[j] * (  (old_x_weights[i] * old_z_weights[k]) + (d_Sx[i] * old_z_weights[k] / 2) \
+                        + (old_x_weights[i] * d_Sz[k] / 2)     +      (d_Sx[i] * d_Sz[k] / 3)      ))
+
+                    Wz_ = Wz_.at[i, j, k, :].set(   d_Sz[k] * (  (old_x_weights[i] * old_y_weights[j]) + (d_Sx[i] * old_y_weights[j] / 2) \
+                        + (old_x_weights[i] * d_Sy[j] / 2)     +      (d_Sx[i] * d_Sy[j] / 3)      ))
+
+            for j in range(len(ypts)):
+                for k in range(len(zpts)):
+                    Jx = Jx.at[xpts[0],ypts[j],zpts[k]].add( -Wx_[0, j, k,:] * dJx, mode='drop')
+                    Jx = Jx.at[xpts[1],ypts[j],zpts[k]].add( -(Wx_[0,j,k,:] + Wx_[1,j,k,:]) * dJx, mode='drop')
+                    Jx = Jx.at[xpts[2],ypts[j],zpts[k]].add( -(Wx_[0,j,k,:] + Wx_[1,j,k,:] + Wx_[2,j,k,:]) * dJx, mode='drop')
+
+            for i in range(len(xpts)):
+                for k in range(len(zpts)):
+                    Jy = Jy.at[xpts[i],ypts[0],zpts[k]].add( -Wy_[i, 0, k,:] * dJy, mode='drop')
+                    Jy = Jy.at[xpts[i],ypts[1],zpts[k]].add( -(Wy_[i, 0, k,:] + Wy_[i, 1, k,:]) * dJy, mode='drop')
+                    Jy = Jy.at[xpts[i],ypts[2],zpts[k]].add( -(Wy_[i, 0, k,:] + Wy_[i, 1, k,:] + Wy_[i, 2, k,:]) * dJy, mode='drop')
+
+            for i in range(len(xpts)):
+                for j in range(len(ypts)):
+                    Jz = Jz.at[xpts[i],ypts[j],zpts[0]].add( -Wz_[i, j, 0,:] * dJz, mode='drop')
+                    Jz = Jz.at[xpts[i],ypts[j],zpts[1]].add( -(Wz_[i, j, 0,:] + Wz_[i, j, 1,:]) * dJz, mode='drop')
+                    Jz = Jz.at[xpts[i],ypts[j],zpts[2]].add( -(Wz_[i, j, 0,:] + Wz_[i, j, 1,:] + Wz_[i, j, 2,:]) * dJz, mode='drop')
+
+        # def add_to_J(particle, J):
+        #     single_x = x.at[particle].get()
+        #     single_y = y.at[particle].get()
+        #     single_z = z.at[particle].get()
+        #     # get the position of the single particle
+        #     single_oldx = old_x.at[particle].get()
+        #     single_oldy = old_y.at[particle].get()
+        #     single_oldz = old_z.at[particle].get()
+        #     # get the old position of the single particle
+
+        #     single_vx = vx.at[particle].get()
+        #     single_vy = vy.at[particle].get()
+        #     single_vz = vz.at[particle].get()
+        #     # get the velocity of the single particle
+
+        #     J = esirkepov_single_particle(q, single_x, single_y, single_z, single_oldx, single_oldy, single_oldz, single_vx, single_vy, single_vz, dx, dy, dz, dt, grid, J, shape_factor)
+        #     return J
+
+        # J = jax.lax.fori_loop(0, N_particles, add_to_J, J)
+    # alpha = constants['alpha']
+    # Jx, Jy, Jz = J
+    # Jx = digital_filter(Jx, alpha)
+    # Jy = digital_filter(Jy, alpha)
+    # Jz = digital_filter(Jz, alpha)
+    J = (Jx, Jy, Jz)
+    # apply a digital filter to the current density arrays
+
+    return J
 
 
-        for i in range(len(xpts)):
-            x = xpts[i]
-            y = ypts[i]
-            z = zpts[i]
-            # Loop over the grid points in each direction
-            Jx = Jx.at[x, y, z].add( Wx[i] *  (q / dy / dz / dt), mode='drop')
-            Jy = Jy.at[x, y, z].add( Wy[i] *  (q / dx / dz / dt), mode='drop')
-            Jz = Jz.at[x, y, z].add( Wz[i] *  (q / dx / dy / dt), mode='drop')
-            # Distribute the current density to the grid points
+def esirkepov_single_particle(q, x, y, z, old_x, old_y, old_z, vx, vy, vz, dx, dy, dz, dt, grid, J, shape_factor):
+    Jx, Jy, Jz = J
+    Nx, Ny, Nz = Jx.shape
+    # get the number of grid points
+
+    dJx = jax.lax.cond(
+        Nx == 1,
+        lambda _: q * vx / (dx*dy*dz),
+        lambda _: q / (dy*dz) / dt,
+        operand=None
+    )
+
+    dJy = jax.lax.cond(
+        Ny == 1,
+        lambda _: q * vy / (dx*dy*dz),
+        lambda _: q / (dx*dz) / dt,
+        operand=None
+    )
+
+    dJz = jax.lax.cond(
+        Nz == 1,
+        lambda _: q * vz / (dx*dy*dz),
+        lambda _: q / (dx*dy) / dt,
+        operand=None
+    )
+    # calculate the current differential
+
+    x0 = jnp.floor( (x - grid[0][0]) / dx).astype(int)
+    y0 = jnp.floor( (y - grid[1][0]) / dy).astype(int)
+    z0 = jnp.floor( (z - grid[2][0]) / dz).astype(int)
+    # calculate the nearest grid point
+
+    x1 = wrap_around(x0+1, Nx)
+    y1 = wrap_around(y0+1, Ny)
+    z1 = wrap_around(z0+1, Nz)
+    # calculate the right grid point
+
+    x_minus1 = x0 - 1
+    y_minus1 = y0 - 1
+    z_minus1 = z0 - 1
+    # calculate the left grid point
+
+    xpts = [x_minus1, x0, x1]
+    ypts = [y_minus1, y0, y1]
+    zpts = [z_minus1, z0, z1]
+    # place all the points in a list
+
+    old_deltax = old_x - jnp.floor(old_x / dx) * dx
+    old_deltay = old_y - jnp.floor(old_y / dy) * dy
+    old_deltaz = old_z - jnp.floor(old_z / dz) * dz
+    # Calculate the difference between the particle position and the nearest grid point
+    new_deltax = x - jnp.floor(x / dx) * dx
+    new_deltay = y - jnp.floor(y / dy) * dy
+    new_deltaz = z - jnp.floor(z / dz) * dz
+    # Calculate the difference between the particle position and the nearest grid point
+
+    old_x_weights, old_y_weights, old_z_weights = jax.lax.cond(
+        shape_factor == 1,
+        lambda _: get_first_order_weights(old_deltax, old_deltay, old_deltaz, dx, dy, dz),
+        lambda _: get_second_order_weights(old_deltax, old_deltay, old_deltaz, dx, dy, dz),
+        operand=None
+    )
+    x_weights, y_weights, z_weights = jax.lax.cond(
+        shape_factor == 1,
+        lambda _: get_first_order_weights(new_deltax, new_deltay, new_deltaz, dx, dy, dz),
+        lambda _: get_second_order_weights(new_deltax, new_deltay, new_deltaz, dx, dy, dz),
+        operand=None
+    )
+    # Calculate the weights for the grid points
+
+
+    d_Sx = []
+    d_Sy = []
+    d_Sz = []
+
+    for i in range(len(x_weights)):
+        d_Sx.append(x_weights[i] - old_x_weights[i])
+        d_Sy.append(y_weights[i] - old_y_weights[i])
+        d_Sz.append(z_weights[i] - old_z_weights[i])
+    # Calculate the difference in weights for the central grid points
+
+    Wx_ = jnp.zeros( (len(x_weights),len(y_weights),len(z_weights)) )
+    Wy_ = jnp.zeros( (len(y_weights),len(x_weights),len(z_weights)) )
+    Wz_ = jnp.zeros( (len(z_weights),len(x_weights),len(y_weights)) )
+
+
+    for i in range(len(x_weights)):
+        for j in range(len(y_weights)):
+            for k in range(len(z_weights)):
+                Wx_ = Wx_.at[i, j, k].set(   d_Sx[i] * (  (old_y_weights[j] * old_z_weights[k]) + (d_Sy[j] * old_z_weights[k] / 2) \
+                    + (old_y_weights[j] * d_Sz[k] / 2)     +      (d_Sy[j] * d_Sz[k] / 3)      ))
+
+                Wy_ = Wy_.at[i, j, k].set(   d_Sy[j] * (old_x_weights[i] * old_z_weights[k] + (d_Sx[i] * old_z_weights[k]) / 2 \
+                    + (old_x_weights[i] * d_Sz[k] / 2)     +      (d_Sx[i] * d_Sz[k] / 3)      ))
+
+                Wz_ = Wz_.at[i, j, k].set(   d_Sz[k] * (old_x_weights[i] * old_y_weights[j] + (d_Sx[i] * old_y_weights[j]) / 2 \
+                    + (old_x_weights[i] * d_Sy[j] / 2)     +       (d_Sx[i] * d_Sy[j] / 3)     ))
+
+    for j in range(len(ypts)):
+        for k in range(len(zpts)):
+            Jx = Jx.at[xpts[0],ypts[j],zpts[k]].add( -Wx_[0, j, k] * dJx, mode='drop')
+            Jx = Jx.at[xpts[1],ypts[j],zpts[k]].add( -(Wx_[0,j,k] + Wx_[1,j,k]) * dJx, mode='drop')
+            Jx = Jx.at[xpts[2],ypts[j],zpts[k]].add( -(Wx_[0,j,k] + Wx_[1,j,k] + Wx_[2,j,k]) * dJx, mode='drop')
+
+    for i in range(len(xpts)):
+        for k in range(len(zpts)):
+            Jy = Jy.at[xpts[i],ypts[0],zpts[k]].add( -Wy_[i, 0, k] * dJy, mode='drop')
+            Jy = Jy.at[xpts[i],ypts[1],zpts[k]].add( -(Wy_[i, 0, k] + Wy_[i, 1, k]) * dJy, mode='drop')
+            Jy = Jy.at[xpts[i],ypts[2],zpts[k]].add( -(Wy_[i, 0, k] + Wy_[i, 1, k] + Wy_[i, 2, k]) * dJy, mode='drop')
+
+    for i in range(len(xpts)):
+        for j in range(len(ypts)):
+            Jz = Jz.at[xpts[i],ypts[j],zpts[0]].add( -Wz_[i, j, 0] * dJz, mode='drop')
+            Jz = Jz.at[xpts[i],ypts[j],zpts[1]].add( -(Wz_[i, j, 0] + Wz_[i, j, 1]) * dJz, mode='drop')
+            Jz = Jz.at[xpts[i],ypts[j],zpts[2]].add( -(Wz_[i, j, 0] + Wz_[i, j, 1] + Wz_[i, j, 2]) * dJz, mode='drop')
 
     return (Jx, Jy, Jz)
 
@@ -536,13 +721,13 @@ def get_second_order_weights(deltax, deltay, deltaz, dx, dy, dz):
     Sy0 = (3/4) - (deltay/dy)**2
     Sz0 = (3/4) - (deltaz/dz)**2
 
-    Sx1 = jnp.where(deltax <= dx/2, (1/2) * ((1/2) - (deltax/dx))**2, 0.0)
-    Sy1 = jnp.where(deltay <= dy/2, (1/2) * ((1/2) - (deltay/dy))**2, 0.0)
-    Sz1 = jnp.where(deltaz <= dz/2, (1/2) * ((1/2) - (deltaz/dz))**2, 0.0)
+    Sx1 = jnp.where(jnp.abs(deltax) <= dx/2, (1/2) * ((1/2) - (deltax/dx))**2, 0.0)
+    Sy1 = jnp.where(jnp.abs(deltay) <= dy/2, (1/2) * ((1/2) - (deltay/dy))**2, 0.0)
+    Sz1 = jnp.where(jnp.abs(deltaz) <= dz/2, (1/2) * ((1/2) - (deltaz/dz))**2, 0.0)
 
-    Sx_minus1 = jnp.where(deltax <= dx/2, (1/2) * ((1/2) + (deltax/dx))**2, 0.0)
-    Sy_minus1 = jnp.where(deltay <= dy/2, (1/2) * ((1/2) + (deltay/dy))**2, 0.0)
-    Sz_minus1 = jnp.where(deltaz <= dz/2, (1/2) * ((1/2) + (deltaz/dz))**2, 0.0)
+    Sx_minus1 = jnp.where(jnp.abs(deltax) <= dx/2, (1/2) * ((1/2) + (deltax/dx))**2, 0.0)
+    Sy_minus1 = jnp.where(jnp.abs(deltay) <= dy/2, (1/2) * ((1/2) + (deltay/dy))**2, 0.0)
+    Sz_minus1 = jnp.where(jnp.abs(deltaz) <= dz/2, (1/2) * ((1/2) + (deltaz/dz))**2, 0.0)
 
     x_weights = [Sx_minus1, Sx0, Sx1]
     y_weights = [Sy_minus1, Sy0, Sy1]
