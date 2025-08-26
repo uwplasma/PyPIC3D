@@ -77,7 +77,7 @@ def time_loop_electrostatic(particles, fields, E_grid, B_grid, world, constants,
 
 
 @partial(jit, static_argnames=("curl_func", "J_func", "solver", "bc", "relativistic"))
-def time_loop_electrodynamic(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc, relativistic=True):
+def time_loop_electrodynamic(particles, fields, vertex_grid, center_grid, world, constants, curl_func, J_func, solver, bc, relativistic=True):
     """
     Advances the simulation by one time step using the electrodynamic Particle-In-Cell (PIC) method.
 
@@ -108,14 +108,14 @@ def time_loop_electrodynamic(particles, fields, E_grid, B_grid, world, constants
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
 
-        particles[i] = particle_push(particles[i], E, B, E_grid, B_grid, world['dt'], constants, relativistic=relativistic)
+        particles[i] = particle_push(particles[i], E, B, center_grid, vertex_grid, world['dt'], constants, relativistic=relativistic)
         # use boris push for particle velocities
 
         particles[i].update_position()
         # update the particle positions
 
     ################ FIELD UPDATE ################################################################################################
-    J = J_func(particles, J, constants, world, E_grid)
+    J = J_func(particles, J, constants, world, vertex_grid)
     # calculate the current density based on the selected method
     E = update_E(E, B, J, world, constants, curl_func)
     # update the electric field using the curl of the magnetic field
