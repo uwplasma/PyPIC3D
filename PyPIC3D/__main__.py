@@ -93,7 +93,7 @@ def run_PyPIC3D(config_file):
         particles, fields = jit_loop(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc, relativistic=relativistic)
         # time loop to update the particles and fields
 
-    return Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles, fields, world, Exs, Eys, Ezs, Bxs, Bys, Bzs, Jxs, Jys, Jzs
+    return Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles, fields, world
 
 def main():
     ###################### JAX SETTINGS ########################################################################
@@ -112,7 +112,7 @@ def main():
     start = time.time()
     # start the timer
 
-    Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles, fields, world, Exs, Eys, Ezs, Bxs, Bys, Bzs, Jxs, Jys, Jzs =  block_until_ready(run_PyPIC3D(toml_file))
+    Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles, fields, world =  block_until_ready(run_PyPIC3D(toml_file))
     # run the PyPIC3D simulation
 
     end = time.time()
