@@ -46,22 +46,12 @@ def run_PyPIC3D(config_file):
 
     field_names = ["E_magnitude", "B_magnitude", "Jz", "rho", "Ex", "Ey", "Bz", "mass_density"]
 
-    Jzs = []
-    Jxs = []
-    Jys = []
-    Bxs = []
-    Bys = []
-    Bzs = []
-    Exs = []
-    Eys = []
-    Ezs = []
-
     ############################################################################################################
 
     ###################################################### SIMULATION LOOP #####################################
 
     for t in tqdm(range(Nt)):
-        # plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters)
+
         # plot the data
         if t % plotting_parameters['plotting_interval'] == 0:
             E, B, J, rho, *rest = fields
@@ -80,40 +70,25 @@ def run_PyPIC3D(config_file):
 
             write_particles_phase_space(particles, t, output_dir)
 
-            Jx, Jy, Jz = J
-            Ex, Ey, Ez = E
-            Bx, By, Bz = B
+            rho = compute_rho(particles, rho, world, constants)
+            # calculate the charge density based on the particle positions
 
-            Jxs.append(jnp.array(Jx[:,:,world['Nz']//2]))
-            Jys.append(jnp.array(Jy[:,:,world['Nz']//2]))
-            Jzs.append(jnp.array(Jz[:,:,world['Nz']//2]))
-            Exs.append(jnp.array(Ex[:,:,world['Nz']//2]))
-            Eys.append(jnp.array(Ey[:,:,world['Nz']//2]))
-            Ezs.append(jnp.array(Ez[:,:,world['Nz']//2]))
-            Bxs.append(jnp.array(Bx[:,:,world['Nz']//2]))
-            Bys.append(jnp.array(By[:,:,world['Nz']//2]))
-            Bzs.append(jnp.array(Bz[:,:,world['Nz']//2]))
-            # Append the sliced fields to the lists
+            mass_density = compute_mass_density(particles, rho, world)
+            # calculate the mass density based on the particle positions
 
-            # rho = compute_rho(particles, rho, world, constants)
-            # # calculate the charge density based on the particle positions
+            E_magnitude = jnp.sqrt(E[0]**2 + E[1]**2 + E[2]**2)[:,:,world['Nz']//2]
+            B_magnitude = jnp.sqrt(B[0]**2 + B[1]**2 + B[2]**2)[:,:,world['Nz']//2]
+            Ex_slice = E[0][:,:,world['Nz']//2]
+            Ey_slice = E[1][:,:,world['Nz']//2]
+            Bz_slice = B[2][:,:,world['Nz']//2]
+            # Calculate the magnitudes of the electric and magnetic fields, and the Bz component
+            fields_mag = [E_magnitude, B_magnitude, J[2][:,:,world['Nz']//2], rho[:,:,world['Nz']//2], Ex_slice, Ey_slice, Bz_slice, mass_density[:,:,world['Nz']//2]]
+            plot_field_slice_vtk(fields_mag, field_names, 2, E_grid, t, "fields", output_dir, world)
+            # Plot the fields in VTK format
 
-            # mass_density = compute_mass_density(particles, rho, world)
-            # # calculate the mass density based on the particle positions
-
-            # E_magnitude = jnp.sqrt(E[0]**2 + E[1]**2 + E[2]**2)[:,:,world['Nz']//2]
-            # B_magnitude = jnp.sqrt(B[0]**2 + B[1]**2 + B[2]**2)[:,:,world['Nz']//2]
-            # Ex_slice = E[0][:,:,world['Nz']//2]
-            # Ey_slice = E[1][:,:,world['Nz']//2]
-            # Bz_slice = B[2][:,:,world['Nz']//2]
-            # # Calculate the magnitudes of the electric and magnetic fields, and the Bz component
-            # fields_mag = [E_magnitude, B_magnitude, J[2][:,:,world['Nz']//2], rho[:,:,world['Nz']//2], Ex_slice, Ey_slice, Bz_slice, mass_density[:,:,world['Nz']//2]]
-            # plot_field_slice_vtk(fields_mag, field_names, 2, E_grid, t, "fields", output_dir, world)
-            # # Plot the fields in VTK format
-
-            # if plotting_parameters['plot_vtk_particles']:
-            #     plot_vtk_particles(particles, t, output_dir)
-            # # Plot the particles in VTK format
+            if plotting_parameters['plot_vtk_particles']:
+                plot_vtk_particles(particles, t, output_dir)
+            # Plot the particles in VTK format
 
         particles, fields = jit_loop(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc, relativistic=relativistic)
         # time loop to update the particles and fields
