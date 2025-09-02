@@ -146,39 +146,6 @@ def main():
     print(f"Time Per Iteration: {duration/Nt} s")
 
 
-    import matplotlib.pyplot as plt
-
-    def plot_time_series(datas, fig, filename):
-        plt.figure()
-        im = plt.imshow(jnp.array(datas).T, aspect='auto', cmap='viridis')
-        plt.xlabel('Time (t)')
-        plt.ylabel('Position (x)')
-        plt.title(f'{fig} Over Time')
-        plt.colorbar(im, label=fig)
-        plt.savefig(filename)
-        plt.close()
-
-    # plot_time_series(Jzs, 'Jz', f"{simulation_parameters['output_dir']}/data/Jz_over_time.png")
-    # plot_time_series(Jxs, 'Jx', f"{simulation_parameters['output_dir']}/data/Jx_over_time.png")
-    # plot_time_series(Jys, 'Jy', f"{simulation_parameters['output_dir']}/data/Jy_over_time.png")
-    # plot_time_series(Exs, 'Ex', f"{simulation_parameters['output_dir']}/data/Ex_over_time.png")
-    # plot_time_series(Eys, 'Ey', f"{simulation_parameters['output_dir']}/data/Ey_over_time.png")
-    # plot_time_series(Ezs, 'Ez', f"{simulation_parameters['output_dir']}/data/Ez_over_time.png")
-    # plot_time_series(Bys, 'By', f"{simulation_parameters['output_dir']}/data/By_over_time.png")
-    # plot_time_series(Bxs, 'Bx', f"{simulation_parameters['output_dir']}/data/Bx_over_time.png")
-    # plot_time_series(Bzs, 'Bz', f"{simulation_parameters['output_dir']}/data/Bz_over_time.png")
-
-    jnp.save(f"{simulation_parameters['output_dir']}/data/Jx.npy", jnp.array(Jxs) )
-    jnp.save(f"{simulation_parameters['output_dir']}/data/Jy.npy", jnp.array(Jys) )
-    jnp.save(f"{simulation_parameters['output_dir']}/data/Jz.npy", jnp.array(Jzs) )
-    jnp.save(f"{simulation_parameters['output_dir']}/data/Ex.npy", jnp.array(Exs) )
-    jnp.save(f"{simulation_parameters['output_dir']}/data/Ey.npy", jnp.array(Eys) )
-    jnp.save(f"{simulation_parameters['output_dir']}/data/Ez.npy", jnp.array(Ezs) )
-    jnp.save(f"{simulation_parameters['output_dir']}/data/By.npy", jnp.array(Bys) )
-    jnp.save(f"{simulation_parameters['output_dir']}/data/Bx.npy", jnp.array(Bxs) )
-    jnp.save(f"{simulation_parameters['output_dir']}/data/Bz.npy", jnp.array(Bzs) )
-
-
 if __name__ == "__main__":
     main()
     # run the main function
