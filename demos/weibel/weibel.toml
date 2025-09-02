@@ -13,7 +13,7 @@ z_wind = 1
 verbose = false
 electrostatic = false
 cfl = 0.5
-shape_factor = 2
+shape_factor = 1
 #current_calculation = "esirkepov"
 relativistic = false
 
