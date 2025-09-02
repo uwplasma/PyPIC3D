@@ -51,7 +51,7 @@ def run_PyPIC3D(config_file):
     ###################################################### SIMULATION LOOP #####################################
 
     for t in tqdm(range(Nt)):
-        # plotter(t, particles, E, B, J, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters)
+
         # plot the data
         if t % plotting_parameters['plotting_interval'] == 0:
             E, B, J, rho, *rest = fields
@@ -69,7 +69,6 @@ def run_PyPIC3D(config_file):
             # Write the total momentum to a file
 
             write_particles_phase_space(particles, t, output_dir)
-
 
             rho = compute_rho(particles, rho, world, constants)
             # calculate the charge density based on the particle positions
