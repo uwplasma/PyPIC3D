@@ -751,3 +751,76 @@ def plot_field_slice_vtk(field_slices, field_names, slice, grid, t, name, path, 
     writer.SetFileName(f"{path}/data/{name}_slice/{name}_slice_{t:09}.vtk")
     writer.SetInputData(structured_grid)
     writer.Write()
+
+
+
+
+def plot_vectorfield_slice_vtk(field_slices, field_names, slice, grid, t, name, path, world):
+    """
+    Plot a slice of a field in VTK format as vector data using Python VTK library.
+
+    Args:
+        field_slices (list): List of 2D field slices to be plotted. Should be [Fx, Fy, Fz] for vector fields.
+        field_names (list): List of field names corresponding to the slices (e.g., ['Ex', 'Ey', 'Ez']).
+        slice (int): Slice direction (0=x-slice, 1=y-slice, 2=z-slice, 3=full 3D).
+        grid (tuple): The grid dimensions (x, y, z).
+        t (int): The time step.
+        name (str): The name of the field.
+        path (str): The path to save the plot.
+        world (dict): World parameters containing grid information.
+
+    Returns:
+        None
+    """
+
+    x, y, z = grid
+    nx, ny, nz = world['Nx'], world['Ny'], world['Nz']
+    dx, dy, dz = world['dx'], world['dy'], world['dz']
+
+    if not os.path.exists(f"{path}/data/{name}_slice"):
+        os.makedirs(f"{path}/data/{name}_slice")
+
+    # Handle slicing
+    if slice == 0:
+        x = np.asarray([x[nx//2]])
+    elif slice == 1:
+        y = np.asarray([y[ny//2]])
+    elif slice == 2:
+        z = np.asarray([z[nz//2]])
+
+    # Create VTK structured grid
+    structured_grid = vtk.vtkStructuredGrid()
+    structured_grid.SetDimensions(x.shape[0], y.shape[0], z.shape[0])
+
+    # Create grid points
+    X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
+    coords = np.column_stack((Z.ravel(), Y.ravel(), X.ravel()))
+    points = vtk.vtkPoints()
+    points.SetData(numpy_support.numpy_to_vtk(coords, deep=True))
+    structured_grid.SetPoints(points)
+
+    # Stack field slices as vector data
+    # Each field_slice should be 2D, shape (len(x), len(y)) or similar
+    # We flatten and stack them as (N, 3) for VTK vector
+    for idx, (field_slice, field_name) in enumerate(zip(field_slices, field_names)):
+        field_arrays = []
+        for comp in field_slice:
+            field_data = np.asarray(comp)
+            # convert to np array
+            if field_data.ndim == 2:
+                field_data = field_data.T.flatten()  # VTK expects Fortran order
+            else:
+                field_data = field_data.flatten()
+            field_arrays.append(field_data)
+        # Stack as (N, 3)
+        vector_data = np.stack(field_arrays, axis=-1)
+        # If shape is (N, 3), convert to VTK
+        vtk_vector_array = numpy_support.numpy_to_vtk(vector_data, deep=True)
+        vtk_vector_array.SetName(f"{field_name}_vector")
+        structured_grid.GetPointData().AddArray(vtk_vector_array)
+
+    # Write the VTK file
+    writer = vtk.vtkStructuredGridWriter()
+    writer.SetFileName(f"{path}/data/{name}_slice/{name}_slice_{t:09}.vtk")
+    writer.SetInputData(structured_grid)
+    writer.Write()
