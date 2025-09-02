@@ -1,45 +1,50 @@
 # This is a configuration file for PyPIC3D
 [simulation_parameters]
-name = "Demo of a Weibel instability with 20,000 electrons"
-t_wind = 100e-9
+name = "Demo of a Weibel instability with 3,000 electrons"
+Nt = 6000
 bc = 'periodic'
 solver = 'fdtd'
-Nx = 120
-Ny = 120
+Nx = 201
+Ny = 1
 Nz = 1
-x_wind = 1
+x_wind = 3e-1
 y_wind = 1
 z_wind = 1
 verbose = false
 electrostatic = false
-cfl = 0.99
+cfl = 0.5
 shape_factor = 2
+#current_calculation = "esirkepov"
+relativistic = false
 
 [plotting]
 plot_errors = false
 phaseSpace  = false
 plotfields = false
-plotting_interval = 30
+plotting_interval = 1
 
 [particle1]
 name = "electron1"
-N_particles = 20000
+N_particles = 3000
 charge = -1.602e-19
 mass   = 9.1093837e-31
-Tx      = 1185374.44057971
-Ty      = 11853.7444057971
-Tz      = 0.0
-ds_per_debye = 8.0
+weight = 3105803940188.3374
 initial_vx = 'electron_vx.npy'
+initial_vy = 'electron_vy.npy'
+initial_vz = 'electron_vz.npy'
+initial_x  = 'electron_x.npy'
+initial_y  = 'electron_y.npy'
 initial_z  = 'electron_z.npy'
 
 [particle2]
 name = "ion1"
-N_particles = 20000
+N_particles = 3000
 charge = 1.602e-19
 mass = 1.67e-27
-T     = 0.0
-initial_x = 'ion_x.npy'
-initial_y = 'ion_y.npy'
-initial_z = 'ion_z.npy'
-update_pos = false
+weight = 3105803940188.3374
+initial_vx = 'ion_vx.npy'
+initial_vy = 'ion_vy.npy'
+initial_vz = 'ion_vz.npy'
+initial_x  = 'ion_x.npy'
+initial_y  = 'ion_y.npy'
+initial_z  = 'ion_z.npy'
