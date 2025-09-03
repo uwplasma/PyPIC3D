@@ -46,7 +46,7 @@ from PyPIC3D.evolve import (
 )
 
 from PyPIC3D.J import (
-    J_from_rhov, Esirkepov_current, VB_current
+    J_from_rhov, Esirkepov_current
 )
 from PyPIC3D.solvers.vector_potential import initialize_vector_potential
 
@@ -296,9 +296,6 @@ def initialize_simulation(toml_file):
     if simulation_parameters['current_calculation'] == "esirkepov":
         print("Using Esirkepov current calculation method")
         J_func = Esirkepov_current
-    elif simulation_parameters['current_calculation'] == "villasenor_buneman":
-        print("Using Villasenor-Buneman current calculation method")
-        J_func = VB_current
     elif simulation_parameters['current_calculation'] == "j_from_rhov":
         print("Using J from rhov current calculation method")
         J_func = J_from_rhov
