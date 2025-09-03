@@ -802,7 +802,7 @@ def plot_vectorfield_slice_vtk(field_slices, field_names, slice, grid, t, name, 
     # Stack field slices as vector data
     # Each field_slice should be 2D, shape (len(x), len(y)) or similar
     # We flatten and stack them as (N, 3) for VTK vector
-    for idx, (field_slice, field_name) in enumerate(zip(field_slices, field_names)):
+    for field_slice, field_name in zip(field_slices, field_names):
         field_arrays = []
         for comp in field_slice:
             field_data = np.asarray(comp)
