@@ -86,12 +86,15 @@ def J_from_rhov(particles, J, constants, world, grid):
         )
         # Calculate the weights for the grid points
 
+        dq = q / dx / dy / dz
+        # calculate the charge differential
+
         for i in range(len(x_weights)):
             for j in range(len(y_weights)):
                 for k in range(len(z_weights)):
-                    Jx = Jx.at[xpts[i], ypts[j], zpts[k]].add((q * vx / (dx * dy * dz)) * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
-                    Jy = Jy.at[xpts[i], ypts[j], zpts[k]].add((q * vy / (dx * dy * dz)) * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
-                    Jz = Jz.at[xpts[i], ypts[j], zpts[k]].add((q * vz / (dx * dy * dz)) * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
+                    Jx = Jx.at[xpts[i], ypts[j], zpts[k]].add((dq * vx) * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
+                    Jy = Jy.at[xpts[i], ypts[j], zpts[k]].add((dq * vy) * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
+                    Jz = Jz.at[xpts[i], ypts[j], zpts[k]].add((dq * vz) * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
         # Add the particle current to the current density arrays
 
     alpha = constants['alpha']
