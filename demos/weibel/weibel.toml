@@ -14,32 +14,29 @@ verbose = false
 electrostatic = false
 cfl = 0.5
 shape_factor = 1
-relativistic = false
+relativistic = true
 
 [plotting]
 plot_errors = false
 phaseSpace  = false
 plotfields = false
-plotting_interval = 1
+plotting_interval = 30
 
 [particle1]
 name = "electron1"
-N_particles = 3000
+N_per_cell =    40
 charge = -1.602e-19
 mass   = 9.1093837e-31
-weight = 3105803940188.3374
+ds_per_debye = 0.7
 Tx     = 296494.82871735515
 Tz     = 29649482.87173552
 Ty     = 0
-initial_vy = 0
 
 [particle2]
 name = "ion1"
-N_particles = 3000
+N_per_cell =    40
 charge = 1.602e-19
 mass = 1.67e-27
-weight = 3105803940188.3374
 Tx     = 296494.82871735515
 Tz     = 29649482.87173552
 Ty     = 0
-initial_vy = 0

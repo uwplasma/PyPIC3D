@@ -4,12 +4,12 @@ import jax.numpy as jnp
 import sys
 import os
 
-# # Add the parent directory to the sys.path
-# sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from PyPIC3D.particle import (
     initial_particles, particle_species
 )
+
+from PyPIC3D.J import J_from_rhov
 
 jax.config.update("jax_enable_x64", True)
 
@@ -294,6 +294,66 @@ class TestParticleMethods(unittest.TestCase):
         self.assertAlmostEqual(species.kinetic_energy(), 0.0)
         self.assertAlmostEqual(species.momentum(), 0.0)
 
+    def test_J_from_rhov(self):
+        x = jnp.array([0.0])
+        y = jnp.array([0.0])
+        z = jnp.array([0.0])
+        vx = jnp.array([0.5])
+        vy = jnp.array([0.5])
+        vz = jnp.array([0.5])
+        # define particle position and velocity
+
+        dx = self.x_wind / 10
+        dy = self.y_wind / 10
+        dz = self.z_wind / 10
+        # uniform spatial resolution in xyz
+
+        grid = jnp.arange(-self.x_wind/2, self.x_wind/2, dx), jnp.arange(-self.y_wind/2, self.y_wind/2, dy), jnp.arange(-self.z_wind/2, self.z_wind/2, dz)
+        # grid for the simulation
+        
+        num_J = (jnp.zeros((10,10,10)), jnp.zeros((10,10,10)), jnp.zeros((10,10,10)))
+        # numerical current density arrays
+
+        Jx = jnp.zeros((10,10,10))
+        Jx = Jx.at[5,5,5].set(0.5 / (dx*dy*dz))  # non zero value at the center of the grid
+        Jy = jnp.zeros((10,10,10))
+        Jy = Jy.at[5,5,5].set(0.5 / (dx*dy*dz))  # non zero value at the center of the grid
+        Jz = jnp.zeros((10,10,10))
+        Jz = Jz.at[5,5,5].set(0.5 / (dx*dy*dz))  # non zero value at the center of the grid
+        J_exp = (Jx, Jy, Jz)
+        # build expected J arrays with non-zero values at the center of the grid
+
+        species = particle_species(
+            name="test",
+            N_particles=1,
+            charge=1.0,
+            mass=self.mass,
+            weight=1.0,
+            T=self.T,
+            v1 = vx,
+            v2 = vy,
+            v3 = vz,
+            x1=x,
+            x2=y,
+            x3=z,
+            dx=1.0,
+            dy=1.0,
+            dz=1.0,
+            xwind=self.x_wind,
+            ywind=self.y_wind,
+            zwind=self.z_wind,
+            subcells=(x, x, y, y, z, z),
+        )
+
+        constants = {'C': 3e8, 'alpha' : 1.0}
+        world = {'dx': dx, 'dy': dy, 'dz': dz, 'Nx': 10, 'Ny': 10, 'Nz': 10}
+        # define constants and world parameters
+
+        num_J = J_from_rhov([species], num_J, constants, world, grid)
+
+        self.assertTrue(jnp.allclose(num_J[0], J_exp[0]))
+        self.assertTrue(jnp.allclose(num_J[1], J_exp[1]))
+        self.assertTrue(jnp.allclose(num_J[2], J_exp[2]))
 
 
 if __name__ == '__main__':
