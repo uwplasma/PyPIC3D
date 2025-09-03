@@ -20,7 +20,7 @@ relativistic = false
 plot_errors = false
 phaseSpace  = false
 plotfields = false
-plotting_interval = 1
+plotting_interval = 30
 
 [particle1]
 name = "electron1"
