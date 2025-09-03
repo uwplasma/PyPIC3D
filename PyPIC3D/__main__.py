@@ -14,7 +14,8 @@ from tqdm import tqdm
 # Importing relevant libraries
 
 from PyPIC3D.plotting import (
-    plotter, write_particles_phase_space, write_data, plot_vtk_particles, plot_field_slice_vtk
+    plotter, write_particles_phase_space, write_data, plot_vtk_particles, plot_field_slice_vtk,
+    plot_vectorfield_slice_vtk
 )
 
 from PyPIC3D.utils import (
@@ -44,7 +45,10 @@ def run_PyPIC3D(config_file):
     dt = world['dt']
     output_dir = simulation_parameters['output_dir']
 
-    field_names = ["E_magnitude", "B_magnitude", "Jz", "rho", "Ex", "Ey", "Bz", "mass_density"]
+    # field_names = ["E_magnitude", "B_magnitude", "Jz", "rho", "Ex", "Ey", "Bz", "mass_density"]
+
+    scalar_field_names = ["rho", "mass_density"]
+    vector_field_names = ["E", "B", "J"]
 
     ############################################################################################################
 
@@ -76,15 +80,16 @@ def run_PyPIC3D(config_file):
             mass_density = compute_mass_density(particles, rho, world)
             # calculate the mass density based on the particle positions
 
-            E_magnitude = jnp.sqrt(E[0]**2 + E[1]**2 + E[2]**2)[:,:,world['Nz']//2]
-            B_magnitude = jnp.sqrt(B[0]**2 + B[1]**2 + B[2]**2)[:,:,world['Nz']//2]
-            Ex_slice = E[0][:,:,world['Nz']//2]
-            Ey_slice = E[1][:,:,world['Nz']//2]
-            Bz_slice = B[2][:,:,world['Nz']//2]
-            # Calculate the magnitudes of the electric and magnetic fields, and the Bz component
-            fields_mag = [E_magnitude, B_magnitude, J[2][:,:,world['Nz']//2], rho[:,:,world['Nz']//2], Ex_slice, Ey_slice, Bz_slice, mass_density[:,:,world['Nz']//2]]
-            plot_field_slice_vtk(fields_mag, field_names, 2, E_grid, t, "fields", output_dir, world)
-            # Plot the fields in VTK format
+            # fields_mag = [rho[:,:,world['Nz']//2], mass_density[:,:,world['Nz']//2]]
+            # plot_field_slice_vtk(fields_mag, scalar_field_names, 2, E_grid, t, "scalar_field", output_dir, world)
+            # Plot the scalar fields in VTK format
+
+
+            vector_field_slices = [ [E[0][:,:,world['Nz']//2], E[1][:,:,world['Nz']//2], E[2][:,:,world['Nz']//2]],
+                                   [B[0][:,:,world['Nz']//2], B[1][:,:,world['Nz']//2], B[2][:,:,world['Nz']//2]],
+                                   [J[0][:,:,world['Nz']//2], J[1][:,:,world['Nz']//2], J[2][:,:,world['Nz']//2]]]
+            plot_vectorfield_slice_vtk(vector_field_slices, vector_field_names, 2, E_grid, t, 'vector_field', output_dir, world)
+            # Plot the vector fields in VTK format
 
             if plotting_parameters['plot_vtk_particles']:
                 plot_vtk_particles(particles, t, output_dir)
