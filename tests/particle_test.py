@@ -301,7 +301,7 @@ class TestParticleMethods(unittest.TestCase):
         vx = jnp.array([0.5])
         vy = jnp.array([0.5])
         vz = jnp.array([0.5])
-        # define particle positon and velocity
+        # define particle position and velocity
 
         dx = self.x_wind / 10
         dy = self.y_wind / 10
@@ -321,7 +321,7 @@ class TestParticleMethods(unittest.TestCase):
         Jz = jnp.zeros((10,10,10))
         Jz = Jz.at[5,5,5].set(0.5 / (dx*dy*dz))  # non zero value at the center of the grid
         J_exp = (Jx, Jy, Jz)
-        # # build expected J arrays with non-zero values at the center of the grid
+        # build expected J arrays with non-zero values at the center of the grid
 
         species = particle_species(
             name="test",
