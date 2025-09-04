@@ -11,6 +11,8 @@ from PyPIC3D.particle import (
 
 from PyPIC3D.J import J_from_rhov
 
+from PyPIC3D.rho import compute_rho
+
 jax.config.update("jax_enable_x64", True)
 
 class TestParticleMethods(unittest.TestCase):
@@ -355,6 +357,61 @@ class TestParticleMethods(unittest.TestCase):
         self.assertTrue(jnp.allclose(num_J[1], J_exp[1]))
         self.assertTrue(jnp.allclose(num_J[2], J_exp[2]))
 
+    def test_rho(self):
+        x = jnp.array([0.0])
+        y = jnp.array([0.0])
+        z = jnp.array([0.0])
+        vx = jnp.array([0.5])
+        vy = jnp.array([0.5])
+        vz = jnp.array([0.5])
+        # define particle position and velocity
+
+        dx = self.x_wind / 10
+        dy = self.y_wind / 10
+        dz = self.z_wind / 10
+        # uniform spatial resolution in xyz
+
+        grid = jnp.arange(-self.x_wind/2, self.x_wind/2, dx), jnp.arange(-self.y_wind/2, self.y_wind/2, dy), jnp.arange(-self.z_wind/2, self.z_wind/2, dz)
+        # grid for the simulation
+
+        num_rho = jnp.zeros((10,10,10))
+        # numerical charge density array
+
+        exp_rho = jnp.zeros((10,10,10))
+        exp_rho = exp_rho.at[5,5,5].set(1.0 / (dx*dy*dz))  # non zero value at the center of the grid
+        # build expected rho array with non-zero values at the center of the grid
+
+        species = particle_species(
+            name="test",
+            N_particles=1,
+            charge=1.0,
+            mass=self.mass,
+            weight=1.0,
+            T=self.T,
+            v1 = vx,
+            v2 = vy,
+            v3 = vz,
+            x1=x,
+            x2=y,
+            x3=z,
+            dx=1.0,
+            dy=1.0,
+            dz=1.0,
+            xwind=self.x_wind,
+            ywind=self.y_wind,
+            zwind=self.z_wind,
+            subcells=(x, x, y, y, z, z),
+        )
+
+        constants = {'C': 3e8, 'alpha' : 1.0}
+        world = {'dx': dx, 'dy': dy, 'dz': dz, 'Nx': 10, 'Ny': 10, 'Nz': 10, 'x_wind': self.x_wind, 'y_wind': self.y_wind, 'z_wind': self.z_wind}
+        # define constants and world parameters
+
+        num_rho = compute_rho([species], num_rho, world, constants)
+        # compute rho
+
+        self.assertTrue(jnp.allclose(num_rho, exp_rho))
+        # check if computed rho matches expected rho
 
 if __name__ == '__main__':
     unittest.main()
