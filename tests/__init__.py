@@ -12,5 +12,4 @@ from . import first_order_yee_test
 from . import initialization_test
 from . import particle_test
 from . import pstd_test
-from . import rho_test
 from . import utils_test
