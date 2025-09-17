@@ -111,7 +111,7 @@ def wrap_around(ix, size):
     """Wrap around index (scalar or 1D array) to ensure it is within bounds."""
     return jnp.where(ix > size - 1, ix - size, ix)
 
-@jit
+
 def Esirkepov_current(particles, J, constants, world, grid):
 
     Jx, Jy, Jz = J
@@ -260,7 +260,6 @@ def Esirkepov_current(particles, J, constants, world, grid):
                 Jz = Jz.at[xpts[i],ypts[j],zpts[2]].add( -(Wz_[i, j, 0,:] + Wz_[i, j, 1,:] + Wz_[i, j, 2,:]) * dJz, mode='drop')
 
     alpha = constants['alpha']
-    Jx, Jy, Jz = J
     Jx = digital_filter(Jx, alpha)
     Jy = digital_filter(Jy, alpha)
     Jz = digital_filter(Jz, alpha)
@@ -298,7 +297,6 @@ def get_second_order_weights(deltax, deltay, deltaz, dx, dy, dz):
     z_weights = [Sz_minus1, Sz0, Sz1]
 
     return x_weights, y_weights, z_weights
-
 
 @jit
 def get_first_order_weights(deltax, deltay, deltaz, dx, dy, dz):
