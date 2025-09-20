@@ -41,7 +41,7 @@ class TestParticleMethods(unittest.TestCase):
         self.T = 300.0
         self.kb = 1.38e-23
         self.key1, self.key2, self.key3 = jax.random.split(jax.random.PRNGKey(0), 3)
-        self.dt = 2.0
+        self.dt = 1.0
 
     def test_initial_particles(self):
         """
