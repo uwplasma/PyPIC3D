@@ -53,10 +53,10 @@ def J_from_rhov(particles, J, constants, world, grid):
         shape_factor = species.get_shape()
         # get the shape factor of the species
 
-        x0 = jnp.floor( (x - grid[0][0]) / dx).astype(int)
-        y0 = jnp.floor( (y - grid[1][0]) / dy).astype(int)
-        z0 = jnp.floor( (z - grid[2][0]) / dz).astype(int)
-        # calculate the nearest grid point
+        x0 = jnp.round( (x - grid[0][0]) / dx).astype(int)
+        y0 = jnp.round( (y - grid[1][0]) / dy).astype(int)
+        z0 = jnp.round( (z - grid[2][0]) / dz).astype(int)
+        # calculate the nearest grid point based on shape factor
 
         x1 = wrap_around(x0+1, Nx)
         y1 = wrap_around(y0+1, Ny)
@@ -73,15 +73,15 @@ def J_from_rhov(particles, J, constants, world, grid):
         zpts = [z_minus1, z0, z1]
         # place all the points in a list
 
-        new_deltax = x - jnp.floor(x / dx) * dx
-        new_deltay = y - jnp.floor(y / dy) * dy
-        new_deltaz = z - jnp.floor(z / dz) * dz
+        deltax = (x - grid[0][0]) - (x0 * dx)
+        deltay = (y - grid[1][0]) - (y0 * dy)
+        deltaz = (z - grid[2][0]) - (z0 * dz)
         # Calculate the difference between the particle position and the nearest grid point
 
         x_weights, y_weights, z_weights = jax.lax.cond(
             shape_factor == 1,
-            lambda _: get_first_order_weights(new_deltax, new_deltay, new_deltaz, dx, dy, dz),
-            lambda _: get_second_order_weights(new_deltax, new_deltay, new_deltaz, dx, dy, dz),
+            lambda _: get_first_order_weights( deltax, deltay, deltaz, dx, dy, dz),
+            lambda _: get_second_order_weights(deltax, deltay, deltaz, dx, dy, dz),
             operand=None
         )
         # Calculate the weights for the grid points
@@ -111,7 +111,7 @@ def wrap_around(ix, size):
     """Wrap around index (scalar or 1D array) to ensure it is within bounds."""
     return jnp.where(ix > size - 1, ix - size, ix)
 
-@jit
+
 def Esirkepov_current(particles, J, constants, world, grid):
 
     Jx, Jy, Jz = J
@@ -260,7 +260,6 @@ def Esirkepov_current(particles, J, constants, world, grid):
                 Jz = Jz.at[xpts[i],ypts[j],zpts[2]].add( -(Wz_[i, j, 0,:] + Wz_[i, j, 1,:] + Wz_[i, j, 2,:]) * dJz, mode='drop')
 
     alpha = constants['alpha']
-    Jx, Jy, Jz = J
     Jx = digital_filter(Jx, alpha)
     Jy = digital_filter(Jy, alpha)
     Jz = digital_filter(Jz, alpha)
@@ -285,20 +284,20 @@ def get_second_order_weights(deltax, deltay, deltaz, dx, dy, dz):
     Sy0 = (3/4) - (deltay/dy)**2
     Sz0 = (3/4) - (deltaz/dz)**2
 
-    Sx1 = jnp.where(jnp.abs(deltax) <= dx/2, (1/2) * ((1/2) - (deltax/dx))**2, 0.0)
-    Sy1 = jnp.where(jnp.abs(deltay) <= dy/2, (1/2) * ((1/2) - (deltay/dy))**2, 0.0)
-    Sz1 = jnp.where(jnp.abs(deltaz) <= dz/2, (1/2) * ((1/2) - (deltaz/dz))**2, 0.0)
+    Sx1 = (1/2) * ((1/2) - (deltax/dx))**2
+    Sy1 = (1/2) * ((1/2) - (deltay/dy))**2
+    Sz1 = (1/2) * ((1/2) - (deltaz/dz))**2
 
-    Sx_minus1 = jnp.where(jnp.abs(deltax) <= dx/2, (1/2) * ((1/2) + (deltax/dx))**2, 0.0)
-    Sy_minus1 = jnp.where(jnp.abs(deltay) <= dy/2, (1/2) * ((1/2) + (deltay/dy))**2, 0.0)
-    Sz_minus1 = jnp.where(jnp.abs(deltaz) <= dz/2, (1/2) * ((1/2) + (deltaz/dz))**2, 0.0)
+    Sx_minus1 = (1/2) * ((1/2) + (deltax/dx))**2
+    Sy_minus1 = (1/2) * ((1/2) + (deltay/dy))**2
+    Sz_minus1 = (1/2) * ((1/2) + (deltaz/dz))**2
+    # second order weights
 
     x_weights = [Sx_minus1, Sx0, Sx1]
     y_weights = [Sy_minus1, Sy0, Sy1]
     z_weights = [Sz_minus1, Sz0, Sz1]
 
     return x_weights, y_weights, z_weights
-
 
 @jit
 def get_first_order_weights(deltax, deltay, deltaz, dx, dy, dz):

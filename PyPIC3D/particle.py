@@ -631,27 +631,27 @@ class particle_species:
     def update_position(self):
         if self.update_pos:
             if self.update_x:
-                self.x1_back = self.x1_forward
-                self.x1_forward = self.x1_forward + self.v1 * self.dt / 2
                 self.old_x1 = self.x1
                 # store the old position of the particles
-                self.x1 = self.x1_forward - self.v1 * self.dt / 2
+                self.x1_back = self.x1_forward
+                self.x1      = self.x1 + self.v1 * self.dt
+                self.x1_forward = self.x1_forward + self.v1 * self.dt
                 # update the x position of the particles
 
             if self.update_y:
-                self.x2_back = self.x2_forward
-                self.x2_forward = self.x2_forward + self.v2 * self.dt / 2
                 self.old_x2 = self.x2
                 # store the old position of the particles
-                self.x2 = self.x2_forward - self.v2 * self.dt / 2
+                self.x2_back = self.x2_forward
+                self.x2      = self.x2 + self.v2 * self.dt
+                self.x2_forward = self.x2_forward + self.v2 * self.dt
                 # update the y position of the particles
 
             if self.update_z:
-                self.x3_back = self.x3_forward
-                self.x3_forward = self.x3_forward + self.v3 * self.dt / 2
                 self.old_x3 = self.x3
                 # store the old position of the particles
-                self.x3 = self.x3_forward - self.v3 * self.dt / 2
+                self.x3_back = self.x3_forward
+                self.x3      = self.x3 + self.v3 * self.dt
+                self.x3_forward = self.x3_forward + self.v3 * self.dt
                 # update the z position of the particles
 
         if self.bc == 'periodic':

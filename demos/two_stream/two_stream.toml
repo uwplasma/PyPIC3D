@@ -44,4 +44,4 @@ name = "ion1"
 N_particles = 3000
 charge = 1.602e-19
 mass = 1.67e-27
-vth = 34982.78402326697
+vth = 349827.8402326697
