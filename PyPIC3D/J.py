@@ -284,13 +284,13 @@ def get_second_order_weights(deltax, deltay, deltaz, dx, dy, dz):
     Sy0 = (3/4) - (deltay/dy)**2
     Sz0 = (3/4) - (deltaz/dz)**2
 
-    Sx1 = (1/2) * ((1/2) - (deltax/dx))**2
-    Sy1 = (1/2) * ((1/2) - (deltay/dy))**2
-    Sz1 = (1/2) * ((1/2) - (deltaz/dz))**2
+    Sx1 = (1/2) * ((1/2) - jnp.abs(deltax/dx))**2
+    Sy1 = (1/2) * ((1/2) - jnp.abs(deltay/dy))**2
+    Sz1 = (1/2) * ((1/2) - jnp.abs(deltaz/dz))**2
 
-    Sx_minus1 = (1/2) * ((1/2) + (deltax/dx))**2
-    Sy_minus1 = (1/2) * ((1/2) + (deltay/dy))**2
-    Sz_minus1 = (1/2) * ((1/2) + (deltaz/dz))**2
+    Sx_minus1 = (1/2) * ((1/2) + jnp.abs(deltax/dx))**2
+    Sy_minus1 = (1/2) * ((1/2) + jnp.abs(deltay/dy))**2
+    Sz_minus1 = (1/2) * ((1/2) + jnp.abs(deltaz/dz))**2
     # second order weights
 
     x_weights = [Sx_minus1, Sx0, Sx1]
