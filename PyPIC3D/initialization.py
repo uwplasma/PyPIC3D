@@ -95,8 +95,6 @@ def default_parameters():
         "benchmark": False, # boolean for using the profiler
         "verbose": False, # boolean for printing verbose output
         "GPUs": False, # boolean for using GPUs
-        # "ncores": 4, # number of cores to use
-        # "ncpus": 1, # number of CPUs to use
         "cfl"  : 1.0, # CFL condition number
         "ds_per_debye" : None, # number of grid spacings per debye length
         "shape_factor" : 1, # shape factor for the simulation (1 for 1st order, 2 for 2nd order)
@@ -312,6 +310,12 @@ def initialize_simulation(toml_file):
     else:
         fields = (E, B, J, rho, phi)
         # define the fields tuple for the electrodynamic and electrostatic solvers
+
+
+    if GPUs:
+        print(f"GPUs Detected! Using GPUs for simulation\n")
+        jax.device_put(particles, jax.devices("gpu")[0])
+    # put the particles on the GPU if GPUs are enabled
 
 
     return evolve_loop, particles, fields, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, \
