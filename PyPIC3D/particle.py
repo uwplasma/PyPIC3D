@@ -509,15 +509,15 @@ class particle_species:
         return self.v1, self.v2, self.v3
 
     def get_backward_position(self):
-        x1_back = self.x1 - self.v1 * self.dt
-        x2_back = self.x2 - self.v2 * self.dt
-        x3_back = self.x3 - self.v3 * self.dt
+        x1_back = self.x1 - self.v1 * self.dt / 2
+        x2_back = self.x2 - self.v2 * self.dt / 2
+        x3_back = self.x3 - self.v3 * self.dt / 2
         return x1_back, x2_back, x3_back
 
     def get_forward_position(self):
-        x1_forward = self.x1 + self.v1 * self.dt
-        x2_forward = self.x2 + self.v2 * self.dt
-        x3_forward = self.x3 + self.v3 * self.dt
+        x1_forward = self.x1 + self.v1 * self.dt / 2
+        x2_forward = self.x2 + self.v2 * self.dt / 2
+        x3_forward = self.x3 + self.v3 * self.dt / 2
         return x1_forward, x2_forward, x3_forward
 
     def get_position(self):
