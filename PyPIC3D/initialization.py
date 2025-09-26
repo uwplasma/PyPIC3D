@@ -314,7 +314,7 @@ def initialize_simulation(toml_file):
 
     if GPUs:
         print(f"GPUs Detected! Using GPUs for simulation\n")
-        jax.device_put(particles, jax.devices("gpu")[0])
+        particles = jax.device_put(particles, jax.devices("gpu")[0])
     # put the particles on the GPU if GPUs are enabled
 
 
