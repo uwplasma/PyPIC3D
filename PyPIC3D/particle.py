@@ -152,15 +152,6 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         update_y = read_value('update_y', toml_key, config, True)
         update_z = read_value('update_z', toml_key, config, True)
 
-        zeta1 = ( x + x_wind/2 ) % dx
-        zeta2 = zeta1
-        eta1  = ( y + y_wind/2 ) % dy
-        eta2  = eta1
-        xi1   = ( z + z_wind/2 ) % dz
-        xi2   = xi1
-        subcells = zeta1, zeta2, eta1, eta2, xi1, xi2
-        # calculate the subcell positions for charge conservation algorithm
-
         particle = particle_species(
             name=particle_name,
             N_particles=N_particles,
@@ -173,7 +164,6 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
             v1=vx,
             v2=vy,
             v3=vz,
-            subcells=subcells,
             xwind=x_wind,
             ywind=y_wind,
             zwind=z_wind,
@@ -464,7 +454,7 @@ class particle_species:
 
 
 
-    def __init__(self, name, N_particles, charge, mass, T, v1, v2, v3, x1, x2, x3, subcells, \
+    def __init__(self, name, N_particles, charge, mass, T, v1, v2, v3, x1, x2, x3, \
             xwind, ywind, zwind, dx, dy, dz, weight=1, bc='periodic', update_x=True, update_y=True, update_z=True, \
                 update_vx=True, update_vy=True, update_vz=True, update_pos=True, update_v=True, shape=1, dt = 0):
         self.name = name
@@ -482,7 +472,6 @@ class particle_species:
         self.x_wind = xwind
         self.y_wind = ywind
         self.z_wind = zwind
-        self.zeta1, self.zeta2, self.eta1, self.eta2, self.xi1, self.xi2 = subcells
         self.bc = bc
         self.update_x = update_x
         self.update_y = update_y
@@ -498,14 +487,6 @@ class particle_species:
         self.x1 = x1
         self.x2 = x2
         self.x3 = x3
-
-        self.x1_back = self.x1 - self.v1 * self.dt / 2
-        self.x2_back = self.x2 - self.v2 * self.dt / 2
-        self.x3_back = self.x3 - self.v3 * self.dt / 2
-
-        self.x1_forward = self.x1 + self.v1 * self.dt / 2
-        self.x2_forward = self.x2 + self.v2 * self.dt / 2
-        self.x3_forward = self.x3 + self.v3 * self.dt / 2
 
         self.old_x1 = self.x1
         self.old_x2 = self.x2
@@ -528,19 +509,22 @@ class particle_species:
         return self.v1, self.v2, self.v3
 
     def get_backward_position(self):
-        return self.x1_back, self.x2_back, self.x3_back
+        x1_back = self.x1 - self.v1 * self.dt
+        x2_back = self.x2 - self.v2 * self.dt
+        x3_back = self.x3 - self.v3 * self.dt
+        return x1_back, x2_back, x3_back
 
     def get_forward_position(self):
-        return self.x1_forward, self.x2_forward, self.x3_forward
+        x1_forward = self.x1 + self.v1 * self.dt
+        x2_forward = self.x2 + self.v2 * self.dt
+        x3_forward = self.x3 + self.v3 * self.dt
+        return x1_forward, x2_forward, x3_forward
 
     def get_position(self):
         return self.x1, self.x2, self.x3
 
     def get_mass(self):
         return self.mass*self.weight
-
-    def get_subcell_position(self):
-        return self.zeta1, self.zeta2, self.eta1, self.eta2, self.xi1, self.xi2
 
     def get_old_position(self):
         return self.old_x1, self.old_x2, self.old_x3
@@ -563,24 +547,6 @@ class particle_species:
             if self.update_vz:
                 self.v3 = v3
 
-    def set_backward_position(self, x1, x2, x3):
-        if self.update_pos:
-            if self.update_x:
-                self.x1_back = x1
-            if self.update_y:
-                self.x2_back = x2
-            if self.update_z:
-                self.x3_back = x3
-
-    def set_forward_position(self, x1, x2, x3):
-        if self.update_pos:
-            if self.update_x:
-                self.x1_forward = x1
-            if self.update_y:
-                self.x2_forward = x2
-            if self.update_z:
-                self.x3_forward = x3
-
     def set_position(self, x1, x2, x3):
         self.x1 = x1
         self.x2 = x2
@@ -591,13 +557,6 @@ class particle_species:
 
     def set_weight(self, weight):
         self.weight = weight
-
-    def calc_subcell_position(self):
-        newzeta = (self.x1 + self.x_wind / 2) % self.dx
-        neweta  = (self.x2 + self.y_wind / 2) % self.dy
-        newxi   = (self.x3 + self.z_wind / 2) % self.dz
-
-        return newzeta, neweta, newxi
 
     def kinetic_energy(self):
         return 0.5 * self.weight * self.mass *  (  jnp.abs( jnp.sum( self.v1**2)) + jnp.abs( jnp.sum( self.v2**2)) + jnp.abs( jnp.sum( self.v3**2)) )
@@ -633,25 +592,19 @@ class particle_species:
             if self.update_x:
                 self.old_x1 = self.x1
                 # store the old position of the particles
-                self.x1_back = self.x1_forward
                 self.x1      = self.x1 + self.v1 * self.dt
-                self.x1_forward = self.x1_forward + self.v1 * self.dt
                 # update the x position of the particles
 
             if self.update_y:
                 self.old_x2 = self.x2
                 # store the old position of the particles
-                self.x2_back = self.x2_forward
                 self.x2      = self.x2 + self.v2 * self.dt
-                self.x2_forward = self.x2_forward + self.v2 * self.dt
                 # update the y position of the particles
 
             if self.update_z:
                 self.old_x3 = self.x3
                 # store the old position of the particles
-                self.x3_back = self.x3_forward
                 self.x3      = self.x3 + self.v3 * self.dt
-                self.x3_forward = self.x3_forward + self.v3 * self.dt
                 # update the z position of the particles
 
         if self.bc == 'periodic':
@@ -661,19 +614,10 @@ class particle_species:
             self.reflecting_boundary_condition()
             # apply reflecting boundary conditions to the particles
 
-        self.zeta1 = self.zeta2
-        self.eta1  = self.eta2
-        self.xi1   = self.xi2
-        self.zeta2, self.eta2, self.xi2 = self.calc_subcell_position()
-        # update the subcell positions for charge conservation algorithm
-
     def tree_flatten(self):
         children = (
             self.v1, self.v2, self.v3, \
             self.x1, self.x2, self.x3, \
-            self.zeta1, self.zeta2, self.eta1, self.eta2, self.xi1, self.xi2, \
-            self.x1_back, self.x2_back, self.x3_back, \
-            self.x1_forward, self.x2_forward, self.x3_forward, \
             self.old_x1, self.old_x2, self.old_x3
         )
 
@@ -687,14 +631,13 @@ class particle_species:
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        v1, v2, v3, x1, x2, x3, zeta1, zeta2, eta1, eta2, xi1, xi2, x1_back, x2_back, x3_back, x1_forward, x2_forward, x3_forward, old_x1, old_x2, old_x3 = children
+        v1, v2, v3, x1, x2, x3, old_x1, old_x2, old_x3 = children
 
 
         name, N_particles, charge, mass, T, x_wind, y_wind, z_wind, dx, dy, \
             dz, weight, bc, update_pos, update_v, update_x, update_y, update_z, \
                 update_vx, update_vy, update_vz, shape, dt  = aux_data
 
-        subcells = zeta1, zeta2, eta1, eta2, xi1, xi2
 
         obj = cls(
             name=name,
@@ -708,7 +651,6 @@ class particle_species:
             v1=v1,
             v2=v2,
             v3=v3,
-            subcells=subcells,
             xwind=x_wind,
             ywind=y_wind,
             zwind=z_wind,
