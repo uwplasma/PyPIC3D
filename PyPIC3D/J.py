@@ -42,20 +42,24 @@ def J_from_rhov(particles, J, constants, world, grid):
     J = (Jx, Jy, Jz)
     # initialize the current density as a tuple
 
-    for species in particles:
-        q = species.get_charge()
-        # get the charge of the species
-        x, y, z = species.get_position()
-        # get the position of the particles in the species
-        vx, vy, vz = species.get_velocity()
-        # get the velocity of the particles in the species
+    if particles:
+        # if there are particles in the simulation
 
-        shape_factor = species.get_shape()
-        # get the shape factor of the species
+        total_x = jnp.concatenate( [species.get_position()[0] for species in particles] )
+        total_y = jnp.concatenate( [species.get_position()[1] for species in particles] )
+        total_z = jnp.concatenate( [species.get_position()[2] for species in particles] )
 
-        x0 = jnp.round( (x - grid[0][0]) / dx).astype(int)
-        y0 = jnp.round( (y - grid[1][0]) / dy).astype(int)
-        z0 = jnp.round( (z - grid[2][0]) / dz).astype(int)
+        total_dqvx = jnp.concatenate( [species.get_charge() / (dx*dy*dz) * species.get_velocity()[0] for species in particles] )
+        total_dqvy = jnp.concatenate( [species.get_charge() / (dx*dy*dz) * species.get_velocity()[1] for species in particles] )
+        total_dqvz = jnp.concatenate( [species.get_charge() / (dx*dy*dz) * species.get_velocity()[2] for species in particles] )
+        # concatenate all the particle data for easier processing
+
+        shape_factor = particles[0].get_shape()
+        # assume all species have the same shape factor
+
+        x0 = jnp.round( (total_x - grid[0][0]) / dx).astype(int)
+        y0 = jnp.round( (total_y - grid[1][0]) / dy).astype(int)
+        z0 = jnp.round( (total_z - grid[2][0]) / dz).astype(int)
         # calculate the nearest grid point based on shape factor
 
         x1 = wrap_around(x0+1, Nx)
@@ -73,9 +77,9 @@ def J_from_rhov(particles, J, constants, world, grid):
         zpts = [z_minus1, z0, z1]
         # place all the points in a list
 
-        deltax = (x - grid[0][0]) - (x0 * dx)
-        deltay = (y - grid[1][0]) - (y0 * dy)
-        deltaz = (z - grid[2][0]) - (z0 * dz)
+        deltax = (total_x - grid[0][0]) - (x0 * dx)
+        deltay = (total_y - grid[1][0]) - (y0 * dy)
+        deltaz = (total_z - grid[2][0]) - (z0 * dz)
         # Calculate the difference between the particle position and the nearest grid point
 
         x_weights, y_weights, z_weights = jax.lax.cond(
@@ -84,25 +88,22 @@ def J_from_rhov(particles, J, constants, world, grid):
             lambda _: get_second_order_weights(deltax, deltay, deltaz, dx, dy, dz),
             operand=None
         )
-        # Calculate the weights for the grid points
-
-        dq = q / dx / dy / dz
-        # calculate the charge differential
 
         for i in range(len(x_weights)):
             for j in range(len(y_weights)):
                 for k in range(len(z_weights)):
-                    Jx = Jx.at[xpts[i], ypts[j], zpts[k]].add((dq * vx) * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
-                    Jy = Jy.at[xpts[i], ypts[j], zpts[k]].add((dq * vy) * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
-                    Jz = Jz.at[xpts[i], ypts[j], zpts[k]].add((dq * vz) * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
+                    Jx = Jx.at[xpts[i], ypts[j], zpts[k]].add( (total_dqvx) * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
+                    Jy = Jy.at[xpts[i], ypts[j], zpts[k]].add( (total_dqvy) * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
+                    Jz = Jz.at[xpts[i], ypts[j], zpts[k]].add( (total_dqvz) * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
         # Add the particle current to the current density arrays
 
-    alpha = constants['alpha']
-    Jx = digital_filter(Jx, alpha)
-    Jy = digital_filter(Jy, alpha)
-    Jz = digital_filter(Jz, alpha)
-    J = (Jx, Jy, Jz)
-    # apply a digital filter to the current density arrays
+        
+        alpha = constants['alpha']
+        Jx = digital_filter(Jx, alpha)
+        Jy = digital_filter(Jy, alpha)
+        Jz = digital_filter(Jz, alpha)
+        J = (Jx, Jy, Jz)
+        # apply a digital filter to the current density arrays
 
     return J
 

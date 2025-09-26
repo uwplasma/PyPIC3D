@@ -106,7 +106,7 @@ def main():
     ###################### JAX SETTINGS ########################################################################
     jax.config.update("jax_enable_x64", True)
     # set Jax to use 64 bit precision
-    jax.config.update("jax_debug_nans", True)
+    # jax.config.update("jax_debug_nans", True)
     # debugging for nans
     jax.config.update('jax_platform_name', 'cpu')
     # set Jax to use CPUs

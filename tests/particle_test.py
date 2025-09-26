@@ -127,7 +127,6 @@ class TestParticleMethods(unittest.TestCase):
             xwind = self.x_wind,
             ywind = self.y_wind,
             zwind = self.z_wind,
-            subcells = (x1, x1, x2, x2, x3, x3),
         )
 
         species.periodic_boundary_condition()
@@ -175,7 +174,6 @@ class TestParticleMethods(unittest.TestCase):
             xwind=self.x_wind,
             ywind=self.y_wind,
             zwind=self.z_wind,
-            subcells=(x1, x1, x2, x2, x3, x3),
             dt=self.dt
         )
 
@@ -226,7 +224,6 @@ class TestParticleMethods(unittest.TestCase):
             xwind=self.x_wind,
             ywind=self.y_wind,
             zwind=self.z_wind,
-            subcells=(x1, x1, x2, x2, x3, x3),
         )
 
         ke = species.kinetic_energy()
@@ -277,7 +274,7 @@ class TestParticleMethods(unittest.TestCase):
             xwind=self.x_wind,
             ywind=self.y_wind,
             zwind=self.z_wind,
-            subcells=(x1, x1, x2, x2, x3, x3),
+            dt=self.dt
         )
 
         
@@ -344,7 +341,6 @@ class TestParticleMethods(unittest.TestCase):
             xwind=self.x_wind,
             ywind=self.y_wind,
             zwind=self.z_wind,
-            subcells=(x, x, y, y, z, z),
         )
 
         constants = {'C': 3e8, 'alpha' : 1.0}
@@ -400,7 +396,6 @@ class TestParticleMethods(unittest.TestCase):
             xwind=self.x_wind,
             ywind=self.y_wind,
             zwind=self.z_wind,
-            subcells=(x, x, y, y, z, z),
         )
 
         constants = {'C': 3e8, 'alpha' : 1.0}
