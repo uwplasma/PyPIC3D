@@ -67,7 +67,7 @@ def default_parameters():
     "plotenergy": True,
     "plotcurrent": False,
     "plasmaFreq": False,
-    "phaseSpace": False,
+    "plot_phasespace": False,
     "plot_errors": False,
     "plot_dispersion": False,
     'plot_chargeconservation': False,
@@ -80,6 +80,7 @@ def default_parameters():
         "name": "Default Simulation",
         "output_dir": os.getcwd(),
         "solver": "spectral",  # solver: spectral, fdtd, vector_potential
+        "particle_bc": "periodic",  # particle boundary conditions: periodic, absorb, reflect
         "bc": "spectral",  # boundary conditions: periodic, dirichlet, neumann
         "Nx": 30,  # number of array spacings in x
         "Ny": 30,  # number of array spacings in y
@@ -171,7 +172,7 @@ def initialize_simulation(toml_file):
     t_wind = simulation_parameters['t_wind']
     electrostatic = simulation_parameters['electrostatic']
     solver = simulation_parameters['solver']
-    bc = simulation_parameters['bc']
+    bc = simulation_parameters['bc'], simulation_parameters['particle_bc']
     relativistic = simulation_parameters['relativistic']
     verbose = simulation_parameters['verbose']
     GPUs = simulation_parameters['GPUs']

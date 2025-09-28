@@ -114,8 +114,8 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         # initialize the positions and velocities of the particles
 
         bc = 'periodic'
-        if 'bc' in config[toml_key]:
-            bc = config[toml_key]['bc']
+        if 'particle_bc' in config[toml_key]:
+            bc = config[toml_key]['particle_bc']
         # set the boundary condition
 
         x = load_initial_positions('initial_x', config, toml_key, x, N_particles, dx, Nx, key1)
@@ -189,6 +189,7 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         dl = debye_length(particle, world, constants)
         print(f"Number of particles: {N_particles}")
         print(f"Number of particles per cell: {N_per_cell}")
+        print(f"Particle Boundary Condition: {bc}")
         print(f"Charge: {charge}")
         print(f"Mass: {mass}")
         print(f"Temperature: {T}")
@@ -573,20 +574,13 @@ class particle_species:
                             jnp.where(self.x3 < -self.z_wind/2, self.x3 + self.z_wind, self.x3))
 
     def reflecting_boundary_condition(self):
+        self.v1 = jnp.where((self.x1 >= self.x_wind/2) | (self.x1 <= -self.x_wind/2), -self.v1, self.v1)
 
-        self.v1 = jnp.where((self.x1 > self.x_wind/2) | (self.x1 < -self.x_wind/2), -self.v1, self.v1)
-        self.x1 = jnp.where(self.x1 > self.x_wind/2, self.x_wind/2, self.x1)
-        self.x1 = jnp.where(self.x1 < -self.x_wind/2, -self.x_wind/2, self.x1)
+        self.v2 = jnp.where((self.x2 >= self.y_wind/2) | (self.x2 <= -self.y_wind/2), -self.v2, self.v2)
 
-        self.v2 = jnp.where((self.x2 > self.y_wind/2) | (self.x2 < -self.y_wind/2), -self.v2, self.v2)
-        self.x2 = jnp.where(self.x2 > self.y_wind/2, self.y_wind/2, self.x2)
-        self.x2 = jnp.where(self.x2 < -self.y_wind/2, -self.y_wind/2, self.x2)
+        self.v3 = jnp.where((self.x3 >= self.z_wind/2) | (self.x3 <= -self.z_wind/2), -self.v3, self.v3)
 
-        self.v3 = jnp.where((self.x3 > self.z_wind/2) | (self.x3 < -self.z_wind/2), -self.v3, self.v3)
-        self.x3 = jnp.where(self.x3 > self.z_wind/2, self.z_wind/2, self.x3)
-        self.x3 = jnp.where(self.x3 < -self.z_wind/2, -self.z_wind/2, self.x3)
-
-
+   
     def update_position(self):
         if self.update_pos:
             if self.update_x:
@@ -613,6 +607,9 @@ class particle_species:
         elif self.bc == 'reflecting':
             self.reflecting_boundary_condition()
             # apply reflecting boundary conditions to the particles
+        elif self.bc == 'absorbing':
+            self.absorbing_boundary_condition()
+            # apply absorbing boundary conditions to the particles
 
     def tree_flatten(self):
         children = (
