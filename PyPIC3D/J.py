@@ -57,9 +57,26 @@ def J_from_rhov(particles, J, constants, world, grid):
         shape_factor = particles[0].get_shape()
         # assume all species have the same shape factor
 
-        x0 = jnp.round( (total_x - grid[0][0]) / dx).astype(int)
-        y0 = jnp.round( (total_y - grid[1][0]) / dy).astype(int)
-        z0 = jnp.round( (total_z - grid[2][0]) / dz).astype(int)
+        x0 = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (total_x - grid[0][0]) / dx).astype(int),
+            lambda _: jnp.round( (total_x - grid[0][0]) / dx).astype(int),
+            operand=None
+        )
+
+        y0 = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (total_y - grid[1][0]) / dy).astype(int),
+            lambda _: jnp.round( (total_y - grid[1][0]) / dy).astype(int),
+            operand=None
+        )
+
+        z0 = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (total_z - grid[2][0]) / dz).astype(int),
+            lambda _: jnp.round( (total_z - grid[2][0]) / dz).astype(int),
+            operand=None
+        )
         # calculate the nearest grid point based on shape factor
 
         x1 = wrap_around(x0+1, Nx)
