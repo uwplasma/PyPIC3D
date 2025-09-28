@@ -12,7 +12,7 @@ y_wind = 1
 z_wind = 1
 verbose = false
 electrostatic = false
-cfl = 0.5
+cfl = 0.99
 shape_factor = 2
 relativistic = true
 
