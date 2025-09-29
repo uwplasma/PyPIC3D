@@ -115,12 +115,15 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
 
         x_bc = 'periodic'
         if 'x_bc' in config[toml_key]:
+            assert config[toml_key]['x_bc'] in ['periodic', 'reflecting'], f"Invalid x boundary condition: {config[toml_key]['x_bc']}"
             x_bc = config[toml_key]['x_bc']
         y_bc = 'periodic'
         if 'y_bc' in config[toml_key]:
+            assert config[toml_key]['y_bc'] in ['periodic', 'reflecting'], f"Invalid y boundary condition: {config[toml_key]['y_bc']}"
             y_bc = config[toml_key]['y_bc']
         z_bc = 'periodic'
         if 'z_bc' in config[toml_key]:
+            assert config[toml_key]['z_bc'] in ['periodic', 'reflecting'], f"Invalid z boundary condition: {config[toml_key]['z_bc']}"
             z_bc = config[toml_key]['z_bc']
         # set the boundary conditions for the particle species
 
