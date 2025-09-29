@@ -637,16 +637,6 @@ class particle_species:
             self.v3 = jnp.where((self.x3 >= self.z_wind/2) | (self.x3 <= -self.z_wind/2), -self.v3, self.v3)
         # apply boundary conditions to the z position of the particles
 
-        # if self.bc == 'periodic':
-        #     self.periodic_boundary_condition()
-        #     # apply periodic boundary conditions to the particles
-        # elif self.bc == 'reflecting':
-        #     self.reflecting_boundary_condition()
-        #     # apply reflecting boundary conditions to the particles
-        # elif self.bc == 'absorbing':
-        #     self.absorbing_boundary_condition()
-        #     # apply absorbing boundary conditions to the particles
-
     def tree_flatten(self):
         children = (
             self.v1, self.v2, self.v3, \
