@@ -79,7 +79,7 @@ def default_parameters():
     simulation_parameters = {
         "name": "Default Simulation",
         "output_dir": os.getcwd(),
-        "solver": "fdfd",  # solver: spectral, fdtd, vector_potential, curl_curl
+        "solver": "fdtd",  # solver: spectral, fdtd, vector_potential, curl_curl
         "particle_bc": "periodic",  # particle boundary conditions: periodic, absorb, reflect
         # "bc": "periodic",  # boundary conditions: periodic, dirichlet, neumann
         "x_bc": "periodic",  # x boundary conditions: periodic, conducting
