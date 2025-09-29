@@ -14,8 +14,8 @@ from PyPIC3D.utils import digital_filter
 
 
 
-@partial(jit, static_argnames=("curl_func"))
-def update_E(E, B, J, world, constants, curl_func):
+@partial(jit, static_argnames=("curl_func", "x_bc", "y_bc", "z_bc"))
+def update_E(E, B, J, world, constants, curl_func, x_bc, y_bc, z_bc):
     """
     Update the electric field components (Ex, Ey, Ez) based on the given parameters.
 
@@ -76,8 +76,8 @@ def update_E(E, B, J, world, constants, curl_func):
     return (Ex, Ey, Ez)
 
 
-@partial(jit, static_argnames=("curl_func"))
-def update_B(E, B, world, constants, curl_func):
+@partial(jit, static_argnames=("curl_func", "x_bc", "y_bc", "z_bc"))
+def update_B(E, B, world, constants, curl_func, x_bc, y_bc, z_bc):
     """
     Update the magnetic field components (Bx, By, Bz) using the curl of the electric field.
 
@@ -107,6 +107,51 @@ def update_B(E, B, world, constants, curl_func):
     Ey = jnp.pad(Ey, 1, mode="wrap")
     Ez = jnp.pad(Ez, 1, mode="wrap")
     # pad the electric field components for periodic boundary conditions
+
+    ##### X BCs #####
+    Ey = jax.lax.cond(
+        x_bc == 'conducting',
+        lambda _: Ey.at[0, :, :].set(0.0).at[-1, :, :].set(0.0),
+        lambda _: Ey,
+        operand=None
+    )
+
+    Ez = jax.lax.cond(
+        x_bc == 'conducting',
+        lambda _: Ez.at[0, :, :].set(0.0).at[-1, :, :].set(0.0),
+        lambda _: Ez,
+        operand=None
+    )
+
+    #### Y BCs #####
+    Ex = jax.lax.cond(
+        y_bc == 'conducting',
+        lambda _: Ex.at[:, 0, :].set(0.0).at[:, -1, :].set(0.0),
+        lambda _: Ex,
+        operand=None
+    )
+
+    Ez = jax.lax.cond(
+        y_bc == 'conducting',
+        lambda _: Ez.at[:, 0, :].set(0.0).at[:, -1, :].set(0.0),
+        lambda _: Ez,
+        operand=None
+    )
+
+    #### Z BCs #####
+    Ex = jax.lax.cond(
+        z_bc == 'conducting',
+        lambda _: Ex.at[:, :, 0].set(0.0).at[:, :, -1].set(0.0),
+        lambda _: Ex,
+        operand=None
+    )
+
+    Ey = jax.lax.cond(
+        z_bc == 'conducting',
+        lambda _: Ey.at[:, :, 0].set(0.0).at[:, :, -1].set(0.0),
+        lambda _: Ey,
+        operand=None
+    )
 
     dEz_dy = (Ez[ 1:-1, 1:-1, 1:-1 ] - jnp.roll(Ez, shift=1, axis=1)[ 1:-1, 1:-1, 1:-1 ]) / dy
     dEx_dy = (Ex[ 1:-1, 1:-1, 1:-1 ] - jnp.roll(Ex, shift=1, axis=1)[ 1:-1, 1:-1, 1:-1 ]) / dy

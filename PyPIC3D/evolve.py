@@ -76,8 +76,8 @@ def time_loop_electrostatic(particles, fields, E_grid, B_grid, world, constants,
     return particles, fields
 
 
-@partial(jit, static_argnames=("curl_func", "J_func", "solver", "bc", "relativistic"))
-def time_loop_electrodynamic(particles, fields, vertex_grid, center_grid, world, constants, curl_func, J_func, solver, bc, relativistic=True):
+@partial(jit, static_argnames=("curl_func", "J_func", "solver", "x_bc", "y_bc", "z_bc", "relativistic"))
+def time_loop_electrodynamic(particles, fields, vertex_grid, center_grid, world, constants, curl_func, J_func, solver, x_bc, y_bc, z_bc, relativistic=True):
     """
     Advances the simulation by one time step using the electrodynamic Particle-In-Cell (PIC) method.
 
@@ -96,7 +96,7 @@ def time_loop_electrodynamic(particles, fields, vertex_grid, center_grid, world,
         curl_func (callable): Function to compute the curl of a field.
         J_func (callable): Function to compute the current density from particles.
         solver (object): Field solver object (not used directly in this function).
-        bc (object): Boundary condition handler (not used directly in this function).
+        bcs (list): List of boundary condition handlers for each spatial dimension.
 
     Returns:
         tuple: Updated particles list and fields tuple (E, B, J, rho, phi).
@@ -117,9 +117,9 @@ def time_loop_electrodynamic(particles, fields, vertex_grid, center_grid, world,
     ################ FIELD UPDATE ################################################################################################
     J = J_func(particles, J, constants, world, vertex_grid)
     # calculate the current density based on the selected method
-    E = update_E(E, B, J, world, constants, curl_func)
+    E = update_E(E, B, J, world, constants, curl_func, x_bc, y_bc, z_bc)
     # update the electric field using the curl of the magnetic field
-    B = update_B(E, B, world, constants, curl_func)
+    B = update_B(E, B, world, constants, curl_func, x_bc, y_bc, z_bc)
     # update the magnetic field using the curl of the electric field
 
     fields = (E, B, J, rho, phi)
