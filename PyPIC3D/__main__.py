@@ -37,13 +37,15 @@ def run_PyPIC3D(config_file):
     ##################################### INITIALIZE SIMULATION ################################################
 
     loop, particles, fields, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, \
-            plasma_parameters, solver, bc, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic = initialize_simulation(config_file)
+            plasma_parameters, solver, bcs, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic = initialize_simulation(config_file)
     # initialize the simulation
 
-    jit_loop = jax.jit(loop, static_argnames=('curl_func', 'J_func','solver', 'bc', 'relativistic'))
+    jit_loop = jax.jit(loop, static_argnames=('curl_func', 'J_func','solver', 'x_bc', 'y_bc', 'z_bc', 'relativistic'))
 
     dt = world['dt']
     output_dir = simulation_parameters['output_dir']
+    x_bc, y_bc, z_bc = bcs
+    # unpack relevant parameters
 
     scalar_field_names = ["rho", "mass_density"]
     vector_field_names = ["E", "B", "J"]
@@ -74,7 +76,8 @@ def run_PyPIC3D(config_file):
                 write_data(f"{output_dir}/data/{species.name}_kinetic_energy.txt", t * dt, species.kinetic_energy())
 
 
-            # write_particles_phase_space(particles, t, output_dir)
+            if plotting_parameters['plot_phasespace']:
+                write_particles_phase_space(particles, t, output_dir)
 
             rho = compute_rho(particles, rho, world, constants)
             # calculate the charge density based on the particle positions
@@ -87,17 +90,17 @@ def run_PyPIC3D(config_file):
             # Plot the scalar fields in VTK format
 
 
-            vector_field_slices = [ [E[0][:,:,world['Nz']//2], E[1][:,:,world['Nz']//2], E[2][:,:,world['Nz']//2]],
-                                   [B[0][:,:,world['Nz']//2], B[1][:,:,world['Nz']//2], B[2][:,:,world['Nz']//2]],
-                                   [J[0][:,:,world['Nz']//2], J[1][:,:,world['Nz']//2], J[2][:,:,world['Nz']//2]]]
-            plot_vectorfield_slice_vtk(vector_field_slices, vector_field_names, 2, E_grid, t, 'vector_field', output_dir, world)
+            vector_field_slices = [ [E[0][:,world['Ny']//2,:], E[1][:,world['Ny']//2,:], E[2][:,world['Ny']//2,:]],
+                                    [B[0][:,world['Ny']//2,:], B[1][:,world['Ny']//2,:], B[2][:,world['Ny']//2,:]],
+                                    [J[0][:,world['Ny']//2,:], J[1][:,world['Ny']//2,:], J[2][:,world['Ny']//2,:]]]
+            plot_vectorfield_slice_vtk(vector_field_slices, vector_field_names, 1, E_grid, t, 'vector_field', output_dir, world)
             # Plot the vector fields in VTK format
 
             if plotting_parameters['plot_vtk_particles']:
                 plot_vtk_particles(particles, t, output_dir)
             # Plot the particles in VTK format
 
-        particles, fields = jit_loop(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, bc, relativistic=relativistic)
+        particles, fields = jit_loop(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, x_bc, y_bc, z_bc, relativistic=relativistic)
         # time loop to update the particles and fields
 
     return Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles, fields, world

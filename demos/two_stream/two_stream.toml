@@ -2,7 +2,6 @@
 [simulation_parameters]
 name = "Demo of a TS instability with 3,000 electrons"
 t_wind = 5.413e-8
-bc = 'periodic'
 solver = 'fdtd'
 Nx = 100
 Ny = 1
@@ -20,7 +19,7 @@ relativistic = true
 
 [plotting]
 plotting_interval = 8
-
+plot_phasespace = true
 
 [particle1]
 name = "electron1"
