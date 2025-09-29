@@ -67,7 +67,7 @@ def default_parameters():
     "plotenergy": True,
     "plotcurrent": False,
     "plasmaFreq": False,
-    "phaseSpace": False,
+    "plot_phasespace": False,
     "plot_errors": False,
     "plot_dispersion": False,
     'plot_chargeconservation': False,
@@ -79,8 +79,12 @@ def default_parameters():
     simulation_parameters = {
         "name": "Default Simulation",
         "output_dir": os.getcwd(),
-        "solver": "spectral",  # solver: spectral, fdtd, vector_potential
-        "bc": "spectral",  # boundary conditions: periodic, dirichlet, neumann
+        "solver": "fdtd",  # solver: spectral, fdtd, vector_potential, curl_curl
+        "particle_bc": "periodic",  # particle boundary conditions: periodic, absorb, reflect
+        # "bc": "periodic",  # boundary conditions: periodic, dirichlet, neumann
+        "x_bc": "periodic",  # x boundary conditions: periodic, conducting
+        "y_bc": "periodic",  # y boundary conditions: periodic, conducting
+        "z_bc": "periodic",  # z boundary conditions: periodic, conducting
         "Nx": 30,  # number of array spacings in x
         "Ny": 30,  # number of array spacings in y
         "Nz": 30,  # number of array spacings in z
@@ -171,7 +175,7 @@ def initialize_simulation(toml_file):
     t_wind = simulation_parameters['t_wind']
     electrostatic = simulation_parameters['electrostatic']
     solver = simulation_parameters['solver']
-    bc = simulation_parameters['bc']
+    bcs = [simulation_parameters['x_bc'], simulation_parameters['y_bc'], simulation_parameters['z_bc']]
     relativistic = simulation_parameters['relativistic']
     verbose = simulation_parameters['verbose']
     GPUs = simulation_parameters['GPUs']
@@ -257,7 +261,7 @@ def initialize_simulation(toml_file):
     if solver == "spectral":
         curl_func = functools.partial(spectral_curl, world=world)
     else:
-        curl_func = functools.partial(centered_finite_difference_curl, dx=dx, dy=dy, dz=dz, bc=bc)
+        curl_func = functools.partial(centered_finite_difference_curl, dx=dx, dy=dy, dz=dz, bc="periodic")
 
 
     ######################### COMPUTE INITIAL ENERGY ########################################################
@@ -319,7 +323,7 @@ def initialize_simulation(toml_file):
 
 
     return evolve_loop, particles, fields, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, \
-        solver, bc, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic
+        solver, bcs, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic
 
 
 

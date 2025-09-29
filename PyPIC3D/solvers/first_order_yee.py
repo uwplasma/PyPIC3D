@@ -14,8 +14,8 @@ from PyPIC3D.utils import digital_filter
 
 
 
-@partial(jit, static_argnames=("curl_func"))
-def update_E(E, B, J, world, constants, curl_func):
+@partial(jit, static_argnames=("curl_func", "x_bc", "y_bc", "z_bc"))
+def update_E(E, B, J, world, constants, curl_func, x_bc, y_bc, z_bc):
     """
     Update the electric field components (Ex, Ey, Ez) based on the given parameters.
 
@@ -45,6 +45,10 @@ def update_E(E, B, J, world, constants, curl_func):
     eps = constants['eps']
     # get the time resolution and necessary constants
 
+    Bx = jnp.pad(Bx, ((1,1), (1,1), (1,1)), mode="wrap")
+    By = jnp.pad(By, ((1,1), (1,1), (1,1)), mode="wrap")
+    Bz = jnp.pad(Bz, ((1,1), (1,1), (1,1)), mode="wrap")
+    # pad the magnetic field components for periodic boundary conditions
 
     dBz_dy = (jnp.roll(Bz, shift=-1, axis=1) - Bz) / dy
     dBx_dy = (jnp.roll(Bx, shift=-1, axis=1) - Bx) / dy
@@ -53,9 +57,9 @@ def update_E(E, B, J, world, constants, curl_func):
     dBz_dx = (jnp.roll(Bz, shift=-1, axis=0) - Bz) / dx
     dBy_dx = (jnp.roll(By, shift=-1, axis=0) - By) / dx
 
-    curl_x = dBz_dy - dBy_dz
-    curl_y = dBx_dz - dBz_dx
-    curl_z = dBy_dx - dBx_dy
+    curl_x = (dBz_dy - dBy_dz)[1:-1,1:-1,1:-1]
+    curl_y = (dBx_dz - dBz_dx)[1:-1,1:-1,1:-1]
+    curl_z = (dBy_dx - dBx_dy)[1:-1,1:-1,1:-1]
     # calculate the curl of the magnetic field
 
     Ex = Ex + ( C**2 * curl_x - Jx / eps ) * dt
@@ -72,8 +76,8 @@ def update_E(E, B, J, world, constants, curl_func):
     return (Ex, Ey, Ez)
 
 
-@partial(jit, static_argnames=("curl_func"))
-def update_B(E, B, world, constants, curl_func):
+@partial(jit, static_argnames=("curl_func", "x_bc", "y_bc", "z_bc"))
+def update_B(E, B, world, constants, curl_func, x_bc, y_bc, z_bc):
     """
     Update the magnetic field components (Bx, By, Bz) using the curl of the electric field.
 
@@ -99,6 +103,76 @@ def update_B(E, B, world, constants, curl_func):
     Bx, By, Bz = B
     # unpack the E and B fields
 
+    Ex = jnp.pad(Ex, ((1,1), (1,1), (1,1)), mode="wrap")
+    Ey = jnp.pad(Ey, ((1,1), (1,1), (1,1)), mode="wrap")
+    Ez = jnp.pad(Ez, ((1,1), (1,1), (1,1)), mode="wrap")
+    # pad the electric field components for periodic boundary conditions
+
+    ##### X BCs #####
+    Ex = jax.lax.cond(
+        x_bc == 'conducting',
+        lambda _: Ex.at[1, :, :].set(0.0).at[-2, :, :].set(0.0),
+        lambda _: Ex,
+        operand=None
+    )
+
+    Ey = jax.lax.cond(
+        x_bc == 'conducting',
+        lambda _: Ey.at[0:2, :, :].set(0.0).at[-2:, :, :].set(0.0),
+        lambda _: Ey,
+        operand=None
+    )
+
+    Ez = jax.lax.cond(
+        x_bc == 'conducting',
+        lambda _: Ez.at[0:2, :, :].set(0.0).at[-2:, :, :].set(0.0),
+        lambda _: Ez,
+        operand=None
+    )
+
+    #### Y BCs #####
+    Ex = jax.lax.cond(
+        y_bc == 'conducting',
+        lambda _: Ex.at[:, 0:2, :].set(0.0).at[:, -2:, :].set(0.0),
+        lambda _: Ex,
+        operand=None
+    )
+
+    Ey = jax.lax.cond(
+        y_bc == 'conducting',
+        lambda _: Ey.at[:, 1, :].set(0.0).at[:, -2, :].set(0.0),
+        lambda _: Ey,
+        operand=None
+    )
+
+    Ez = jax.lax.cond(
+        y_bc == 'conducting',
+        lambda _: Ez.at[:, 0:2, :].set(0.0).at[:, -2:, :].set(0.0),
+        lambda _: Ez,
+        operand=None
+    )
+
+    #### Z BCs #####
+    Ex = jax.lax.cond(
+        z_bc == 'conducting',
+        lambda _: Ex.at[:, :, 0:2].set(0.0).at[:, :, -2:].set(0.0),
+        lambda _: Ex,
+        operand=None
+    )
+
+    Ey = jax.lax.cond(
+        z_bc == 'conducting',
+        lambda _: Ey.at[:, :, 0:2].set(0.0).at[:, :, -2:].set(0.0),
+        lambda _: Ey,
+        operand=None
+    )
+
+    Ez = jax.lax.cond(
+        z_bc == 'conducting',
+        lambda _: Ez.at[:, :, 1].set(0.0).at[:, :, -2].set(0.0),
+        lambda _: Ez,
+        operand=None
+    )
 
     dEz_dy = (Ez - jnp.roll(Ez, shift=1, axis=1)) / dy
     dEx_dy = (Ex - jnp.roll(Ex, shift=1, axis=1)) / dy
@@ -107,11 +181,10 @@ def update_B(E, B, world, constants, curl_func):
     dEz_dx = (Ez - jnp.roll(Ez, shift=1, axis=0)) / dx
     dEy_dx = (Ey - jnp.roll(Ey, shift=1, axis=0)) / dx
 
-
-    curl_x = dEz_dy - dEy_dz
-    curl_y = dEx_dz - dEz_dx
-    curl_z = dEy_dx - dEx_dy
-    # calculate the curl of the field
+    curl_x = (dEz_dy - dEy_dz)[1:-1,1:-1,1:-1]
+    curl_y = (dEx_dz - dEz_dx)[1:-1,1:-1,1:-1]
+    curl_z = (dEy_dx - dEx_dy)[1:-1,1:-1,1:-1]
+    # calculate the curl of the electric field
 
     Bx = Bx - dt*curl_x
     By = By - dt*curl_y

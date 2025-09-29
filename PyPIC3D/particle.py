@@ -113,10 +113,19 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         x, y, z, vx, vy, vz = initial_particles(N_per_cell, N_particles, xmin, xmax, ymin, ymax, zmin, zmax, mass, Tx, Ty, Tz, kb, key1, key2, key3)
         # initialize the positions and velocities of the particles
 
-        bc = 'periodic'
-        if 'bc' in config[toml_key]:
-            bc = config[toml_key]['bc']
-        # set the boundary condition
+        x_bc = 'periodic'
+        if 'x_bc' in config[toml_key]:
+            assert config[toml_key]['x_bc'] in ['periodic', 'reflecting'], f"Invalid x boundary condition: {config[toml_key]['x_bc']}"
+            x_bc = config[toml_key]['x_bc']
+        y_bc = 'periodic'
+        if 'y_bc' in config[toml_key]:
+            assert config[toml_key]['y_bc'] in ['periodic', 'reflecting'], f"Invalid y boundary condition: {config[toml_key]['y_bc']}"
+            y_bc = config[toml_key]['y_bc']
+        z_bc = 'periodic'
+        if 'z_bc' in config[toml_key]:
+            assert config[toml_key]['z_bc'] in ['periodic', 'reflecting'], f"Invalid z boundary condition: {config[toml_key]['z_bc']}"
+            z_bc = config[toml_key]['z_bc']
+        # set the boundary conditions for the particle species
 
         x = load_initial_positions('initial_x', config, toml_key, x, N_particles, dx, Nx, key1)
         y = load_initial_positions('initial_y', config, toml_key, y, N_particles, dy, Ny, key2)
@@ -171,7 +180,9 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
             dy=dy,
             dz=dz,
             weight=weight,
-            bc=bc,
+            x_bc=x_bc,
+            y_bc=y_bc,
+            z_bc=z_bc,
             update_vx=update_vx,
             update_vy=update_vy,
             update_vz=update_vz,
@@ -189,6 +200,7 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         dl = debye_length(particle, world, constants)
         print(f"Number of particles: {N_particles}")
         print(f"Number of particles per cell: {N_per_cell}")
+        print(f"x, y, z boundary conditions: {x_bc}, {y_bc}, {z_bc}")
         print(f"Charge: {charge}")
         print(f"Mass: {mass}")
         print(f"Temperature: {T}")
@@ -455,7 +467,8 @@ class particle_species:
 
 
     def __init__(self, name, N_particles, charge, mass, T, v1, v2, v3, x1, x2, x3, \
-            xwind, ywind, zwind, dx, dy, dz, weight=1, bc='periodic', update_x=True, update_y=True, update_z=True, \
+            xwind, ywind, zwind, dx, dy, dz, weight=1, x_bc="periodic", y_bc="periodic", \
+                z_bc="periodic", update_x=True, update_y=True, update_z=True, \
                 update_vx=True, update_vy=True, update_vz=True, update_pos=True, update_v=True, shape=1, dt = 0):
         self.name = name
         self.N_particles = N_particles
@@ -472,7 +485,10 @@ class particle_species:
         self.x_wind = xwind
         self.y_wind = ywind
         self.z_wind = zwind
-        self.bc = bc
+        self.x_bc = x_bc
+        self.y_bc = y_bc
+        self.z_bc = z_bc
+        # boundary conditions for each dimension
         self.update_x = update_x
         self.update_y = update_y
         self.update_z = update_z
@@ -573,20 +589,13 @@ class particle_species:
                             jnp.where(self.x3 < -self.z_wind/2, self.x3 + self.z_wind, self.x3))
 
     def reflecting_boundary_condition(self):
+        self.v1 = jnp.where((self.x1 >= self.x_wind/2) | (self.x1 <= -self.x_wind/2), -self.v1, self.v1)
 
-        self.v1 = jnp.where((self.x1 > self.x_wind/2) | (self.x1 < -self.x_wind/2), -self.v1, self.v1)
-        self.x1 = jnp.where(self.x1 > self.x_wind/2, self.x_wind/2, self.x1)
-        self.x1 = jnp.where(self.x1 < -self.x_wind/2, -self.x_wind/2, self.x1)
+        self.v2 = jnp.where((self.x2 >= self.y_wind/2) | (self.x2 <= -self.y_wind/2), -self.v2, self.v2)
 
-        self.v2 = jnp.where((self.x2 > self.y_wind/2) | (self.x2 < -self.y_wind/2), -self.v2, self.v2)
-        self.x2 = jnp.where(self.x2 > self.y_wind/2, self.y_wind/2, self.x2)
-        self.x2 = jnp.where(self.x2 < -self.y_wind/2, -self.y_wind/2, self.x2)
+        self.v3 = jnp.where((self.x3 >= self.z_wind/2) | (self.x3 <= -self.z_wind/2), -self.v3, self.v3)
 
-        self.v3 = jnp.where((self.x3 > self.z_wind/2) | (self.x3 < -self.z_wind/2), -self.v3, self.v3)
-        self.x3 = jnp.where(self.x3 > self.z_wind/2, self.z_wind/2, self.x3)
-        self.x3 = jnp.where(self.x3 < -self.z_wind/2, -self.z_wind/2, self.x3)
-
-
+   
     def update_position(self):
         if self.update_pos:
             if self.update_x:
@@ -607,12 +616,26 @@ class particle_species:
                 self.x3      = self.x3 + self.v3 * self.dt
                 # update the z position of the particles
 
-        if self.bc == 'periodic':
-            self.periodic_boundary_condition()
-            # apply periodic boundary conditions to the particles
-        elif self.bc == 'reflecting':
-            self.reflecting_boundary_condition()
-            # apply reflecting boundary conditions to the particles
+        if self.x_bc == 'periodic':
+            self.x1 = jnp.where(self.x1 > self.x_wind/2,  self.x1 - self.x_wind, \
+                            jnp.where(self.x1 < -self.x_wind/2, self.x1 + self.x_wind, self.x1))
+        elif self.x_bc == 'reflecting':
+            self.v1 = jnp.where((self.x1 >= self.x_wind/2) | (self.x1 <= -self.x_wind/2), -self.v1, self.v1)
+        # apply boundary conditions to the x position of the particles
+
+        if self.y_bc == 'periodic':
+            self.x2 = jnp.where(self.x2 > self.y_wind/2,  self.x2 - self.y_wind, \
+                            jnp.where(self.x2 < -self.y_wind/2, self.x2 + self.y_wind, self.x2))
+        elif self.y_bc == 'reflecting':
+            self.v2 = jnp.where((self.x2 >= self.y_wind/2) | (self.x2 <= -self.y_wind/2), -self.v2, self.v2)
+        # apply boundary conditions to the y position of the particles
+
+        if self.z_bc == 'periodic':
+            self.x3 = jnp.where(self.x3 > self.z_wind/2,  self.x3 - self.z_wind, \
+                            jnp.where(self.x3 < -self.z_wind/2, self.x3 + self.z_wind, self.x3))
+        elif self.z_bc == 'reflecting':
+            self.v3 = jnp.where((self.x3 >= self.z_wind/2) | (self.x3 <= -self.z_wind/2), -self.v3, self.v3)
+        # apply boundary conditions to the z position of the particles
 
     def tree_flatten(self):
         children = (
@@ -624,8 +647,9 @@ class particle_species:
         aux_data = (
             self.name, self.N_particles, self.charge, self.mass, self.T, \
             self.x_wind, self.y_wind, self.z_wind, self.dx, self.dy, self.dz, \
-            self.weight, self.bc, self.update_pos, self.update_v, self.update_x, self.update_y, \
-            self.update_z, self.update_vx, self.update_vy, self.update_vz, self.shape, self.dt
+            self.weight, self.x_bc, self.y_bc, self.z_bc, self.update_pos, self.update_v, \
+            self.update_x, self.update_y, self.update_z, self.update_vx, self.update_vy, \
+            self.update_vz, self.shape, self.dt
         )
         return children, aux_data
 
@@ -635,7 +659,7 @@ class particle_species:
 
 
         name, N_particles, charge, mass, T, x_wind, y_wind, z_wind, dx, dy, \
-            dz, weight, bc, update_pos, update_v, update_x, update_y, update_z, \
+            dz, weight, x_bc, y_bc, z_bc, update_pos, update_v, update_x, update_y, update_z, \
                 update_vx, update_vy, update_vz, shape, dt  = aux_data
 
 
@@ -658,7 +682,9 @@ class particle_species:
             dy=dy,
             dz=dz,
             weight=weight,
-            bc=bc,
+            x_bc=x_bc,
+            y_bc=y_bc,
+            z_bc=z_bc,
             update_x=update_x,
             update_y=update_y,
             update_z=update_z,
