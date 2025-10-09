@@ -169,6 +169,7 @@ def initialize_simulation(toml_file):
         simulation_parameters, plotting_parameters, constants = update_parameters_from_toml(toml_file, simulation_parameters, plotting_parameters, constants)
 
     print(f"Initializing Simulation: { simulation_parameters['name'] }\n")
+    print(f"Using boundary conditions: x: {simulation_parameters['x_bc']}, y: {simulation_parameters['y_bc']}, z: {simulation_parameters['z_bc']}\n")
 
     x_wind, y_wind, z_wind = simulation_parameters['x_wind'], simulation_parameters['y_wind'], simulation_parameters['z_wind']
     Nx, Ny, Nz = simulation_parameters['Nx'], simulation_parameters['Ny'], simulation_parameters['Nz']

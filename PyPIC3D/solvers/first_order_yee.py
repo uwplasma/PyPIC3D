@@ -67,6 +67,68 @@ def update_E(E, B, J, world, constants, curl_func, x_bc, y_bc, z_bc):
     Ez = Ez + ( C**2 * curl_z - Jz / eps ) * dt
     # update the electric field from Maxwell's equations
 
+    ### Conducting Boundaries ####
+    
+    ### X BC ###
+    Ey = lax.cond(
+        x_bc == 'conducting',
+        lambda Ey: Ey.at[0,:,:].set(0.0).at[-1,:,:].set(0.0).at[-2,:,:].set(0.0),
+        # the left inner cell next to the boundary to 0,
+        # and the right 2 inner cells next to the boundary to 0
+        lambda Ey: Ey,
+        operand=Ey
+    )
+
+    Ez = lax.cond(
+        x_bc == 'conducting',
+        lambda Ez: Ez.at[0,:,:].set(0.0).at[-1,:,:].set(0.0).at[-2,:,:].set(0.0),
+        # the left inner cell next to the boundary to 0,
+        # and the right 2 inner cells next to the boundary to 0
+        lambda Ez: Ez,
+        operand=Ez
+    )
+    # set Ey and Ez to 0 at the x boundaries for conducting boundaries
+
+    ### Y BC ###
+    Ex = lax.cond(
+        y_bc == 'conducting',
+        lambda Ex: Ex.at[:,0,:].set(0.0).at[:,-1,:].set(0.0).at[:,-2,:].set(0.0),
+        # the left inner cell next to the boundary to 0,
+        # and the right 2 inner cells next to the boundary to 0
+        lambda Ex: Ex,
+        operand=Ex
+    )
+
+    Ez = lax.cond(
+        y_bc == 'conducting',
+        lambda Ez: Ez.at[:,0,:].set(0.0).at[:,-1,:].set(0.0).at[:,-2,:].set(0.0),
+        # the left inner cell next to the boundary to 0,
+        # and the right 2 inner cells next to the boundary to 0
+        lambda Ez: Ez,
+        operand=Ez
+    )
+    # set Ex and Ez to 0 at the y boundaries for conducting boundaries
+
+    ### Z BC ###
+    Ex = lax.cond(
+        z_bc == 'conducting',
+        lambda Ex: Ex.at[:,:,0].set(0.0).at[:,:,-1].set(0.0).at[:,:,-2].set(0.0),
+        # the left inner cell next to the boundary to 0,
+        # and the right 2 inner cells next to the boundary to 0
+        lambda Ex: Ex,
+        operand=Ex
+    )
+
+    Ey = lax.cond(
+        z_bc == 'conducting',
+        lambda Ey: Ey.at[:,:,0].set(0.0).at[:,:,-1].set(0.0).at[:,:,-2].set(0.0),
+        # the left inner cell next to the boundary to 0,
+        # and the right 2 inner cells next to the boundary to 0
+        lambda Ey: Ey,
+        operand=Ey
+    )
+    # set Ex and Ey to 0 at the z boundaries for conducting boundaries
+
     alpha = constants['alpha']
     Ex = digital_filter(Ex, alpha)
     Ey = digital_filter(Ey, alpha)
@@ -107,72 +169,6 @@ def update_B(E, B, world, constants, curl_func, x_bc, y_bc, z_bc):
     Ey = jnp.pad(Ey, ((1,1), (1,1), (1,1)), mode="wrap")
     Ez = jnp.pad(Ez, ((1,1), (1,1), (1,1)), mode="wrap")
     # pad the electric field components for periodic boundary conditions
-
-    ##### X BCs #####
-    Ex = jax.lax.cond(
-        x_bc == 'conducting',
-        lambda _: Ex.at[1, :, :].set(0.0).at[-2, :, :].set(0.0),
-        lambda _: Ex,
-        operand=None
-    )
-
-    Ey = jax.lax.cond(
-        x_bc == 'conducting',
-        lambda _: Ey.at[0:2, :, :].set(0.0).at[-2:, :, :].set(0.0),
-        lambda _: Ey,
-        operand=None
-    )
-
-    Ez = jax.lax.cond(
-        x_bc == 'conducting',
-        lambda _: Ez.at[0:2, :, :].set(0.0).at[-2:, :, :].set(0.0),
-        lambda _: Ez,
-        operand=None
-    )
-
-    #### Y BCs #####
-    Ex = jax.lax.cond(
-        y_bc == 'conducting',
-        lambda _: Ex.at[:, 0:2, :].set(0.0).at[:, -2:, :].set(0.0),
-        lambda _: Ex,
-        operand=None
-    )
-
-    Ey = jax.lax.cond(
-        y_bc == 'conducting',
-        lambda _: Ey.at[:, 1, :].set(0.0).at[:, -2, :].set(0.0),
-        lambda _: Ey,
-        operand=None
-    )
-
-    Ez = jax.lax.cond(
-        y_bc == 'conducting',
-        lambda _: Ez.at[:, 0:2, :].set(0.0).at[:, -2:, :].set(0.0),
-        lambda _: Ez,
-        operand=None
-    )
-
-    #### Z BCs #####
-    Ex = jax.lax.cond(
-        z_bc == 'conducting',
-        lambda _: Ex.at[:, :, 0:2].set(0.0).at[:, :, -2:].set(0.0),
-        lambda _: Ex,
-        operand=None
-    )
-
-    Ey = jax.lax.cond(
-        z_bc == 'conducting',
-        lambda _: Ey.at[:, :, 0:2].set(0.0).at[:, :, -2:].set(0.0),
-        lambda _: Ey,
-        operand=None
-    )
-
-    Ez = jax.lax.cond(
-        z_bc == 'conducting',
-        lambda _: Ez.at[:, :, 1].set(0.0).at[:, :, -2].set(0.0),
-        lambda _: Ez,
-        operand=None
-    )
 
     dEz_dy = (Ez - jnp.roll(Ez, shift=1, axis=1)) / dy
     dEx_dy = (Ex - jnp.roll(Ex, shift=1, axis=1)) / dy
