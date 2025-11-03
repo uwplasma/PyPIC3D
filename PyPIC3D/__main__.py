@@ -5,6 +5,7 @@
 
 ########################################## IMPORT LIBRARIES #############################################
 from sys import path
+import os
 import time
 import jax
 from jax import block_until_ready
@@ -14,7 +15,7 @@ from tqdm import tqdm
 # Importing relevant libraries
 
 from PyPIC3D.plotting import (
-    plotter, write_particles_phase_space, write_data, plot_vtk_particles, plot_field_slice_vtk,
+    write_particles_phase_space, write_data, plot_vtk_particles, plot_field_slice_vtk,
     plot_vectorfield_slice_vtk
 )
 
@@ -26,7 +27,7 @@ from PyPIC3D.initialization import (
     initialize_simulation
 )
 
-from PyPIC3D.rho import compute_rho, compute_mass_density
+from PyPIC3D.rho import compute_rho, compute_mass_density, compute_velocity_field
 
 
 # Importing functions from the PyPIC3D package
@@ -85,8 +86,8 @@ def run_PyPIC3D(config_file):
             mass_density = compute_mass_density(particles, rho, world)
             # calculate the mass density based on the particle positions
 
-            fields_mag = [rho[:,:,world['Nz']//2], mass_density[:,:,world['Nz']//2]]
-            plot_field_slice_vtk(fields_mag, scalar_field_names, 2, E_grid, t, "scalar_field", output_dir, world)
+            fields_mag = [rho[:,world['Ny']//2,:], mass_density[:,world['Ny']//2,:]]
+            plot_field_slice_vtk(fields_mag, scalar_field_names, 1, E_grid, t, "scalar_field", output_dir, world)
             # Plot the scalar fields in VTK format
 
 
@@ -102,6 +103,7 @@ def run_PyPIC3D(config_file):
 
         particles, fields = jit_loop(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, x_bc, y_bc, z_bc, relativistic=relativistic)
         # time loop to update the particles and fields
+
 
     return Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles, fields, world
 

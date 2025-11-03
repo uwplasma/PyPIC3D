@@ -16,6 +16,11 @@ from scipy import stats
 # import external libraries
 
 @jit
+def wrap_around(ix, size):
+    """Wrap around index (scalar or 1D array) to ensure it is within bounds."""
+    return jnp.where(ix > size - 1, ix - size, ix)
+
+@jit
 def digital_filter(phi, alpha):
     """
     Apply a digital filter to a field.
