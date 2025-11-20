@@ -6,7 +6,6 @@ import jax
 # import external libraries
 
 from PyPIC3D.initialization import initialize_simulation
-from PyPIC3D.plotting import plotter
 # import functions from the PyPIC3D package
 
 class PyPIC3DExperiment(epyc.Experiment):
@@ -48,8 +47,6 @@ class PyPIC3DExperiment(epyc.Experiment):
         for t in tqdm(range(Nt)):
             particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi = loop(particles, (Ex, Ey, Ez), (Bx, By, Bz), (Jx, Jy, Jz), rho, phi)
             # time loop to update the particles and fields
-            plotter(t, particles, Ex, Ey, Ez, Bx, By, Bz, Jx, Jy, Jz, rho, phi, E_grid, B_grid, world, constants, plotting_parameters, simulation_parameters, solver, bc)
-            # plot the data
 
         end = time.time()
         duration = end - start
