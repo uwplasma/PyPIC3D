@@ -286,7 +286,8 @@ def compute_velocity_field(particles, field, direction, world):
         vx, vy, vz = species.get_velocity()
         # get the velocity of the particles in the species
 
-        dv = jnp.array([vx, vy, vz])[direction] / dx / dy / dz
+
+        dv = jnp.array([vx, vy, vz])[direction] / N_particles
         # select the velocity component based on the direction
 
         x0 = jnp.floor((x + x_wind / 2) / dx).astype(int)

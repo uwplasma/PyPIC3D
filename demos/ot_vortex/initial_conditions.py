@@ -24,8 +24,8 @@ Bx = -B0 * np.sin(2 * np.pi * Y / y_wind)
 By = B0 * np.sin(4 * np.pi * X / x_wind)
 # components of the magnetic field
 
-N_particles = 500000
-N_ions      = 500000
+N_particles = 1000000
+N_ions      = 1000000
 # number of particles
 
 electron_x = np.random.uniform(-x_wind / 2, x_wind / 2, N_particles)
