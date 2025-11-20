@@ -5,7 +5,7 @@ from functools import partial
 from jax import lax
 # import external libraries
 
-from PyPIC3D.utils import digital_filter
+from PyPIC3D.utils import digital_filter, wrap_around
 
 @jit
 def J_from_rhov(particles, J, constants, world, grid):
@@ -124,13 +124,9 @@ def J_from_rhov(particles, J, constants, world, grid):
 
     return J
 
-@jit
-def wrap_around(ix, size):
-    """Wrap around index (scalar or 1D array) to ensure it is within bounds."""
-    return jnp.where(ix > size - 1, ix - size, ix)
-
 
 def Esirkepov_current(particles, J, constants, world, grid):
+    # NOT FUNCTION YET!
 
     Jx, Jy, Jz = J
     # unpack the values of J

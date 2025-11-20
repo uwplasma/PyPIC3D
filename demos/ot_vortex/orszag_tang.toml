@@ -30,7 +30,7 @@ path = "By.npy"
 
 [particle1]
 name = "electrons"
-N_particles = 500000
+N_particles = 1000000
 ds_per_debye = 1.0
 charge = -1.602e-19
 mass   = 9.1093837e-31
@@ -44,7 +44,7 @@ initial_vz = 'electron_vz.npy'
 
 [particle2]
 name = "ions"
-N_particles = 500000
+N_particles = 1000000
 charge = 1.602e-19
 mass = 1.67e-27
 initial_x = 'ion_x.npy'
