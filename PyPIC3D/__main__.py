@@ -51,11 +51,12 @@ def run_PyPIC3D(config_file):
     scalar_field_names = ["rho", "mass_density"]
     vector_field_names = ["E", "B", "J"]
 
-
     E, B, J, rho, *rest = fields
     # unpack the fields
     e_energy, b_energy, kinetic_energy = compute_energy(particles, E, B, world, constants)
+    # Compute the energy of the system
     initial_energy = e_energy + b_energy + kinetic_energy
+
 
     ############################################################################################################
 
@@ -70,7 +71,7 @@ def run_PyPIC3D(config_file):
             e_energy, b_energy, kinetic_energy = compute_energy(particles, E, B, world, constants)
             # Compute the energy of the system
             write_data(f"{output_dir}/data/total_energy.txt", t * dt, e_energy + b_energy + kinetic_energy)
-            write_data(f"{output_dir}/data/energy_error.txt", t * dt, abs( (e_energy + b_energy + kinetic_energy - initial_energy ) / initial_energy ) )
+            write_data(f"{output_dir}/data/energy_error.txt", t * dt, abs( initial_energy - (e_energy + b_energy + kinetic_energy)) / initial_energy)
             write_data(f"{output_dir}/data/electric_field_energy.txt", t * dt, e_energy)
             write_data(f"{output_dir}/data/magnetic_field_energy.txt", t * dt, b_energy)
             write_data(f"{output_dir}/data/kinetic_energy.txt", t * dt, kinetic_energy)
