@@ -115,9 +115,9 @@ class TestParticleMethods(unittest.TestCase):
             mass = self.mass,
             weight = 1.0,
             T = self.T,
-            v1 = jnp.array([1.0, 2.0, 3.0]),
-            v2 = jnp.array([1.0, 2.0, 3.0]),
-            v3 = jnp.array([1.0, 2.0, 3.0]),
+            v1 = jnp.array([0.0, 0.0, 0.0]),
+            v2 = jnp.array([0.0, 0.0, 0.0]),
+            v3 = jnp.array([0.0, 0.0, 0.0]),
             x1 = x1,
             x2 = x2,
             x3 = x3,
@@ -129,7 +129,6 @@ class TestParticleMethods(unittest.TestCase):
             zwind = self.z_wind,
         )
 
-        species.periodic_boundary_condition()
         x, y, z = species.get_position()
         self.assertTrue(jnp.all(x == jnp.array([-4.5, 4.0, 0.0])))
         self.assertTrue(jnp.all(y == jnp.array([-4.5, 4.0, 0.0])))
@@ -178,7 +177,7 @@ class TestParticleMethods(unittest.TestCase):
         )
 
         species.update_position()
-        x, y, z = species.get_position()
+        x, y, z = species.get_forward_position()
         self.assertTrue(jnp.allclose(x, jnp.array([1.1, 2.2, 3.3])))
         self.assertTrue(jnp.allclose(y, jnp.array([1.1, 2.2, 3.3])))
         self.assertTrue(jnp.allclose(z, jnp.array([1.1, 2.2, 3.3])))
@@ -282,12 +281,12 @@ class TestParticleMethods(unittest.TestCase):
         self.assertEqual(species.get_charge(), 1.0)
         self.assertEqual(species.get_number_of_particles(), self.N_particles)
         self.assertTrue(jnp.all(species.get_velocity()[0] == jnp.ones(self.N_particles)))
-        self.assertTrue(jnp.all(species.get_position()[0] == jnp.zeros(self.N_particles)))
+        self.assertTrue(jnp.all(species.get_forward_position()[0] == jnp.zeros(self.N_particles)))
         self.assertEqual(species.get_mass(), self.mass)
         species.set_velocity(jnp.zeros(self.N_particles), jnp.zeros(self.N_particles), jnp.zeros(self.N_particles))
         self.assertTrue(jnp.all(species.get_velocity()[0] == jnp.zeros(self.N_particles)))
         species.set_position(jnp.ones(self.N_particles), jnp.ones(self.N_particles), jnp.ones(self.N_particles))
-        self.assertTrue(jnp.all(species.get_position()[0] == jnp.ones(self.N_particles)))
+        self.assertTrue(jnp.all(species.get_forward_position()[0] == jnp.ones(self.N_particles)))
         species.set_mass(2.0)
         self.assertEqual(species.get_mass(), 2.0)
         self.assertAlmostEqual(species.kinetic_energy(), 0.0)

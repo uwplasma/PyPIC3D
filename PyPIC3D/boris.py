@@ -25,7 +25,7 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic
     """
     q = particles.get_charge()
     m = particles.get_mass()
-    x, y, z = particles.get_backward_position()
+    x, y, z = particles.get_forward_position()
     vx, vy, vz = particles.get_velocity()
     # get the charge, mass, position, and velocity of the particles
 

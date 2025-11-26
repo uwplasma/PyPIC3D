@@ -524,20 +524,32 @@ class particle_species:
     def get_velocity(self):
         return self.v1, self.v2, self.v3
 
-    def get_backward_position(self):
+    def get_forward_position(self):
+        return self.x1, self.x2, self.x3
+
+    def get_position(self):
         x1_back = self.x1 - self.v1 * self.dt / 2
         x2_back = self.x2 - self.v2 * self.dt / 2
         x3_back = self.x3 - self.v3 * self.dt / 2
+        # moving the forward positions back half a time step to get x_t positions
+
+        # boundary conditions
+        if self.x_bc == 'periodic':
+            x1_back = jnp.where(x1_back > self.x_wind/2,  x1_back - self.x_wind, \
+                            jnp.where(x1_back < -self.x_wind/2, x1_back + self.x_wind, x1_back))
+        # apply boundary conditions to the x position of the particles
+
+        if self.y_bc == 'periodic':
+            x2_back = jnp.where(x2_back > self.y_wind/2,  x2_back - self.y_wind, \
+                            jnp.where(x2_back < -self.y_wind/2, x2_back + self.y_wind, x2_back))
+        # apply boundary conditions to the y position of the particles
+
+        if self.z_bc == 'periodic':
+            x3_back = jnp.where(x3_back > self.z_wind/2,  x3_back - self.z_wind, \
+                            jnp.where(x3_back < -self.z_wind/2, x3_back + self.z_wind, x3_back))
+        # apply boundary conditions to the z position of the particles
+
         return x1_back, x2_back, x3_back
-
-    def get_forward_position(self):
-        x1_forward = self.x1 + self.v1 * self.dt / 2
-        x2_forward = self.x2 + self.v2 * self.dt / 2
-        x3_forward = self.x3 + self.v3 * self.dt / 2
-        return x1_forward, x2_forward, x3_forward
-
-    def get_position(self):
-        return self.x1, self.x2, self.x3
 
     def get_mass(self):
         return self.mass*self.weight
@@ -579,22 +591,6 @@ class particle_species:
 
     def momentum(self):
         return self.mass * self.weight * jnp.sum(jnp.sqrt(self.v1**2 + self.v2**2 + self.v3**2))
-
-    def periodic_boundary_condition(self):
-        self.x1 = jnp.where(self.x1 > self.x_wind/2,  self.x1 - self.x_wind, \
-                            jnp.where(self.x1 < -self.x_wind/2, self.x1 + self.x_wind, self.x1))
-        self.x2 = jnp.where(self.x2 > self.y_wind/2,  self.x2 - self.y_wind, \
-                            jnp.where(self.x2 < -self.y_wind/2, self.x2 + self.y_wind, self.x2))
-        self.x3 = jnp.where(self.x3 > self.z_wind/2,  self.x3 - self.z_wind, \
-                            jnp.where(self.x3 < -self.z_wind/2, self.x3 + self.z_wind, self.x3))
-
-    def reflecting_boundary_condition(self):
-        self.v1 = jnp.where((self.x1 >= self.x_wind/2) | (self.x1 <= -self.x_wind/2), -self.v1, self.v1)
-
-        self.v2 = jnp.where((self.x2 >= self.y_wind/2) | (self.x2 <= -self.y_wind/2), -self.v2, self.v2)
-
-        self.v3 = jnp.where((self.x3 >= self.z_wind/2) | (self.x3 <= -self.z_wind/2), -self.v3, self.v3)
-
    
     def update_position(self):
         if self.update_pos:
