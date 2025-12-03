@@ -9,9 +9,11 @@ from PyPIC3D.particle import (
     initial_particles, particle_species
 )
 
-from PyPIC3D.J import J_from_rhov
+from PyPIC3D.J import J_from_rhov, Esirkepov_current
 
 from PyPIC3D.rho import compute_rho
+
+from PyPIC3D.solvers.fdtd import centered_finite_difference_divergence
 
 jax.config.update("jax_enable_x64", True)
 
@@ -351,6 +353,93 @@ class TestParticleMethods(unittest.TestCase):
         self.assertTrue(jnp.allclose(num_J[0], J_exp[0]))
         self.assertTrue(jnp.allclose(num_J[1], J_exp[1]))
         self.assertTrue(jnp.allclose(num_J[2], J_exp[2]))
+
+
+    def test_Esirkepov_current(self):
+
+        T = 300.0  # Temperature in Kelvin
+        N_particles = 5000
+        
+        x = jax.random.uniform(self.key1, (N_particles,), minval=-self.x_wind/2, maxval=self.x_wind/2)
+        y = jax.random.uniform(self.key2, (N_particles,), minval=-self.y_wind/2, maxval=self.y_wind/2)
+        z = jax.random.uniform(self.key3, (N_particles,), minval=-self.z_wind/2, maxval=self.z_wind/2)
+        # define particle position
+        sigma = jnp.sqrt(self.kb * T / self.mass)
+        key_vx, key_vy, key_vz = jax.random.split(self.key1, 3)
+        vx = sigma * jax.random.normal(key_vx, (N_particles,))
+        vy = sigma * jax.random.normal(key_vy, (N_particles,))
+        vz = sigma * jax.random.normal(key_vz, (N_particles,))
+        # define particle position and velocity
+
+        Nx = 100
+        Ny = 100
+        Nz = 100
+        dx = self.x_wind / Nx
+        dy = self.y_wind / Ny
+        dz = self.z_wind / Nz
+        # uniform spatial resolution in xyz
+
+        species = particle_species(
+            name="test",
+            N_particles=N_particles,
+            charge=1.0,
+            mass=self.mass,
+            weight=1.0,
+            T=T,
+            v1 = vx,
+            v2 = vy,
+            v3 = vz,
+            x1=x,
+            x2=y,
+            x3=z,
+            dx=1.0,
+            dy=1.0,
+            dz=1.0,
+            dt=self.dt,
+            xwind=self.x_wind,
+            ywind=self.y_wind,
+            zwind=self.z_wind,
+        )
+
+        constants = {'C': 3e8, 'alpha' : 1.0}
+        world = {'dx': dx, 'dy': dy, 'dz': dz, 'Nx': 10, 'Ny': 10, 'Nz': 10, 'x_wind': self.x_wind, 'y_wind': self.y_wind, 'z_wind': self.z_wind, 'dt': self.dt}
+        # define constants and world parameters
+
+        grid = jnp.arange(-self.x_wind/2, self.x_wind/2, dx), jnp.arange(-self.y_wind/2, self.y_wind/2, dy), jnp.arange(-self.z_wind/2, self.z_wind/2, dz)
+        # grid for the simulation
+
+        rho = jnp.zeros((Nx,Ny,Nz))
+        rho = compute_rho([species], rho, world, constants)
+        # compute initial rho
+
+        species.update_position()
+        # update particle positions
+
+        rho_new = jnp.zeros((Nx,Ny,Nz))
+        rho_new = compute_rho([species], rho_new, world, constants)
+        # compute new rho
+
+        drhodt = (rho_new - rho) / self.dt
+        # compute drho/dt
+        
+        Jx = jnp.zeros((Nx,Ny,Nz))
+        Jy = jnp.zeros((Nx,Ny,Nz))
+        Jz = jnp.zeros((Nx,Ny,Nz))
+        J  = (Jx, Jy, Jz)
+
+        J = Esirkepov_current([species], J, constants, world, grid)
+        # compute J using Esirkepov method
+
+        div_J = centered_finite_difference_divergence(J[0], J[1], J[2], dx, dy, dz, bc='periodic')
+
+        continuity = div_J + drhodt
+        max_continuity = jnp.max(jnp.abs(continuity))
+        mean_continuity = jnp.mean(jnp.abs(continuity))
+
+        self.assertLess(max_continuity, 1e-2)
+        self.assertLess(mean_continuity, 5e-5)
+        
+
 
     def test_rho(self):
         x = jnp.array([0.0])
