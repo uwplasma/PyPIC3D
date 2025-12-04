@@ -528,8 +528,9 @@ def get_2D_esirkepov_weights(x_weights, y_weights, z_weights, old_x_weights, old
 def get_1D_esirkepov_weights(x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights, N_particles, dim=0):
 
     Wx_ = jnp.zeros( (len(x_weights),len(y_weights),len(z_weights), N_particles) )
-    Wy_ = jnp.zeros( (len(y_weights),len(x_weights),len(z_weights), N_particles) )
-    Wz_ = jnp.zeros( (len(z_weights),len(x_weights),len(y_weights), N_particles) )
+    Wy_ = jnp.zeros_like( Wx_)
+    Wz_ = jnp.zeros_like( Wx_)
+    # initialize the weight arrays
 
 
     for i in range(len(x_weights)):
