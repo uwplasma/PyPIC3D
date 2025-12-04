@@ -58,6 +58,9 @@ def run_PyPIC3D(config_file):
     initial_energy = e_energy + b_energy + kinetic_energy
 
 
+    Jxs = []
+
+
     ############################################################################################################
 
     ###################################################### SIMULATION LOOP #####################################
@@ -66,6 +69,8 @@ def run_PyPIC3D(config_file):
 
         # plot the data
         if t % plotting_parameters['plotting_interval'] == 0:
+            Jxs.append(J[0])
+
             E, B, J, rho, *rest = fields
             # unpack the fields
             e_energy, b_energy, kinetic_energy = compute_energy(particles, E, B, world, constants)
@@ -111,6 +116,8 @@ def run_PyPIC3D(config_file):
 
         particles, fields = jit_loop(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, x_bc, y_bc, z_bc, relativistic=relativistic)
         # time loop to update the particles and fields
+
+        jnp.save(f"{output_dir}/Jx.npy", jnp.asarray(Jxs) )
 
 
     return Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles, fields, world

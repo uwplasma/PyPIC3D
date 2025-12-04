@@ -297,8 +297,8 @@ def initialize_simulation(toml_file):
     # set the evolve loop function based on the electrostatic flag
 
     if simulation_parameters['current_calculation'] == "esirkepov":
-        # print("Using Esirkepov current calculation method")
-        raise NotImplementedError("Esirkepov current calculation method is not fully functional yet.")
+        print("Using Esirkepov current calculation method")
+        # raise NotImplementedError("Esirkepov current calculation method is not fully functional yet.")
         J_func = Esirkepov_current
     elif simulation_parameters['current_calculation'] == "j_from_rhov":
         print("Using J from rhov current calculation method")

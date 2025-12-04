@@ -141,6 +141,9 @@ def Esirkepov_current(particles, J, constants, world, grid):
     # get the grid spacing parameters
     dt = world['dt']
     # get the time step
+
+    # jax.debug.print("resolution dx, dy, dz: {}, {}, {}", dx, dy, dz)
+
     C = constants['C']
     # speed of light
     Nx, Ny, Nz = Jx.shape
@@ -184,21 +187,21 @@ def Esirkepov_current(particles, J, constants, world, grid):
         dJx = jax.lax.cond(
             Nx == 1,
             lambda _: q * vx / (dx*dy*dz),
-            lambda _: -q / (dy*dz) / dt * jnp.ones(N_particles),
+            lambda _: q / (dy*dz) / dt * jnp.ones(N_particles),
             operand=None
         )
 
         dJy = jax.lax.cond(
             Ny == 1,
             lambda _: q * vy / (dx*dy*dz),
-            lambda _: -q / (dx*dz) / dt * jnp.ones(N_particles),
+            lambda _: q / (dx*dz) / dt * jnp.ones(N_particles),
             operand=None
         )
 
         dJz = jax.lax.cond(
             Nz == 1,
             lambda _: q * vz / (dx*dy*dz),
-            lambda _: -q / (dx*dy) / dt * jnp.ones(N_particles),
+            lambda _: q / (dx*dy) / dt * jnp.ones(N_particles),
             operand=None
         )
         # calculate the current differential
@@ -402,11 +405,14 @@ def Esirkepov_current(particles, J, constants, world, grid):
 
     for i in range(Nx):
         Jx = Jx.at[i, :, :].add( global_Wx[i, :, :] + Jx.at[i-1, :, :].get(), mode='drop')
-    for j in range(Ny):
-        Jy = Jy.at[:, j, :].add( global_Wy[:, j, :] + Jy.at[:, j-1, :].get(), mode='drop')
-    for k in range(Nz):
-        Jz = Jz.at[:, :, k].add( global_Wz[:, :, k] + Jz.at[:, :, k-1].get(), mode='drop')
-    # accumulate the global weights into the current density arrays
+    # for j in range(Ny):
+    #     Jy = Jy.at[:, j, :].add( global_Wy[:, j, :] + Jy.at[:, j-1, :].get(), mode='drop')
+    # for k in range(Nz):
+    #     Jz = Jz.at[:, :, k].add( global_Wz[:, :, k] + Jz.at[:, :, k-1].get(), mode='drop')
+    # # accumulate the global weights into the current density arrays
+
+    # sum_Wx = jnp.sum(global_Wx)
+    # jax.debug.print("Sum of Jx contributions from Esirkepov method: {}", sum_Wx)
 
 
     alpha = constants['alpha']
@@ -537,71 +543,43 @@ def get_1D_esirkepov_weights(x_weights, y_weights, z_weights, old_x_weights, old
     Wz_ = jnp.zeros_like( Wx_)
     # initialize the weight arrays
 
+    def x_active(Wx_, Wy_, Wz_, x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights):
+        for i in range(len(x_weights)):
+            Wx_ = Wx_.at[i, 2, 2, :].set( (x_weights[i] - old_x_weights[i]) )
+            Wy_ = Wy_.at[i, 2, 2, :].set( (y_weights[i] + old_y_weights[i]) / 2 )
+            Wz_ = Wz_.at[i, 2, 2, :].set( (z_weights[i] + old_z_weights[i]) / 2 )
+        # weights if x direction is active
+        return Wx_, Wy_, Wz_
 
-    for i in range(len(x_weights)):
+    def y_active(Wx_, Wy_, Wz_, x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights):
         for j in range(len(y_weights)):
-            for k in range(len(z_weights)):
-
-                factor = lax.cond(
-                    dim == 0,
-                    # if the 1D line is in the x direction
-                    lambda _: x_weights[i] - old_x_weights[i],
-
-                    # if the 1D line is in the y or z direction
-                    lambda _: lax.cond(
-                                    dim == 1,
-                                    # if the 1D line is in the y direction
-                                    lambda _: 1/2 * (y_weights[j] + old_y_weights[j]),
-                                    # if the 1D line is in the z direction
-                                    lambda _: 1/2 * (z_weights[k] + old_z_weights[k]),
-                                    operand=None
-                                        ),
+            Wx_ = Wx_.at[2, j, 2, :].set( (x_weights[j] + old_x_weights[j]) / 2 )
+            Wy_ = Wy_.at[2, j, 2, :].set( (y_weights[j] - old_y_weights[j]) )
+            Wz_ = Wz_.at[2, j, 2, :].set( (z_weights[j] + old_z_weights[j]) / 2 )
+        # weights if y direction is active
+        return Wx_, Wy_, Wz_
     
-                    operand=None
-                )
-                Wx_ = Wx_.at[i,j,k,:].set( factor )
-
-
-                
-                factor = lax.cond(
-                    dim == 1,
-                    # if the 1D line is in the y direction
-                    lambda _: y_weights[j] - old_y_weights[j],
-
-                    # if the 1D line is in the x or z direction
-                    lambda _: lax.cond(
-                                    dim == 0,
-                                    # if the 1D line is in the x direction
-                                    lambda _: 1/2 * (x_weights[i] + old_x_weights[i]),
-                                    # if the 1D line is in the z direction
-                                    lambda _: 1/2 * (z_weights[k] + old_z_weights[k]),
-                                    operand=None
-                                        ),
+    def z_active(Wx_, Wy_, Wz_, x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights):
+        for k in range(len(z_weights)):
+            Wx_ = Wx_.at[2, 2, k, :].set( (x_weights[k] + old_x_weights[k]) / 2 )
+            Wy_ = Wy_.at[2, 2, k, :].set( (y_weights[k] + old_y_weights[k]) / 2 )
+            Wz_ = Wz_.at[2, 2, k, :].set( (z_weights[k] - old_z_weights[k]) )
+        # weights if z direction is active
+        return Wx_, Wy_, Wz_
     
-                    operand=None
-                )
+    Wx_, Wy_, Wz_ = lax.cond(
+        dim == 0,
+        lambda _: x_active(Wx_, Wy_, Wz_, x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights),
+        lambda _: lax.cond(
+            dim == 1,
+            lambda _: y_active(Wx_, Wy_, Wz_, x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights),
+            lambda _: z_active(Wx_, Wy_, Wz_, x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights),
+            operand=None,
+        ),
+        operand=None,
+    )
+    # determine which dimension is active and calculate weights accordingly
 
-                Wy_ = Wy_.at[i,j,k,:].set( factor )
-
-                factor = lax.cond(
-                    dim == 2,
-                    # if the 1D line is in the z direction
-                    lambda _: z_weights[k] - old_z_weights[k],
-
-                    # if the 1D line is in the x or y direction
-                    lambda _: lax.cond(
-                                    dim == 0,
-                                    # if the 1D line is in the x direction
-                                    lambda _: 1/2 * (x_weights[i] + old_x_weights[i]),
-                                    # if the 1D line is in the y direction
-                                    lambda _: 1/2 * (y_weights[j] + old_y_weights[j]),
-                                    operand=None
-                                        ),
-    
-                    operand=None
-                )
-
-                Wz_ = Wz_.at[i,j,k,:].set( factor )
 
     return Wx_, Wy_, Wz_
 
