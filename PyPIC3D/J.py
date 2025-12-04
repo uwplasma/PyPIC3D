@@ -347,22 +347,41 @@ def Esirkepov_current(particles, J, constants, world, grid):
             n_dims == 3,
             lambda _: get_3D_esirkepov_weights(x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights, N_particles, null_dim=None),
             # if 3D simulation
-            lambda _: get_2D_esirkepov_weights(x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights, N_particles,
-            # if 2D simulation                 
-                                                null_dim= lax.cond(
-                                                    x_dim == 0,
-                                                    lambda _: 0,
-                                                    lambda _: lax.cond(
-                                                        y_dim == 0,
-                                                        lambda _: 1,
-                                                        lambda _: 2,
-                                                        operand=None
-                                                    ),
-                                                    operand=None
-                                                )
-                                                # determine which dimension is null
+            lambda _: jax.lax.cond(
+                        n_dims == 2,
+                        lambda _: get_2D_esirkepov_weights(x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights, N_particles,
+                        # if 2D simulation                 
+                            null_dim= lax.cond(
+                                x_dim == 0,
+                                lambda _: 0,
+                                lambda _: lax.cond(
+                                    y_dim == 0,
+                                    lambda _: 1,
+                                    lambda _: 2,
+                                    operand=None
+                                ),
+                                operand=None
+                            )
+                            # determine which dimension is null
 
                                             ),
+                        lambda _: get_1D_esirkepov_weights(x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights, N_particles,  
+                        # if 1D simulation
+                            dim= lax.cond(
+                                x_dim == 1,
+                                lambda _: 0,
+                                lambda _: lax.cond(
+                                    y_dim == 1,
+                                    lambda _: 1,
+                                    lambda _: 2,
+                                    operand=None
+                                ),
+                                operand=None
+                            )
+                            # determine which dimension is active
+                ),
+                operand=None
+            ),
             operand=None
         )
         # calculate the Esirkepov weights
@@ -506,79 +525,79 @@ def get_2D_esirkepov_weights(x_weights, y_weights, z_weights, old_x_weights, old
     return Wx_, Wy_, Wz_
 
 
-# def get_1D_esirkepov_weights(x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights, N_particles, dim=0):
+def get_1D_esirkepov_weights(x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights, N_particles, dim=0):
 
-#     Wx_ = jnp.zeros( (len(x_weights),len(y_weights),len(z_weights), N_particles) )
-#     Wy_ = jnp.zeros( (len(y_weights),len(x_weights),len(z_weights), N_particles) )
-#     Wz_ = jnp.zeros( (len(z_weights),len(x_weights),len(y_weights), N_particles) )
+    Wx_ = jnp.zeros( (len(x_weights),len(y_weights),len(z_weights), N_particles) )
+    Wy_ = jnp.zeros( (len(y_weights),len(x_weights),len(z_weights), N_particles) )
+    Wz_ = jnp.zeros( (len(z_weights),len(x_weights),len(y_weights), N_particles) )
 
 
-#     for i in range(len(x_weights)):
-#         for j in range(len(y_weights)):
-#             for k in range(len(z_weights)):
+    for i in range(len(x_weights)):
+        for j in range(len(y_weights)):
+            for k in range(len(z_weights)):
 
-#                 factor = lax.cond(
-#                     dim == 0,
-#                     # if the 1D line is in the x direction
-#                     lambda _: x_weights[i] - old_x_weights[i],
+                factor = lax.cond(
+                    dim == 0,
+                    # if the 1D line is in the x direction
+                    lambda _: x_weights[i] - old_x_weights[i],
 
-#                     # if the 1D line is in the y or z direction
-#                     lambda _: lax.cond(
-#                                     dim == 1,
-#                                     # if the 1D line is in the y direction
-#                                     lambda _: 1/2 * (y_weights[j] + old_y_weights[j]),
-#                                     # if the 1D line is in the z direction
-#                                     lambda _: 1/2 * (z_weights[k] + old_z_weights[k]),
-#                                     operand=None
-#                                         ),
+                    # if the 1D line is in the y or z direction
+                    lambda _: lax.cond(
+                                    dim == 1,
+                                    # if the 1D line is in the y direction
+                                    lambda _: 1/2 * (y_weights[j] + old_y_weights[j]),
+                                    # if the 1D line is in the z direction
+                                    lambda _: 1/2 * (z_weights[k] + old_z_weights[k]),
+                                    operand=None
+                                        ),
     
-#                     operand=None
-#                 )
-#                 Wx_ = Wx_.at[i,j,k,:].set( factor )
+                    operand=None
+                )
+                Wx_ = Wx_.at[i,j,k,:].set( factor )
 
 
                 
-#                 factor = lax.cond(
-#                     dim == 1,
-#                     # if the 1D line is in the y direction
-#                     lambda _: y_weights[i] - old_y_weights[i],
+                factor = lax.cond(
+                    dim == 1,
+                    # if the 1D line is in the y direction
+                    lambda _: y_weights[j] - old_y_weights[j],
 
-#                     # if the 1D line is in the x or z direction
-#                     lambda _: lax.cond(
-#                                     dim == 0,
-#                                     # if the 1D line is in the x direction
-#                                     lambda _: 1/2 * (x_weights[j] + old_x_weights[j]),
-#                                     # if the 1D line is in the z direction
-#                                     lambda _: 1/2 * (z_weights[k] + old_z_weights[k]),
-#                                     operand=None
-#                                         ),
+                    # if the 1D line is in the x or z direction
+                    lambda _: lax.cond(
+                                    dim == 0,
+                                    # if the 1D line is in the x direction
+                                    lambda _: 1/2 * (x_weights[i] + old_x_weights[i]),
+                                    # if the 1D line is in the z direction
+                                    lambda _: 1/2 * (z_weights[k] + old_z_weights[k]),
+                                    operand=None
+                                        ),
     
-#                     operand=None
-#                 )
+                    operand=None
+                )
 
-#                 Wy_ = Wy_.at[j,i,k,:].set( factor )
+                Wy_ = Wy_.at[i,j,k,:].set( factor )
 
-#                 factor = lax.cond(
-#                     dim == 2,
-#                     # if the 1D line is in the z direction
-#                     lambda _: z_weights[i] - old_z_weights[i],
+                factor = lax.cond(
+                    dim == 2,
+                    # if the 1D line is in the z direction
+                    lambda _: z_weights[k] - old_z_weights[k],
 
-#                     # if the 1D line is in the x or y direction
-#                     lambda _: lax.cond(
-#                                     dim == 0,
-#                                     # if the 1D line is in the x direction
-#                                     lambda _: 1/2 * (x_weights[j] + old_x_weights[j]),
-#                                     # if the 1D line is in the y direction
-#                                     lambda _: 1/2 * (y_weights[k] + old_y_weights[k]),
-#                                     operand=None
-#                                         ),
+                    # if the 1D line is in the x or y direction
+                    lambda _: lax.cond(
+                                    dim == 0,
+                                    # if the 1D line is in the x direction
+                                    lambda _: 1/2 * (x_weights[i] + old_x_weights[i]),
+                                    # if the 1D line is in the y direction
+                                    lambda _: 1/2 * (y_weights[j] + old_y_weights[j]),
+                                    operand=None
+                                        ),
     
-#                     operand=None
-#                 )
+                    operand=None
+                )
 
-#                 Wz_ = Wz_.at[k,i,j,:].set( factor )
+                Wz_ = Wz_.at[i,j,k,:].set( factor )
 
-#     return Wx_, Wy_, Wz_
+    return Wx_, Wy_, Wz_
 
 @jit
 def get_second_order_weights(deltax, deltay, deltaz, dx, dy, dz):

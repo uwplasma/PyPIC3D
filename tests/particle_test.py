@@ -391,9 +391,9 @@ class TestParticleMethods(unittest.TestCase):
             x1=x,
             x2=y,
             x3=z,
-            dx=1.0,
-            dy=1.0,
-            dz=1.0,
+            dx=dx,
+            dy=dy,
+            dz=dz,
             dt=self.dt,
             xwind=self.x_wind,
             ywind=self.y_wind,
@@ -484,9 +484,102 @@ class TestParticleMethods(unittest.TestCase):
             x1=x,
             x2=y,
             x3=z,
-            dx=1.0,
-            dy=1.0,
-            dz=1.0,
+            dx=dx,
+            dy=dy,
+            dz=dz,
+            dt=self.dt,
+            xwind=self.x_wind,
+            ywind=self.y_wind,
+            zwind=self.z_wind,
+            shape=1,
+        )
+
+        species.update_position()  # move particles to new position
+
+        constants = {'C': 3e8, 'alpha' : 1.0}
+        world = {'dx': dx, 'dy': dy, 'dz': dz, 'Nx': Nx, 'Ny': Ny, 'Nz': Nz, 'x_wind': self.x_wind, 'y_wind': self.y_wind, 'z_wind': self.z_wind, 'dt': self.dt}
+        # define constants and world parameters
+
+        grid = jnp.arange(-self.x_wind/2, self.x_wind/2, dx), jnp.arange(-self.y_wind/2, self.y_wind/2, dy), jnp.arange(-self.z_wind/2, self.z_wind/2, dz)
+        # grid for the simulation
+
+        rho = jnp.zeros((Nx,Ny,Nz))
+        rho = compute_rho([species], rho, world, constants)
+        # compute initial rho
+
+        species.update_position()
+        # update particle positions
+
+        rho_new = jnp.zeros((Nx,Ny,Nz))
+        rho_new = compute_rho([species], rho_new, world, constants)
+        # compute new rho
+
+        drhodt = (rho_new - rho) / (self.dt)
+        # compute drho/dt
+        
+        Jx = jnp.zeros((Nx,Ny,Nz))
+        Jy = jnp.zeros((Nx,Ny,Nz))
+        Jz = jnp.zeros((Nx,Ny,Nz))
+        J  = (Jx, Jy, Jz)
+
+        J = Esirkepov_current([species], J, constants, world, grid)
+        # compute J using Esirkepov method
+
+        dJxdx = (jnp.roll(J[0], shift=-1, axis=0) - jnp.roll(J[0], shift=1, axis=0)) / (2 * dx)
+        dJydy = (jnp.roll(J[1], shift=-1, axis=1) - jnp.roll(J[1], shift=1, axis=1)) / (2 * dy)
+        dJzdz = (jnp.roll(J[2], shift=-1, axis=2) - jnp.roll(J[2], shift=1, axis=2)) / (2 * dz)
+        div_J = dJxdx + dJydy + dJzdz
+        # compute divergence of J
+
+        continuity = div_J + drhodt
+        # check continuity equation
+
+        max_continuity = jnp.max(jnp.abs(continuity))
+        mean_continuity = jnp.mean(jnp.abs(continuity))
+
+        self.assertLess(max_continuity, 5e-7)
+        self.assertLess(mean_continuity, 5e-8)
+
+
+    def test_Esirkepov_current_1D(self):
+        N_particles = 5000
+        # number of particles
+        
+        x = jax.random.uniform(self.key1, (N_particles,), minval=-self.x_wind/2, maxval=self.x_wind/2)
+        y = jax.random.uniform(self.key2, (N_particles,), minval=-self.y_wind/2, maxval=self.y_wind/2)
+        z = jax.random.uniform(self.key3, (N_particles,), minval=-self.z_wind/2, maxval=self.z_wind/2)
+        # define particle position
+        sigma = jnp.sqrt(self.kb * self.T / self.mass)
+        key_vx, key_vy, key_vz = jax.random.split(self.key1, 3)
+        vx = sigma * jax.random.normal(key_vx, (N_particles,))
+        vy = sigma * jax.random.normal(key_vy, (N_particles,))
+        vz = sigma * jax.random.normal(key_vz, (N_particles,))
+        # define particle position and velocity
+
+        Nx = 100
+        Ny = 1
+        Nz = 1
+        dx = self.x_wind / Nx
+        dy = 1.0
+        dz = 1.0
+        # uniform spatial resolution in xy
+
+        species = particle_species(
+            name="test",
+            N_particles=N_particles,
+            charge=1.0,
+            mass=self.mass,
+            weight=1.0,
+            T=self.T,
+            v1 = vx,
+            v2 = vy,
+            v3 = vz,
+            x1=x,
+            x2=y,
+            x3=z,
+            dx=dx,
+            dy=dy,
+            dz=dz,
             dt=self.dt,
             xwind=self.x_wind,
             ywind=self.y_wind,
@@ -577,9 +670,9 @@ class TestParticleMethods(unittest.TestCase):
             x1=x,
             x2=y,
             x3=z,
-            dx=1.0,
-            dy=1.0,
-            dz=1.0,
+            dx=dx,
+            dy=dy,
+            dz=dz,
             xwind=self.x_wind,
             ywind=self.y_wind,
             zwind=self.z_wind,
