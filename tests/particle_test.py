@@ -356,15 +356,14 @@ class TestParticleMethods(unittest.TestCase):
 
 
     def test_Esirkepov_current(self):
-
-        T = 100.0  # Temperature in Kelvin
         N_particles = 5000
+        # number of particles
         
         x = jax.random.uniform(self.key1, (N_particles,), minval=-self.x_wind/2, maxval=self.x_wind/2)
         y = jax.random.uniform(self.key2, (N_particles,), minval=-self.y_wind/2, maxval=self.y_wind/2)
         z = jax.random.uniform(self.key3, (N_particles,), minval=-self.z_wind/2, maxval=self.z_wind/2)
         # define particle position
-        sigma = jnp.sqrt(self.kb * T / self.mass)
+        sigma = jnp.sqrt(self.kb * self.T / self.mass)
         key_vx, key_vy, key_vz = jax.random.split(self.key1, 3)
         vx = sigma * jax.random.normal(key_vx, (N_particles,))
         vy = sigma * jax.random.normal(key_vy, (N_particles,))
@@ -385,7 +384,7 @@ class TestParticleMethods(unittest.TestCase):
             charge=1.0,
             mass=self.mass,
             weight=1.0,
-            T=T,
+            T=self.T,
             v1 = vx,
             v2 = vy,
             v3 = vz,
