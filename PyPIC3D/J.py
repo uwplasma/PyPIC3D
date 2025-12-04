@@ -409,7 +409,12 @@ def Esirkepov_current(particles, J, constants, world, grid):
     # accumulate the global weights into the current density arrays
 
 
+    alpha = constants['alpha']
+    Jx = digital_filter(Jx, alpha)
+    Jy = digital_filter(Jy, alpha)
+    Jz = digital_filter(Jz, alpha)
     J = (Jx, Jy, Jz)
+    # apply a digital filter to the current density arrays
 
     return J
             
