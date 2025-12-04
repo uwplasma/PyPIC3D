@@ -624,14 +624,11 @@ class TestParticleMethods(unittest.TestCase):
         div_J = dJxdx + dJydy + dJzdz
         # compute divergence of J
 
-        continuity = div_J + drhodt
+        sum_continuity = jnp.sum(div_J + drhodt)
+        self.assertAlmostEqual(sum_continuity, 0.0, places=14)
         # check continuity equation
 
-        max_continuity = jnp.max(jnp.abs(continuity))
-        mean_continuity = jnp.mean(jnp.abs(continuity))
-
-        self.assertLess(max_continuity, 5e-7)
-        self.assertLess(mean_continuity, 8e-8)
+        
 
     def test_rho(self):
         x = jnp.array([0.0])

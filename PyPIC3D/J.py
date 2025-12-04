@@ -344,8 +344,6 @@ def Esirkepov_current(particles, J, constants, world, grid):
         old_z_weights = [old_z_weights[i, ...] for i in range(5)]
         # convert back to lists
 
-        # Wx_, Wy_, Wz_ =  get_3D_esirkepov_weights(x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights, N_particles, null_dim=None)
-
         Wx_, Wy_, Wz_ = jax.lax.cond(
             n_dims == 3,
             lambda _: get_3D_esirkepov_weights(x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights, N_particles, null_dim=None),
@@ -405,14 +403,11 @@ def Esirkepov_current(particles, J, constants, world, grid):
 
     for i in range(Nx):
         Jx = Jx.at[i, :, :].add( global_Wx[i, :, :] + Jx.at[i-1, :, :].get(), mode='drop')
-    # for j in range(Ny):
-    #     Jy = Jy.at[:, j, :].add( global_Wy[:, j, :] + Jy.at[:, j-1, :].get(), mode='drop')
-    # for k in range(Nz):
-    #     Jz = Jz.at[:, :, k].add( global_Wz[:, :, k] + Jz.at[:, :, k-1].get(), mode='drop')
-    # # accumulate the global weights into the current density arrays
-
-    # sum_Wx = jnp.sum(global_Wx)
-    # jax.debug.print("Sum of Jx contributions from Esirkepov method: {}", sum_Wx)
+    for j in range(Ny):
+        Jy = Jy.at[:, j, :].add( global_Wy[:, j, :] + Jy.at[:, j-1, :].get(), mode='drop')
+    for k in range(Nz):
+        Jz = Jz.at[:, :, k].add( global_Wz[:, :, k] + Jz.at[:, :, k-1].get(), mode='drop')
+    # accumulate the global weights into the current density arrays
 
 
     alpha = constants['alpha']
