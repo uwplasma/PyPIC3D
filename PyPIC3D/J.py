@@ -142,8 +142,6 @@ def Esirkepov_current(particles, J, constants, world, grid):
     dt = world['dt']
     # get the time step
 
-    # jax.debug.print("resolution dx, dy, dz: {}, {}, {}", dx, dy, dz)
-
     C = constants['C']
     # speed of light
     Nx, Ny, Nz = Jx.shape
@@ -458,75 +456,54 @@ def get_2D_esirkepov_weights(x_weights, y_weights, z_weights, old_x_weights, old
     Wz_ = jnp.zeros_like( Wx_)
     # initialize the weight arrays
 
+    # XY Plane
+    def xy_plane(Wx_, Wy_, Wz_, x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights):
+        for i in range(len(x_weights)):
+            for j in range(len(y_weights)):
+                Wx_ = Wx_.at[i,j,2,:].set( 1/2 * d_Sx[i] * ( y_weights[j] + old_y_weights[j] ) )
+                Wy_ = Wy_.at[i,j,2,:].set( 1/2 * d_Sy[j] * ( x_weights[i] + old_x_weights[i] ) )
+                Wz_ = Wz_.at[i,j,2,:].set( 1/3 * ( x_weights[i] * y_weights[j] + old_x_weights[i] * old_y_weights[j] )     \
+                                        +  1/6 * ( x_weights[i] * old_y_weights[j] + old_x_weights[i] * y_weights[j] ) )
+        # Weights if the 2D plane is in the XY plane
 
-    for i in range(len(x_weights)):
+        return Wx_, Wy_, Wz_
+    
+
+    # XZ Plane
+    def xz_plane(Wx_, Wy_, Wz_, x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights):
+        for i in range(len(x_weights)):
+            for k in range(len(z_weights)):
+                Wx_ = Wx_.at[i,2,k,:].set( 1/2 * d_Sx[i] * ( z_weights[k] + old_z_weights[k] ) )
+                Wy_ = Wy_.at[i,2,k,:].set( 1/3 * ( x_weights[i] * z_weights[k] + old_x_weights[i] * old_z_weights[k] )     \
+                                        +  1/6 * ( x_weights[i] * old_z_weights[k] + old_x_weights[i] * z_weights[k] ) )
+                Wz_ = Wz_.at[i,2,k,:].set( 1/2 * d_Sz[k] * ( x_weights[i] + old_x_weights[i] ) )
+        # Weights if the 2D plane is in the XZ plane
+        return Wx_, Wy_, Wz_
+    
+
+    # YZ Plane
+    def yz_plane(Wx_, Wy_, Wz_, x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights):
         for j in range(len(y_weights)):
             for k in range(len(z_weights)):
-
-                factor = lax.cond(
-                    null_dim == 0,
-                    # if the 2D plane is in the yz plane
-                    lambda _: 1/3 * (y_weights[j] * z_weights[k] + old_y_weights[j] * old_z_weights[k])     \
-                        +  1/6 * (y_weights[j] * old_z_weights[k] + old_y_weights[j] * z_weights[k]),
-
-                    
-                    # if the 2D plane is in the xz or xy plane
-                    lambda _: 1/2 * d_Sx[i] * lax.cond(
-                                            null_dim == 1,
-                                            # if the 2D plane is in the xz plane
-                                            lambda _: z_weights[k] + old_z_weights[k],
-                                            # if the 2D plane is in the xy plane
-                                            lambda _: y_weights[j] + old_y_weights[j],
-                                        operand=None
-                                        ),
+                Wx_ = Wx_.at[2,j,k,:].set( 1/3 * ( y_weights[j] * z_weights[k] + old_y_weights[j] * old_z_weights[k] )     \
+                                        +  1/6 * ( y_weights[j] * old_z_weights[k] + old_y_weights[j] * z_weights[k] ) )
+                Wy_ = Wy_.at[2,j,k,:].set( 1/2 * d_Sy[j] * ( z_weights[k] + old_z_weights[k] ) )
+                Wz_ = Wz_.at[2,j,k,:].set( 1/2 * d_Sz[k] * ( y_weights[j] + old_y_weights[j] ) )
+        # Weights if the 2D plane is in the YZ plane
+        return Wx_, Wy_, Wz_
     
-                    operand=None
-                )
-                Wx_ = Wx_.at[i,j,k,:].set( factor )
 
-
-                factor = lax.cond(
-                    null_dim == 1,
-                    # if the 2D plane is in the xz plane
-                    lambda _: 1/3 * (x_weights[i] * z_weights[k] + old_x_weights[i] * old_z_weights[k])     \
-                        +  1/6 * (x_weights[i] * old_z_weights[k] + old_x_weights[i] * z_weights[k]),
-
-                    # if the 2D plane is in the yz or xy plane
-                    lambda _: 1/2 * d_Sy[j] * lax.cond(
-                                            null_dim == 0,
-                                            # if the 2D plane is in the yz plane
-                                            lambda _: z_weights[k] + old_z_weights[k],
-                                            # if the 2D plane is in the xy plane
-                                            lambda _: x_weights[i] + old_x_weights[i],
-                                        operand=None
-                                        ),
-    
-                    operand=None
-                )
-                
-                Wy_ = Wy_.at[i,j,k,:].set( factor )
-                
-
-                factor = lax.cond(
-                    null_dim == 2,
-                    # if the 2D plane is in the xy plane
-                    lambda _: 1/3 * (x_weights[i] * y_weights[j] + old_x_weights[i] * old_y_weights[j])     \
-                        +  1/6 * (x_weights[i] * old_y_weights[j] + old_x_weights[i] * y_weights[j]),
-
-                    # if the 2D plane is in the yz or xz plane
-                    lambda _: 1/2 * d_Sz[k] * lax.cond(
-                                            null_dim == 0,
-                                            # if the 2D plane is in the yz plane
-                                            lambda _: y_weights[j] + old_y_weights[j],
-                                            # if the 2D plane is in the xz plane
-                                            lambda _: x_weights[i] + old_x_weights[i],
-                                        operand=None
-                                        ),
-    
-                    operand=None
-                )
-
-                Wz_ = Wz_.at[i,j,k,:].set( factor )
+    Wx_, Wy_, Wz_ = lax.cond(
+        null_dim == 0,
+        lambda _: yz_plane(Wx_, Wy_, Wz_, x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights),
+        lambda _: lax.cond(
+            null_dim == 1,
+            lambda _: xz_plane(Wx_, Wy_, Wz_, x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights),
+            lambda _: xy_plane(Wx_, Wy_, Wz_, x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights),
+            operand=None
+        ),
+        operand=None
+    )
 
     return Wx_, Wy_, Wz_
 
@@ -541,23 +518,23 @@ def get_1D_esirkepov_weights(x_weights, y_weights, z_weights, old_x_weights, old
     def x_active(Wx_, Wy_, Wz_, x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights):
         for i in range(len(x_weights)):
             Wx_ = Wx_.at[i, 2, 2, :].set( (x_weights[i] - old_x_weights[i]) )
-            Wy_ = Wy_.at[i, 2, 2, :].set( (y_weights[i] + old_y_weights[i]) / 2 )
-            Wz_ = Wz_.at[i, 2, 2, :].set( (z_weights[i] + old_z_weights[i]) / 2 )
+            Wy_ = Wy_.at[i, 2, 2, :].set( (x_weights[i] + old_x_weights[i]) / 2 )
+            Wz_ = Wz_.at[i, 2, 2, :].set( (x_weights[i] + old_x_weights[i]) / 2 )
         # weights if x direction is active
         return Wx_, Wy_, Wz_
 
     def y_active(Wx_, Wy_, Wz_, x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights):
         for j in range(len(y_weights)):
-            Wx_ = Wx_.at[2, j, 2, :].set( (x_weights[j] + old_x_weights[j]) / 2 )
+            Wx_ = Wx_.at[2, j, 2, :].set( (y_weights[j] + old_y_weights[j]) / 2 )
             Wy_ = Wy_.at[2, j, 2, :].set( (y_weights[j] - old_y_weights[j]) )
-            Wz_ = Wz_.at[2, j, 2, :].set( (z_weights[j] + old_z_weights[j]) / 2 )
+            Wz_ = Wz_.at[2, j, 2, :].set( (y_weights[j] + old_y_weights[j]) / 2 )
         # weights if y direction is active
         return Wx_, Wy_, Wz_
     
     def z_active(Wx_, Wy_, Wz_, x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights):
         for k in range(len(z_weights)):
-            Wx_ = Wx_.at[2, 2, k, :].set( (x_weights[k] + old_x_weights[k]) / 2 )
-            Wy_ = Wy_.at[2, 2, k, :].set( (y_weights[k] + old_y_weights[k]) / 2 )
+            Wx_ = Wx_.at[2, 2, k, :].set( (z_weights[k] + old_z_weights[k]) / 2 )
+            Wy_ = Wy_.at[2, 2, k, :].set( (z_weights[k] + old_z_weights[k]) / 2 )
             Wz_ = Wz_.at[2, 2, k, :].set( (z_weights[k] - old_z_weights[k]) )
         # weights if z direction is active
         return Wx_, Wy_, Wz_
