@@ -203,10 +203,32 @@ def Esirkepov_current(particles, J, constants, world, grid):
         )
         # calculate the current differential
 
-        x0 = wrap_around( jnp.round( (x - grid[0][0]) / dx).astype(int), Nx)
-        y0 = wrap_around( jnp.round( (y - grid[1][0]) / dy).astype(int), Ny)
-        z0 = wrap_around( jnp.round( (z - grid[2][0]) / dz).astype(int), Nz)
-        # calculate the nearest grid point
+        x0 = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (x - grid[0][0]) / dx).astype(int),
+            lambda _: jnp.round( (x - grid[0][0]) / dx).astype(int),
+            operand=None
+        )
+
+        y0 = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (y - grid[1][0]) / dy).astype(int),
+            lambda _: jnp.round( (y - grid[1][0]) / dy).astype(int),
+            operand=None
+        )
+
+        z0 = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (z - grid[2][0]) / dz).astype(int),
+            lambda _: jnp.round( (z - grid[2][0]) / dz).astype(int),
+            operand=None
+        )
+        # calculate the nearest grid point based on shape factor
+
+        x0 = wrap_around(x0, Nx)
+        y0 = wrap_around(y0, Ny)
+        z0 = wrap_around(z0, Nz)
+        # wrap around the grid indices
 
         x1 = wrap_around(x0+1, Nx)
         y1 = wrap_around(y0+1, Ny)
@@ -233,9 +255,9 @@ def Esirkepov_current(particles, J, constants, world, grid):
         zpts = [z_minus2, z_minus1, z0, z1, z2]
         # place all the points in a list
 
-        deltax = x - jnp.round( (x - grid[0][0]) / dx).astype(int) * dx
-        deltay = y - jnp.round( (y - grid[1][0]) / dy).astype(int) * dy
-        deltaz = z - jnp.round( (z - grid[2][0]) / dz).astype(int) * dz
+        deltax = (x - grid[0][0]) - (x0 * dx)
+        deltay = (y - grid[1][0]) - (y0 * dy)
+        deltaz = (z - grid[2][0]) - (z0 * dz)
         # Calculate the difference between the particle position and the nearest grid point
 
         x_weights, y_weights, z_weights = jax.lax.cond(
@@ -246,9 +268,36 @@ def Esirkepov_current(particles, J, constants, world, grid):
         )
         # Calculate the weights for the grid points
 
-        old_deltax = old_x - jnp.round( (old_x - grid[0][0]) / dx).astype(int) * dx
-        old_deltay = old_y - jnp.round( (old_y - grid[1][0]) / dy).astype(int) * dy
-        old_deltaz = old_z - jnp.round( (old_z - grid[2][0]) / dz).astype(int) * dz
+        old_x0 = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (old_x - grid[0][0]) / dx).astype(int),
+            lambda _: jnp.round( (old_x - grid[0][0]) / dx).astype(int),
+            operand=None
+        )
+
+        old_y0 = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (old_y - grid[1][0]) / dy).astype(int),
+            lambda _: jnp.round( (old_y - grid[1][0]) / dy).astype(int),
+            operand=None
+        )
+
+        old_z0 = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (old_z - grid[2][0]) / dz).astype(int),
+            lambda _: jnp.round( (old_z - grid[2][0]) / dz).astype(int),
+            operand=None
+        )
+        # calculate the nearest grid point based on shape factor
+
+        old_x0 = wrap_around(old_x0, Nx)
+        old_y0 = wrap_around(old_y0, Ny)
+        old_z0 = wrap_around(old_z0, Nz)
+        # wrap around the grid indices
+
+        old_deltax = (old_x - grid[0][0]) - (old_x0 * dx)
+        old_deltay = (old_y - grid[1][0]) - (old_y0 * dy)
+        old_deltaz = (old_z - grid[2][0]) - (old_z0 * dz)
         # Calculate the difference between the old particle position and the grid point nearest the new x
 
         old_x_weights, old_y_weights, old_z_weights = jax.lax.cond(
@@ -271,11 +320,6 @@ def Esirkepov_current(particles, J, constants, world, grid):
         old_z_weights = [z_pad, old_z_weights[0], old_z_weights[1], old_z_weights[2], z_pad]
         # pad the weights to account for shifts
 
-
-        old_x0 = wrap_around( jnp.round( (old_x - grid[0][0]) / dx).astype(int), Nx)
-        old_y0 = wrap_around( jnp.round( (old_y - grid[1][0]) / dy).astype(int), Ny)
-        old_z0 = wrap_around( jnp.round( (old_z - grid[2][0]) / dz).astype(int), Nz)
-        # calculate the nearest grid point
 
         shift_xi = (old_x0 - x0).astype(int)
         shift_yi = (old_y0 - y0).astype(int)
