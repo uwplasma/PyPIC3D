@@ -432,9 +432,9 @@ class TestParticleMethods(unittest.TestCase):
         J = Esirkepov_current([species], J, constants, world, grid)
         # compute J using Esirkepov method
 
-        dJxdx = (jnp.roll(J[0], shift=-1, axis=0) - jnp.roll(J[0], shift=1, axis=0)) / (2 * dx)
-        dJydy = (jnp.roll(J[1], shift=-1, axis=1) - jnp.roll(J[1], shift=1, axis=1)) / (2 * dy)
-        dJzdz = (jnp.roll(J[2], shift=-1, axis=2) - jnp.roll(J[2], shift=1, axis=2)) / (2 * dz)
+        dJxdx = (jnp.roll(J[0], shift=-1, axis=0) - J[0] ) / dx
+        dJydy = (jnp.roll(J[1], shift=-1, axis=1) - J[1] ) / dy
+        dJzdz = (jnp.roll(J[2], shift=-1, axis=2) - J[2] ) / dz
         div_J = dJxdx + dJydy + dJzdz
         # compute divergence of J
 
@@ -444,8 +444,8 @@ class TestParticleMethods(unittest.TestCase):
         max_continuity = jnp.max(jnp.abs(continuity))
         mean_continuity = jnp.mean(jnp.abs(continuity))
 
-        self.assertLess(max_continuity, 2e-2)
-        self.assertLess(mean_continuity, 1e-4)
+        self.assertLess(max_continuity, 5e-6)
+        self.assertLess(mean_continuity, 3e-8)
 
         
     def test_Esirkepov_current_2D(self):
@@ -525,9 +525,9 @@ class TestParticleMethods(unittest.TestCase):
         J = Esirkepov_current([species], J, constants, world, grid)
         # compute J using Esirkepov method
 
-        dJxdx = (jnp.roll(J[0], shift=-1, axis=0) - jnp.roll(J[0], shift=1, axis=0)) / (2 * dx)
-        dJydy = (jnp.roll(J[1], shift=-1, axis=1) - jnp.roll(J[1], shift=1, axis=1)) / (2 * dy)
-        dJzdz = (jnp.roll(J[2], shift=-1, axis=2) - jnp.roll(J[2], shift=1, axis=2)) / (2 * dz)
+        dJxdx = (jnp.roll(J[0], shift=-1, axis=0) - J[0] ) / dx
+        dJydy = (jnp.roll(J[1], shift=-1, axis=1) - J[1] ) / dy
+        dJzdz = (jnp.roll(J[2], shift=-1, axis=2) - J[2] ) / dz
         div_J = dJxdx + dJydy + dJzdz
         # compute divergence of J
 
@@ -537,7 +537,7 @@ class TestParticleMethods(unittest.TestCase):
         max_continuity = jnp.max(jnp.abs(continuity))
         mean_continuity = jnp.mean(jnp.abs(continuity))
 
-        self.assertLess(max_continuity, 5e-7)
+        self.assertLess(max_continuity, 6e-7)
         self.assertLess(mean_continuity, 5e-8)
 
 
@@ -618,9 +618,9 @@ class TestParticleMethods(unittest.TestCase):
         J = Esirkepov_current([species], J, constants, world, grid)
         # compute J using Esirkepov method
 
-        dJxdx = (jnp.roll(J[0], shift=-1, axis=0) - jnp.roll(J[0], shift=1, axis=0)) / (2 * dx)
-        dJydy = (jnp.roll(J[1], shift=-1, axis=1) - jnp.roll(J[1], shift=1, axis=1)) / (2 * dy)
-        dJzdz = (jnp.roll(J[2], shift=-1, axis=2) - jnp.roll(J[2], shift=1, axis=2)) / (2 * dz)
+        dJxdx = (jnp.roll(J[0], shift=-1, axis=0) - J[0] ) / dx
+        dJydy = (jnp.roll(J[1], shift=-1, axis=1) - J[1] ) / dy
+        dJzdz = (jnp.roll(J[2], shift=-1, axis=2) - J[2] ) / dz
         div_J = dJxdx + dJydy + dJzdz
         # compute divergence of J
 
@@ -631,7 +631,7 @@ class TestParticleMethods(unittest.TestCase):
         mean_continuity = jnp.mean(jnp.abs(continuity))
 
         self.assertLess(max_continuity, 5e-7)
-        self.assertLess(mean_continuity, 5e-8)
+        self.assertLess(mean_continuity, 8e-8)
 
     def test_rho(self):
         x = jnp.array([0.0])
