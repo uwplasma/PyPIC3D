@@ -170,7 +170,7 @@ def Esirkepov_current(particles, J, constants, world, grid):
 
         old_x, old_y, old_z = species.get_old_position()
         # get the old position of the particles in the species
-        x, y, z = species.get_position()
+        x, y, z = species.get_forward_position()
         # get the position of the particles in the species
         vx, vy, vz = species.get_velocity()
         # get the velocity of the particles in the species
@@ -185,21 +185,21 @@ def Esirkepov_current(particles, J, constants, world, grid):
         dJx = jax.lax.cond(
             Nx == 1,
             lambda _: q * vx / (dx*dy*dz),
-            lambda _: q / (dy*dz) / dt * jnp.ones(N_particles),
+            lambda _: -q / (dy*dz) / dt * jnp.ones(N_particles),
             operand=None
         )
 
         dJy = jax.lax.cond(
             Ny == 1,
             lambda _: q * vy / (dx*dy*dz),
-            lambda _: q / (dx*dz) / dt * jnp.ones(N_particles),
+            lambda _: -q / (dx*dz) / dt * jnp.ones(N_particles),
             operand=None
         )
 
         dJz = jax.lax.cond(
             Nz == 1,
             lambda _: q * vz / (dx*dy*dz),
-            lambda _: q / (dx*dy) / dt * jnp.ones(N_particles),
+            lambda _: -q / (dx*dy) / dt * jnp.ones(N_particles),
             operand=None
         )
         # calculate the current differential
@@ -321,10 +321,24 @@ def Esirkepov_current(particles, J, constants, world, grid):
         old_z_weights = [z_pad, old_z_weights[0], old_z_weights[1], old_z_weights[2], z_pad]
         # pad the weights to account for shifts
 
-
-        shift_xi = (old_x0 - x0).astype(int)
-        shift_yi = (old_y0 - y0).astype(int)
-        shift_zi = (old_z0 - z0).astype(int)
+        shift_xi = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (old_x - x) / dx).astype(int),
+            lambda _: jnp.round( (old_x - x) / dx).astype(int),
+            operand=None
+        )
+        shift_yi = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (old_y - y) / dy).astype(int),
+            lambda _: jnp.round( (old_y - y) / dy).astype(int),
+            operand=None
+        )
+        shift_zi = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (old_z - z) / dz).astype(int),
+            lambda _: jnp.round( (old_z - z) / dz).astype(int),
+            operand=None
+        )
         # calculate the shifts in indices (int)
 
         def single_particle_roll(old_weights, shift_i):
@@ -398,22 +412,11 @@ def Esirkepov_current(particles, J, constants, world, grid):
                     global_Wz = global_Wz.at[xpts[i],ypts[j],zpts[k]].add( factor, mode='drop')
                     # Add the local weights to the global weight arrays
 
-
-    for i in range(Nx):
-        Jx = Jx.at[i, :, :].add( global_Wx[i, :, :] + Jx.at[i-1, :, :].get(), mode='drop')
-    for j in range(Ny):
-        Jy = Jy.at[:, j, :].add( global_Wy[:, j, :] + Jy.at[:, j-1, :].get(), mode='drop')
-    for k in range(Nz):
-        Jz = Jz.at[:, :, k].add( global_Wz[:, :, k] + Jz.at[:, :, k-1].get(), mode='drop')
-    # accumulate the global weights into the current density arrays
-
-
-    alpha = constants['alpha']
-    Jx = digital_filter(Jx, alpha)
-    Jy = digital_filter(Jy, alpha)
-    Jz = digital_filter(Jz, alpha)
+    Jx = jnp.cumsum(global_Wx, axis=0)
+    Jy = jnp.cumsum(global_Wy, axis=1)
+    Jz = jnp.cumsum(global_Wz, axis=2)
+    # compute the cumulative sum to get the current densities
     J = (Jx, Jy, Jz)
-    # apply a digital filter to the current density arrays
 
     return J
             

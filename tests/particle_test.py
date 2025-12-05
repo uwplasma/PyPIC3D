@@ -625,6 +625,15 @@ class TestParticleMethods(unittest.TestCase):
         # compute divergence of J
 
         sum_continuity = jnp.sum(div_J + drhodt)
+        mean_continuity = jnp.mean(jnp.abs(div_J + drhodt))
+        mean_drhodt = jnp.mean(jnp.abs(drhodt))
+        mean_divJ = jnp.mean(jnp.abs(div_J))
+        
+        print("Mean continuity error (1D): ", mean_continuity)
+        print("Sum continuity error (1D): ", sum_continuity)
+        print("continuity / drhodt (1D): ", mean_continuity / mean_drhodt)
+        print("continuity / divJ (1D): ", mean_continuity / mean_divJ)
+
         self.assertAlmostEqual(sum_continuity, 0.0, places=14)
         # check continuity equation
 
