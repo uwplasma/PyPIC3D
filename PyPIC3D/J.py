@@ -170,7 +170,7 @@ def Esirkepov_current(particles, J, constants, world, grid):
 
         old_x, old_y, old_z = species.get_old_position()
         # get the old position of the particles in the species
-        x, y, z = species.get_forward_position()
+        x, y, z = species.get_position()
         # get the position of the particles in the species
         vx, vy, vz = species.get_velocity()
         # get the velocity of the particles in the species
