@@ -204,6 +204,14 @@ def initialize_simulation(toml_file):
     else:
         Nt     = int( t_wind / dt )
     # Nt for resolution
+
+    if simulation_parameters['dt'] is not None and simulation_parameters['Nt'] is not None:
+        t_wind = dt * Nt
+        print(f"Adjusting t_wind to {t_wind} based on provided dt and Nt")
+        simulation_parameters['t_wind'] = t_wind
+    # adjust t_wind if both dt and Nt are provided
+
+
     world = {'dt': dt, 'Nt': Nt, 'dx': dx, 'dy': dy, 'dz': dz, 'Nx': Nx, 'Ny': Ny, 'Nz': Nz, 'x_wind': x_wind, 'y_wind': y_wind, 'z_wind': z_wind}
     # set the simulation world parameters
 
