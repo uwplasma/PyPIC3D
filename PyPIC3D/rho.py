@@ -330,3 +330,78 @@ def compute_velocity_field(particles, field, direction, world):
         # distribute the velocity of the particles to the grid points using the weighting factors
 
     return field
+
+
+
+
+@jit
+def compute_pressure_field(particles, field, velocity_field, direction, world):
+
+    dx = world['dx']
+    dy = world['dy']
+    dz = world['dz']
+    x_wind = world['x_wind']
+    y_wind = world['y_wind']
+    z_wind = world['z_wind']
+    Nx, Ny, Nz = field.shape
+    # get the shape of the velocity field array
+
+    field = jnp.zeros_like(field)
+    # reset field to zero
+
+    for species in particles:
+        shape_factor = species.get_shape()
+        # get the shape factor of the species, which determines the weighting function
+        N_particles = species.get_number_of_particles()
+        # get the number of particles
+        x, y, z = species.get_position()
+        # get the position of the particles in the species
+        vx, vy, vz = species.get_velocity()
+        # get the velocity of the particles in the species
+
+
+        v = jnp.array([vx, vy, vz])[direction]
+        # select the velocity component based on the direction
+
+        x0 = jnp.floor((x + x_wind / 2) / dx).astype(int)
+        y0 = jnp.floor((y + y_wind / 2) / dy).astype(int)
+        z0 = jnp.floor((z + z_wind / 2) / dz).astype(int)
+        # Calculate the nearest grid points
+
+        deltax = x - jnp.floor(x / dx) * dx
+        deltay = y - jnp.floor(y / dy) * dy
+        deltaz = z - jnp.floor(z / dz) * dz
+        # Calculate the difference between the particle position and the nearest grid point
+
+        x1 = wrap_around(x0 + 1, Nx)
+        y1 = wrap_around(y0 + 1, Ny)
+        z1 = wrap_around(z0 + 1, Nz)
+        # Calculate the index of the next grid point
+
+        x_minus1 = x0 - 1
+        y_minus1 = y0 - 1
+        z_minus1 = z0 - 1
+        # Calculate the index of the previous grid point
+
+        xpts = [x_minus1, x0, x1]
+        ypts = [y_minus1, y0, y1]
+        zpts = [z_minus1, z0, z1]
+        # place all the points in a list
+
+        x_weights, y_weights, z_weights = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: get_first_order_weights(deltax, deltay, deltaz, dx, dy, dz),
+            lambda _: get_second_order_weights(deltax, deltay, deltaz, dx, dy, dz),
+            operand=None
+        )
+        # get the weighting factors based on the shape factor
+
+        for i in range(3):
+            for j in range(3):
+                for k in range(3):
+                    vbar = v -velocity_field.at[xpts[i], ypts[j], zpts[k]].get()
+
+                    field = field.at[xpts[i], ypts[j], zpts[k]].add( vbar**2 * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
+        # distribute the pressure moment of the particles to the grid points using the weighting factors
+
+    return field
