@@ -45,9 +45,9 @@ def J_from_rhov(particles, J, constants, world, grid):
     if particles:
         # if there are particles in the simulation
 
-        total_x = jnp.concatenate( [species.get_position()[0] for species in particles] )
-        total_y = jnp.concatenate( [species.get_position()[1] for species in particles] )
-        total_z = jnp.concatenate( [species.get_position()[2] for species in particles] )
+        total_x = jnp.concatenate( [species.get_forward_position()[0] for species in particles] )
+        total_y = jnp.concatenate( [species.get_forward_position()[1] for species in particles] )
+        total_z = jnp.concatenate( [species.get_forward_position()[2] for species in particles] )
 
         total_dqvx = jnp.concatenate( [species.get_charge() / (dx*dy*dz) * species.get_velocity()[0] for species in particles] )
         total_dqvy = jnp.concatenate( [species.get_charge() / (dx*dy*dz) * species.get_velocity()[1] for species in particles] )
