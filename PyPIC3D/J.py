@@ -252,9 +252,9 @@ def Esirkepov_current(particles, J, constants, world, grid):
         shift_x = ((old_x0 - x0 + Nx//2) % Nx) - Nx//2
         shift_y = ((old_y0 - y0 + Ny//2) % Ny) - Ny//2
         shift_z = ((old_z0 - z0 + Nz//2) % Nz) - Nz//2
-        oxw = _roll_old_weights_to_new_frame(oxw, shift_x) if x_active else oxw
-        oyw = _roll_old_weights_to_new_frame(oyw, shift_y) if y_active else oyw
-        ozw = _roll_old_weights_to_new_frame(ozw, shift_z) if z_active else ozw
+        oxw = _roll_old_weights_to_new_frame(oxw, shift_x)
+        oyw = _roll_old_weights_to_new_frame(oyw, shift_y)
+        ozw = _roll_old_weights_to_new_frame(ozw, shift_z)
 
         # --- build Esirkepov W on compact stencil ---
         if x_active and y_active and z_active:

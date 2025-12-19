@@ -31,6 +31,7 @@ def compute_rho(particles, rho, world, constants):
     x_wind = world['x_wind']
     y_wind = world['y_wind']
     z_wind = world['z_wind']
+    grid   = world['grid']
     Nx, Ny, Nz = rho.shape
     # get the shape of the charge density array
 
@@ -48,15 +49,38 @@ def compute_rho(particles, rho, world, constants):
         x, y, z = species.get_position()
         # get the position of the particles in the species
 
-        x0 = jnp.floor((x + x_wind / 2) / dx).astype(int)
-        y0 = jnp.floor((y + y_wind / 2) / dy).astype(int)
-        z0 = jnp.floor((z + z_wind / 2) / dz).astype(int)
-        # Calculate the nearest grid points
 
-        deltax = x - jnp.floor(x / dx) * dx
-        deltay = y - jnp.floor(y / dy) * dy
-        deltaz = z - jnp.floor(z / dz) * dz
-        # Calculate the difference between the particle position and the nearest grid point
+        x0 = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (x - grid[0][0]) / dx).astype(int),
+            lambda _: jnp.round( (x - grid[0][0]) / dx).astype(int),
+            operand=None
+        )
+
+        y0 = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (y - grid[1][0]) / dy).astype(int),
+            lambda _: jnp.round( (y - grid[1][0]) / dy).astype(int),
+            operand=None
+        )
+
+        z0 = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (z - grid[2][0]) / dz).astype(int),
+            lambda _: jnp.round( (z - grid[2][0]) / dz).astype(int),
+            operand=None
+        )
+        # calculate the nearest grid point based on shape factor
+
+        deltax = x - (x0 * dx + grid[0][0])
+        deltay = y - (y0 * dy + grid[1][0])
+        deltaz = z - (z0 * dz + grid[2][0])
+        # calculate the difference based on shape factor
+
+        x0 = wrap_around(x0, Nx)
+        y0 = wrap_around(y0, Ny)
+        z0 = wrap_around(z0, Nz)
+        # ensure indices are within bounds
 
         x1 = wrap_around(x0 + 1, Nx)
         y1 = wrap_around(y0 + 1, Ny)
@@ -115,20 +139,20 @@ def get_second_order_weights(deltax, deltay, deltaz, dx, dy, dz):
     Sy0 = (3/4) - (deltay/dy)**2
     Sz0 = (3/4) - (deltaz/dz)**2
 
-    Sx1 = jnp.where(jnp.abs(deltax) <= dx/2, (1/2) * ((1/2) - (deltax/dx))**2, 0.0)
-    Sy1 = jnp.where(jnp.abs(deltay) <= dy/2, (1/2) * ((1/2) - (deltay/dy))**2, 0.0)
-    Sz1 = jnp.where(jnp.abs(deltaz) <= dz/2, (1/2) * ((1/2) - (deltaz/dz))**2, 0.0)
+    Sx1 = (1/2) * ((1/2) - (deltax/dx))**2
+    Sy1 = (1/2) * ((1/2) - (deltay/dy))**2
+    Sz1 = (1/2) * ((1/2) - (deltaz/dz))**2
 
-    Sx_minus1 = jnp.where(jnp.abs(deltax) <= dx/2, (1/2) * ((1/2) + (deltax/dx))**2, 0.0)
-    Sy_minus1 = jnp.where(jnp.abs(deltay) <= dy/2, (1/2) * ((1/2) + (deltay/dy))**2, 0.0)
-    Sz_minus1 = jnp.where(jnp.abs(deltaz) <= dz/2, (1/2) * ((1/2) + (deltaz/dz))**2, 0.0)
+    Sx_minus1 = (1/2) * ((1/2) + (deltax/dx))**2
+    Sy_minus1 = (1/2) * ((1/2) + (deltay/dy))**2
+    Sz_minus1 = (1/2) * ((1/2) + (deltaz/dz))**2
+    # second order weights
 
     x_weights = [Sx_minus1, Sx0, Sx1]
     y_weights = [Sy_minus1, Sy0, Sy1]
     z_weights = [Sz_minus1, Sz0, Sz1]
 
     return x_weights, y_weights, z_weights
-
 
 @jit
 def get_first_order_weights(deltax, deltay, deltaz, dx, dy, dz):
@@ -285,7 +309,6 @@ def compute_velocity_field(particles, field, direction, world):
         # get the position of the particles in the species
         vx, vy, vz = species.get_velocity()
         # get the velocity of the particles in the species
-
 
         dv = jnp.array([vx, vy, vz])[direction] / N_particles
         # select the velocity component based on the direction

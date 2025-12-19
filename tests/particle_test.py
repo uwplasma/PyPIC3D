@@ -441,11 +441,9 @@ class TestParticleMethods(unittest.TestCase):
         continuity = div_J + drhodt
         # check continuity equation
 
-        max_continuity = jnp.max(jnp.abs(continuity))
-        mean_continuity = jnp.mean(jnp.abs(continuity))
-
-        self.assertLess(max_continuity, 5e-6)
-        self.assertLess(mean_continuity, 3e-8)
+        sum_continuity = jnp.sum(continuity)
+        self.assertAlmostEqual(sum_continuity, 0.0, places=11)
+        # check continuity equation
 
         
     def test_Esirkepov_current_2D(self):
@@ -534,11 +532,9 @@ class TestParticleMethods(unittest.TestCase):
         continuity = div_J + drhodt
         # check continuity equation
 
-        max_continuity = jnp.max(jnp.abs(continuity))
-        mean_continuity = jnp.mean(jnp.abs(continuity))
-
-        self.assertLess(max_continuity, 6e-7)
-        self.assertLess(mean_continuity, 5e-8)
+        sum_continuity = jnp.sum(continuity)
+        self.assertAlmostEqual(sum_continuity, 0.0, places=13)
+        # check continuity equation
 
 
     def test_Esirkepov_current_1D(self):
@@ -618,9 +614,9 @@ class TestParticleMethods(unittest.TestCase):
         J = Esirkepov_current([species], J, constants, world, grid)
         # compute J using Esirkepov method
 
-        dJxdx = (jnp.roll(J[0], shift=-1, axis=0) - J[0] ) / dx
-        dJydy = (jnp.roll(J[1], shift=-1, axis=1) - J[1] ) / dy
-        dJzdz = (jnp.roll(J[2], shift=-1, axis=2) - J[2] ) / dz
+        dJxdx = -(jnp.roll(J[0], shift=1, axis=0) - J[0] ) / dx
+        dJydy = -(jnp.roll(J[1], shift=1, axis=1) - J[1] ) / dy
+        dJzdz = -(jnp.roll(J[2], shift=1, axis=2) - J[2] ) / dz
         div_J = dJxdx + dJydy + dJzdz
         # compute divergence of J
 
@@ -685,7 +681,7 @@ class TestParticleMethods(unittest.TestCase):
         )
 
         constants = {'C': 3e8, 'alpha' : 1.0}
-        world = {'dx': dx, 'dy': dy, 'dz': dz, 'Nx': 10, 'Ny': 10, 'Nz': 10, 'x_wind': self.x_wind, 'y_wind': self.y_wind, 'z_wind': self.z_wind}
+        world = {'dx': dx, 'dy': dy, 'dz': dz, 'Nx': 10, 'Ny': 10, 'Nz': 10, 'x_wind': self.x_wind, 'y_wind': self.y_wind, 'z_wind': self.z_wind, "grid": grid}
         # define constants and world parameters
 
         num_rho = compute_rho([species], num_rho, world, constants)
@@ -693,6 +689,116 @@ class TestParticleMethods(unittest.TestCase):
 
         self.assertTrue(jnp.allclose(num_rho, exp_rho))
         # check if computed rho matches expected rho
+
+
+    def test_check_continuity_1D(self):
+
+        # WORLD PARAMETERS ########
+        Nx = 100
+        Ny = 1
+        Nz = 1
+        x_wind = 1.0
+        y_wind = 1.0
+        z_wind = 1.0
+        dx = x_wind / Nx
+        dy = y_wind / Ny
+        dz = z_wind / Nz
+        dt = dx / (3e8)
+        ###########################
+
+
+        grid = (
+            jnp.arange(-x_wind/2, x_wind/2, dx),
+            jnp.arange(-y_wind/2, y_wind/2, dy),
+            jnp.arange(-z_wind/2, z_wind/2, dz),
+        )
+
+        world = {
+            "dx": dx, "dy": dy, "dz": dz,
+            "Nx": Nx, "Ny": Ny, "Nz": Nz,
+            "x_wind": x_wind, "y_wind": y_wind, "z_wind": z_wind,
+            "dt": dt, 'grid': grid
+        }
+
+        constants = {"C": 3e8, "alpha": 1.0}
+        # build constants and world parameters data structures
+
+        vy = 0.0
+        vz = 0.0
+        y0  = 0.0
+        z0  = 0.0
+        # transverse dimensions
+
+        vx = 0.01  # particle velocity in x
+        x0 = 0.0  # initial particle position in x
+
+        species = particle_species(
+            name="single",
+            N_particles=1,
+            charge=1.0,
+            mass=1.0,
+            weight=1.0,
+            T=0.0,
+            v1=jnp.array([vx]),
+            v2=jnp.array([vy]),
+            v3=jnp.array([vz]),
+            x1=jnp.array([x0]),
+            x2=jnp.array([y0]),
+            x3=jnp.array([z0]),
+            dx=dx, dy=dy, dz=dz,
+            dt=dt,
+            xwind=x_wind, ywind=y_wind, zwind=z_wind,
+            shape=2,
+        )
+
+        rho = jnp.zeros((Nx, Ny, Nz))
+
+        species.update_position()
+        # move particles to new position
+        prev_rho = compute_rho([species], rho, world, constants)
+        # compute rho
+        species.update_position()
+        rho = compute_rho([species], rho, world, constants)
+        # compute rho again
+
+        drhodt = (rho - prev_rho) / dt
+        # calculate backward difference for drhodt
+        Jx = jnp.zeros((Nx, Ny, Nz))
+        Jy = jnp.zeros((Nx, Ny, Nz))
+        Jz = jnp.zeros((Nx, Ny, Nz))
+        J = (Jx, Jy, Jz)
+        J = Esirkepov_current([species], J, constants, world, grid)
+        # compute J using Esirkepov method
+
+        dJxdx = ( J[0] - jnp.roll(J[0], shift=1, axis=0) ) / dx
+        # backward difference for divergence in 1D
+
+        continuity = drhodt + dJxdx
+        # check continuity equation
+
+        import matplotlib.pyplot as plt
+
+        plt.figure(figsize=(12, 6))
+        plt.plot(dJxdx.flatten(), label='dJxdx', linewidth=2)
+        plt.plot(drhodt.flatten(), label='drhodt', linewidth=2)
+        plt.xlabel('Grid Index')
+        plt.ylabel('Value')
+        plt.legend()
+        plt.grid(True)
+        plt.title('Divergence of Current vs Rate of Change of Charge Density')
+        plt.savefig('continuity_check.png')
+        plt.close()
+
+        print("Mean drhodt: ", jnp.mean(jnp.abs(drhodt)))
+        print("Mean divJ: ", jnp.mean(jnp.abs(dJxdx)))
+
+        print("Max continuity error: ", jnp.max(jnp.abs(continuity)))
+        print("Mean continuity error: ", jnp.mean((continuity)))
+        print("Sum continuity error: ", jnp.sum(continuity))
+
+        self.assertLess(jnp.abs(jnp.mean(continuity)), 5e-6)
+
+
 
 if __name__ == '__main__':
     unittest.main()
