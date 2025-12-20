@@ -200,53 +200,116 @@ def Esirkepov_current(particles, J, constants, world, grid):
     x_active = (Nx != 1)
     y_active = (Ny != 1)
     z_active = (Nz != 1)
+    # determine which axis are null
 
     for species in particles:
         q = species.get_charge()
-
         old_x, old_y, old_z = species.get_old_position()
         x, y, z = species.get_position()
         vx, vy, vz = species.get_velocity()
         shape_factor = species.get_shape()
+        N_particles = species.get_number_of_particles()
+        # get the particle properties
+        
+        x0 = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (x - xmin) / dx).astype(int),
+            lambda _: jnp.round( (x - xmin) / dx).astype(int),
+            operand=None
+        )
+        y0 = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (y - ymin) / dy).astype(int),
+            lambda _: jnp.round( (y - ymin) / dy).astype(int),
+            operand=None
+        )
+        z0 = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (z - zmin) / dz).astype(int),
+            lambda _: jnp.round( (z - zmin) / dz).astype(int),
+            operand=None
+        ) # calculate the nearest grid point based on shape factor for new positions
 
-        Np = x.shape[0]
+        old_x0 = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (old_x - xmin) / dx).astype(int),
+            lambda _: jnp.round( (old_x - xmin) / dx).astype(int),
+            operand=None
+        )
+        old_y0 = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (old_y - ymin) / dy).astype(int),
+            lambda _: jnp.round( (old_y - ymin) / dy).astype(int),
+            operand=None
+        )
+        old_z0 = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (old_z - zmin) / dz).astype(int),
+            lambda _: jnp.round( (old_z - zmin) / dz).astype(int),
+            operand=None
+        ) # calculate the nearest grid point based on shape factor for old positions
 
-        # --- unwrapped cell indices at new and old positions ---
-        x0 = _unwrapped_cell_index(x, xmin, dx, shape_factor)
-        y0 = _unwrapped_cell_index(y, ymin, dy, shape_factor)
-        z0 = _unwrapped_cell_index(z, zmin, dz, shape_factor)
-
-        old_x0 = _unwrapped_cell_index(old_x, xmin, dx, shape_factor)
-        old_y0 = _unwrapped_cell_index(old_y, ymin, dy, shape_factor)
-        old_z0 = _unwrapped_cell_index(old_z, zmin, dz, shape_factor)
-
-        # --- subcell offsets (must use UNWRAPPED index) ---
         deltax = (x - xmin) - x0 * dx
         deltay = (y - ymin) - y0 * dy
         deltaz = (z - zmin) - z0 * dz
-
+        # get the difference between the particle position and the nearest grid point
         old_deltax = (old_x - xmin) - old_x0 * dx
         old_deltay = (old_y - ymin) - old_y0 * dy
         old_deltaz = (old_z - zmin) - old_z0 * dz
+        # get the difference between the particle position and the nearest grid point
 
-        # --- shape weights at old and new positions ---
+        x0 = wrap_around(x0, Nx)
+        y0 = wrap_around(y0, Ny)
+        z0 = wrap_around(z0, Nz)
+        # wrap around the grid points for periodic boundary conditions
+        x1 = wrap_around(x0+1, Nx)
+        y1 = wrap_around(y0+1, Ny)
+        z1 = wrap_around(z0+1, Nz)
+        # calculate the right grid point
+        x2 = wrap_around(x0+2, Nx)
+        y2 = wrap_around(y0+2, Ny)
+        z2 = wrap_around(z0+2, Nz)
+        # calculate the second right grid point
+        x_minus1 = x0 - 1
+        y_minus1 = y0 - 1
+        z_minus1 = z0 - 1
+        # calculate the left grid point
+        x_minus2 = x0 - 2
+        y_minus2 = y0 - 2
+        z_minus2 = z0 - 2
+        # calculate the second left grid point
+
+        xpts = [x_minus2, x_minus1, x0, x1, x2]
+        ypts = [y_minus2, y_minus1, y0, y1, y2]
+        zpts = [z_minus2, z_minus1, z0, z1, z2]
+        # place all the points in a list
+
         xw, yw, zw = jax.lax.cond(
             shape_factor == 1,
             lambda _: get_first_order_weights(deltax, deltay, deltaz, dx, dy, dz),
             lambda _: get_second_order_weights(deltax, deltay, deltaz, dx, dy, dz),
             operand=None,
         )
+        # get the weights for the new positions
         oxw, oyw, ozw = jax.lax.cond(
             shape_factor == 1,
             lambda _: get_first_order_weights(old_deltax, old_deltay, old_deltaz, dx, dy, dz),
             lambda _: get_second_order_weights(old_deltax, old_deltay, old_deltaz, dx, dy, dz),
             operand=None,
-        )
+        ) # get the weights for the old positions
 
-        if len(xw) == 3:
-            xw, yw, zw = pad_to_5(xw), pad_to_5(yw), pad_to_5(zw)
-            oxw, oyw, ozw = pad_to_5(oxw), pad_to_5(oyw), pad_to_5(ozw)
+        tmp = jnp.zeros_like(xw[0])
+        # build the temporary zero array for padding
 
+        xw = [tmp, xw[0], xw[1], xw[2], tmp]
+        yw = [tmp, yw[0], yw[1], yw[2], tmp]
+        zw = [tmp, zw[0], zw[1], zw[2], tmp]
+        # pad the weights to 5 points for consistency
+
+        oxw = [tmp, oxw[0], oxw[1], oxw[2], tmp]
+        oyw = [tmp, oyw[0], oyw[1], oyw[2], tmp]
+        ozw = [tmp, ozw[0], ozw[1], ozw[2], tmp]
+        # pad the old weights to 5 points for consistency
 
         # align old weights into new-cell frame (roll by shift = old_i0 - new_i0)
         shift_x = ((old_x0 - x0 + Nx//2) % Nx) - Nx//2
@@ -258,9 +321,8 @@ def Esirkepov_current(particles, J, constants, world, grid):
 
         # --- build Esirkepov W on compact stencil ---
         if x_active and y_active and z_active:
-            Wx_, Wy_, Wz_ = get_3D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, Np)
+            Wx_, Wy_, Wz_ = get_3D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, N_particles)
         elif (x_active and y_active and (not z_active)) or (x_active and z_active and (not y_active)) or (y_active and z_active and (not x_active)):
-            # Your helper handles XY / XZ / YZ planes based on which N==1.
             null_dim = lax.cond(
                 not x_active,
                 lambda _: 0,
@@ -272,34 +334,35 @@ def Esirkepov_current(particles, J, constants, world, grid):
                 ),
                 operand=None,
             )
+            # determine which dimension is inactive
 
-            Wx_, Wy_, Wz_ = get_2D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, Np, null_dim=null_dim)
+            Wx_, Wy_, Wz_ = get_2D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, N_particles, null_dim=null_dim)
         elif x_active and (not y_active) and (not z_active):
             # 1D in x: Esirkepov reduces to 1D continuity;
-            Wx_, Wy_, Wz_ = get_1D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, Np, dim=0)
+            Wx_, Wy_, Wz_ = get_1D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, N_particles, dim=0)
         elif y_active and (not x_active) and (not z_active):
-            Wx_, Wy_, Wz_ = get_1D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, Np, dim=1)
+            Wx_, Wy_, Wz_ = get_1D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, N_particles, dim=1)
         elif z_active and (not x_active) and (not y_active):
-            Wx_, Wy_, Wz_ = get_1D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, Np, dim=2)
+            Wx_, Wy_, Wz_ = get_1D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, N_particles, dim=2)
 
         dJx = jax.lax.cond(
             x_active,
-            lambda _: (q / (dy * dz)) / dt * jnp.ones(Np),
-            lambda _: q * vx / (dx * dy * dz) * jnp.ones(Np),
+            lambda _: (q / (dy * dz)) / dt * jnp.ones(N_particles),
+            lambda _: q * vx / (dx * dy * dz) * jnp.ones(N_particles),
             operand=None,
         )
 
         dJy = jax.lax.cond(
             y_active,
-            lambda _: (q / (dx * dz)) / dt * jnp.ones(Np),
-            lambda _: q * vy / (dx * dy * dz) * jnp.ones(Np),
+            lambda _: (q / (dx * dz)) / dt * jnp.ones(N_particles),
+            lambda _: q * vy / (dx * dy * dz) * jnp.ones(N_particles),
             operand=None,
         )
 
         dJz = jax.lax.cond(
             z_active,
-            lambda _: (q / (dx * dy)) / dt * jnp.ones(Np),
-            lambda _: q * vz / (dx * dy * dz) * jnp.ones(Np),
+            lambda _: (q / (dx * dy)) / dt * jnp.ones(N_particles),
+            lambda _: q * vz / (dx * dy * dz) * jnp.ones(N_particles),
             operand=None,
         )
         # calculate prefactors for current deposition
@@ -329,77 +392,44 @@ def Esirkepov_current(particles, J, constants, world, grid):
         # This assumes 5 cells in each dimension for the stencil, but 6 faces (so 5 differences).
         # This should give periodic wrap around J(1) = J(6) = 0 as required.
         ################################################################################################
-
-        # --- stencil points (unwrapped for order, wrapped for scatter) ---
-        _, xpts = _stencil_points(x0, Nx)
-        _, ypts = _stencil_points(y0, Ny)
-        _, zpts = _stencil_points(z0, Nz)
-
-        # # --- scatter compact stencil directly into J ---
-        # # Jx_loc[i,j,k,p] adds to cell (xpts[i,p], ypts[j,p], zpts[k,p])
-        Sx, Sy, Sz = Jx_loc.shape[0], Jx_loc.shape[1], Jx_loc.shape[2]  # typically 5,5,5 (or 5,5,1 etc)
-
         if x_active:
-            for i in range(Sx):
-                for j in range(Sy):
-                    for k in range(Sz):
-                        xi = xpts[i, :]
-                        yj = ypts[j, :]
-                        zk = zpts[k, :]
-
-                        Jx = Jx.at[xi, yj, zk].add(Jx_loc[i, j, k, :], mode="drop")
+            for i in range(5):
+                for j in range(5):
+                    for k in range(5):
+                        Jx = Jx.at[xpts[i], ypts[j], zpts[k]].add(Jx_loc[i, j, k, :], mode="drop")
                         # deposit Jx using Esirkepov weights
         else:
-            for i in range(Sx):
-                for j in range(Sy):
-                    for k in range(Sz):
-                        xi = xpts[i, :]
-                        yj = ypts[j, :]
-                        zk = zpts[k, :]
-
-                        Jx = Jx.at[xi, yj, zk].add(Fx[i, j, k, :], mode="drop")
+            for i in range(5):
+                for j in range(5):
+                    for k in range(5):
+                        Jx = Jx.at[xpts[i], ypts[j], zpts[k]].add(Fx[i, j, k, :], mode="drop")
                         # deposit Jx using midpoint weights for inactive dimension
 
         if y_active:
-            for i in range(Sx):
-                for j in range(Sy):
-                    for k in range(Sz):
-                        xi = xpts[i, :]
-                        yj = ypts[j, :]
-                        zk = zpts[k, :]
-
-                        Jy = Jy.at[xi, yj, zk].add(Jy_loc[i, j, k, :], mode="drop")
+            for i in range(5):
+                for j in range(5):
+                    for k in range(5):
+                        Jy = Jy.at[xpts[i], ypts[j], zpts[k]].add(Jy_loc[i, j, k, :], mode="drop")
                         # deposit Jy using Esirkepov weights
         else:
-            for i in range(Sx):
-                for j in range(Sy):
-                    for k in range(Sz):
-                        xi = xpts[i, :]
-                        yj = ypts[j, :]
-                        zk = zpts[k, :]
-
-                        Jy = Jy.at[xi, yj, zk].add(Fy[i, j, k, :], mode="drop")
+            for i in range(5):
+                for j in range(5):
+                    for k in range(5):
+                        Jy = Jy.at[xpts[i], ypts[j], zpts[k]].add(Fy[i, j, k, :], mode="drop")
                         # deposit Jy using midpoint weights for inactive dimension
 
         if z_active:
-            for i in range(Sx):
-                for j in range(Sy):
-                    for k in range(Sz):
-                        xi = xpts[i, :]
-                        yj = ypts[j, :]
-                        zk = zpts[k, :]
-
-                        Jz = Jz.at[xi, yj, zk].add(Jz_loc[i, j, k, :], mode="drop")
+            for i in range(5):
+                for j in range(5):
+                    for k in range(5):
+                        Jz = Jz.at[xpts[i], ypts[j], zpts[k]].add(Jz_loc[i, j, k, :], mode="drop")
+                        # deposit Jz using Esirkepov weights
         
         else:
-            for i in range(Sx):
-                for j in range(Sy):
-                    for k in range(Sz):
-                        xi = xpts[i, :]
-                        yj = ypts[j, :]
-                        zk = zpts[k, :]
-
-                        Jz = Jz.at[xi, yj, zk].add(Fz[i, j, k, :], mode="drop")
+            for i in range(5):
+                for j in range(5):
+                    for k in range(5):
+                        Jz = Jz.at[xpts[i], ypts[j], zpts[k]].add(Fz[i, j, k, :], mode="drop")
                         # deposit Jz using midpoint weights for inactive dimension
 
 
