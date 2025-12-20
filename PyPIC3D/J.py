@@ -282,9 +282,26 @@ def Esirkepov_current(particles, J, constants, world, grid):
         elif z_active and (not x_active) and (not y_active):
             Wx_, Wy_, Wz_ = get_1D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, Np, dim=2)
 
-        dJx =  q / (dy * dz) / dt * jnp.ones(Np)
-        dJy =  q / (dx * dz) / dt * jnp.ones(Np)
-        dJz =  q / (dx * dy) / dt * jnp.ones(Np)
+        dJx = jax.lax.cond(
+            x_active,
+            lambda _: (q / (dy * dz)) / dt * jnp.ones(Np),
+            lambda _: q * vx / (dx * dy * dz) * jnp.ones(Np),
+            operand=None,
+        )
+
+        dJy = jax.lax.cond(
+            y_active,
+            lambda _: (q / (dx * dz)) / dt * jnp.ones(Np),
+            lambda _: q * vy / (dx * dy * dz) * jnp.ones(Np),
+            operand=None,
+        )
+
+        dJz = jax.lax.cond(
+            z_active,
+            lambda _: (q / (dx * dy)) / dt * jnp.ones(Np),
+            lambda _: q * vz / (dx * dy * dz) * jnp.ones(Np),
+            operand=None,
+        )
         # calculate prefactors for current deposition
 
         # local “difference RHS”
@@ -331,6 +348,17 @@ def Esirkepov_current(particles, J, constants, world, grid):
                         zk = zpts[k, :]
 
                         Jx = Jx.at[xi, yj, zk].add(Jx_loc[i, j, k, :], mode="drop")
+                        # deposit Jx using Esirkepov weights
+        else:
+            for i in range(Sx):
+                for j in range(Sy):
+                    for k in range(Sz):
+                        xi = xpts[i, :]
+                        yj = ypts[j, :]
+                        zk = zpts[k, :]
+
+                        Jx = Jx.at[xi, yj, zk].add(Fx[i, j, k, :], mode="drop")
+                        # deposit Jx using midpoint weights for inactive dimension
 
         if y_active:
             for i in range(Sx):
@@ -341,6 +369,17 @@ def Esirkepov_current(particles, J, constants, world, grid):
                         zk = zpts[k, :]
 
                         Jy = Jy.at[xi, yj, zk].add(Jy_loc[i, j, k, :], mode="drop")
+                        # deposit Jy using Esirkepov weights
+        else:
+            for i in range(Sx):
+                for j in range(Sy):
+                    for k in range(Sz):
+                        xi = xpts[i, :]
+                        yj = ypts[j, :]
+                        zk = zpts[k, :]
+
+                        Jy = Jy.at[xi, yj, zk].add(Fy[i, j, k, :], mode="drop")
+                        # deposit Jy using midpoint weights for inactive dimension
 
         if z_active:
             for i in range(Sx):
@@ -351,16 +390,18 @@ def Esirkepov_current(particles, J, constants, world, grid):
                         zk = zpts[k, :]
 
                         Jz = Jz.at[xi, yj, zk].add(Jz_loc[i, j, k, :], mode="drop")
+        
+        else:
+            for i in range(Sx):
+                for j in range(Sy):
+                    for k in range(Sz):
+                        xi = xpts[i, :]
+                        yj = ypts[j, :]
+                        zk = zpts[k, :]
 
-    not_3D = (not x_active) or (not y_active) or (not z_active)
-    # check if simulation is not 3D
+                        Jz = Jz.at[xi, yj, zk].add(Fz[i, j, k, :], mode="drop")
+                        # deposit Jz using midpoint weights for inactive dimension
 
-    if not_3D:
-        J_rhov = J_from_rhov(particles, J, constants, world, grid)
-        # calculate J from rho*v for inactive dimensions
-        Jx = J_rhov[0] if not x_active else Jx
-        Jy = J_rhov[1] if not y_active else Jy
-        Jz = J_rhov[2] if not z_active else Jz
 
     return (Jx, Jy, Jz)
         
@@ -462,18 +503,30 @@ def get_1D_esirkepov_weights(x_weights, y_weights, z_weights, old_x_weights, old
     def x_active(Wx_, Wy_, Wz_, x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights):
         for i in range(len(x_weights)):
             Wx_ = Wx_.at[i, 2, 2, :].set( (x_weights[i] - old_x_weights[i]) )
+            # get the weights for x direction
+            Wy_ = Wy_.at[:, 2, 2, :].set( (x_weights[i] + old_x_weights[i]) / 2 )
+            Wz_ = Wz_.at[:, 2, 2, :].set( (x_weights[i] + old_x_weights[i]) / 2 )
+            # use a midpoint average for inactive directions
         # weights if x direction is active
         return Wx_, Wy_, Wz_
 
     def y_active(Wx_, Wy_, Wz_, x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights):
         for j in range(len(y_weights)):
             Wy_ = Wy_.at[2, j, 2, :].set( (y_weights[j] - old_y_weights[j]) )
+            # weights for y direction
+            Wx_ = Wx_.at[2, :, 2, :].set( (y_weights[j] + old_y_weights[j]) / 2 )
+            Wz_ = Wz_.at[2, :, 2, :].set( (y_weights[j] + old_y_weights[j]) / 2 )
+            # use a midpoint average for inactive directions
         # weights if y direction is active
         return Wx_, Wy_, Wz_
     
     def z_active(Wx_, Wy_, Wz_, x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights):
         for k in range(len(z_weights)):
             Wz_ = Wz_.at[2, 2, k, :].set( (z_weights[k] - old_z_weights[k]) )
+            # weights for z direction
+            Wx_ = Wx_.at[2, 2, :, :].set( (z_weights[k] + old_z_weights[k]) / 2 )
+            Wy_ = Wy_.at[2, 2, :, :].set( (z_weights[k] + old_z_weights[k]) / 2 )
+            # use a midpoint average for inactive directions
         # weights if z direction is active
         return Wx_, Wy_, Wz_
     
