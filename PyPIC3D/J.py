@@ -156,7 +156,7 @@ def _roll_old_weights_to_new_frame(old_w_list, shift):
     old_w = jnp.stack(old_w_list, axis=0)  # (5, Np)
 
     def roll_one_particle(w5, s):
-        return jnp.roll(w5, -s, axis=0)
+        return jnp.roll(w5, s, axis=0)
 
     rolled = jax.vmap(roll_one_particle, in_axes=(1, 0), out_axes=1)(old_w, shift)  # (5,Np)
     return [rolled[i, :] for i in range(5)]
@@ -186,11 +186,6 @@ def Esirkepov_current(particles, J, constants, world, grid):
     Nx, Ny, Nz = Jx.shape
     dx, dy, dz, dt = world["dx"], world["dy"], world["dz"], world["dt"]
     xmin, ymin, zmin = grid[0][0], grid[1][0], grid[2][0]
-
-    xmin = xmin - dx/2
-    ymin = ymin - dy/2
-    zmin = zmin - dz/2
-    # adjust grid minimums for staggered grid
 
     # zero current arrays
     Jx = Jx.at[:, :, :].set(0)
@@ -258,6 +253,11 @@ def Esirkepov_current(particles, J, constants, world, grid):
         old_deltaz = (old_z - zmin) - old_z0 * dz
         # get the difference between the particle position and the nearest grid point
 
+        shift_x = x0 - old_x0
+        shift_y = y0 - old_y0
+        shift_z = z0 - old_z0
+        # calculate the shift between old and new grid points
+
         x0 = wrap_around(x0, Nx)
         y0 = wrap_around(y0, Ny)
         z0 = wrap_around(z0, Nz)
@@ -270,13 +270,13 @@ def Esirkepov_current(particles, J, constants, world, grid):
         y2 = wrap_around(y0+2, Ny)
         z2 = wrap_around(z0+2, Nz)
         # calculate the second right grid point
-        x_minus1 = x0 - 1
-        y_minus1 = y0 - 1
-        z_minus1 = z0 - 1
+        x_minus1 = wrap_around(x0 - 1, Nx)
+        y_minus1 = wrap_around(y0 - 1, Ny)
+        z_minus1 = wrap_around(z0 - 1, Nz)
         # calculate the left grid point
-        x_minus2 = x0 - 2
-        y_minus2 = y0 - 2
-        z_minus2 = z0 - 2
+        x_minus2 = wrap_around(x0 - 2, Nx)
+        y_minus2 = wrap_around(y0 - 2, Ny)
+        z_minus2 = wrap_around(z0 - 2, Nz)
         # calculate the second left grid point
 
         xpts = [x_minus2, x_minus1, x0, x1, x2]
@@ -311,10 +311,6 @@ def Esirkepov_current(particles, J, constants, world, grid):
         ozw = [tmp, ozw[0], ozw[1], ozw[2], tmp]
         # pad the old weights to 5 points for consistency
 
-        # align old weights into new-cell frame (roll by shift = old_i0 - new_i0)
-        shift_x = ((old_x0 - x0 + Nx//2) % Nx) - Nx//2
-        shift_y = ((old_y0 - y0 + Ny//2) % Ny) - Ny//2
-        shift_z = ((old_z0 - z0 + Nz//2) % Nz) - Nz//2
         oxw = _roll_old_weights_to_new_frame(oxw, shift_x)
         oyw = _roll_old_weights_to_new_frame(oyw, shift_y)
         ozw = _roll_old_weights_to_new_frame(ozw, shift_z)
@@ -347,21 +343,21 @@ def Esirkepov_current(particles, J, constants, world, grid):
 
         dJx = jax.lax.cond(
             x_active,
-            lambda _: (q / (dy * dz)) / dt * jnp.ones(N_particles),
+            lambda _: -(q / (dy * dz)) / dt * jnp.ones(N_particles),
             lambda _: q * vx / (dx * dy * dz) * jnp.ones(N_particles),
             operand=None,
         )
 
         dJy = jax.lax.cond(
             y_active,
-            lambda _: (q / (dx * dz)) / dt * jnp.ones(N_particles),
+            lambda _: -(q / (dx * dz)) / dt * jnp.ones(N_particles),
             lambda _: q * vy / (dx * dy * dz) * jnp.ones(N_particles),
             operand=None,
         )
 
         dJz = jax.lax.cond(
             z_active,
-            lambda _: (q / (dx * dy)) / dt * jnp.ones(N_particles),
+            lambda _: -(q / (dx * dy)) / dt * jnp.ones(N_particles),
             lambda _: q * vz / (dx * dy * dz) * jnp.ones(N_particles),
             operand=None,
         )
@@ -534,8 +530,8 @@ def get_1D_esirkepov_weights(x_weights, y_weights, z_weights, old_x_weights, old
         for i in range(len(x_weights)):
             Wx_ = Wx_.at[i, 2, 2, :].set( (x_weights[i] - old_x_weights[i]) )
             # get the weights for x direction
-            Wy_ = Wy_.at[:, 2, 2, :].set( (x_weights[i] + old_x_weights[i]) / 2 )
-            Wz_ = Wz_.at[:, 2, 2, :].set( (x_weights[i] + old_x_weights[i]) / 2 )
+            Wy_ = Wy_.at[i, 2, 2, :].set( (x_weights[i] + old_x_weights[i]) / 2 )
+            Wz_ = Wz_.at[i, 2, 2, :].set( (x_weights[i] + old_x_weights[i]) / 2 )
             # use a midpoint average for inactive directions
         # weights if x direction is active
         return Wx_, Wy_, Wz_
@@ -544,8 +540,8 @@ def get_1D_esirkepov_weights(x_weights, y_weights, z_weights, old_x_weights, old
         for j in range(len(y_weights)):
             Wy_ = Wy_.at[2, j, 2, :].set( (y_weights[j] - old_y_weights[j]) )
             # weights for y direction
-            Wx_ = Wx_.at[2, :, 2, :].set( (y_weights[j] + old_y_weights[j]) / 2 )
-            Wz_ = Wz_.at[2, :, 2, :].set( (y_weights[j] + old_y_weights[j]) / 2 )
+            Wx_ = Wx_.at[2, j, 2, :].set( (y_weights[j] + old_y_weights[j]) / 2 )
+            Wz_ = Wz_.at[2, j, 2, :].set( (y_weights[j] + old_y_weights[j]) / 2 )
             # use a midpoint average for inactive directions
         # weights if y direction is active
         return Wx_, Wy_, Wz_
@@ -554,8 +550,8 @@ def get_1D_esirkepov_weights(x_weights, y_weights, z_weights, old_x_weights, old
         for k in range(len(z_weights)):
             Wz_ = Wz_.at[2, 2, k, :].set( (z_weights[k] - old_z_weights[k]) )
             # weights for z direction
-            Wx_ = Wx_.at[2, 2, :, :].set( (z_weights[k] + old_z_weights[k]) / 2 )
-            Wy_ = Wy_.at[2, 2, :, :].set( (z_weights[k] + old_z_weights[k]) / 2 )
+            Wx_ = Wx_.at[2, 2, k, :].set( (z_weights[k] + old_z_weights[k]) / 2 )
+            Wy_ = Wy_.at[2, 2, k, :].set( (z_weights[k] + old_z_weights[k]) / 2 )
             # use a midpoint average for inactive directions
         # weights if z direction is active
         return Wx_, Wy_, Wz_
