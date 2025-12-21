@@ -44,11 +44,9 @@ def J_from_rhov(particles, J, constants, world, grid):
 
     if particles:
         # if there are particles in the simulation
-
-        x_mid = [ (species.get_old_position()[0] + species.get_forward_position()[0]) / 2 for species in particles]
-        y_mid = [ (species.get_old_position()[1] + species.get_forward_position()[1]) / 2 for species in particles]
-        z_mid = [ (species.get_old_position()[2] + species.get_forward_position()[2]) / 2 for species in particles]
-        # # midpoint rule to get x_t+1/2 position
+        x_mid = [ species.get_position()[0] for species in particles]
+        y_mid = [ species.get_position()[1] for species in particles]
+        z_mid = [ species.get_position()[2] for species in particles]
         # # v is already at t+1/2 from the Boris push
         # yields J at t+1/2
         total_x = jnp.concatenate( x_mid )

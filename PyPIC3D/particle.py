@@ -594,22 +594,21 @@ class particle_species:
    
     def update_position(self):
         if self.update_pos:
-            old_x1, old_x2, old_x3 = self.get_position()
             # store the old position of the particles
             if self.update_x:
-                self.old_x1 = old_x1    
+                self.old_x1 = self.x1
                 # store the old position of the particles
                 self.x1      = self.x1 + self.v1 * self.dt
                 # update the x position of the particles
 
             if self.update_y:
-                self.old_x2 = old_x2
+                self.old_x2 = self.x2
                 # store the old position of the particles
                 self.x2      = self.x2 + self.v2 * self.dt
                 # update the y position of the particles
 
             if self.update_z:
-                self.old_x3 = old_x3
+                self.old_x3 = self.x3
                 # store the old position of the particles
                 self.x3      = self.x3 + self.v3 * self.dt
                 # update the z position of the particles
