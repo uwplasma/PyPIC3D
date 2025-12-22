@@ -154,7 +154,7 @@ def _roll_old_weights_to_new_frame(old_w_list, shift):
     old_w = jnp.stack(old_w_list, axis=0)  # (5, Np)
 
     def roll_one_particle(w5, s):
-        return jnp.roll(w5, s, axis=0)
+        return jnp.roll(w5, -s, axis=0)
 
     rolled = jax.vmap(roll_one_particle, in_axes=(1, 0), out_axes=1)(old_w, shift)  # (5,Np)
     return [rolled[i, :] for i in range(5)]
@@ -251,9 +251,9 @@ def Esirkepov_current(particles, J, constants, world, grid):
         old_deltaz = (old_z - zmin) - old_z0 * dz
         # get the difference between the particle position and the nearest grid point
 
-        shift_x = x0 - old_x0
-        shift_y = y0 - old_y0
-        shift_z = z0 - old_z0
+        shift_x = old_x0 - x0
+        shift_y = old_y0 - y0
+        shift_z = old_z0 - z0
         # calculate the shift between old and new grid points
 
         x0 = wrap_around(x0, Nx)
@@ -341,21 +341,21 @@ def Esirkepov_current(particles, J, constants, world, grid):
 
         dJx = jax.lax.cond(
             x_active,
-            lambda _: (q / (dy * dz)) / dt * jnp.ones(N_particles),
+            lambda _: -(q / (dy * dz)) / dt * jnp.ones(N_particles),
             lambda _: q * vx / (dx * dy * dz) * jnp.ones(N_particles),
             operand=None,
         )
 
         dJy = jax.lax.cond(
             y_active,
-            lambda _: (q / (dx * dz)) / dt * jnp.ones(N_particles),
+            lambda _: -(q / (dx * dz)) / dt * jnp.ones(N_particles),
             lambda _: q * vy / (dx * dy * dz) * jnp.ones(N_particles),
             operand=None,
         )
 
         dJz = jax.lax.cond(
             z_active,
-            lambda _: (q / (dx * dy)) / dt * jnp.ones(N_particles),
+            lambda _: -(q / (dx * dy)) / dt * jnp.ones(N_particles),
             lambda _: q * vz / (dx * dy * dz) * jnp.ones(N_particles),
             operand=None,
         )
