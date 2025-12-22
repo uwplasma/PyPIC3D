@@ -341,21 +341,21 @@ def Esirkepov_current(particles, J, constants, world, grid):
 
         dJx = jax.lax.cond(
             x_active,
-            lambda _: -(q / (dy * dz)) / dt * jnp.ones(N_particles),
+            lambda _: (q / (dy * dz)) / dt * jnp.ones(N_particles),
             lambda _: q * vx / (dx * dy * dz) * jnp.ones(N_particles),
             operand=None,
         )
 
         dJy = jax.lax.cond(
             y_active,
-            lambda _: -(q / (dx * dz)) / dt * jnp.ones(N_particles),
+            lambda _: (q / (dx * dz)) / dt * jnp.ones(N_particles),
             lambda _: q * vy / (dx * dy * dz) * jnp.ones(N_particles),
             operand=None,
         )
 
         dJz = jax.lax.cond(
             z_active,
-            lambda _: -(q / (dx * dy)) / dt * jnp.ones(N_particles),
+            lambda _: (q / (dx * dy)) / dt * jnp.ones(N_particles),
             lambda _: q * vz / (dx * dy * dz) * jnp.ones(N_particles),
             operand=None,
         )
@@ -373,16 +373,10 @@ def Esirkepov_current(particles, J, constants, world, grid):
         # Using Backward Finite Difference approach for prefix sum #################################
         # Jx currents
         Jx_loc = jnp.cumsum(Fx, axis=0)
-        Jx_loc = Jx_loc.at[4, :, :, :].set(0)
-        # J(5) = 0 for Esirkepov because the sum of the differences of the stencil weights over all cells is 1 - 1 = 0
         # Jy currents
         Jy_loc = jnp.cumsum(Fy, axis=1)
-        Jy_loc = Jy_loc.at[:, 4, :, :].set(0)
-        # J(5) = 0 for Esirkepov because the sum of the differences of the stencil weights over all cells is 1 - 1 = 0
         # Jz currents
         Jz_loc = jnp.cumsum(Fz, axis=2)
-        Jz_loc = Jz_loc.at[:, :, 4, :].set(0)
-        # J(5) = 0 for Esirkepov because the sum of the differences of the stencil weights over all cells is 1 - 1 = 0
         # This assumes 5 cells in each dimension for the stencil, but 6 faces (so 5 differences).
         # This should give periodic wrap around J(1) = J(6) = 0 as required.
         ################################################################################################
