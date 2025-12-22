@@ -198,7 +198,7 @@ def Esirkepov_current(particles, J, constants, world, grid):
     for species in particles:
         q = species.get_charge()
         old_x, old_y, old_z = species.get_old_position()
-        x, y, z = species.get_position()
+        x, y, z = species.get_forward_position()
         vx, vy, vz = species.get_velocity()
         shape_factor = species.get_shape()
         N_particles = species.get_number_of_particles()
@@ -341,21 +341,21 @@ def Esirkepov_current(particles, J, constants, world, grid):
 
         dJx = jax.lax.cond(
             x_active,
-            lambda _: -(q / (dy * dz)) / dt * jnp.ones(N_particles),
+            lambda _: (q / (dy * dz)) / dt * jnp.ones(N_particles),
             lambda _: q * vx / (dx * dy * dz) * jnp.ones(N_particles),
             operand=None,
         )
 
         dJy = jax.lax.cond(
             y_active,
-            lambda _: -(q / (dx * dz)) / dt * jnp.ones(N_particles),
+            lambda _: (q / (dx * dz)) / dt * jnp.ones(N_particles),
             lambda _: q * vy / (dx * dy * dz) * jnp.ones(N_particles),
             operand=None,
         )
 
         dJz = jax.lax.cond(
             z_active,
-            lambda _: -(q / (dx * dy)) / dt * jnp.ones(N_particles),
+            lambda _: (q / (dx * dy)) / dt * jnp.ones(N_particles),
             lambda _: q * vz / (dx * dy * dz) * jnp.ones(N_particles),
             operand=None,
         )
