@@ -135,16 +135,6 @@ def J_from_rhov(particles, J, constants, world, grid):
 
     return J
 
-
-def _unwrapped_cell_index(x, xmin, dx, shape_factor):
-    # matches your existing convention: linear -> floor, quadratic -> round
-    return jax.lax.cond(
-        shape_factor == 1,
-        lambda _: jnp.floor((x - xmin) / dx).astype(jnp.int32),
-        lambda _: jnp.round((x - xmin) / dx).astype(jnp.int32),
-        operand=None,
-    )
-
 def _roll_old_weights_to_new_frame(old_w_list, shift):
     """
     old_w_list: list of 5 arrays, each (Np,)
@@ -159,15 +149,6 @@ def _roll_old_weights_to_new_frame(old_w_list, shift):
     rolled = jax.vmap(roll_one_particle, in_axes=(1, 0), out_axes=1)(old_w, shift)  # (5,Np)
     return [rolled[i, :] for i in range(5)]
 
-def _stencil_points(i0, N):
-    """
-    i0: (Np,) unwrapped base index at new position
-    Returns pts_u: (S,Np) unwrapped and pts: (S,Np) wrapped, where S=5 for your weights.
-    """
-    offsets = jnp.array([-2, -1, 0, 1, 2], dtype=jnp.int32)[:, None]  # (5,1)
-    pts_u = i0[None, :] + offsets                                     # (5,Np)
-    pts = wrap_around(pts_u, N) if N != 1 else jnp.zeros_like(pts_u)
-    return pts_u, pts
 
 def pad_to_5(w3):
     # w3 is [w(-1), w(0), w(+1)] in your convention
@@ -251,9 +232,9 @@ def Esirkepov_current(particles, J, constants, world, grid):
         old_deltaz = (old_z - zmin) - old_z0 * dz
         # get the difference between the particle position and the nearest grid point
 
-        shift_x = old_x0 - x0
-        shift_y = old_y0 - y0
-        shift_z = old_z0 - z0
+        shift_x = x0 - old_x0
+        shift_y = y0 - old_y0
+        shift_z = z0 - old_z0
         # calculate the shift between old and new grid points
 
         x0 = wrap_around(x0, Nx)
@@ -341,21 +322,21 @@ def Esirkepov_current(particles, J, constants, world, grid):
 
         dJx = jax.lax.cond(
             x_active,
-            lambda _: (q / (dy * dz)) / dt * jnp.ones(N_particles),
+            lambda _: -(q / (dy * dz)) / dt * jnp.ones(N_particles),
             lambda _: q * vx / (dx * dy * dz) * jnp.ones(N_particles),
             operand=None,
         )
 
         dJy = jax.lax.cond(
             y_active,
-            lambda _: (q / (dx * dz)) / dt * jnp.ones(N_particles),
+            lambda _: -(q / (dx * dz)) / dt * jnp.ones(N_particles),
             lambda _: q * vy / (dx * dy * dz) * jnp.ones(N_particles),
             operand=None,
         )
 
         dJz = jax.lax.cond(
             z_active,
-            lambda _: (q / (dx * dy)) / dt * jnp.ones(N_particles),
+            lambda _: -(q / (dx * dy)) / dt * jnp.ones(N_particles),
             lambda _: q * vz / (dx * dy * dz) * jnp.ones(N_particles),
             operand=None,
         )
