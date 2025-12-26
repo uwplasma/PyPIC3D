@@ -2,7 +2,6 @@ import jax
 from jax import jit
 import jax.numpy as jnp
 
-from PyPIC3D.utils import wrap_around
 
 
 @jit
