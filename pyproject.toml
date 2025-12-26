@@ -17,7 +17,6 @@ dependencies = [
     "plotly",
     "toml",
     "tqdm",
-    "epyc",
     "pyevtk",
     "vtk"
 ]

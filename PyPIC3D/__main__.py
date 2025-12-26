@@ -57,21 +57,10 @@ def run_PyPIC3D(config_file):
     # Compute the energy of the system
     initial_energy = e_energy + b_energy + kinetic_energy
 
-
-    Jxs = []
-    Nx = world['Nx']
-    Ny = world['Ny']
-    Nz = world['Nz']
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
     dt = world['dt']
-
-
-    rho = jnp.zeros((Nx,Ny,Nz))
-    new_rho = jnp.zeros((Nx,Ny,Nz))
-    rho = compute_rho(particles, rho, world, constants)
-    # compute initial rho
 
     ############################################################################################################
 
@@ -84,8 +73,6 @@ def run_PyPIC3D(config_file):
 
             E, B, J, rho, *rest = fields
             # unpack the fields
-
-            Jxs.append(J[0])
 
             e_energy, b_energy, kinetic_energy = compute_energy(particles, E, B, world, constants)
             # Compute the energy of the system
@@ -107,26 +94,8 @@ def run_PyPIC3D(config_file):
             if plotting_parameters['plot_phasespace']:
                 write_particles_phase_space(particles, t, output_dir)
 
-            new_rho = compute_rho(particles, new_rho, world, constants)
+            rho = compute_rho(particles, rho, world, constants)
             # calculate the charge density based on the particle positions
-            drhodt = (new_rho - rho) / (dt)
-            # compute drho/dt
-            dJxdx = (jnp.roll(J[0], shift=-1, axis=0) - J[0] ) / dx
-            dJydy = (jnp.roll(J[1], shift=-1, axis=1) - J[1] ) / dy
-            dJzdz = (jnp.roll(J[2], shift=-1, axis=2) - J[2] ) / dz
-            div_J = dJxdx + dJydy + dJzdz
-            # compute divergence of J
-            continuity_error = drhodt + div_J
-            max_continuity_error = jnp.max(jnp.abs(continuity_error))
-            mean_continuity_error = jnp.mean(jnp.abs(continuity_error))
-            sum_continuity_error = jnp.sum(continuity_error)
-            write_data(f"{output_dir}/data/max_continuity_error.txt", t * dt, max_continuity_error)
-            # write the continuity error to a file
-            write_data(f"{output_dir}/data/mean_continuity_error.txt", t * dt, mean_continuity_error)
-            write_data(f"{output_dir}/data/sum_continuity_error.txt", t * dt, sum_continuity_error)
-
-            rho = new_rho
-            # update rho to the new charge density
 
             mass_density = compute_mass_density(particles, rho, world)
             # calculate the mass density based on the particle positions
@@ -151,8 +120,6 @@ def run_PyPIC3D(config_file):
 
         particles, fields = jit_loop(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, x_bc, y_bc, z_bc, relativistic=relativistic)
         # time loop to update the particles and fields
-
-        jnp.save(f"{output_dir}/Jx.npy", jnp.asarray(Jxs) )
 
 
     return Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles, fields, world
