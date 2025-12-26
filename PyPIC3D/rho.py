@@ -375,8 +375,6 @@ def compute_pressure_field(particles, field, velocity_field, direction, world):
     for species in particles:
         shape_factor = species.get_shape()
         # get the shape factor of the species, which determines the weighting function
-        N_particles = species.get_number_of_particles()
-        # get the number of particles
         x, y, z = species.get_position()
         # get the position of the particles in the species
         vx, vy, vz = species.get_velocity()
