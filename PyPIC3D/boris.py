@@ -2,6 +2,8 @@ import jax
 from jax import jit
 import jax.numpy as jnp
 
+from PyPIC3D.utils import wrap_around
+
 
 @jit
 def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic=True, relativistic=True):
@@ -531,13 +533,3 @@ def create_quadratic_interpolator(field, grid, periodic=True):
 
     vmap_interpolator = jax.vmap(interpolator, in_axes=(0, 0, 0), out_axes=0)
     return vmap_interpolator
-
-@jit
-def wrap_around(ix, size):
-    """Wrap around index to ensure it is within bounds."""
-    return jax.lax.cond(
-        ix > size - 1,
-        lambda _: ix - size,
-        lambda _: ix,
-        operand=None
-    )

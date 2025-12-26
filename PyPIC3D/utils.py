@@ -18,7 +18,7 @@ from scipy import stats
 @jit
 def wrap_around(ix, size):
     """Wrap around index (scalar or 1D array) to ensure it is within bounds."""
-    return ix % size
+    return jnp.where(ix > size - 1, ix - size, ix)
 
 @jit
 def digital_filter(phi, alpha):

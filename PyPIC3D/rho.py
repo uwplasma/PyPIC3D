@@ -119,11 +119,6 @@ def compute_rho(particles, rho, world, constants):
     return rho
 
 @jit
-def wrap_around(ix, size):
-    """Wrap around index (scalar or 1D array) to ensure it is within bounds."""
-    return jnp.where(ix > size - 1, ix - size, ix)
-
-@jit
 def get_second_order_weights(deltax, deltay, deltaz, dx, dy, dz):
     """
     Calculate the second-order weights for particle current distribution.
