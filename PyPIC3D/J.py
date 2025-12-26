@@ -150,12 +150,6 @@ def _roll_old_weights_to_new_frame(old_w_list, shift):
     return [rolled[i, :] for i in range(5)]
 
 
-def pad_to_5(w3):
-    # w3 is [w(-1), w(0), w(+1)] in your convention
-    z = jnp.zeros_like(w3[0])
-    return [z, w3[0], w3[1], w3[2], z]
-
-
 def Esirkepov_current(particles, J, constants, world, grid):
     """
     Local per-particle Esirkepov deposition that works for 1D/2D/3D by setting inactive dims to size 1.
