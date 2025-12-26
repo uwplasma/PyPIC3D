@@ -420,7 +420,7 @@ def compute_pressure_field(particles, field, velocity_field, direction, world):
         for i in range(3):
             for j in range(3):
                 for k in range(3):
-                    vbar = v -velocity_field.at[xpts[i], ypts[j], zpts[k]].get()
+                    vbar = v - velocity_field.at[xpts[i], ypts[j], zpts[k]].get()
 
                     field = field.at[xpts[i], ypts[j], zpts[k]].add( vbar**2 * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
         # distribute the pressure moment of the particles to the grid points using the weighting factors
