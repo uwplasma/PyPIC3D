@@ -13,7 +13,6 @@ from PyPIC3D.J import J_from_rhov, Esirkepov_current
 
 from PyPIC3D.rho import compute_rho
 
-from PyPIC3D.solvers.fdtd import centered_finite_difference_divergence
 
 jax.config.update("jax_enable_x64", True)
 
