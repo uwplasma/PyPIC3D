@@ -495,26 +495,6 @@ class TestParticleMethods(unittest.TestCase):
         continuity = drhodt + dJxdx
         # check continuity equation
 
-        # import matplotlib.pyplot as plt
-
-        # plt.figure(figsize=(12, 6))
-        # plt.plot(dJxdx.flatten(), label='dJxdx', linewidth=2)
-        # plt.plot(drhodt.flatten(), label='drhodt', linewidth=2)
-        # plt.xlabel('Grid Index')
-        # plt.ylabel('Value')
-        # plt.legend()
-        # plt.grid(True)
-        # plt.title('Divergence of Current vs Rate of Change of Charge Density')
-        # plt.savefig('continuity_check.png')
-        # plt.close()
-
-        print("Mean drhodt: ", jnp.mean(jnp.abs(drhodt)))
-        print("Mean divJ: ", jnp.mean(jnp.abs(dJxdx)))
-
-        print("Max continuity error: ", jnp.max(jnp.abs(continuity)))
-        print("Mean continuity error: ", jnp.mean((continuity)))
-        print("Sum continuity error: ", jnp.sum(continuity))
-
         self.assertLess(jnp.abs(jnp.mean(continuity)), 5e-6)
 
 
