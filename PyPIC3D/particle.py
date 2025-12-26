@@ -591,6 +591,28 @@ class particle_species:
 
     def momentum(self):
         return self.mass * self.weight * jnp.sum(jnp.sqrt(self.v1**2 + self.v2**2 + self.v3**2))
+    
+    def boundary_conditions(self):
+        if self.x_bc == 'periodic':
+            self.x1 = jnp.where(self.x1 > self.x_wind/2,  self.x1 - self.x_wind, \
+                            jnp.where(self.x1 < -self.x_wind/2, self.x1 + self.x_wind, self.x1))
+        elif self.x_bc == 'reflecting':
+            self.v1 = jnp.where((self.x1 >= self.x_wind/2) | (self.x1 <= -self.x_wind/2), -self.v1, self.v1)
+        # apply boundary conditions to the x position of the particles
+
+        if self.y_bc == 'periodic':
+            self.x2 = jnp.where(self.x2 > self.y_wind/2,  self.x2 - self.y_wind, \
+                            jnp.where(self.x2 < -self.y_wind/2, self.x2 + self.y_wind, self.x2))
+        elif self.y_bc == 'reflecting':
+            self.v2 = jnp.where((self.x2 >= self.y_wind/2) | (self.x2 <= -self.y_wind/2), -self.v2, self.v2)
+        # apply boundary conditions to the y position of the particles
+
+        if self.z_bc == 'periodic':
+            self.x3 = jnp.where(self.x3 > self.z_wind/2,  self.x3 - self.z_wind, \
+                            jnp.where(self.x3 < -self.z_wind/2, self.x3 + self.z_wind, self.x3))
+        elif self.z_bc == 'reflecting':
+            self.v3 = jnp.where((self.x3 >= self.z_wind/2) | (self.x3 <= -self.z_wind/2), -self.v3, self.v3)
+        # apply boundary conditions to the z position of the particles
    
     def update_position(self):
         if self.update_pos:
@@ -612,27 +634,6 @@ class particle_species:
                 # store the old position of the particles
                 self.x3      = self.x3 + self.v3 * self.dt
                 # update the z position of the particles
-
-        if self.x_bc == 'periodic':
-            self.x1 = jnp.where(self.x1 > self.x_wind/2,  self.x1 - self.x_wind, \
-                            jnp.where(self.x1 < -self.x_wind/2, self.x1 + self.x_wind, self.x1))
-        elif self.x_bc == 'reflecting':
-            self.v1 = jnp.where((self.x1 >= self.x_wind/2) | (self.x1 <= -self.x_wind/2), -self.v1, self.v1)
-        # apply boundary conditions to the x position of the particles
-
-        if self.y_bc == 'periodic':
-            self.x2 = jnp.where(self.x2 > self.y_wind/2,  self.x2 - self.y_wind, \
-                            jnp.where(self.x2 < -self.y_wind/2, self.x2 + self.y_wind, self.x2))
-        elif self.y_bc == 'reflecting':
-            self.v2 = jnp.where((self.x2 >= self.y_wind/2) | (self.x2 <= -self.y_wind/2), -self.v2, self.v2)
-        # apply boundary conditions to the y position of the particles
-
-        if self.z_bc == 'periodic':
-            self.x3 = jnp.where(self.x3 > self.z_wind/2,  self.x3 - self.z_wind, \
-                            jnp.where(self.x3 < -self.z_wind/2, self.x3 + self.z_wind, self.x3))
-        elif self.z_bc == 'reflecting':
-            self.v3 = jnp.where((self.x3 >= self.z_wind/2) | (self.x3 <= -self.z_wind/2), -self.v3, self.v3)
-        # apply boundary conditions to the z position of the particles
 
     def tree_flatten(self):
         children = (
