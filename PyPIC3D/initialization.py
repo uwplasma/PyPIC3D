@@ -204,7 +204,15 @@ def initialize_simulation(toml_file):
     else:
         Nt     = int( t_wind / dt )
     # Nt for resolution
-    world = {'dt': dt, 'Nt': Nt, 'dx': dx, 'dy': dy, 'dz': dz, 'Nx': Nx, 'Ny': Ny, 'Nz': Nz, 'x_wind': x_wind, 'y_wind': y_wind, 'z_wind': z_wind}
+
+    if simulation_parameters['dt'] is not None and simulation_parameters['Nt'] is not None:
+        t_wind = dt * Nt
+        print(f"Adjusting t_wind to {t_wind} based on provided dt and Nt")
+        simulation_parameters['t_wind'] = t_wind
+    # adjust t_wind if both dt and Nt are provided
+
+
+    world = {'dt': dt, 'Nt': Nt, 'dx': dx, 'dy': dy, 'dz': dz, 'Nx': Nx, 'Ny': Ny, 'Nz': Nz, 'x_wind': x_wind, 'y_wind': y_wind, 'z_wind': z_wind, 'grid': None}
     # set the simulation world parameters
 
     world = convert_to_jax_compatible(world)
@@ -219,6 +227,9 @@ def initialize_simulation(toml_file):
     else:
         B_grid, E_grid = build_yee_grid(world)
         # build the Yee grid for the fields
+
+    world['grid'] = E_grid
+    # set the grid in the world parameters
 
     if not os.path.exists(f"{simulation_parameters['output_dir']}/data"):
         os.makedirs(f"{simulation_parameters['output_dir']}/data")
@@ -297,8 +308,8 @@ def initialize_simulation(toml_file):
     # set the evolve loop function based on the electrostatic flag
 
     if simulation_parameters['current_calculation'] == "esirkepov":
-        # print("Using Esirkepov current calculation method")
-        raise NotImplementedError("Esirkepov current calculation method is not fully functional yet.")
+        print("Using Esirkepov current calculation method")
+        # raise NotImplementedError("Esirkepov current calculation method is not fully functional yet.")
         J_func = Esirkepov_current
     elif simulation_parameters['current_calculation'] == "j_from_rhov":
         print("Using J from rhov current calculation method")

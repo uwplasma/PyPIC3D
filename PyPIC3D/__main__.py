@@ -57,7 +57,6 @@ def run_PyPIC3D(config_file):
     # Compute the energy of the system
     initial_energy = e_energy + b_energy + kinetic_energy
 
-
     ############################################################################################################
 
     ###################################################### SIMULATION LOOP #####################################
@@ -66,8 +65,10 @@ def run_PyPIC3D(config_file):
 
         # plot the data
         if t % plotting_parameters['plotting_interval'] == 0:
+
             E, B, J, rho, *rest = fields
             # unpack the fields
+
             e_energy, b_energy, kinetic_energy = compute_energy(particles, E, B, world, constants)
             # Compute the energy of the system
             write_data(f"{output_dir}/data/total_energy.txt", t * dt, e_energy + b_energy + kinetic_energy)
@@ -108,6 +109,9 @@ def run_PyPIC3D(config_file):
             if plotting_parameters['plot_vtk_particles']:
                 plot_vtk_particles(particles, t, output_dir)
             # Plot the particles in VTK format
+
+            fields = (E, B, J, rho, *rest)
+            # repack the fields
 
         particles, fields = jit_loop(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, x_bc, y_bc, z_bc, relativistic=relativistic)
         # time loop to update the particles and fields

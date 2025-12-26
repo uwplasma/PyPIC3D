@@ -591,27 +591,8 @@ class particle_species:
 
     def momentum(self):
         return self.mass * self.weight * jnp.sum(jnp.sqrt(self.v1**2 + self.v2**2 + self.v3**2))
-   
-    def update_position(self):
-        if self.update_pos:
-            if self.update_x:
-                self.old_x1 = self.x1
-                # store the old position of the particles
-                self.x1      = self.x1 + self.v1 * self.dt
-                # update the x position of the particles
-
-            if self.update_y:
-                self.old_x2 = self.x2
-                # store the old position of the particles
-                self.x2      = self.x2 + self.v2 * self.dt
-                # update the y position of the particles
-
-            if self.update_z:
-                self.old_x3 = self.x3
-                # store the old position of the particles
-                self.x3      = self.x3 + self.v3 * self.dt
-                # update the z position of the particles
-
+    
+    def boundary_conditions(self):
         if self.x_bc == 'periodic':
             self.x1 = jnp.where(self.x1 > self.x_wind/2,  self.x1 - self.x_wind, \
                             jnp.where(self.x1 < -self.x_wind/2, self.x1 + self.x_wind, self.x1))
@@ -632,6 +613,27 @@ class particle_species:
         elif self.z_bc == 'reflecting':
             self.v3 = jnp.where((self.x3 >= self.z_wind/2) | (self.x3 <= -self.z_wind/2), -self.v3, self.v3)
         # apply boundary conditions to the z position of the particles
+   
+    def update_position(self):
+        if self.update_pos:
+            # store the old position of the particles
+            if self.update_x:
+                self.old_x1 = self.x1
+                # store the old position of the particles
+                self.x1      = self.x1 + self.v1 * self.dt
+                # update the x position of the particles
+
+            if self.update_y:
+                self.old_x2 = self.x2
+                # store the old position of the particles
+                self.x2      = self.x2 + self.v2 * self.dt
+                # update the y position of the particles
+
+            if self.update_z:
+                self.old_x3 = self.x3
+                # store the old position of the particles
+                self.x3      = self.x3 + self.v3 * self.dt
+                # update the z position of the particles
 
     def tree_flatten(self):
         children = (
