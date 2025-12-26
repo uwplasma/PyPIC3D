@@ -57,11 +57,6 @@ def run_PyPIC3D(config_file):
     # Compute the energy of the system
     initial_energy = e_energy + b_energy + kinetic_energy
 
-    dx = world['dx']
-    dy = world['dy']
-    dz = world['dz']
-    dt = world['dt']
-
     ############################################################################################################
 
     ###################################################### SIMULATION LOOP #####################################
