@@ -18,6 +18,7 @@ from PyPIC3D.solvers.vector_potential import (
     E_from_A, B_from_A, update_vector_potential
 )
 
+
 from PyPIC3D.solvers.curl_curl_form import (
     update_B_second_order, update_E_second_order
 )
@@ -61,15 +62,18 @@ def time_loop_electrostatic(particles, fields, E_grid, B_grid, world, constants,
         particles[i].update_position()
         # update the particle positions
 
-        particles[i].boundary_conditions()
-        # apply boundary conditions to the particles
-
     ############### SOLVE E FIELD ############################################################################################
     E, phi, rho = calculateE(world, particles, constants, rho, phi, solver, bc)
     # calculate the electric field using the Poisson equation
 
     fields = (E, B, J, rho, phi)
     # pack the fields into a tuple
+
+    ############### PARTICLE BOUNDARY CONDITIONS ################################################################################
+    for i in range(len(particles)):
+
+        particles[i].boundary_conditions()
+        # apply boundary conditions to the particles
 
     return particles, fields
 
@@ -112,9 +116,6 @@ def time_loop_electrodynamic(particles, fields, vertex_grid, center_grid, world,
         particles[i].update_position()
         # update the particle positions
 
-        particles[i].boundary_conditions()
-        # apply boundary conditions to the particles
-
     ################ FIELD UPDATE ################################################################################################
     J = J_func(particles, J, constants, world, vertex_grid)
     # calculate the current density based on the selected method
@@ -125,7 +126,14 @@ def time_loop_electrodynamic(particles, fields, vertex_grid, center_grid, world,
 
     fields = (E, B, J, rho, phi)
     # pack the fields into a tuple
+
+    # ############### PARTICLE BOUNDARY CONDITIONS ################################################################################
+    for i in range(len(particles)):
+
+        particles[i].boundary_conditions()
+        # apply boundary conditions to the particles
     
+
     return particles, fields
 
 
@@ -166,9 +174,6 @@ def time_loop_vector_potential(particles, fields, E_grid, B_grid, world, constan
         particles[i].update_position()
         # update the particle positions
 
-        particles[i].boundary_conditions()
-        # apply boundary conditions to the particles
-
     ################ FIELD UPDATE ################################################################################################
     A0 = A1
     A1 = A2
@@ -185,6 +190,12 @@ def time_loop_vector_potential(particles, fields, E_grid, B_grid, world, constan
 
     fields = (E, B, J, rho, phi, A2, A1, A0)
     # pack the fields into a tuple
+
+    ############### PARTICLE BOUNDARY CONDITIONS ################################################################################
+    for i in range(len(particles)):
+
+        particles[i].boundary_conditions()
+        # apply boundary conditions to the particles
 
     return particles, fields
 
@@ -226,9 +237,6 @@ def time_loop_curl_curl(particles, fields, E_grid, B_grid, world, constants, cur
         particles[i].update_position()
         # update the particle positions
 
-        particles[i].boundary_conditions()
-        # apply boundary conditions to the particles
-
     ################ FIELD UPDATE ################################################################################################
     E0 = E
     B0 = B
@@ -248,5 +256,11 @@ def time_loop_curl_curl(particles, fields, E_grid, B_grid, world, constants, cur
 
     fields = (E, B, J, rho, phi, E2, B2, E0, B0, J0)
     # pack the fields into a tuple
+
+    ############### PARTICLE BOUNDARY CONDITIONS ################################################################################
+    for i in range(len(particles)):
+        
+        particles[i].boundary_conditions()
+        # apply boundary conditions to the particles
 
     return particles, fields
