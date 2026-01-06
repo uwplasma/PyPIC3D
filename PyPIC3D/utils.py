@@ -32,10 +32,25 @@ def digital_filter(phi, alpha):
     Returns:
         ndarray: Filtered field array.
     """
-    filter_phi = alpha * phi +  (  (1 - alpha) / 6 ) * (  jnp.roll(phi, shift=1, axis=0) + jnp.roll(phi, shift=-1, axis=0) + \
-                                                            jnp.roll(phi, shift=1, axis=1) + jnp.roll(phi, shift=-1, axis=1) + \
-                                                                jnp.roll(phi, shift=1, axis=2) + jnp.roll(phi, shift=-1, axis=2) )
-    return filter_phi
+    neighbor_weight = (1 - alpha) / 6
+    kernel = jnp.zeros((3, 3, 3, 1, 1), dtype=phi.dtype)
+    kernel = kernel.at[1, 1, 1, 0, 0].set(alpha)
+    kernel = kernel.at[0, 1, 1, 0, 0].set(neighbor_weight)
+    kernel = kernel.at[2, 1, 1, 0, 0].set(neighbor_weight)
+    kernel = kernel.at[1, 0, 1, 0, 0].set(neighbor_weight)
+    kernel = kernel.at[1, 2, 1, 0, 0].set(neighbor_weight)
+    kernel = kernel.at[1, 1, 0, 0, 0].set(neighbor_weight)
+    kernel = kernel.at[1, 1, 2, 0, 0].set(neighbor_weight)
+
+    padded_phi = jnp.pad(phi, ((1, 1), (1, 1), (1, 1)), mode="wrap")
+    filtered = jax.lax.conv_general_dilated(
+        padded_phi[jnp.newaxis, ..., jnp.newaxis],
+        kernel,
+        window_strides=(1, 1, 1),
+        padding="VALID",
+        dimension_numbers=("NDHWC", "DHWIO", "NDHWC"),
+    )
+    return jnp.squeeze(filtered, axis=(0, 4))
 
 def mae(x, y):
     """

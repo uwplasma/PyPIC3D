@@ -35,7 +35,7 @@ name = "electron2"
 N_particles = 1500
 charge = -1.602e-19
 mass   = 9.1093837e-31
-vth = 1498962.29
+vth = 14989622.9
 initial_vx = -5e7
 
 [particle3]
