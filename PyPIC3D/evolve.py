@@ -6,10 +6,6 @@ import jax
 from jax import jit
 from functools import partial
 
-# from PyPIC3D.fields import (
-#     calculateE, update_B, update_E
-# )
-
 from PyPIC3D.boris import (
     particle_push
 )
@@ -75,6 +71,7 @@ def time_loop_electrostatic(particles, fields, E_grid, B_grid, world, constants,
 
     ############### PARTICLE BOUNDARY CONDITIONS ################################################################################
     for i in range(len(particles)):
+
         particles[i].boundary_conditions()
         # apply boundary conditions to the particles
 
@@ -130,8 +127,9 @@ def time_loop_electrodynamic(particles, fields, vertex_grid, center_grid, world,
     fields = (E, B, J, rho, phi)
     # pack the fields into a tuple
 
-    ############### PARTICLE BOUNDARY CONDITIONS ################################################################################
+    # ############### PARTICLE BOUNDARY CONDITIONS ################################################################################
     for i in range(len(particles)):
+
         particles[i].boundary_conditions()
         # apply boundary conditions to the particles
     
@@ -195,6 +193,7 @@ def time_loop_vector_potential(particles, fields, E_grid, B_grid, world, constan
 
     ############### PARTICLE BOUNDARY CONDITIONS ################################################################################
     for i in range(len(particles)):
+
         particles[i].boundary_conditions()
         # apply boundary conditions to the particles
 
@@ -260,6 +259,7 @@ def time_loop_curl_curl(particles, fields, E_grid, B_grid, world, constants, cur
 
     ############### PARTICLE BOUNDARY CONDITIONS ################################################################################
     for i in range(len(particles)):
+        
         particles[i].boundary_conditions()
         # apply boundary conditions to the particles
 

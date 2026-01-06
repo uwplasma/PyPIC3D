@@ -44,9 +44,9 @@ def J_from_rhov(particles, J, constants, world, grid):
 
     if particles:
         # if there are particles in the simulation
-        x_mid = [ species.get_position()[0] for species in particles]
-        y_mid = [ species.get_position()[1] for species in particles]
-        z_mid = [ species.get_position()[2] for species in particles]
+        x_mid = [ species.get_forward_position()[0] for species in particles]
+        y_mid = [ species.get_forward_position()[1] for species in particles]
+        z_mid = [ species.get_forward_position()[2] for species in particles]
         # # v is already at t+1/2 from the Boris push
         # yields J at t+1/2
         total_x = jnp.concatenate( x_mid )
@@ -159,7 +159,7 @@ def Esirkepov_current(particles, J, constants, world, grid):
     Nx, Ny, Nz = Jx.shape
     dx, dy, dz, dt = world["dx"], world["dy"], world["dz"], world["dt"]
     xmin, ymin, zmin = grid[0][0], grid[1][0], grid[2][0]
-
+ 
     # zero current arrays
     Jx = Jx.at[:, :, :].set(0)
     Jy = Jy.at[:, :, :].set(0)
@@ -172,12 +172,16 @@ def Esirkepov_current(particles, J, constants, world, grid):
 
     for species in particles:
         q = species.get_charge()
-        old_x, old_y, old_z = species.get_old_position()
         x, y, z = species.get_forward_position()
         vx, vy, vz = species.get_velocity()
         shape_factor = species.get_shape()
         N_particles = species.get_number_of_particles()
         # get the particle properties
+
+        old_x = x - vx * dt
+        old_y = y - vy * dt
+        old_z = z - vz * dt
+        # calculate old positions from new positions and velocities
         
         x0 = jax.lax.cond(
             shape_factor == 1,
