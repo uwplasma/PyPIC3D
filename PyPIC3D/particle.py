@@ -504,11 +504,6 @@ class particle_species:
         self.x2 = x2
         self.x3 = x3
 
-        self.old_x1 = self.x1
-        self.old_x2 = self.x2
-        self.old_x3 = self.x3
-
-
     def get_name(self):
         return self.name
 
@@ -553,9 +548,6 @@ class particle_species:
 
     def get_mass(self):
         return self.mass*self.weight
-
-    def get_old_position(self):
-        return self.old_x1, self.old_x2, self.old_x3
 
     def get_resolution(self):
         return self.dx, self.dy, self.dz
@@ -616,22 +608,15 @@ class particle_species:
    
     def update_position(self):
         if self.update_pos:
-            # store the old position of the particles
             if self.update_x:
-                self.old_x1 = self.x1
-                # store the old position of the particles
                 self.x1      = self.x1 + self.v1 * self.dt
                 # update the x position of the particles
 
             if self.update_y:
-                self.old_x2 = self.x2
-                # store the old position of the particles
                 self.x2      = self.x2 + self.v2 * self.dt
                 # update the y position of the particles
 
             if self.update_z:
-                self.old_x3 = self.x3
-                # store the old position of the particles
                 self.x3      = self.x3 + self.v3 * self.dt
                 # update the z position of the particles
 
@@ -639,7 +624,6 @@ class particle_species:
         children = (
             self.v1, self.v2, self.v3, \
             self.x1, self.x2, self.x3, \
-            self.old_x1, self.old_x2, self.old_x3
         )
 
         aux_data = (
@@ -653,7 +637,7 @@ class particle_species:
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        v1, v2, v3, x1, x2, x3, old_x1, old_x2, old_x3 = children
+        v1, v2, v3, x1, x2, x3 = children
 
 
         name, N_particles, charge, mass, T, x_wind, y_wind, z_wind, dx, dy, \
