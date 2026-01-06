@@ -22,9 +22,6 @@ def J_from_rhov(particles, J, constants, world, grid):
         tuple: Updated current density arrays (Jx, Jy, Jz) for the x, y, and z directions respectively.
     """
 
-    C = constants['C']
-    # speed of light
-
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
@@ -42,52 +39,41 @@ def J_from_rhov(particles, J, constants, world, grid):
     J = (Jx, Jy, Jz)
     # initialize the current density as a tuple
 
-    if particles:
-        # if there are particles in the simulation
-        x_mid = [ species.get_forward_position()[0] for species in particles]
-        y_mid = [ species.get_forward_position()[1] for species in particles]
-        z_mid = [ species.get_forward_position()[2] for species in particles]
-        # # v is already at t+1/2 from the Boris push
-        # yields J at t+1/2
-        total_x = jnp.concatenate( x_mid )
-        total_y = jnp.concatenate( y_mid )
-        total_z = jnp.concatenate( z_mid )
-        # use the mid-point position for current deposition
-
-        total_dqvx = jnp.concatenate( [species.get_charge() / (dx*dy*dz) * species.get_velocity()[0] for species in particles] )
-        total_dqvy = jnp.concatenate( [species.get_charge() / (dx*dy*dz) * species.get_velocity()[1] for species in particles] )
-        total_dqvz = jnp.concatenate( [species.get_charge() / (dx*dy*dz) * species.get_velocity()[2] for species in particles] )
-        # concatenate all the particle data for easier processing
-
-        shape_factor = particles[0].get_shape()
-        # assume all species have the same shape factor
+    for species in particles:
+        x, y, z = species.get_forward_position()
+        vx, vy, vz = species.get_velocity()
+        shape_factor = species.get_shape()
+        charge = species.get_charge()
+        # get the particle properties
+        dq = charge / (dx * dy * dz)
+        # calculate the charge density contribution per particle
 
         x0 = jax.lax.cond(
             shape_factor == 1,
-            lambda _: jnp.floor( (total_x - grid[0][0]) / dx).astype(int),
-            lambda _: jnp.round( (total_x - grid[0][0]) / dx).astype(int),
+            lambda _: jnp.floor( (x - grid[0][0]) / dx).astype(int),
+            lambda _: jnp.round( (x - grid[0][0]) / dx).astype(int),
             operand=None
         )
 
         y0 = jax.lax.cond(
             shape_factor == 1,
-            lambda _: jnp.floor( (total_y - grid[1][0]) / dy).astype(int),
-            lambda _: jnp.round( (total_y - grid[1][0]) / dy).astype(int),
+            lambda _: jnp.floor( (y - grid[1][0]) / dy).astype(int),
+            lambda _: jnp.round( (y - grid[1][0]) / dy).astype(int),
             operand=None
         )
 
         z0 = jax.lax.cond(
             shape_factor == 1,
-            lambda _: jnp.floor( (total_z - grid[2][0]) / dz).astype(int),
-            lambda _: jnp.round( (total_z - grid[2][0]) / dz).astype(int),
+            lambda _: jnp.floor( (z - grid[2][0]) / dz).astype(int),
+            lambda _: jnp.round( (z - grid[2][0]) / dz).astype(int),
             operand=None
         )
         # calculate the nearest grid point based on shape factor
 
 
-        deltax = (total_x - grid[0][0]) - (x0 * dx)
-        deltay = (total_y - grid[1][0]) - (y0 * dy)
-        deltaz = (total_z - grid[2][0]) - (z0 * dz)
+        deltax = (x - grid[0][0]) - (x0 * dx)
+        deltay = (y - grid[1][0]) - (y0 * dy)
+        deltaz = (z - grid[2][0]) - (z0 * dz)
         # Calculate the difference between the particle position and the nearest grid point
 
         x0 = wrap_around(x0, Nx)
@@ -120,18 +106,18 @@ def J_from_rhov(particles, J, constants, world, grid):
         for i in range(len(x_weights)):
             for j in range(len(y_weights)):
                 for k in range(len(z_weights)):
-                    Jx = Jx.at[xpts[i], ypts[j], zpts[k]].add( (total_dqvx) * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
-                    Jy = Jy.at[xpts[i], ypts[j], zpts[k]].add( (total_dqvy) * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
-                    Jz = Jz.at[xpts[i], ypts[j], zpts[k]].add( (total_dqvz) * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
+                    Jx = Jx.at[xpts[i], ypts[j], zpts[k]].add( (dq * vx) * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
+                    Jy = Jy.at[xpts[i], ypts[j], zpts[k]].add( (dq * vy) * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
+                    Jz = Jz.at[xpts[i], ypts[j], zpts[k]].add( (dq * vz) * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
         # Add the particle current to the current density arrays
 
-        
-        alpha = constants['alpha']
-        Jx = digital_filter(Jx, alpha)
-        Jy = digital_filter(Jy, alpha)
-        Jz = digital_filter(Jz, alpha)
-        J = (Jx, Jy, Jz)
-        # apply a digital filter to the current density arrays
+    
+    alpha = constants['alpha']
+    Jx = digital_filter(Jx, alpha)
+    Jy = digital_filter(Jy, alpha)
+    Jz = digital_filter(Jz, alpha)
+    J = (Jx, Jy, Jz)
+    # apply a digital filter to the current density arrays
 
     return J
 
