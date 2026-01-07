@@ -73,7 +73,7 @@ External Fields
 ---------------
 
 External field arrays can be added by declaring ``field`` sections in the TOML
-file. Each entry must provide a name, a field type (``E``, ``B``, or ``J``), and
+file. Each entry must provide a name, a field type ( 0-2 for ``E``, 3-5 for ``B``, 6-8 for ``J``), and
 a NumPy ``.npy`` file path matching the grid shape.
 
 .. code-block:: toml
