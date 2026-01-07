@@ -11,7 +11,9 @@ Solvers Overview
 
     \nabla \times \mathbf{B} = \mu_0 \mathbf{J} + \mu_0 \epsilon_0 \frac{\partial \mathbf{E}}{\partial t}
 
-PyPIC3D provides several solvers for solving the above equations, including: spectral and finite difference solvers.
+PyPIC3D provides multiple time integrators for Maxwell's equations and related
+formulations. Select a solver by setting
+``simulation_parameters.solver`` in the TOML configuration.
 
 Initialization
 --------------
@@ -22,8 +24,8 @@ The electric field is initialized as 0 by default, but can be initialized using 
 
     \nabla^2 \mathbf{\phi} = \frac{-\rho}{\epsilon_0}
 
-PyPIC3D can solve for the initial electric field using both spectral and finite difference solvers.
-The magnetic field is initialized to zero.
+PyPIC3D can solve for the initial electric field using both spectral and finite
+difference methods. The magnetic field is initialized to zero.
 
 .. Successive Over-Relaxation (SOR)
 .. ++++++++++++++++++++++++++++++++
@@ -54,20 +56,22 @@ The magnetic field is initialized to zero.
 .. The Conjugate Gradient Method is an iterative method used to solve linear systems of equations. The Conjugate Gradient Method is used to solve the Poisson equation for the electric field in PyPIC3D.
 
 
-First Order Yee Solver
-----------------
-PyPIC3D has both a spectral solver and a finite difference solver that evolves the electric and magnetic fields on a Yee grid.
+First-Order Yee Solvers
+-----------------------
+PyPIC3D evolves the electric and magnetic fields on a staggered Yee grid using
+either a pseudo-spectral time-domain (PSTD) solver or a centered finite
+difference time-domain (FDTD) solver.
 
-Spectral:
-*********
+Spectral (PSTD)
+***************
 .. math::
 
         \tilde{\mathbf{E}}^{n+1} = \tilde{\mathbf{E}}^n + C^2 \Delta t ( ik \times \tilde{\mathbf{B}}^n - \mu_0 \tilde{J^n} )
 
         \tilde{\mathbf{B}}^{n+1} = \tilde{\mathbf{B}}^n - \Delta t ( ik \times \tilde{\mathbf{E}}^{n+1} )
 
-Finite Difference:
-******************
+Finite Difference (FDTD)
+************************
 
 .. math::
 
@@ -78,10 +82,11 @@ Finite Difference:
 
 
 
-Second Order Vector Potential Solver
-------------------------------------
+Vector Potential Solver
+-----------------------
 
-PyPIC3D also has a second order solver that evolves the vector potential instead of the electric and magnetic fields under the temporal gauge:
+PyPIC3D also includes a vector potential formulation that evolves :math:`\mathbf{A}`
+under the temporal gauge:
 
 .. math::
     \mathbf{A}_0 = 0
@@ -96,4 +101,20 @@ Under this formulation, the electric and magnetic fields are calculated from the
 
     \mathbf{B} = \nabla \times \mathbf{A}
 
-The vector potential is evolved in time using a backward Euler method and the electric and magnetic fields are calculated using centered finite differencing.
+The vector potential is advanced in time using a backward Euler update, and the
+electric and magnetic fields are reconstructed with centered finite differences.
+
+Curl-Curl Solver
+----------------
+
+The curl-curl solver advances the fields using a second-order finite difference
+formulation that evolves both :math:`\mathbf{E}` and :math:`\mathbf{B}` from
+their previous two time levels. Enable it with
+``simulation_parameters.solver = "curl_curl"``.
+
+Electrostatic Mode
+------------------
+
+For electrostatic simulations, set ``simulation_parameters.electrostatic = true``.
+In this mode, the electric field is computed from the Poisson equation each
+time step and the magnetic field remains static.
