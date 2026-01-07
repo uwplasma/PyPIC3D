@@ -1,8 +1,9 @@
-.. PyPIC3D documentation master file, created by
-   sphinx-quickstart on Thu Oct 14 2021.
+PyPIC3D Documentation
+=====================
 
-Welcome to PyPIC3D's documentation!
-===================================
+PyPIC3D is a three-dimensional particle-in-cell (PIC) code written in Python and
+accelerated with JAX. The project focuses on rapid experimentation, clear
+configuration, and reproducible plasma simulations on structured grids.
 
 .. toctree::
    :maxdepth: 2

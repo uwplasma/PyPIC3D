@@ -1,22 +1,28 @@
-Charge Conservation Method
-===========================
+Current Deposition
+==================
 
-There are 3 charge conservation methods in PyPIC3D including a charge density and velocity based method and two continuity equation based methods.
+PyPIC3D offers multiple current deposition strategies selected via
+``simulation_parameters.current_calculation`` in the TOML configuration. The
+available methods are:
 
-Villasenor-Buneman
-------------------
-The Villasenor-Buneman method is charge conserving method for 1st order shape factors that assumes particles are moving in a straight line and deposits current onto each of the cell faces.
+Esirkepov (charge conserving)
+-----------------------------
+The Esirkepov method deposits current with exact charge conservation for the
+active grid dimensions and supports both first- and second-order shape factors.
+It is the recommended charge-conserving option for electrodynamic simulations.
 
-Esirkepov
----------
-The Esirkepov method is a charge conserving method that makes use of a generalized shape factor to deposit current onto the cell faces. The Esirkepov method is typically faster than the Villasenor-Buneman method due to a lack of loops and can be used for particles with arbitrary shape factors.
-
-Charge Density Method
----------------------
-The charge density method uses the particle velocities and their charge to deposit current using the analytical definition of J
+Charge Density Method (J from ρv)
+---------------------------------
+The ``j_from_rhov`` option computes current directly from the particle velocity
+field and charge density:
 
 .. math::
-    \mathbf{J} = \rho v
+    \mathbf{J} = \rho \mathbf{v}
+
+This approach is straightforward and often sufficient for exploratory runs,
+but it does not enforce discrete charge conservation in the same way as the
+Esirkepov method. A digital filter (``constants.alpha``) is applied to smooth
+high-frequency noise in the deposited current.
 
 
 
@@ -33,8 +39,6 @@ The charge density method uses the particle velocities and their charge to depos
 References
 ----------
 
-For more details on the Villasenor-Buneman and the Esirkepov methods, refer to the original papers:
-
-Villasenor, J., & Buneman, O. (1992). Rigorous charge conservation for local electromagnetic field solvers. *Journal of Computational Physics*, 58(2), 189-196.
+For more details on the Esirkepov method, refer to the original paper:
 
 Esirkepov, T. Z. (2001). Exact charge conservation scheme for particle-in-cell simulation with an arbitrary form-factor. Computer Physics Communications, 135(2), 144-153.

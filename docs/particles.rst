@@ -1,19 +1,15 @@
 Particle Species
-===========================
+================
 
-In PyPIC3D, particle species are used to represent different types of particles in the simulation. Each species can have its own unique properties such as mass, charge, and initial conditions. This allows for the simulation of complex systems with multiple interacting particle types.
+PyPIC3D represents each particle population as a separate species with its own
+charge, mass, temperature, and initialization bounds. This structure supports
+multi-species plasmas (electrons, ions, beams, etc.) and per-species boundary
+conditions.
 
-Key Properties
---------------
+Defining a Species
+------------------
 
-- **Mass**: The mass of the particle species.
-- **Charge**: The electric charge of the particle species.
-- **Initial Conditions**: The initial position and velocity of the particles in the species.
-
-Usage
------
-
-To define a particle species in PyPIC3D, you typically create an instance of the `ParticleSpecies` class in the configuration file. Here is an example of how you might define a particle species in the configuration file:
+Define each species as a ``[particleX]`` section in the TOML configuration:
 
 .. code-block:: toml
 
@@ -25,37 +21,30 @@ To define a particle species in PyPIC3D, you typically create an instance of the
     mass   = 9.1093837e-31
     temperature = 293000
 
+Required fields
+^^^^^^^^^^^^^^^
 
-To incorporate particle species in a simulation, the following parameters must be set for a particle species in the configuration file:
+- ``name``: Human-readable species label.
+- ``charge``: Particle charge in Coulombs.
+- ``mass``: Particle mass in kilograms.
+- ``N_particles`` or ``N_per_cell``: Total macro-particles or number per cell.
 
-- `name`: The name of the particle species.
-- `N_particles`: The number of particles in the species.
-- `weight`: The weight of the particles.
-- `charge`: The charge of the particles.
-- `mass`: The mass of the particles.
-- `temperature`: The temperature of the particles.
+Common optional fields
+^^^^^^^^^^^^^^^^^^^^^^
 
-Optional Parameters:
+- ``temperature`` or ``vth``: Set thermal conditions (scalar or via ``Tx``, ``Ty``, ``Tz``).
+- ``weight``: Macro-particle weight; if omitted, can be inferred from ``ds_per_debye``.
+- ``xmin``, ``xmax``, ``ymin``, ``ymax``, ``zmin``, ``zmax``: Spatial bounds.
+- ``x_bc``, ``y_bc``, ``z_bc``: Per-species boundary conditions (``periodic`` or ``reflecting``).
+- ``initial_x``, ``initial_y``, ``initial_z``: ``.npy`` files for initial positions.
+- ``initial_vx``, ``initial_vy``, ``initial_vz``: ``.npy`` files for initial velocities.
+- ``update_pos``/``update_v`` and per-component flags (``update_x``, ``update_vx``, etc.).
 
-- `initial_x`: Path to *.npy file containing the initial x position of the particles.
-- `initial_y`: Path to *.npy file containing the initial y position of the particles.
-- `initial_z`: Path to *.npy file containing the initial z position of the particles.
-- `initial_vx`: Path to *.npy file containing the initial x velocity of the particles.
-- `initial_vy`: Path to *.npy file containing the initial y velocity of the particles.
-- `initial_vz`: Path to *.npy file containing the initial z velocity of the particles.
-- `update_pos`: Whether to update the position of the particles.
-- `update_v`: Whether to update the velocity of the particles.
-- `update_vx`: Whether to update the x velocity of the particles.
-- `update_vy`: Whether to update the y velocity of the particles.
-- `update_vz`: Whether to update the z velocity of the particles.
-- `update_x`: Whether to update the x position of the particles.
-- `update_y`: Whether to update the y position of the particles.
-- `update_z`: Whether to update the z position of the particles.
+Initialization Notes
+--------------------
 
-Particle Species Initialization
------------------------------------------
-
-The position of the particles is initialized using a uniform distribution:
+If no external ``initial_*`` arrays are provided, positions are initialized with
+a uniform distribution inside the specified bounds:
 
 .. code-block:: python
 
@@ -65,7 +54,8 @@ The position of the particles is initialized using a uniform distribution:
     # Generate random numbers from a uniform distribution
     # to initialize the position of the particles
 
-The velocity of the particles is initialized using a Maxwell-Boltzmann distribution:
+Velocities are initialized using a Maxwell-Boltzmann distribution based on the
+specified temperature or thermal velocity:
 
 .. code-block:: python
 

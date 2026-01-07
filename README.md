@@ -8,9 +8,9 @@ PyPIC3D is a 3D particle-in-cell (PIC) simulation code developed in Python, leve
 
 ### Key Features
 
-- **Autodifferentiation**: Jax's built-in autodifferentiation capabilities allow for efficient gradient computations, which can be highly beneficial for optimization and surrogate modeling in plasma simulations.
-- **Benchmarking**: The code is benchmarked against other open source PIC codes including OSIRIS.
-- **Plasma Simulation**: Designed to simulate plasma behavior in three dimensions, providing insights into complex plasma dynamics.
+- **JAX acceleration**: Leverages JAX for high-performance numerical kernels and JIT compilation.
+- **Multiple solvers**: Supports FDTD, PSTD (spectral), vector potential, curl-curl, and electrostatic workflows.
+- **Config-driven runs**: Simulations are configured via TOML files and executed with a single CLI command.
 
 ### Applications
 
@@ -47,10 +47,9 @@ PyPIC3D --config filename.toml
 
 The PyPIC3D codebase is organized into several key sections:
 
-- **Core**: Contains the core functionalities of the PIC simulation, including particle push, field solve, and boundary conditions.
-- **Experiments**: Contains several base experiment classes to do various computational experiments such as parameter scans.
-- **Demos**: Demos of different plasma phenomenon that you can simulate using PyPIC3D.
-- **Tests**: Unit tests and integration tests to ensure the correctness and stability of the codebase.
+- **Core**: Core PIC functionality including particle push, field solvers, and diagnostics.
+- **Demos**: Example configurations for common plasma phenomena and regression tests.
+- **Tests**: Unit and integration tests that validate the simulation components.
 
 Each section is designed to be modular and easily extensible, allowing users to customize and expand the functionality of PyPIC3D according to their needs.
 
