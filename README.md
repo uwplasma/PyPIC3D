@@ -1,5 +1,5 @@
 <div align="center">
-    <img src="docs/images/PyPICLogo.png" alt="PyPIC3D Logo" width="300">
+    <img src="docs/images/PyPICLogo.png" alt="PyPIC3D Logo" width="400">
 </div>
 
 ## PyPIC3D
