@@ -36,7 +36,7 @@ from PyPIC3D.solvers.fdtd import (
 
 
 from PyPIC3D.plotting import (
-    plot_initial_histograms
+    plot_initial_histograms, write_openpmd_initial_particles
 )
 
 
@@ -72,7 +72,8 @@ def default_parameters():
     "plot_dispersion": False,
     'plot_chargeconservation': False,
     "plot_vtk_particles": True,
-    "plotting_interval": 10
+    "plotting_interval": 10,
+    "dump_particles": False,
     }
     # dictionary for plotting/saving data
 
@@ -258,6 +259,10 @@ def initialize_simulation(toml_file):
 
     particle_sanity_check(particles)
     # ensure the arrays for the particles are of the correct shape
+
+    if plotting_parameters['dump_particles']:
+        write_openpmd_initial_particles(particles, world, simulation_parameters['output_dir'])
+    # write the initial particles to an openPMD file
 
     E, B, J, phi, rho = initialize_fields(Nx, Ny, Nz)
     # initialize the electric and magnetic fields
