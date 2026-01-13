@@ -104,6 +104,7 @@ def default_parameters():
         "ds_per_debye" : None, # number of grid spacings per debye length
         "shape_factor" : 1, # shape factor for the simulation (1 for 1st order, 2 for 2nd order)
         "current_calculation": "j_from_rhov",  # current calculation method: esirkepov, villasenor_buneman, j_from_rhov
+        "filter_j": "bilinear",  # filter for the current density: bilinear, digital, none
     }
     # dictionary for simulation parameters
 
@@ -261,7 +262,7 @@ def initialize_simulation(toml_file):
     # ensure the arrays for the particles are of the correct shape
 
     if plotting_parameters['dump_particles']:
-        write_openpmd_initial_particles(particles, world, simulation_parameters['output_dir'])
+        write_openpmd_initial_particles(particles, world, constants, simulation_parameters['output_dir'])
     # write the initial particles to an openPMD file
 
     E, B, J, phi, rho = initialize_fields(Nx, Ny, Nz)
@@ -317,8 +318,8 @@ def initialize_simulation(toml_file):
         # raise NotImplementedError("Esirkepov current calculation method is not fully functional yet.")
         J_func = Esirkepov_current
     elif simulation_parameters['current_calculation'] == "j_from_rhov":
-        print("Using J from rhov current calculation method")
-        J_func = J_from_rhov
+        print(f"Using J from rhov current calculation method with filter: {simulation_parameters['filter_j']}")
+        J_func = functools.partial(J_from_rhov, filter=simulation_parameters['filter_j'])
 
 
     if solver == "vector_potential":

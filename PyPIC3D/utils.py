@@ -21,6 +21,36 @@ def wrap_around(ix, size):
     return jnp.mod(ix, size)
 
 @jit
+def bilinear_filter(phi, mode="wrap"):
+    """
+    Apply a 3D (tri-linear) smoothing filter to a 3D array using a separable
+    [1, 2, 1]/4 kernel in each dimension.
+
+    Args:
+        phi (jnp.ndarray): 3D field array with shape (Nx, Ny, Nz).
+        mode (str): Padding mode passed to jnp.pad (default: "wrap").
+
+    Returns:
+        jnp.ndarray: Filtered array with the same shape as phi.
+    """
+    k1 = jnp.array([1.0, 2.0, 1.0], dtype=phi.dtype) / 4.0  # sums to 1
+    k3 = k1[:, None, None] * k1[None, :, None] * k1[None, None, :]  # (3,3,3), sums to 1
+
+    kernel = jnp.zeros((3, 3, 3, 1, 1), dtype=phi.dtype)
+    kernel = kernel.at[:, :, :, 0, 0].set(k3)
+
+    padded_phi = jnp.pad(phi, ((1, 1), (1, 1), (1, 1)), mode=mode)
+
+    filtered = jax.lax.conv_general_dilated(
+        padded_phi[jnp.newaxis, ..., jnp.newaxis],
+        kernel,
+        window_strides=(1, 1, 1),
+        padding="VALID",
+        dimension_numbers=("NDHWC", "DHWIO", "NDHWC"),
+    )
+    return jnp.squeeze(filtered, axis=(0, 4))
+
+@jit
 def digital_filter(phi, alpha):
     """
     Apply a digital filter to a field.
@@ -156,13 +186,34 @@ def compute_energy(particles, E, B, world, constants):
 
     Ex, Ey, Ez = E
     Bx, By, Bz = B
-    E2_integral = jnp.squeeze( nd_trapezoid(Ex**2 + Ey**2 + Ez**2, dxs))
-    B2_integral = jnp.squeeze( nd_trapezoid(Bx**2 + By**2 + Bz**2, dxs))
+    # E2_integral = jnp.squeeze( nd_trapezoid(Ex**2 + Ey**2 + Ez**2, dxs))
+    # B2_integral = jnp.squeeze( nd_trapezoid(Bx**2 + By**2 + Bz**2, dxs))
+    dV = dx * dy * dz
+    # calculate the volume element
+    E2_integral = jnp.sum(Ex**2 + Ey**2 + Ez**2) * dV
+    B2_integral = jnp.sum(Bx**2 + By**2 + Bz**2) * dV
     # Integrate E^2 and B^2 over the grid using trapezoidal rule
     e_energy = 0.5 * constants['eps'] * E2_integral
     b_energy = 0.5 / constants['mu'] * B2_integral
     # Electric and magnetic field energy
-    kinetic_energy = sum([species.kinetic_energy() for species in particles])
+    # kinetic_energy = sum([species.kinetic_energy() for species in particles])
+
+    C = constants['C']
+    # speed of light
+    kinetic_energy = 0.0
+    for species in particles:
+        mass = species.get_mass()
+        vx, vy, vz = species.get_velocity()
+        v2 = vx**2 + vy**2 + vz**2
+        gamma = 1.0 / jnp.sqrt(1 - v2 / C**2)
+        momentum2 = jnp.square(mass * gamma ) * v2
+        # compute the squared momentum for each particle
+        KE = jnp.sum( jnp.sqrt( momentum2 * C**2 + mass**2 * C**4) - mass * C**2 )
+        # compute the kinetic energy for this species
+        kinetic_energy += KE
+        # add to total kinetic energy
+
+
     # Kinetic energy of particles
     return e_energy, b_energy, kinetic_energy
 

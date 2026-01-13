@@ -596,7 +596,7 @@ def plot_vectorfield_slice_vtk(field_slices, field_names, slice, grid, t, name, 
     writer.Write()
 
 
-def write_openpmd_initial_particles(particles, world, output_dir, filename="initial_particles.h5"):
+def write_openpmd_initial_particles(particles, world, constants, output_dir, filename="initial_particles.h5"):
     """
     Write the initial particle states to separate openPMD files, one per species.
 
@@ -608,6 +608,9 @@ def write_openpmd_initial_particles(particles, world, output_dir, filename="init
     """
     if not particles:
         return
+    
+    C = constants['C']
+    # speed of light
 
     output_path = os.path.join(output_dir, "data", "openpmd")
     os.makedirs(output_path, exist_ok=True)
@@ -635,6 +638,8 @@ def write_openpmd_initial_particles(particles, world, output_dir, filename="init
 
         x, y, z = species.get_forward_position()
         vx, vy, vz = species.get_velocity()
+        gamma = 1 / jnp.sqrt(1.0 - (vx**2 + vy**2 + vz**2) / C**2)
+        # compute the Lorentz factor
 
         x = make_array_writable(x)
         y = make_array_writable(y)
@@ -642,6 +647,7 @@ def write_openpmd_initial_particles(particles, world, output_dir, filename="init
         vx = make_array_writable(vx)
         vy = make_array_writable(vy)
         vz = make_array_writable(vz)
+        gamma = make_array_writable(gamma)
 
         num_particles = x.shape[0]
         particle_mass = float(species.mass)
@@ -667,7 +673,7 @@ def write_openpmd_initial_particles(particles, world, output_dir, filename="init
         for component, data in zip(("x", "y", "z"), (vx, vy, vz)):
             record_component = momentum[component]
             record_component.reset_dataset(io.Dataset(data.dtype, [num_particles]))
-            record_component.store_chunk(data * particle_mass, [0], [num_particles])
+            record_component.store_chunk(data * particle_mass * gamma , [0], [num_particles])
             record_component.unit_SI = 1.0
 
         weighting = species_group["weighting"]

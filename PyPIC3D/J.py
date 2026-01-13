@@ -5,10 +5,10 @@ from functools import partial
 from jax import lax
 # import external libraries
 
-from PyPIC3D.utils import digital_filter, wrap_around
+from PyPIC3D.utils import digital_filter, wrap_around, bilinear_filter
 
-@jit
-def J_from_rhov(particles, J, constants, world, grid):
+@partial(jit, static_argnames=("filter",))
+def J_from_rhov(particles, J, constants, world, grid, filter='bilinear'):
     """
     Compute the current density from the charge density and particle velocities.
 
@@ -40,84 +40,97 @@ def J_from_rhov(particles, J, constants, world, grid):
     # initialize the current density as a tuple
 
     for species in particles:
-        x, y, z = species.get_forward_position()
-        vx, vy, vz = species.get_velocity()
         shape_factor = species.get_shape()
         charge = species.get_charge()
-        # get the particle properties
         dq = charge / (dx * dy * dz)
         # calculate the charge density contribution per particle
+        x, y, z = species.get_forward_position()
+        vx, vy, vz = species.get_velocity()
+        # get the particles positions and velocities
 
-        x0 = jax.lax.cond(
-            shape_factor == 1,
-            lambda _: jnp.floor( (x - grid[0][0]) / dx).astype(int),
-            lambda _: jnp.round( (x - grid[0][0]) / dx).astype(int),
-            operand=None
-        )
+        x = x - vx * world['dt'] / 2
+        y = y - vy * world['dt'] / 2
+        z = z - vz * world['dt'] / 2
+        # step back to half time step positions for proper time staggering
 
-        y0 = jax.lax.cond(
-            shape_factor == 1,
-            lambda _: jnp.floor( (y - grid[1][0]) / dy).astype(int),
-            lambda _: jnp.round( (y - grid[1][0]) / dy).astype(int),
-            operand=None
-        )
-
-        z0 = jax.lax.cond(
-            shape_factor == 1,
-            lambda _: jnp.floor( (z - grid[2][0]) / dz).astype(int),
-            lambda _: jnp.round( (z - grid[2][0]) / dz).astype(int),
-            operand=None
-        )
+        x0 = jnp.floor( (x - grid[0][0]) / dx).astype(int)
+        y0 = jnp.floor( (y - grid[1][0]) / dy).astype(int)
+        z0 = jnp.floor( (z - grid[2][0]) / dz).astype(int)
         # calculate the nearest grid point based on shape factor
 
-
-        deltax = (x - grid[0][0]) - (x0 * dx)
-        deltay = (y - grid[1][0]) - (y0 * dy)
-        deltaz = (z - grid[2][0]) - (z0 * dz)
+        deltax_node = (x - grid[0][0]) - (x0 * dx)
+        deltay_node = (y - grid[1][0]) - (y0 * dy)
+        deltaz_node = (z - grid[2][0]) - (z0 * dz)
         # Calculate the difference between the particle position and the nearest grid point
+
+        deltax_face = (x - grid[0][0]) - (x0 + 0.5) * dx
+        deltay_face = (y - grid[1][0]) - (y0 + 0.5) * dy
+        deltaz_face = (z - grid[2][0]) - (z0 + 0.5) * dz
+        # Calculate the difference between the particle position and the nearest staggered cell face
 
         x0 = wrap_around(x0, Nx)
         y0 = wrap_around(y0, Ny)
         z0 = wrap_around(z0, Nz)
         # wrap around the grid points for periodic boundary conditions
-
         x1 = wrap_around(x0+1, Nx)
         y1 = wrap_around(y0+1, Ny)
         z1 = wrap_around(z0+1, Nz)
         # calculate the right grid point
-
         x_minus1 = x0 - 1
         y_minus1 = y0 - 1
         z_minus1 = z0 - 1
         # calculate the left grid point
-
         xpts = [x_minus1, x0, x1]
         ypts = [y_minus1, y0, y1]
         zpts = [z_minus1, z0, z1]
         # place all the points in a list
 
-        x_weights, y_weights, z_weights = jax.lax.cond(
+        x_weights_node, y_weights_node, z_weights_node = jax.lax.cond(
             shape_factor == 1,
-            lambda _: get_first_order_weights( deltax, deltay, deltaz, dx, dy, dz),
-            lambda _: get_second_order_weights(deltax, deltay, deltaz, dx, dy, dz),
+            lambda _: get_first_order_weights( deltax_node, deltay_node, deltaz_node, dx, dy, dz),
+            lambda _: get_second_order_weights(deltax_node, deltay_node, deltaz_node, dx, dy, dz),
             operand=None
         )
 
-        for i in range(len(x_weights)):
-            for j in range(len(y_weights)):
-                for k in range(len(z_weights)):
-                    Jx = Jx.at[xpts[i], ypts[j], zpts[k]].add( (dq * vx) * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
-                    Jy = Jy.at[xpts[i], ypts[j], zpts[k]].add( (dq * vy) * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
-                    Jz = Jz.at[xpts[i], ypts[j], zpts[k]].add( (dq * vz) * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
+        x_weights_face, y_weights_face, z_weights_face = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: get_first_order_weights( deltax_face, deltay_face, deltaz_face, dx, dy, dz),
+            lambda _: get_second_order_weights(deltax_face, deltay_face, deltaz_face, dx, dy, dz),
+            operand=None
+        )
+        # get the weights for node and face positions
+
+        for i in range(len(x_weights_face)):
+            for j in range(len(y_weights_face)):
+                for k in range(len(z_weights_face)):
+                    Jx = Jx.at[xpts[i], ypts[j], zpts[k]].add( (dq * vx) * x_weights_face[i] * y_weights_node[j] * z_weights_node[k], mode='drop')
+                    Jy = Jy.at[xpts[i], ypts[j], zpts[k]].add( (dq * vy) * x_weights_node[i] * y_weights_face[j] * z_weights_node[k], mode='drop')
+                    Jz = Jz.at[xpts[i], ypts[j], zpts[k]].add( (dq * vz) * x_weights_node[i] * y_weights_node[j] * z_weights_face[k], mode='drop')
         # Add the particle current to the current density arrays
 
-    
-    alpha = constants['alpha']
-    Jx = digital_filter(Jx, alpha)
-    Jy = digital_filter(Jy, alpha)
-    Jz = digital_filter(Jz, alpha)
+    def filter_func(J_, filter):
+        J_ = jax.lax.cond(
+            filter == 'bilinear',
+            lambda J_: bilinear_filter(J_),
+            lambda J_: J_,
+            operand=J_
+        )
+
+        alpha = constants['alpha']
+        J_ = jax.lax.cond(
+            filter == 'digital',
+            lambda J_: digital_filter(J_, alpha),
+            lambda J_: J_,
+            operand=J_
+        )
+        return J_
+    # define a filtering function
+
+    Jx = filter_func(Jx, filter)
+    Jy = filter_func(Jy, filter)
+    Jz = filter_func(Jz, filter)
+    # apply the selected filter to each component of J
     J = (Jx, Jy, Jz)
-    # apply a digital filter to the current density arrays
 
     return J
 
@@ -136,7 +149,7 @@ def _roll_old_weights_to_new_frame(old_w_list, shift):
     return [rolled[i, :] for i in range(5)]
 
 
-def Esirkepov_current(particles, J, constants, world, grid):
+def Esirkepov_current(particles, J, constants, world, grid, filter=None):
     """
     Local per-particle Esirkepov deposition that works for 1D/2D/3D by setting inactive dims to size 1.
     J is a tuple (Jx,Jy,Jz) arrays shaped (Nx,Ny,Nz).
@@ -545,13 +558,13 @@ def get_second_order_weights(deltax, deltay, deltaz, dx, dy, dz):
     Sy0 = (3/4) - (deltay/dy)**2
     Sz0 = (3/4) - (deltaz/dz)**2
 
-    Sx1 = (1/2) * ((1/2) - (deltax/dx))**2
-    Sy1 = (1/2) * ((1/2) - (deltay/dy))**2
-    Sz1 = (1/2) * ((1/2) - (deltaz/dz))**2
+    Sx1 = (1/2) * ((1/2) + (deltax/dx))**2
+    Sy1 = (1/2) * ((1/2) + (deltay/dy))**2
+    Sz1 = (1/2) * ((1/2) + (deltaz/dz))**2
 
-    Sx_minus1 = (1/2) * ((1/2) + (deltax/dx))**2
-    Sy_minus1 = (1/2) * ((1/2) + (deltay/dy))**2
-    Sz_minus1 = (1/2) * ((1/2) + (deltaz/dz))**2
+    Sx_minus1 = (1/2) * ((1/2) - (deltax/dx))**2
+    Sy_minus1 = (1/2) * ((1/2) - (deltay/dy))**2
+    Sz_minus1 = (1/2) * ((1/2) - (deltaz/dz))**2
     # second order weights
 
     x_weights = [Sx_minus1, Sx0, Sx1]
