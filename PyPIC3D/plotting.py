@@ -603,6 +603,7 @@ def write_openpmd_initial_particles(particles, world, constants, output_dir, fil
     Args:
         particles (list): List of particle species.
         world (dict): Dictionary containing the simulation world parameters.
+        constants (dict): Dictionary of physical constants (must include key 'C' for the speed of light).
         output_dir (str): Base output directory for the simulation.
         filename (str): Base name of the openPMD output file (species name is prepended).
     """
