@@ -11,6 +11,8 @@ import jax
 from functools import partial
 import vtk
 from vtk.util import numpy_support
+import openpmd_api as io
+import importlib.metadata
 
 from PyPIC3D.utils import compute_energy
 
@@ -592,3 +594,106 @@ def plot_vectorfield_slice_vtk(field_slices, field_names, slice, grid, t, name, 
     writer.SetFileName(f"{path}/data/{name}_slice/{name}_slice_{t:09}.vtk")
     writer.SetInputData(structured_grid)
     writer.Write()
+
+
+def write_openpmd_initial_particles(particles, world, constants, output_dir, filename="initial_particles.h5"):
+    """
+    Write the initial particle states to separate openPMD files, one per species.
+
+    Args:
+        particles (list): List of particle species.
+        world (dict): Dictionary containing the simulation world parameters.
+        constants (dict): Dictionary of physical constants (must include key 'C' for the speed of light).
+        output_dir (str): Base output directory for the simulation.
+        filename (str): Base name of the openPMD output file (species name is prepended).
+    """
+    if not particles:
+        return
+    
+    C = constants['C']
+    # speed of light
+
+    output_path = os.path.join(output_dir, "data", "openpmd")
+    os.makedirs(output_path, exist_ok=True)
+
+    def make_array_writable(arr):
+        arr = np.array(arr, dtype=np.float64, copy=True, order="C")
+        arr.setflags(write=True)
+        return arr
+
+    for species in particles:
+        species_name = species.get_name().replace(" ", "_")
+        series_filename = f"{species_name}_{filename}"
+        series_path = os.path.join(output_path, series_filename)
+
+        series = io.Series(series_path, io.Access.create)
+        series.set_attribute("software", "PyPIC3D")
+        series.set_attribute("softwareVersion", importlib.metadata.version("PyPIC3D"))
+
+        iteration = series.iterations[0]
+        iteration.time = 0.0
+        iteration.dt = float(world["dt"])
+        iteration.time_unit_SI = 1.0
+
+        species_group = iteration.particles[species_name]
+
+        x, y, z = species.get_forward_position()
+        vx, vy, vz = species.get_velocity()
+        gamma = 1 / jnp.sqrt(1.0 - (vx**2 + vy**2 + vz**2) / C**2)
+        # compute the Lorentz factor
+
+        x = make_array_writable(x)
+        y = make_array_writable(y)
+        z = make_array_writable(z)
+        vx = make_array_writable(vx)
+        vy = make_array_writable(vy)
+        vz = make_array_writable(vz)
+        gamma = make_array_writable(gamma)
+
+        num_particles = x.shape[0]
+        particle_mass = float(species.mass)
+        particle_charge = float(species.charge)
+
+        position = species_group["position"]
+        for component, data in zip(("x", "y", "z"), (x, y, z)):
+            record_component = position[component]
+            record_component.reset_dataset(io.Dataset(data.dtype, [num_particles]))
+            record_component.store_chunk(data, [0], [num_particles])
+            record_component.unit_SI = 1.0
+
+        # positionOffset: required by openPMD consumers (WarpX expects it)
+        pos_off = species_group["positionOffset"]
+        zeros = np.zeros(num_particles, dtype=np.float64)
+        for comp in ("x", "y", "z"):
+            rc = pos_off[comp]
+            rc.reset_dataset(io.Dataset(zeros.dtype, [num_particles]))
+            rc.store_chunk(zeros, [0], [num_particles])
+            rc.unit_SI = 1.0
+
+        momentum = species_group["momentum"]
+        for component, data in zip(("x", "y", "z"), (vx, vy, vz)):
+            record_component = momentum[component]
+            record_component.reset_dataset(io.Dataset(data.dtype, [num_particles]))
+            record_component.store_chunk(data * particle_mass * gamma , [0], [num_particles])
+            record_component.unit_SI = 1.0
+
+        weighting = species_group["weighting"]
+        weights = np.full(num_particles, float(species.weight), dtype=np.float64)
+        weighting.reset_dataset(io.Dataset(weights.dtype, [num_particles]))
+        weighting.store_chunk(weights, [0], [num_particles])
+        weighting.unit_SI = 1.0
+
+        charge = species_group["charge"]
+        charges = np.full(num_particles, particle_charge, dtype=np.float64)
+        charge.reset_dataset(io.Dataset(charges.dtype, [num_particles]))
+        charge.store_chunk(charges, [0], [num_particles])
+        charge.unit_SI = 1.0
+
+        mass = species_group["mass"]
+        masses = np.full(num_particles, particle_mass, dtype=np.float64)
+        mass.reset_dataset(io.Dataset(masses.dtype, [num_particles]))
+        mass.store_chunk(masses, [0], [num_particles])
+        mass.unit_SI = 1.0
+
+        series.flush()
+        series.close()

@@ -117,7 +117,7 @@ def time_loop_electrodynamic(particles, fields, vertex_grid, center_grid, world,
         # update the particle positions
 
     ################ FIELD UPDATE ################################################################################################
-    J = J_func(particles, J, constants, world, vertex_grid)
+    J = J_func(particles, J, constants, world, center_grid)
     # calculate the current density based on the selected method
     E = update_E(E, B, J, world, constants, curl_func, x_bc, y_bc, z_bc)
     # update the electric field using the curl of the magnetic field
@@ -127,7 +127,7 @@ def time_loop_electrodynamic(particles, fields, vertex_grid, center_grid, world,
     fields = (E, B, J, rho, phi)
     # pack the fields into a tuple
 
-    # ############### PARTICLE BOUNDARY CONDITIONS ################################################################################
+    ############### PARTICLE BOUNDARY CONDITIONS ################################################################################
     for i in range(len(particles)):
 
         particles[i].boundary_conditions()
@@ -185,7 +185,7 @@ def time_loop_vector_potential(particles, fields, E_grid, B_grid, world, constan
     # calculate the electric field from the vector potential using centered finite difference
     B = B_from_A(A1, world, E_grid, B_grid)
     # calculate the magnetic field from the vector potential using centered finite difference
-    J = J_func(particles, J, constants, world, E_grid)
+    J = J_func(particles, J, constants, world, B_grid)
     # calculate the current density using the selected method
 
     fields = (E, B, J, rho, phi, A2, A1, A0)
@@ -251,7 +251,7 @@ def time_loop_curl_curl(particles, fields, E_grid, B_grid, world, constants, cur
     # update the electric field using second-order centered finite difference
     J0 = J
     # update the previous current density
-    J = J_func(particles, J, constants, world, E_grid)
+    J = J_func(particles, J, constants, world, B_grid)
     # calculate the current density based on the selected method
 
     fields = (E, B, J, rho, phi, E2, B2, E0, B0, J0)

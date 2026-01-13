@@ -147,9 +147,19 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         if "weight" in config[toml_key]:
             weight = config[toml_key]['weight']
             # set the weight of the particles, if specified in the toml file
-        elif 'ds_per_debye' in config[toml_key]: # assuming dx = dy = dz
+        elif 'ds_per_debye' in config[toml_key]:  # account for anisotropic grid spacings via ds2
             ds_per_debye = config[toml_key]['ds_per_debye']
-            weight = (x_wind*y_wind*z_wind * eps * kb * T)  / (N_particles * charge**2 * ds_per_debye**2 * dx*dx)
+            
+            ds2 = 0
+            for d in [dx, dy, dz]:
+                if d != 1:
+                    ds2 += d**2
+
+            if ds2 == 0:
+                raise ValueError(
+                    "Invalid configuration for 'ds_per_debye': at least one of dx, dy, dz must differ from 1."
+                )
+            weight = (x_wind*y_wind*z_wind * eps * kb * T)  / (N_particles * charge**2 * ds_per_debye**2 * ds2)
             # weight the particles by the debye length and the number of particles
 
         update_pos = read_value('update_pos', toml_key, config, True)
@@ -345,7 +355,13 @@ def compute_macroparticle_weight(config, particle_keys, simulation_parameters, w
             inverse_total_debye += jnp.sqrt( N_particles / (x_wind * y_wind * z_wind) / (eps * kb * T) ) * jnp.abs(charge)
             # get the inverse debye length before macroparticle weighting
 
-        weight = 1 / (dx**2) / (ds_per_debye**2) / inverse_total_debye
+        ds2 = 0
+        for d in [dx, dy, dz]:
+            if d != 1:
+                ds2 += d**2
+            
+
+        weight = 1 / (ds2) / (ds_per_debye**2) / inverse_total_debye
         # weight the particles by the total debye length of the plasma
 
     else:
@@ -579,7 +595,9 @@ class particle_species:
         self.weight = weight
 
     def kinetic_energy(self):
-        return 0.5 * self.weight * self.mass *  (  jnp.abs( jnp.sum( self.v1**2)) + jnp.abs( jnp.sum( self.v2**2)) + jnp.abs( jnp.sum( self.v3**2)) )
+        v2 = jnp.square(self.v1) + jnp.square(self.v2) + jnp.square(self.v3)
+        # compute the square of the velocity
+        return 0.5 * self.weight * self.mass *  jnp.sum(v2)
 
     def momentum(self):
         return self.mass * self.weight * jnp.sum(jnp.sqrt(self.v1**2 + self.v2**2 + self.v3**2))

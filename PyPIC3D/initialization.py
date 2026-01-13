@@ -36,7 +36,7 @@ from PyPIC3D.solvers.fdtd import (
 
 
 from PyPIC3D.plotting import (
-    plot_initial_histograms
+    plot_initial_histograms, write_openpmd_initial_particles
 )
 
 
@@ -72,7 +72,8 @@ def default_parameters():
     "plot_dispersion": False,
     'plot_chargeconservation': False,
     "plot_vtk_particles": True,
-    "plotting_interval": 10
+    "plotting_interval": 10,
+    "dump_particles": False,
     }
     # dictionary for plotting/saving data
 
@@ -103,6 +104,7 @@ def default_parameters():
         "ds_per_debye" : None, # number of grid spacings per debye length
         "shape_factor" : 1, # shape factor for the simulation (1 for 1st order, 2 for 2nd order)
         "current_calculation": "j_from_rhov",  # current calculation method: esirkepov, villasenor_buneman, j_from_rhov
+        "filter_j": "bilinear",  # filter for the current density: bilinear, digital, none
     }
     # dictionary for simulation parameters
 
@@ -259,6 +261,10 @@ def initialize_simulation(toml_file):
     particle_sanity_check(particles)
     # ensure the arrays for the particles are of the correct shape
 
+    if plotting_parameters['dump_particles']:
+        write_openpmd_initial_particles(particles, world, constants, simulation_parameters['output_dir'])
+    # write the initial particles to an openPMD file
+
     E, B, J, phi, rho = initialize_fields(Nx, Ny, Nz)
     # initialize the electric and magnetic fields
 
@@ -312,8 +318,8 @@ def initialize_simulation(toml_file):
         # raise NotImplementedError("Esirkepov current calculation method is not fully functional yet.")
         J_func = Esirkepov_current
     elif simulation_parameters['current_calculation'] == "j_from_rhov":
-        print("Using J from rhov current calculation method")
-        J_func = J_from_rhov
+        print(f"Using J from rhov current calculation method with filter: {simulation_parameters['filter_j']}")
+        J_func = functools.partial(J_from_rhov, filter=simulation_parameters['filter_j'])
 
 
     if solver == "vector_potential":

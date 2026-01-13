@@ -18,7 +18,8 @@ dependencies = [
     "toml",
     "tqdm",
     "pyevtk",
-    "vtk"
+    "vtk",
+    "openpmd-api",
 ]
 
 [tool.setuptools]
