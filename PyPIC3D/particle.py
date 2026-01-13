@@ -147,7 +147,7 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         if "weight" in config[toml_key]:
             weight = config[toml_key]['weight']
             # set the weight of the particles, if specified in the toml file
-        elif 'ds_per_debye' in config[toml_key]: # assuming dx = dy = dz
+        elif 'ds_per_debye' in config[toml_key]:  # account for anisotropic grid spacings via ds2
             ds_per_debye = config[toml_key]['ds_per_debye']
             
             ds2 = 0
