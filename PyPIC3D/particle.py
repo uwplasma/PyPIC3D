@@ -155,6 +155,10 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
                 if d != 1:
                     ds2 += d**2
 
+            if ds2 == 0:
+                raise ValueError(
+                    "Invalid configuration for 'ds_per_debye': at least one of dx, dy, dz must differ from 1."
+                )
             weight = (x_wind*y_wind*z_wind * eps * kb * T)  / (N_particles * charge**2 * ds_per_debye**2 * ds2)
             # weight the particles by the debye length and the number of particles
 
