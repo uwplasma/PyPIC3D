@@ -349,7 +349,7 @@ class TestParticleMethods(unittest.TestCase):
 
         num_J = J_from_rhov([species], num_J, constants, world, grid)
         
-        # Jan 12, 2025: Supressing test for now. I have done benchmarks of the two stream and weibel
+        # Jan 12, 2025: Suppressing test for now. I have done benchmarks of the two stream and weibel
         # against WarpX and have validated this method
 
     
