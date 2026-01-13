@@ -154,7 +154,8 @@ class TestFieldsMethods(unittest.TestCase):
 
         # Ex should evolve correctly (tolerance accounts for discretization)
         relative_error = Ex_error / E0
-        self.assertLess(relative_error, 5e-3, "Ex evolution should match analytical solution within 0.5%")
+        self.assertLess(relative_error, 4e-3, "Ex evolution should match analytical solution within 0.4%")
+
 
     def test_update_B(self):
         """Test update_B against analytical electromagnetic wave solution"""
@@ -217,7 +218,7 @@ class TestFieldsMethods(unittest.TestCase):
         # By should evolve correctly
         B0 = E0 / c
         relative_error = By_error / B0
-        self.assertLess(relative_error, 5e-3, "By evolution should match analytical solution within 0.5%")
+        self.assertLess(relative_error, 2e-3, "By evolution should match analytical solution within 0.2%")
 
 if __name__ == '__main__':
     unittest.main()
