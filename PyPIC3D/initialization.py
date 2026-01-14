@@ -72,6 +72,7 @@ def default_parameters():
     "plot_dispersion": False,
     'plot_chargeconservation': False,
     "plot_vtk_particles": True,
+    "write_openpmd": False,
     "plotting_interval": 10,
     "dump_particles": False,
     }

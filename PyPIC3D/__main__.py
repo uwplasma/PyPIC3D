@@ -16,7 +16,7 @@ from tqdm import tqdm
 
 from PyPIC3D.plotting import (
     write_particles_phase_space, write_data, plot_vtk_particles, plot_field_slice_vtk,
-    plot_vectorfield_slice_vtk
+    plot_vectorfield_slice_vtk, write_openpmd_iteration
 )
 
 from PyPIC3D.utils import (
@@ -109,6 +109,10 @@ def run_PyPIC3D(config_file):
             if plotting_parameters['plot_vtk_particles']:
                 plot_vtk_particles(particles, t, output_dir)
             # Plot the particles in VTK format
+
+            if plotting_parameters.get("write_openpmd", False):
+                write_openpmd_iteration(particles, (E, B, J, rho, *rest), world, constants, output_dir, t)
+            # Write the particles and fields in openPMD format
 
             fields = (E, B, J, rho, *rest)
             # repack the fields
