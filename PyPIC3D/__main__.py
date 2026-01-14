@@ -82,29 +82,32 @@ def run_PyPIC3D(config_file):
             write_data(f"{output_dir}/data/total_momentum.txt", t * dt, total_momentum)
             # Write the total momentum to a file
 
-            for species in particles:
-                write_data(f"{output_dir}/data/{species.name}_kinetic_energy.txt", t * dt, species.kinetic_energy())
+            # for species in particles:
+            #     write_data(f"{output_dir}/data/{species.name}_kinetic_energy.txt", t * dt, species.kinetic_energy())
 
 
             if plotting_parameters['plot_phasespace']:
                 write_particles_phase_space(particles, t, output_dir)
 
-            rho = compute_rho(particles, rho, world, constants)
-            # calculate the charge density based on the particle positions
-
-            mass_density = compute_mass_density(particles, rho, world)
-            # calculate the mass density based on the particle positions
-
-            fields_mag = [rho[:,world['Ny']//2,:], mass_density[:,world['Ny']//2,:]]
-            plot_field_slice_vtk(fields_mag, scalar_field_names, 1, E_grid, t, "scalar_field", output_dir, world)
-            # Plot the scalar fields in VTK format
 
 
-            vector_field_slices = [ [E[0][:,world['Ny']//2,:], E[1][:,world['Ny']//2,:], E[2][:,world['Ny']//2,:]],
-                                    [B[0][:,world['Ny']//2,:], B[1][:,world['Ny']//2,:], B[2][:,world['Ny']//2,:]],
-                                    [J[0][:,world['Ny']//2,:], J[1][:,world['Ny']//2,:], J[2][:,world['Ny']//2,:]]]
-            plot_vectorfield_slice_vtk(vector_field_slices, vector_field_names, 1, E_grid, t, 'vector_field', output_dir, world)
-            # Plot the vector fields in VTK format
+            if plotting_parameters['plot_vtk_scalars']:
+                rho = compute_rho(particles, rho, world, constants)
+                # calculate the charge density based on the particle positions
+                mass_density = compute_mass_density(particles, rho, world)
+                # calculate the mass density based on the particle positions
+
+                fields_mag = [rho[:,world['Ny']//2,:], mass_density[:,world['Ny']//2,:]]
+                plot_field_slice_vtk(fields_mag, scalar_field_names, 1, E_grid, t, "scalar_field", output_dir, world)
+                # Plot the scalar fields in VTK format
+
+
+            if plotting_parameters['plot_vtk_vectors']:
+                vector_field_slices = [ [E[0][:,world['Ny']//2,:], E[1][:,world['Ny']//2,:], E[2][:,world['Ny']//2,:]],
+                                        [B[0][:,world['Ny']//2,:], B[1][:,world['Ny']//2,:], B[2][:,world['Ny']//2,:]],
+                                        [J[0][:,world['Ny']//2,:], J[1][:,world['Ny']//2,:], J[2][:,world['Ny']//2,:]]]
+                plot_vectorfield_slice_vtk(vector_field_slices, vector_field_names, 1, E_grid, t, 'vector_field', output_dir, world)
+                # Plot the vector fields in VTK format
 
             if plotting_parameters['plot_vtk_particles']:
                 plot_vtk_particles(particles, t, output_dir)

@@ -622,7 +622,8 @@ def _configure_openpmd_iteration(iteration, t, world):
 
 def _configure_openpmd_mesh(mesh, world):
     mesh.geometry = io.Geometry.cartesian
-    mesh.data_order = io.Data_Order.C
+    # openpmd-api 0.16+ removed io.Data_Order; mesh.data_order accepts a string.
+    mesh.data_order = io.Data_Order.C if hasattr(io, "Data_Order") else "C"
     mesh.grid_spacing = [float(world["dx"]), float(world["dy"]), float(world["dz"])]
     mesh.grid_global_offset = [
         -float(world["x_wind"]) / 2.0,
