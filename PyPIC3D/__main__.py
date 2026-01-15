@@ -134,11 +134,11 @@ def run_PyPIC3D(config_file):
             # Plot the particles in VTK format
 
             if plotting_parameters['plot_openpmd_particles']:
-                write_openpmd_particles(particles, world, constants, os.path.join(output_dir, "data"), plot_num, "particles", ".h5")
+                write_openpmd_particles(particles, world, constants, os.path.join(output_dir, "data"), plot_num, t, "particles", ".h5")
             # Write the particles in openPMD format
 
             if plotting_parameters['plot_openpmd_fields']:
-                write_openpmd_fields(fields, world, os.path.join(output_dir, "data"), plot_num, "fields", ".h5")
+                write_openpmd_fields(fields, world, os.path.join(output_dir, "data"), plot_num, t,  "fields", ".h5")
             # Write the fields in openPMD format
 
             fields = (E, B, J, rho, *rest)

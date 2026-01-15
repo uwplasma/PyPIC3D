@@ -23,13 +23,6 @@ def _open_openpmd_series(output_path, filename, file_extension=".bp"):
     series.set_attribute("softwareVersion", importlib.metadata.version("PyPIC3D"))
     return series
 
-
-def _configure_openpmd_iteration(iteration, t, world):
-    iteration.time = float(t * world["dt"])
-    iteration.dt = float(world["dt"])
-    iteration.time_unit_SI = 1.0
-
-
 def _configure_openpmd_mesh(mesh, world):
     mesh.geometry = io.Geometry.cartesian
     # openpmd-api 0.16+ removed io.Data_Order; mesh.data_order accepts a string.
@@ -65,7 +58,7 @@ def _write_openpmd_vector_mesh(iteration, name, components, world):
         record.unit_SI = 1.0
 
 
-def _write_openpmd_fields_to_iteration(iteration, field_map, world):
+def write_openpmd_fields_to_iteration(iteration, field_map, world):
     for name, data in field_map.items():
         is_vector = isinstance(data, (list, tuple)) and len(data) == 3
         if is_vector:
@@ -74,7 +67,7 @@ def _write_openpmd_fields_to_iteration(iteration, field_map, world):
             _write_openpmd_scalar_mesh(iteration, name, data, world)
 
 
-def _write_openpmd_particles_to_iteration(iteration, particles, constants):
+def write_openpmd_particles_to_iteration(iteration, particles, constants):
     if not particles:
         return
 
@@ -141,7 +134,7 @@ def _write_openpmd_particles_to_iteration(iteration, particles, constants):
         mass.unit_SI = 1.0
 
 
-def write_openpmd_fields(fields, world, output_dir, t, filename="fields", file_extension=".bp"):
+def write_openpmd_fields(fields, world, output_dir, plot_t, t, filename="fields", file_extension=".bp"):
     """
     Write all field data to an openPMD file for visualization in ParaView/VisIt.
 
@@ -166,14 +159,23 @@ def write_openpmd_fields(fields, world, output_dir, t, filename="fields", file_e
             field_map[f"field_{idx}"] = extra
 
     series = _open_openpmd_series(output_dir, filename, file_extension=file_extension)
-    iteration = series.iterations[int(t)]
-    _configure_openpmd_iteration(iteration, t, world)
-    _write_openpmd_fields_to_iteration(iteration, field_map, world)
+    # open or create the openPMD series
+    iteration = series.iterations[int(plot_t)]
+    # specify the iteration using the plot number
+    iteration.time = float(t * world["dt"])
+    # set the physical time
+    iteration.dt = float(world["dt"])
+    # set the time step
+    iteration.time_unit_SI = 1.0
+    # set the time unit
+    write_openpmd_fields_to_iteration(iteration, field_map, world)
+    # write the field data to the iteration
     series.flush()
     series.close()
+    # flush and close the series
 
 
-def write_openpmd_particles(particles, world, constants, output_dir, t, filename="particles", file_extension=".bp"):
+def write_openpmd_particles(particles, world, constants, output_dir, plot_t, t, filename="particles", file_extension=".bp"):
     """
     Write all particle data to an openPMD file for visualization in ParaView/VisIt.
 
@@ -186,11 +188,21 @@ def write_openpmd_particles(particles, world, constants, output_dir, t, filename
         filename (str): openPMD file name.
     """
     series = _open_openpmd_series(output_dir, filename, file_extension=file_extension)
-    iteration = series.iterations[int(t)]
-    _configure_openpmd_iteration(iteration, t, world)
-    _write_openpmd_particles_to_iteration(iteration, particles, constants)
+    # open or create the openPMD series
+    iteration = series.iterations[int(plot_t)]
+    # specify the iteration using the plot number
+    iteration.time = float(t * world["dt"])
+    # set the physical time
+    iteration.dt = float(world["dt"])
+    # set the time step
+    iteration.time_unit_SI = 1.0
+    # set the time unit
+    write_openpmd_particles_to_iteration(iteration, particles, constants)
+    # write the particle data to the iteration
     series.flush()
     series.close()
+    # flush and close the series
+
 
 
 def write_openpmd_initial_particles(particles, world, constants, output_dir, filename="initial_particles.h5"):
