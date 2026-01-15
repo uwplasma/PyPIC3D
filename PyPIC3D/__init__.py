@@ -12,7 +12,7 @@ from . import errors
 from . import boundaryconditions
 from . import initialization
 from . import particle
-from . import plotting
+from .diagnostics import plotting
 from . import utils
 from .solvers import pstd
 from .solvers import fdtd

@@ -11,12 +11,20 @@ import jax
 from jax import block_until_ready
 import jax.numpy as jnp
 from tqdm import tqdm
+
 #from memory_profiler import profile
 # Importing relevant libraries
 
-from PyPIC3D.plotting import (
-    write_particles_phase_space, write_data, plot_vtk_particles, plot_field_slice_vtk,
-    plot_vectorfield_slice_vtk, write_openpmd_iteration
+from PyPIC3D.diagnostics.plotting import (
+    write_particles_phase_space, write_data
+)
+
+from PyPIC3D.diagnostics.openPMD import (
+    write_openpmd_particles, write_openpmd_fields
+)
+
+from PyPIC3D.diagnostics.vtk import (
+    plot_field_slice_vtk, plot_vectorfield_slice_vtk, plot_vtk_particles
 )
 
 from PyPIC3D.utils import (
@@ -27,7 +35,11 @@ from PyPIC3D.initialization import (
     initialize_simulation
 )
 
-from PyPIC3D.rho import compute_rho, compute_mass_density, compute_velocity_field
+from PyPIC3D.diagnostics.fluid_quantities import (
+    compute_mass_density, compute_velocity_field
+)
+
+from PyPIC3D.rho import compute_rho
 
 
 # Importing functions from the PyPIC3D package
@@ -113,9 +125,13 @@ def run_PyPIC3D(config_file):
                 plot_vtk_particles(particles, t, output_dir)
             # Plot the particles in VTK format
 
-            if plotting_parameters.get("write_openpmd", False):
-                write_openpmd_iteration(particles, (E, B, J, rho, *rest), world, constants, output_dir, t)
-            # Write the particles and fields in openPMD format
+            if plotting_parameters['plot_openpmd_particles']:
+                write_openpmd_particles(particles, world, constants, os.path.join(output_dir, "data"), t, "particles", ".h5")
+            # Write the particles in openPMD format
+
+            if plotting_parameters['plot_openpmd_fields']:
+                write_openpmd_fields(fields, world, os.path.join(output_dir, "data"), t, "fields", ".h5")
+            # Write the fields in openPMD format
 
             fields = (E, B, J, rho, *rest)
             # repack the fields

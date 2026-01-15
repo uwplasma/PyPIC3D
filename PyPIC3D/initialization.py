@@ -35,8 +35,12 @@ from PyPIC3D.solvers.fdtd import (
 )
 
 
-from PyPIC3D.plotting import (
-    plot_initial_histograms, write_openpmd_initial_particles
+from PyPIC3D.diagnostics.plotting import (
+    plot_initial_histograms
+)
+
+from PyPIC3D.diagnostics.openPMD import (
+    write_openpmd_initial_particles
 )
 
 
@@ -74,7 +78,8 @@ def default_parameters():
     "plot_vtk_particles": False,
     "plot_vtk_scalars" : False,
     "plot_vtk_vectors" : False,
-    "write_openpmd": False,
+    "plot_openpmd_particles": False,
+    "plot_openpmd_fields": False,
     "plotting_interval": 10,
     "dump_particles": False,
     }
