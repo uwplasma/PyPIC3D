@@ -15,6 +15,24 @@ import importlib.metadata
 from scipy import stats
 # import external libraries
 
+def setup_pmd_files(file_path, name, extension=".bp"):
+    """
+    Set up the openPMD file structure for storing simulation data.
+
+    Args:
+        file_path (str): The path where the openPMD files will be stored.
+        name (str): The base name for the openPMD files.
+    Returns:
+        None
+    """
+
+    file = os.path.join(file_path, name + ".pmd")
+    with open(file, 'w') as f:
+        f.write(f"{name}{extension}\n")
+    # create the openPMD file structure
+
+    return
+
 @jit
 def wrap_around(ix, size):
     """Wrap around index (scalar or 1D array) to ensure it is within bounds."""

@@ -28,7 +28,8 @@ from PyPIC3D.diagnostics.vtk import (
 )
 
 from PyPIC3D.utils import (
-    dump_parameters_to_toml, load_config_file, compute_energy
+    dump_parameters_to_toml, load_config_file, compute_energy,
+    setup_pmd_files
 )
 
 from PyPIC3D.initialization import (
@@ -69,6 +70,10 @@ def run_PyPIC3D(config_file):
     # Compute the energy of the system
     initial_energy = e_energy + b_energy + kinetic_energy
 
+    if plotting_parameters['plot_openpmd_fields']: setup_pmd_files( os.path.join(output_dir, "data"), "fields", ".h5")
+    if plotting_parameters['plot_openpmd_particles']: setup_pmd_files( os.path.join(output_dir, "data"), "particles", ".h5")
+    # setup the openPMD files if needed
+
     ############################################################################################################
 
     ###################################################### SIMULATION LOOP #####################################
@@ -77,6 +82,9 @@ def run_PyPIC3D(config_file):
 
         # plot the data
         if t % plotting_parameters['plotting_interval'] == 0:
+
+            plot_num = t // plotting_parameters['plotting_interval']
+            # determine the plot number
 
             E, B, J, rho, *rest = fields
             # unpack the fields
@@ -122,15 +130,15 @@ def run_PyPIC3D(config_file):
                 # Plot the vector fields in VTK format
 
             if plotting_parameters['plot_vtk_particles']:
-                plot_vtk_particles(particles, t, output_dir)
+                plot_vtk_particles(particles, plot_num, output_dir)
             # Plot the particles in VTK format
 
             if plotting_parameters['plot_openpmd_particles']:
-                write_openpmd_particles(particles, world, constants, os.path.join(output_dir, "data"), t, "particles", ".h5")
+                write_openpmd_particles(particles, world, constants, os.path.join(output_dir, "data"), plot_num, "particles", ".h5")
             # Write the particles in openPMD format
 
             if plotting_parameters['plot_openpmd_fields']:
-                write_openpmd_fields(fields, world, os.path.join(output_dir, "data"), t, "fields", ".h5")
+                write_openpmd_fields(fields, world, os.path.join(output_dir, "data"), plot_num, "fields", ".h5")
             # Write the fields in openPMD format
 
             fields = (E, B, J, rho, *rest)
