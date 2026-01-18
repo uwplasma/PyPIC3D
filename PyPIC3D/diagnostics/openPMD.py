@@ -1,6 +1,5 @@
 
 import openpmd_api as io
-from jax import jit
 import jax.numpy as jnp
 import os
 import numpy as np
