@@ -7,7 +7,7 @@ import numpy as np
 import importlib.metadata
 
 def _ensure_openpmd_array(data, dtype=np.float64):
-    arr = np.asarray(data, dtype=dtype)
+    arr = np.squeeze(np.asarray(data, dtype=dtype))
     if not arr.flags.c_contiguous or not arr.flags.writeable:
         arr = np.array(arr, dtype=dtype, copy=True, order="C")
     return arr
@@ -23,23 +23,47 @@ def _open_openpmd_series(output_path, filename, file_extension=".bp"):
     series.set_attribute("softwareVersion", importlib.metadata.version("PyPIC3D"))
     return series
 
-def _configure_openpmd_mesh(mesh, world):
+def _configure_openpmd_mesh(mesh, world, active_dims=(1,1,1)):
     mesh.geometry = io.Geometry.cartesian
     # openpmd-api 0.16+ removed io.Data_Order; mesh.data_order accepts a string.
     mesh.data_order = io.Data_Order.C if hasattr(io, "Data_Order") else "C"
-    mesh.grid_spacing = [float(world["dx"]), float(world["dy"]), float(world["dz"])]
-    mesh.grid_global_offset = [
-        -float(world["x_wind"]) / 2.0,
-        -float(world["y_wind"]) / 2.0,
-        -float(world["z_wind"]) / 2.0,
-    ]
-    mesh.axis_labels = ["x", "y", "z"]
+
+    axes    = []
+    ds      = []
+    offsets = []
+    # initialize lists for axes, spacings, and offsets
+    if active_dims[0]:
+        axes.append("x")
+        ds.append(float(world["dx"]))
+        offsets.append(-float(world["x_wind"]) / 2.0)
+    if active_dims[1]:
+        axes.append("y")
+        ds.append(float(world["dy"]))
+        offsets.append(-float(world["y_wind"]) / 2.0)
+    if active_dims[2]:
+        axes.append("z")
+        ds.append(float(world["dz"]))
+        offsets.append(-float(world["z_wind"]) / 2.0)
+    # determine the active axes being used and set them
+
+    mesh.axis_labels = axes
+    mesh.grid_spacing = ds
+    mesh.grid_global_offset = offsets
+
+
+    # mesh.grid_spacing = [float(world["dx"]), float(world["dy"]), float(world["dz"])]
+    # mesh.grid_global_offset = [
+    #     -float(world["x_wind"]) / 2.0,
+    #     -float(world["y_wind"]) / 2.0,
+    #     -float(world["z_wind"]) / 2.0,
+    # ]
+    # mesh.axis_labels = ["x", "y", "z"]
     mesh.unit_SI = 1.0
 
 
-def _write_openpmd_scalar_mesh(iteration, name, data, world):
+def _write_openpmd_scalar_mesh(iteration, name, data, world, active_dims=(1,1,1)):
     mesh = iteration.meshes[name]
-    _configure_openpmd_mesh(mesh, world)
+    _configure_openpmd_mesh(mesh, world, active_dims)
     array = _ensure_openpmd_array(data)
     record = mesh[io.Mesh_Record_Component.SCALAR]
     record.reset_dataset(io.Dataset(array.dtype, array.shape))
@@ -47,9 +71,9 @@ def _write_openpmd_scalar_mesh(iteration, name, data, world):
     record.unit_SI = 1.0
 
 
-def _write_openpmd_vector_mesh(iteration, name, components, world):
+def _write_openpmd_vector_mesh(iteration, name, components, world, active_dims=(1,1,1)):
     mesh = iteration.meshes[name]
-    _configure_openpmd_mesh(mesh, world)
+    _configure_openpmd_mesh(mesh, world, active_dims)
     for component_name, component_data in zip(("x", "y", "z"), components):
         array = _ensure_openpmd_array(component_data)
         record = mesh[component_name]
@@ -58,13 +82,13 @@ def _write_openpmd_vector_mesh(iteration, name, components, world):
         record.unit_SI = 1.0
 
 
-def write_openpmd_fields_to_iteration(iteration, field_map, world):
+def write_openpmd_fields_to_iteration(iteration, field_map, world, active_dims=(1,1,1)):
     for name, data in field_map.items():
         is_vector = isinstance(data, (list, tuple)) and len(data) == 3
         if is_vector:
-            _write_openpmd_vector_mesh(iteration, name, data, world)
+            _write_openpmd_vector_mesh(iteration, name, data, world, active_dims)
         else:
-            _write_openpmd_scalar_mesh(iteration, name, data, world)
+            _write_openpmd_scalar_mesh(iteration, name, data, world, active_dims)
 
 
 def write_openpmd_particles_to_iteration(iteration, particles, constants):
@@ -152,11 +176,18 @@ def write_openpmd_fields(fields, world, output_dir, plot_t, t, filename="fields"
         "J": J,
         "rho": rho,
     }
+    # map field names to their data
 
     if rest:
         field_map["phi"] = rest[0]
         for idx, extra in enumerate(rest[1:], start=1):
             field_map[f"field_{idx}"] = extra
+    # add extra fields if present
+
+    Nx, Ny, Nz = rho.shape
+    active_dims = (Nx > 1, Ny > 1, Nz > 1)
+    # determine active dimensions
+
 
     series = _open_openpmd_series(output_dir, filename, file_extension=file_extension)
     # open or create the openPMD series
@@ -168,7 +199,7 @@ def write_openpmd_fields(fields, world, output_dir, plot_t, t, filename="fields"
     # set the time step
     iteration.time_unit_SI = 1.0
     # set the time unit
-    write_openpmd_fields_to_iteration(iteration, field_map, world)
+    write_openpmd_fields_to_iteration(iteration, field_map, world, active_dims)
     # write the field data to the iteration
     series.flush()
     series.close()
@@ -306,3 +337,49 @@ def write_openpmd_initial_particles(particles, world, constants, output_dir, fil
 
         series.flush()
         series.close()
+
+def write_openpmd_initial_fields(fields, world, output_dir, filename="initial_fields.h5"):
+    """
+    Write the initial field states to an openPMD file.
+
+    Args:
+        fields (tuple): Field tuple from the solver (E, B, J, rho, ...).
+        world (dict): Simulation world parameters.
+        output_dir (str): Base output directory for the simulation.
+        filename (str): openPMD file name.
+    """
+    E, B, J, rho, *rest = fields
+    field_map = {
+        "E": E,
+        "B": B,
+        "J": J,
+        "rho": rho,
+    }
+    # map field names to their data
+
+    if rest:
+        field_map["phi"] = rest[0]
+        for idx, extra in enumerate(rest[1:], start=1):
+            field_map[f"field_{idx}"] = extra
+    # add extra fields if present
+
+    Nx, Ny, Nz = rho.shape
+    active_dims = (Nx > 1, Ny > 1, Nz > 1)
+    # determine active dimensions
+
+
+    output_path = os.path.join(output_dir, "data", "initial_fields")
+    os.makedirs(output_path, exist_ok=True)
+    series_path = os.path.join(output_path, filename)
+    series = io.Series(series_path, io.Access.create)
+    series.set_attribute("software", "PyPIC3D")
+    series.set_attribute("softwareVersion", importlib.metadata.version("PyPIC3D"))
+    # create the openPMD series
+
+    iteration = series.iterations[0]
+    iteration.time = 0.0
+    iteration.dt = float(world["dt"])
+    iteration.time_unit_SI = 1.0
+    write_openpmd_fields_to_iteration(iteration, field_map, world, active_dims)
+    series.flush()
+    series.close()

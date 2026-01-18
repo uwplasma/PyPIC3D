@@ -40,7 +40,7 @@ from PyPIC3D.diagnostics.plotting import (
 )
 
 from PyPIC3D.diagnostics.openPMD import (
-    write_openpmd_initial_particles
+    write_openpmd_initial_particles, write_openpmd_initial_fields
 )
 
 
@@ -82,6 +82,7 @@ def default_parameters():
     "plot_openpmd_fields": False,
     "plotting_interval": 10,
     "dump_particles": False,
+    "dump_fields": False,
     }
     # dictionary for plotting/saving data
 
@@ -341,6 +342,10 @@ def initialize_simulation(toml_file):
     else:
         fields = (E, B, J, rho, phi)
         # define the fields tuple for the electrodynamic and electrostatic solvers
+
+    if plotting_parameters['dump_fields']:
+        write_openpmd_initial_fields(fields, world, simulation_parameters['output_dir'], filename="initial_fields.h5")
+    # write the initial fields to an openPMD file
 
 
     if GPUs:
