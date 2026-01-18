@@ -31,8 +31,6 @@ def setup_pmd_files(file_path, name, extension=".bp"):
         f.write(f"{name}{extension}\n")
     # create the openPMD file structure
 
-    return
-
 @jit
 def wrap_around(ix, size):
     """Wrap around index (scalar or 1D array) to ensure it is within bounds."""
