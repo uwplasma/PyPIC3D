@@ -8,9 +8,6 @@ import plotly.graph_objects as go
 import jax
 from functools import partial
 
-from PyPIC3D.utils import compute_energy
-
-
 def plot_positions(particles, t, x_wind, y_wind, z_wind, path):
     """
     Makes an interactive 3D plot of the positions of the particles using Plotly.
