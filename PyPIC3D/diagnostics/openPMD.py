@@ -166,8 +166,10 @@ def write_openpmd_fields(fields, world, output_dir, plot_t, t, filename="fields"
         fields (tuple): Field tuple from the solver (E, B, J, rho, ...).
         world (dict): Simulation world parameters.
         output_dir (str): Base output directory for the simulation.
-        t (int): Iteration index.
-        filename (str): openPMD file name.
+        plot_t (int): openPMD iteration number/index used when writing this step.
+        t (int): Simulation step index used to compute the physical time (t * world["dt"]).
+        filename (str): Base name for the openPMD file.
+        file_extension (str): File extension for the openPMD series (for example, ".bp").
     """
     E, B, J, rho, *rest = fields
     field_map = {
