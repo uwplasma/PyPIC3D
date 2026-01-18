@@ -37,7 +37,7 @@ from PyPIC3D.initialization import (
 )
 
 from PyPIC3D.diagnostics.fluid_quantities import (
-    compute_mass_density, compute_velocity_field
+    compute_mass_density
 )
 
 from PyPIC3D.rho import compute_rho
