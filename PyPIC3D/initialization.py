@@ -35,8 +35,12 @@ from PyPIC3D.solvers.fdtd import (
 )
 
 
-from PyPIC3D.plotting import (
-    plot_initial_histograms, write_openpmd_initial_particles
+from PyPIC3D.diagnostics.plotting import (
+    plot_initial_histograms
+)
+
+from PyPIC3D.diagnostics.openPMD import (
+    write_openpmd_initial_particles, write_openpmd_initial_fields
 )
 
 
@@ -71,9 +75,14 @@ def default_parameters():
     "plot_errors": False,
     "plot_dispersion": False,
     'plot_chargeconservation': False,
-    "plot_vtk_particles": True,
+    "plot_vtk_particles": False,
+    "plot_vtk_scalars" : False,
+    "plot_vtk_vectors" : False,
+    "plot_openpmd_particles": False,
+    "plot_openpmd_fields": False,
     "plotting_interval": 10,
     "dump_particles": False,
+    "dump_fields": False,
     }
     # dictionary for plotting/saving data
 
@@ -333,6 +342,10 @@ def initialize_simulation(toml_file):
     else:
         fields = (E, B, J, rho, phi)
         # define the fields tuple for the electrodynamic and electrostatic solvers
+
+    if plotting_parameters['dump_fields']:
+        write_openpmd_initial_fields(fields, world, simulation_parameters['output_dir'], filename="initial_fields.h5")
+    # write the initial fields to an openPMD file
 
 
     if GPUs:

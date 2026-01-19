@@ -11,23 +11,36 @@ import jax
 from jax import block_until_ready
 import jax.numpy as jnp
 from tqdm import tqdm
+
 #from memory_profiler import profile
 # Importing relevant libraries
 
-from PyPIC3D.plotting import (
-    write_particles_phase_space, write_data, plot_vtk_particles, plot_field_slice_vtk,
-    plot_vectorfield_slice_vtk
+from PyPIC3D.diagnostics.plotting import (
+    write_particles_phase_space, write_data
+)
+
+from PyPIC3D.diagnostics.openPMD import (
+    write_openpmd_particles, write_openpmd_fields
+)
+
+from PyPIC3D.diagnostics.vtk import (
+    plot_field_slice_vtk, plot_vectorfield_slice_vtk, plot_vtk_particles
 )
 
 from PyPIC3D.utils import (
-    dump_parameters_to_toml, load_config_file, compute_energy
+    dump_parameters_to_toml, load_config_file, compute_energy,
+    setup_pmd_files
 )
 
 from PyPIC3D.initialization import (
     initialize_simulation
 )
 
-from PyPIC3D.rho import compute_rho, compute_mass_density, compute_velocity_field
+from PyPIC3D.diagnostics.fluid_quantities import (
+    compute_mass_density
+)
+
+from PyPIC3D.rho import compute_rho
 
 
 # Importing functions from the PyPIC3D package
@@ -57,6 +70,10 @@ def run_PyPIC3D(config_file):
     # Compute the energy of the system
     initial_energy = e_energy + b_energy + kinetic_energy
 
+    if plotting_parameters['plot_openpmd_fields']: setup_pmd_files( os.path.join(output_dir, "data"), "fields", ".h5")
+    if plotting_parameters['plot_openpmd_particles']: setup_pmd_files( os.path.join(output_dir, "data"), "particles", ".h5")
+    # setup the openPMD files if needed
+
     ############################################################################################################
 
     ###################################################### SIMULATION LOOP #####################################
@@ -65,6 +82,9 @@ def run_PyPIC3D(config_file):
 
         # plot the data
         if t % plotting_parameters['plotting_interval'] == 0:
+
+            plot_num = t // plotting_parameters['plotting_interval']
+            # determine the plot number
 
             E, B, J, rho, *rest = fields
             # unpack the fields
@@ -82,33 +102,44 @@ def run_PyPIC3D(config_file):
             write_data(f"{output_dir}/data/total_momentum.txt", t * dt, total_momentum)
             # Write the total momentum to a file
 
-            for species in particles:
-                write_data(f"{output_dir}/data/{species.name}_kinetic_energy.txt", t * dt, species.kinetic_energy())
+            # for species in particles:
+            #     write_data(f"{output_dir}/data/{species.name}_kinetic_energy.txt", t * dt, species.kinetic_energy())
 
 
             if plotting_parameters['plot_phasespace']:
                 write_particles_phase_space(particles, t, output_dir)
 
-            rho = compute_rho(particles, rho, world, constants)
-            # calculate the charge density based on the particle positions
-
-            mass_density = compute_mass_density(particles, rho, world)
-            # calculate the mass density based on the particle positions
-
-            fields_mag = [rho[:,world['Ny']//2,:], mass_density[:,world['Ny']//2,:]]
-            plot_field_slice_vtk(fields_mag, scalar_field_names, 1, E_grid, t, "scalar_field", output_dir, world)
-            # Plot the scalar fields in VTK format
 
 
-            vector_field_slices = [ [E[0][:,world['Ny']//2,:], E[1][:,world['Ny']//2,:], E[2][:,world['Ny']//2,:]],
-                                    [B[0][:,world['Ny']//2,:], B[1][:,world['Ny']//2,:], B[2][:,world['Ny']//2,:]],
-                                    [J[0][:,world['Ny']//2,:], J[1][:,world['Ny']//2,:], J[2][:,world['Ny']//2,:]]]
-            plot_vectorfield_slice_vtk(vector_field_slices, vector_field_names, 1, E_grid, t, 'vector_field', output_dir, world)
-            # Plot the vector fields in VTK format
+            if plotting_parameters['plot_vtk_scalars']:
+                rho = compute_rho(particles, rho, world, constants)
+                # calculate the charge density based on the particle positions
+                mass_density = compute_mass_density(particles, rho, world)
+                # calculate the mass density based on the particle positions
+
+                fields_mag = [rho[:,world['Ny']//2,:], mass_density[:,world['Ny']//2,:]]
+                plot_field_slice_vtk(fields_mag, scalar_field_names, 1, E_grid, t, "scalar_field", output_dir, world)
+                # Plot the scalar fields in VTK format
+
+
+            if plotting_parameters['plot_vtk_vectors']:
+                vector_field_slices = [ [E[0][:,world['Ny']//2,:], E[1][:,world['Ny']//2,:], E[2][:,world['Ny']//2,:]],
+                                        [B[0][:,world['Ny']//2,:], B[1][:,world['Ny']//2,:], B[2][:,world['Ny']//2,:]],
+                                        [J[0][:,world['Ny']//2,:], J[1][:,world['Ny']//2,:], J[2][:,world['Ny']//2,:]]]
+                plot_vectorfield_slice_vtk(vector_field_slices, vector_field_names, 1, E_grid, t, 'vector_field', output_dir, world)
+                # Plot the vector fields in VTK format
 
             if plotting_parameters['plot_vtk_particles']:
-                plot_vtk_particles(particles, t, output_dir)
+                plot_vtk_particles(particles, plot_num, output_dir)
             # Plot the particles in VTK format
+
+            if plotting_parameters['plot_openpmd_particles']:
+                write_openpmd_particles(particles, world, constants, os.path.join(output_dir, "data"), plot_num, t, "particles", ".h5")
+            # Write the particles in openPMD format
+
+            if plotting_parameters['plot_openpmd_fields']:
+                write_openpmd_fields(fields, world, os.path.join(output_dir, "data"), plot_num, t,  "fields", ".h5")
+            # Write the fields in openPMD format
 
             fields = (E, B, J, rho, *rest)
             # repack the fields
