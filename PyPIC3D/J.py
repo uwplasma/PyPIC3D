@@ -101,13 +101,46 @@ def J_from_rhov(particles, J, constants, world, grid, filter='bilinear'):
         )
         # get the weights for node and face positions
 
-        for i in range(len(x_weights_face)):
-            for j in range(len(y_weights_face)):
-                for k in range(len(z_weights_face)):
-                    Jx = Jx.at[xpts[i], ypts[j], zpts[k]].add( (dq * vx) * x_weights_face[i] * y_weights_node[j] * z_weights_node[k], mode='drop')
-                    Jy = Jy.at[xpts[i], ypts[j], zpts[k]].add( (dq * vy) * x_weights_node[i] * y_weights_face[j] * z_weights_node[k], mode='drop')
-                    Jz = Jz.at[xpts[i], ypts[j], zpts[k]].add( (dq * vz) * x_weights_node[i] * y_weights_node[j] * z_weights_face[k], mode='drop')
-        # Add the particle current to the current density arrays
+        xpts_ = jnp.stack(xpts, axis=0)  # (Sx, Np)
+        ypts_ = jnp.stack(ypts, axis=0)  # (Sy, Np)
+        zpts_ = jnp.stack(zpts, axis=0)  # (Sz, Np)
+        # stack the point indices for easier indexing
+        x_weights_face_ = jnp.stack(x_weights_face, axis=0)  # (Sx, Np)
+        y_weights_face_ = jnp.stack(y_weights_face, axis=0)  # (Sy, Np)
+        z_weights_face_ = jnp.stack(z_weights_face, axis=0)  # (Sz, Np)
+        # stack the face weights for easier indexing
+        x_weights_node_ = jnp.stack(x_weights_node, axis=0)  # (Sx, Np)
+        y_weights_node_ = jnp.stack(y_weights_node, axis=0)  # (Sy, Np)
+        z_weights_node_ = jnp.stack(z_weights_node, axis=0)  # (Sz, Np)
+        # stack the node weights for easier indexing
+
+        n_Sx, n_Sy, n_Sz = xpts_.shape[0], ypts_.shape[0], zpts_.shape[0]
+        # get the stencil sizes
+        ii, jj, kk = jnp.meshgrid(jnp.arange(n_Sx), jnp.arange(n_Sy), jnp.arange(n_Sz), indexing="ij")
+        # create a meshgrid of stencil indices
+        combos = jnp.stack([ii.ravel(), jj.ravel(), kk.ravel()], axis=1)  # (M, 3)
+        # create all combinations of stencil indices
+
+        def idx_and_dJ_values(idx):
+            i, j, k = idx
+            # unpack the stencil indices
+            ix = xpts_[i]
+            iy = ypts_[j]
+            iz = zpts_[k]
+            # get the grid indices for this stencil point
+            valx = (dq * vx) * x_weights_face_[i] * y_weights_node_[j] * z_weights_node_[k]
+            valy = (dq * vy) * x_weights_node_[i] * y_weights_face_[j] * z_weights_node_[k]
+            valz = (dq * vz) * x_weights_node_[i] * y_weights_node_[j] * z_weights_face_[k]
+            # calculate the current contributions for this stencil point
+            return ix, iy, iz, valx, valy, valz
+        
+        ix, iy, iz, valx, valy, valz = jax.vmap(idx_and_dJ_values)(combos)  # each: (M, Np)
+        # vectorized computation of indices and current contributions
+
+        Jx = Jx.at[(ix, iy, iz)].add(valx, mode="drop")
+        Jy = Jy.at[(ix, iy, iz)].add(valy, mode="drop")
+        Jz = Jz.at[(ix, iy, iz)].add(valz, mode="drop")
+        # deposit the current contributions into the global J arrays
 
     def filter_func(J_, filter):
         J_ = jax.lax.cond(
