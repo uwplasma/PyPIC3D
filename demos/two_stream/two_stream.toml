@@ -20,6 +20,9 @@ relativistic = true
 [plotting]
 plotting_interval = 8
 plot_phasespace = true
+plot_openpmd_particles = true
+plot_openpmd_fields = true
+dump_particles = true
 
 [particle1]
 name = "electron1"
@@ -28,7 +31,7 @@ charge = -1.602e-19
 mass   = 9.1093837e-31
 vth = 14989622.9
 ds_per_debye = 8.0
-initial_vx = 5e7
+initial_vx = 0.5e8
 
 [particle2]
 name = "electron2"
@@ -36,7 +39,7 @@ N_particles = 1500
 charge = -1.602e-19
 mass   = 9.1093837e-31
 vth = 14989622.9
-initial_vx = -5e7
+initial_vx = -0.5e8
 
 [particle3]
 name = "ion1"
