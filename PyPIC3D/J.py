@@ -101,36 +101,31 @@ def J_from_rhov(particles, J, constants, world, grid, filter='bilinear'):
         )
         # get the weights for node and face positions
 
-        xpts_ = jnp.stack(xpts, axis=0)  # (Sx, Np)
-        ypts_ = jnp.stack(ypts, axis=0)  # (Sy, Np)
-        zpts_ = jnp.stack(zpts, axis=0)  # (Sz, Np)
-        # stack the point indices for easier indexing
-        x_weights_face_ = jnp.stack(x_weights_face, axis=0)  # (Sx, Np)
-        y_weights_face_ = jnp.stack(y_weights_face, axis=0)  # (Sy, Np)
-        z_weights_face_ = jnp.stack(z_weights_face, axis=0)  # (Sz, Np)
-        # stack the face weights for easier indexing
-        x_weights_node_ = jnp.stack(x_weights_node, axis=0)  # (Sx, Np)
-        y_weights_node_ = jnp.stack(y_weights_node, axis=0)  # (Sy, Np)
-        z_weights_node_ = jnp.stack(z_weights_node, axis=0)  # (Sz, Np)
-        # stack the node weights for easier indexing
+        xpts = jnp.asarray(xpts)  # (Sx, Np)
+        ypts = jnp.asarray(ypts)  # (Sy, Np)
+        zpts = jnp.asarray(zpts)  # (Sz, Np)
 
-        n_Sx, n_Sy, n_Sz = xpts_.shape[0], ypts_.shape[0], zpts_.shape[0]
-        # get the stencil sizes
-        ii, jj, kk = jnp.meshgrid(jnp.arange(n_Sx), jnp.arange(n_Sy), jnp.arange(n_Sz), indexing="ij")
-        # create a meshgrid of stencil indices
-        combos = jnp.stack([ii.ravel(), jj.ravel(), kk.ravel()], axis=1)  # (M, 3)
-        # create all combinations of stencil indices
+        x_weights_face = jnp.asarray(x_weights_face)  # (Sx, Np)
+        y_weights_face = jnp.asarray(y_weights_face)  # (Sy, Np)
+        z_weights_face = jnp.asarray(z_weights_face)  # (Sz, Np)
+
+        x_weights_node = jnp.asarray(x_weights_node)  # (Sx, Np)
+        y_weights_node = jnp.asarray(y_weights_node)  # (Sy, Np)
+        z_weights_node = jnp.asarray(z_weights_node)  # (Sz, Np)
+
+        ii, jj, kk = jnp.meshgrid(jnp.arange(3), jnp.arange(3), jnp.arange(3), indexing="ij")
+        combos = jnp.stack([ii.ravel(), jj.ravel(), kk.ravel()], axis=1)  # (27, 3)
 
         def idx_and_dJ_values(idx):
             i, j, k = idx
             # unpack the stencil indices
-            ix = xpts_[i]
-            iy = ypts_[j]
-            iz = zpts_[k]
+            ix = xpts[i, ...]
+            iy = ypts[j, ...]
+            iz = zpts[k, ...]
             # get the grid indices for this stencil point
-            valx = (dq * vx) * x_weights_face_[i] * y_weights_node_[j] * z_weights_node_[k]
-            valy = (dq * vy) * x_weights_node_[i] * y_weights_face_[j] * z_weights_node_[k]
-            valz = (dq * vz) * x_weights_node_[i] * y_weights_node_[j] * z_weights_face_[k]
+            valx = (dq * vx) * x_weights_face[i, ...] * y_weights_node[j, ...] * z_weights_node[k, ...]
+            valy = (dq * vy) * x_weights_node[i, ...] * y_weights_face[j, ...] * z_weights_node[k, ...]
+            valz = (dq * vz) * x_weights_node[i, ...] * y_weights_node[j, ...] * z_weights_face[k, ...]
             # calculate the current contributions for this stencil point
             return ix, iy, iz, valx, valy, valz
         

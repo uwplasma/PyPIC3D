@@ -62,15 +62,16 @@ def time_loop_electrostatic(particles, fields, E_grid, B_grid, world, constants,
         particles[i].update_position()
         # update the particle positions
 
-        particles[i].boundary_conditions()
-        # apply boundary conditions to the particles
-
     ############### SOLVE E FIELD ############################################################################################
     E, phi, rho = calculateE(world, particles, constants, rho, phi, solver, bc)
     # calculate the electric field using the Poisson equation
 
     fields = (E, B, J, rho, phi)
     # pack the fields into a tuple
+
+    for i in range(len(particles)):
+        particles[i].boundary_conditions()
+        # apply boundary conditions to the particles
 
     return particles, fields
 
@@ -113,9 +114,6 @@ def time_loop_electrodynamic(particles, fields, vertex_grid, center_grid, world,
         particles[i].update_position()
         # update the particle positions
 
-        particles[i].boundary_conditions()
-        # apply boundary conditions to the particles
-
     ################ FIELD UPDATE ################################################################################################
     J = J_func(particles, J, constants, world, center_grid)
     # calculate the current density based on the selected method
@@ -123,6 +121,10 @@ def time_loop_electrodynamic(particles, fields, vertex_grid, center_grid, world,
     # update the electric field using the curl of the magnetic field
     B = update_B(E, B, world, constants, curl_func, x_bc, y_bc, z_bc)
     # update the magnetic field using the curl of the electric field
+
+    for i in range(len(particles)):
+        particles[i].boundary_conditions()
+        # apply boundary conditions to the particles
 
     fields = (E, B, J, rho, phi)
     # pack the fields into a tuple
@@ -168,9 +170,6 @@ def time_loop_vector_potential(particles, fields, E_grid, B_grid, world, constan
         particles[i].update_position()
         # update the particle positions
 
-        particles[i].boundary_conditions()
-        # apply boundary conditions to the particles
-
     ################ FIELD UPDATE ################################################################################################
     A0 = A1
     A1 = A2
@@ -184,6 +183,10 @@ def time_loop_vector_potential(particles, fields, E_grid, B_grid, world, constan
     # calculate the magnetic field from the vector potential using centered finite difference
     J = J_func(particles, J, constants, world, B_grid)
     # calculate the current density using the selected method
+
+    for i in range(len(particles)):
+        particles[i].boundary_conditions()
+        # apply boundary conditions to the particles
 
     fields = (E, B, J, rho, phi, A2, A1, A0)
     # pack the fields into a tuple
@@ -229,9 +232,6 @@ def time_loop_curl_curl(particles, fields, E_grid, B_grid, world, constants, cur
         particles[i].update_position()
         # update the particle positions
 
-        particles[i].boundary_conditions()
-        # apply boundary conditions to the particles
-
     ################ FIELD UPDATE ################################################################################################
     E0 = E
     B0 = B
@@ -248,6 +248,10 @@ def time_loop_curl_curl(particles, fields, E_grid, B_grid, world, constants, cur
     # update the previous current density
     J = J_func(particles, J, constants, world, B_grid)
     # calculate the current density based on the selected method
+
+    for i in range(len(particles)):
+        particles[i].boundary_conditions()
+        # apply boundary conditions to the particles
 
     fields = (E, B, J, rho, phi, E2, B2, E0, B0, J0)
     # pack the fields into a tuple

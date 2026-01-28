@@ -63,6 +63,7 @@ def bilinear_filter(phi, mode="wrap"):
         window_strides=(1, 1, 1),
         padding="VALID",
         dimension_numbers=("NDHWC", "DHWIO", "NDHWC"),
+        feature_group_count=1,
     )
     return jnp.squeeze(filtered, axis=(0, 4))
 
