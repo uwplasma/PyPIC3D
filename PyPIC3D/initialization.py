@@ -231,11 +231,11 @@ def initialize_simulation(toml_file):
     plotting_parameters = convert_to_jax_compatible(plotting_parameters)
     # convert the world parameters to jax compatible format
 
-    if solver == "vector_potential":
-        B_grid, E_grid = build_collocated_grid(world)
-        # build the grid for the fields
-    else:
-        B_grid, E_grid = build_yee_grid(world)
+    # if solver == "vector_potential":
+    #     B_grid, E_grid = build_collocated_grid(world)
+    #     # build the grid for the fields
+    # else:
+    B_grid, E_grid = build_yee_grid(world)
         # build the Yee grid for the fields
 
     world['grid'] = E_grid
