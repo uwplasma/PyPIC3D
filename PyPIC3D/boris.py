@@ -2,7 +2,8 @@ import jax
 from jax import jit
 import jax.numpy as jnp
 
-
+from PyPIC3D.shapes import get_first_order_weights, get_second_order_weights
+from PyPIC3D.utils import wrap_around
 
 @jit
 def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic=True, relativistic=True):
@@ -33,12 +34,7 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic
     shape_factor = particles.get_shape()
     # get the shape factor of the particles
 
-    dx = grid[0][1] - grid[0][0]
-    dy = grid[1][1] - grid[1][0]
-    dz = grid[2][1] - grid[2][0]
-    # calculate the grid spacing in each direction
-
-    ################## INTERPOLATION GRIDS ##########################
+    ################## INTERPOLATION GRIDS ###################################
     Ex_grid = staggered_grid[0], grid[1], grid[2]
     Ey_grid = grid[0], staggered_grid[1], grid[2]
     Ez_grid = grid[0], grid[1], staggered_grid[2]
@@ -47,51 +43,26 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic
     By_grid = staggered_grid[0], grid[1], staggered_grid[2]
     Bz_grid = staggered_grid[0], staggered_grid[1], grid[2]
     # create the staggered grids for the magnetic field components
+    ##########################################################################
 
+
+    ################## INTERPOLATE FIELDS TO PARTICLE POSITIONS ##############
     Ex, Ey, Ez = E
     # unpack the electric field components
-    # calculate the electric field at the particle positions using their specific grids
-    efield_atx = jax.lax.cond(
-        shape_factor == 1,
-        lambda _: create_trilinear_interpolator(Ex, Ex_grid, periodic)(x, y, z),
-        lambda _: create_quadratic_interpolator(Ex, Ex_grid, periodic)(x, y, z),
-        operand=None
-    )
-    efield_aty = jax.lax.cond(
-        shape_factor == 1,
-        lambda _: create_trilinear_interpolator(Ey, Ey_grid, periodic)(x, y, z),
-        lambda _: create_quadratic_interpolator(Ey, Ey_grid, periodic)(x, y, z),
-        operand=None
-    )
-    efield_atz = jax.lax.cond(
-        shape_factor == 1,
-        lambda _: create_trilinear_interpolator(Ez, Ez_grid, periodic)(x, y, z),
-        lambda _: create_quadratic_interpolator(Ez, Ez_grid, periodic)(x, y, z),
-        operand=None
-    )
-    # unpack the magnetic field components
+    efield_atx = interpolate_field_to_particles(Ex, x, y, z, Ex_grid, shape_factor)
+    efield_aty = interpolate_field_to_particles(Ey, x, y, z, Ey_grid, shape_factor)
+    efield_atz = interpolate_field_to_particles(Ez, x, y, z, Ez_grid, shape_factor)
+    # calculate the electric field at the particle positions on the Yee-staggered component grids
     Bx, By, Bz = B
-    # calculate the magnetic field at the particle positions using their specific staggered grids
-    bfield_atx = jax.lax.cond(
-        shape_factor == 1,
-        lambda _: create_trilinear_interpolator(Bx, Bx_grid, periodic)(x, y, z),
-        lambda _: create_quadratic_interpolator(Bx, Bx_grid, periodic)(x, y, z),
-        operand=None
-    )
-    bfield_aty = jax.lax.cond(
-        shape_factor == 1,
-        lambda _: create_trilinear_interpolator(By, By_grid, periodic)(x, y, z),
-        lambda _: create_quadratic_interpolator(By, By_grid, periodic)(x, y, z),
-        operand=None
-    )
-    bfield_atz = jax.lax.cond(
-        shape_factor == 1,
-        lambda _: create_trilinear_interpolator(Bz, Bz_grid, periodic)(x, y, z),
-        lambda _: create_quadratic_interpolator(Bz, Bz_grid, periodic)(x, y, z),
-        operand=None
-    )
-    # calculate the magnetic field at the particle positions
+    # unpack the magnetic field components
+    bfield_atx = interpolate_field_to_particles(Bx, x, y, z, Bx_grid, shape_factor)
+    bfield_aty = interpolate_field_to_particles(By, x, y, z, By_grid, shape_factor)
+    bfield_atz = interpolate_field_to_particles(Bz, x, y, z, Bz_grid, shape_factor)
+    # calculate the magnetic field at the particle positions on the Yee-staggered component grids
+    #########################################################################
 
+
+    #################### BORIS ALGORITHM ####################################
     boris_vmap              = jax.vmap(boris_single_particle, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None, None))
     relativistic_boris_vmap = jax.vmap(relativistic_boris_single_particle, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None, None))
     # vectorize the Boris algorithm for batch processing
@@ -103,6 +74,8 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic
         operand=None
     )
     # apply the Boris algorithm to update the velocities of the particles
+    #########################################################################
+
 
     particles.set_velocity(newvx, newvy, newvz)
     # set the new velocities of the particles
@@ -219,6 +192,92 @@ def relativistic_boris_single_particle(vx, vy, vz, efield_atx, efield_aty, efiel
     # convert the relativistic velocity back to the lab frame
 
     return newv[0], newv[1], newv[2]
+
+
+@jit
+def interpolate_field_to_particles(field, x, y, z, grid, shape_factor):
+    """
+    Interpolate a Yee-grid field component to particle positions using PIC shape functions.
+
+    Args:
+        field (ndarray): Field component values on the supplied component grid.
+        x, y, z (ndarray): Particle coordinates.
+        grid (tuple): Component grid coordinates (x_grid, y_grid, z_grid).
+        shape_factor (int): Particle shape order (1 -> first order, 2 -> second order).
+
+    Returns:
+        ndarray: Interpolated field value at each particle position.
+    """
+    x_grid, y_grid, z_grid = grid
+
+    xmin, ymin, zmin = x_grid[0], y_grid[0], z_grid[0]
+    # grid minimum coordinates
+
+    Nx = len(x_grid)
+    Ny = len(y_grid)
+    Nz = len(z_grid)
+    # grid point counts for each direction
+
+    dx = x_grid[1] - x_grid[0] if Nx > 1 else 1.0
+    dy = y_grid[1] - y_grid[0] if Ny > 1 else 1.0
+    dz = z_grid[1] - z_grid[0] if Nz > 1 else 1.0
+    # grid spacing in each direction
+
+    x0 = jnp.floor((x - xmin) / dx).astype(int)
+    y0 = jnp.floor((y - ymin) / dy).astype(int)
+    z0 = jnp.floor((z - zmin) / dz).astype(int)
+    # compute the closest grid nodes
+
+    deltax = (x - xmin) - x0 * dx
+    deltay = (y - ymin) - y0 * dy
+    deltaz = (z - zmin) - z0 * dz
+    # determine the distance from the closest grid nodes
+
+    x_weights, y_weights, z_weights = jax.lax.cond(
+        shape_factor == 1,
+        lambda _: get_first_order_weights(deltax, deltay, deltaz, dx, dy, dz),
+        lambda _: get_second_order_weights(deltax, deltay, deltaz, dx, dy, dz),
+        operand=None,
+    )
+    x_weights = jnp.asarray(x_weights)
+    y_weights = jnp.asarray(y_weights)
+    z_weights = jnp.asarray(z_weights)
+    # compute the shape function weights for the particles and convert them to arrays
+
+    x0 = wrap_around(x0, Nx)
+    y0 = wrap_around(y0, Ny)
+    z0 = wrap_around(z0, Nz)
+    # wrap around the grid points for periodic boundary conditions
+    x1 = wrap_around(x0+1, Nx)
+    y1 = wrap_around(y0+1, Ny)
+    z1 = wrap_around(z0+1, Nz)
+    # calculate the right grid point
+    x_minus1 = x0 - 1
+    y_minus1 = y0 - 1
+    z_minus1 = z0 - 1
+    # calculate the left grid point
+    xpts = jnp.asarray([x_minus1, x0, x1])
+    ypts = jnp.asarray([y_minus1, y0, y1])
+    zpts = jnp.asarray([z_minus1, z0, z1])
+    # place all the points in a list
+
+    def stencil_contribution(stencil_idx):
+        i, j, k = stencil_idx
+        return (
+            field[xpts[i, ...], ypts[j, ...], zpts[k, ...]]
+            * x_weights[i, ...]
+            * y_weights[j, ...]
+            * z_weights[k, ...]
+        )
+    # define a function to compute the contribution from each point in the 3x3x3 stencil
+
+    stencil_indicies = jnp.asarray( [[i, j, k] for i in range(3) for j in range(3) for k in range(3)] )
+    # compute the contribution from each point in the 3x3x3 stencil and add them to an array
+
+    interpolated_field = jnp.sum(jax.vmap(stencil_contribution)(stencil_indicies), axis=0)
+    # sum the contributions from all stencil points to get the final interpolated field value at each particle position
+
+    return interpolated_field
 
 
 
