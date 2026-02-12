@@ -54,9 +54,27 @@ def J_from_rhov(particles, J, constants, world, grid, filter='bilinear'):
         z = z - vz * world['dt'] / 2
         # step back to half time step positions for proper time staggering
 
-        x0 = jnp.floor( (x - grid[0][0]) / dx).astype(int)
-        y0 = jnp.floor( (y - grid[1][0]) / dy).astype(int)
-        z0 = jnp.floor( (z - grid[2][0]) / dz).astype(int)
+        # x0 = jnp.floor( (x - grid[0][0]) / dx).astype(int)
+        # y0 = jnp.floor( (y - grid[1][0]) / dy).astype(int)
+        # z0 = jnp.floor( (z - grid[2][0]) / dz).astype(int)
+        x0 = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (x - grid[0][0]) / dx).astype(int),
+            lambda _: jnp.round( (x - grid[0][0]) / dx).astype(int),
+            operand=None
+        )
+        y0 = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (y - grid[1][0]) / dy).astype(int),
+            lambda _: jnp.round( (y - grid[1][0]) / dy).astype(int),
+            operand=None
+        )
+        z0 = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: jnp.floor( (z - grid[2][0]) / dz).astype(int),
+            lambda _: jnp.round( (z - grid[2][0]) / dz).astype(int),
+            operand=None
+        )
         # calculate the nearest grid point based on shape factor
 
         deltax_node = (x - grid[0][0]) - (x0 * dx)

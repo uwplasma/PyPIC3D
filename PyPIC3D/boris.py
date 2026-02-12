@@ -223,10 +223,25 @@ def interpolate_field_to_particles(field, x, y, z, grid, shape_factor):
     dz = z_grid[1] - z_grid[0] if Nz > 1 else 1.0
     # grid spacing in each direction
 
-    x0 = jnp.floor((x - xmin) / dx).astype(int)
-    y0 = jnp.floor((y - ymin) / dy).astype(int)
-    z0 = jnp.floor((z - zmin) / dz).astype(int)
-    # compute the closest grid nodes
+    x0 = jax.lax.cond(
+        shape_factor == 1,
+        lambda _: jnp.floor((x - xmin) / dx).astype(int),
+        lambda _: jnp.round((x - xmin) / dx).astype(int),
+        operand=None,
+    )
+    y0 = jax.lax.cond(
+        shape_factor == 1,
+        lambda _: jnp.floor((y - ymin) / dy).astype(int),
+        lambda _: jnp.round((y - ymin) / dy).astype(int),
+        operand=None,
+    )
+    z0 = jax.lax.cond(
+        shape_factor == 1,
+        lambda _: jnp.floor((z - zmin) / dz).astype(int),
+        lambda _: jnp.round((z - zmin) / dz).astype(int),
+        operand=None,
+    )
+    # compute the stencil anchor points (cell-left for first order, nearest node for second order)
 
     deltax = (x - xmin) - x0 * dx
     deltay = (y - ymin) - y0 * dy
