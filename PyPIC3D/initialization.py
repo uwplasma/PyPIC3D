@@ -45,8 +45,7 @@ from PyPIC3D.diagnostics.openPMD import (
 
 
 from PyPIC3D.evolve import (
-    time_loop_electrodynamic, time_loop_electrostatic, time_loop_vector_potential,
-    time_loop_curl_curl
+    time_loop_electrodynamic, time_loop_electrostatic, time_loop_vector_potential
 )
 
 from PyPIC3D.J import (
@@ -313,10 +312,6 @@ def initialize_simulation(toml_file):
         print("Using vector potential solver")
         evolve_loop = time_loop_vector_potential
 
-    elif solver == "curl_curl":
-        print("Using curl-curl solver")
-        evolve_loop = time_loop_curl_curl
-
     else:
         print(f"Using electrodynamic solver with: {solver}")
         evolve_loop = time_loop_electrodynamic
@@ -336,9 +331,6 @@ def initialize_simulation(toml_file):
         # initialize the vector potential A based on the current density J
         fields = (E, B, J, rho, phi, A2, A1, A0)
         # define the fields tuple for the vector potential solver
-    elif solver == "curl_curl":
-        fields = (E, B, J, rho, phi, E, B, E, B, J)
-        # add the additional fields for the curl-curl solver
     else:
         fields = (E, B, J, rho, phi)
         # define the fields tuple for the electrodynamic and electrostatic solvers
