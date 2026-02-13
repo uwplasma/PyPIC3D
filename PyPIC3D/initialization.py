@@ -236,7 +236,7 @@ def initialize_simulation(toml_file):
     #     # build the grid for the fields
     # else:
     B_grid, E_grid = build_yee_grid(world)
-        # build the Yee grid for the fields
+    # build the Yee grid for the fields
 
     world['grid'] = E_grid
     # set the grid in the world parameters
@@ -309,6 +309,7 @@ def initialize_simulation(toml_file):
         evolve_loop = time_loop_electrostatic
 
     elif solver == "vector_potential":
+        raise NotImplementedError("Vector potential solver is not fully functional yet.")
         print("Using vector potential solver")
         evolve_loop = time_loop_vector_potential
 
