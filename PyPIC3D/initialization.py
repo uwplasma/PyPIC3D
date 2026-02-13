@@ -45,8 +45,7 @@ from PyPIC3D.diagnostics.openPMD import (
 
 
 from PyPIC3D.evolve import (
-    time_loop_electrodynamic, time_loop_electrostatic, time_loop_vector_potential,
-    time_loop_curl_curl
+    time_loop_electrodynamic, time_loop_electrostatic, time_loop_vector_potential
 )
 
 from PyPIC3D.J import (
@@ -232,12 +231,12 @@ def initialize_simulation(toml_file):
     plotting_parameters = convert_to_jax_compatible(plotting_parameters)
     # convert the world parameters to jax compatible format
 
-    if solver == "vector_potential":
-        B_grid, E_grid = build_collocated_grid(world)
-        # build the grid for the fields
-    else:
-        B_grid, E_grid = build_yee_grid(world)
-        # build the Yee grid for the fields
+    # if solver == "vector_potential":
+    #     B_grid, E_grid = build_collocated_grid(world)
+    #     # build the grid for the fields
+    # else:
+    B_grid, E_grid = build_yee_grid(world)
+    # build the Yee grid for the fields
 
     world['grid'] = E_grid
     # set the grid in the world parameters
@@ -310,12 +309,9 @@ def initialize_simulation(toml_file):
         evolve_loop = time_loop_electrostatic
 
     elif solver == "vector_potential":
+        raise NotImplementedError("Vector potential solver is not fully functional yet.")
         print("Using vector potential solver")
         evolve_loop = time_loop_vector_potential
-
-    elif solver == "curl_curl":
-        print("Using curl-curl solver")
-        evolve_loop = time_loop_curl_curl
 
     else:
         print(f"Using electrodynamic solver with: {solver}")
@@ -336,9 +332,6 @@ def initialize_simulation(toml_file):
         # initialize the vector potential A based on the current density J
         fields = (E, B, J, rho, phi, A2, A1, A0)
         # define the fields tuple for the vector potential solver
-    elif solver == "curl_curl":
-        fields = (E, B, J, rho, phi, E, B, E, B, J)
-        # add the additional fields for the curl-curl solver
     else:
         fields = (E, B, J, rho, phi)
         # define the fields tuple for the electrodynamic and electrostatic solvers

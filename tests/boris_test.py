@@ -6,8 +6,7 @@ import os
 from functools import partial
 
 
-from PyPIC3D.boris import boris_single_particle
-from PyPIC3D.boris import create_trilinear_interpolator, create_quadratic_interpolator
+from PyPIC3D.boris import boris_single_particle, interpolate_field_to_particles
 from PyPIC3D.utils import mae, convergence_test
 
 jax.config.update("jax_enable_x64", True)
@@ -42,21 +41,13 @@ class TestBorisMethods(unittest.TestCase):
 
     def test_boris(self):
 
-        Ex_interpolate = create_trilinear_interpolator(self.Ex, self.grid)
-        Ey_interpolate = create_trilinear_interpolator(self.Ey, self.grid)
-        Ez_interpolate = create_trilinear_interpolator(self.Ez, self.grid)
-        Bx_interpolate = create_trilinear_interpolator(self.Bx, self.staggered_grid)
-        By_interpolate = create_trilinear_interpolator(self.By, self.staggered_grid)
-        Bz_interpolate = create_trilinear_interpolator(self.Bz, self.staggered_grid)
-        # create interpolators for the electric and magnetic fields
-
-        efield_atx = Ex_interpolate(self.x, self.y, self.z)
-        efield_aty = Ey_interpolate(self.x, self.y, self.z)
-        efield_atz = Ez_interpolate(self.x, self.y, self.z)
+        efield_atx = interpolate_field_to_particles(self.Ex, self.x, self.y, self.z, self.grid, shape_factor=1)
+        efield_aty = interpolate_field_to_particles(self.Ey, self.x, self.y, self.z, self.grid, shape_factor=1)
+        efield_atz = interpolate_field_to_particles(self.Ez, self.x, self.y, self.z, self.grid, shape_factor=1)
         # calculate the electric field at the particle positions
-        bfield_atx = Bx_interpolate(self.x, self.y, self.z)
-        bfield_aty = By_interpolate(self.x, self.y, self.z)
-        bfield_atz = Bz_interpolate(self.x, self.y, self.z)
+        bfield_atx = interpolate_field_to_particles(self.Bx, self.x, self.y, self.z, self.staggered_grid, shape_factor=1)
+        bfield_aty = interpolate_field_to_particles(self.By, self.x, self.y, self.z, self.staggered_grid, shape_factor=1)
+        bfield_atz = interpolate_field_to_particles(self.Bz, self.x, self.y, self.z, self.staggered_grid, shape_factor=1)
 
         boris_vmap = jax.vmap(boris_single_particle, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None, None))
         newvx, newvy, newvz = boris_vmap(self.vx, self.vy, self.vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, self.q, self.m, self.dt, None)
@@ -131,21 +122,21 @@ class TestBorisMethods(unittest.TestCase):
 
         # Run convergence tests for each interpolation method
         ################### BASIC TRIGONOMETRIC TEST #############################
-        slope = convergence_test(partial(interpolation_wave_test, interp_func=create_trilinear_interpolator))
+        slope = convergence_test(partial(interpolation_wave_test, shape_factor=1))
         # measure the convergence rate of the trilinear interpolation
         self.assertTrue(slope > 1.9)
         # assert that the order of the error is at least 2nd order
         ############################################################################
 
         ################### POLYNOMIAL TEST #######################################
-        slope = convergence_test(partial(interpolation_polynomial_test, interp_func=create_trilinear_interpolator))
+        slope = convergence_test(partial(interpolation_polynomial_test, shape_factor=1))
         # measure the convergence rate of the trilinear interpolation
         self.assertTrue(slope > 1.9)
         # assert that the order of the error is at least 2nd order
         ############################################################################
 
         ################### HIGH-FREQUENCY TEST ###################################
-        slope = convergence_test(partial(interpolation_oscillatory_test, interp_func=create_trilinear_interpolator))
+        slope = convergence_test(partial(interpolation_oscillatory_test, shape_factor=1))
         # measure the convergence rate of the trilinear interpolation
         self.assertTrue(slope > 1.9)
         # assert that the order of the error is at least 2nd order
@@ -154,28 +145,28 @@ class TestBorisMethods(unittest.TestCase):
     def test_quadratic_convergence(self):
 
         ################### BASIC TRIGONOMETRIC TEST ###############################
-        slope = convergence_test(partial(interpolation_wave_test, interp_func=create_quadratic_interpolator))
-        # measure the convergence rate of the quadratic interpolation
-        self.assertTrue(slope > 2.9)
-        # assert that the order of the error is at least 3rd order
+        slope = convergence_test(partial(interpolation_wave_test, shape_factor=2))
+        # measure the convergence rate of the second-order shape interpolation
+        self.assertTrue(slope > 1.9)
+        # assert that the order of the error is at least 2nd order
         ############################################################################
 
         ################### POLYNOMIAL TEST ########################################
-        slope = convergence_test(partial(interpolation_polynomial_test, interp_func=create_quadratic_interpolator))
-        # measure the convergence rate of the quadratic interpolation
-        self.assertTrue(slope > 2.9)
-        # assert that the order of the error is at least 3rd order
+        slope = convergence_test(partial(interpolation_polynomial_test, shape_factor=2))
+        # measure the convergence rate of the second-order shape interpolation
+        self.assertTrue(slope > 1.9)
+        # assert that the order of the error is at least 2nd order
         ############################################################################
 
         ################### HIGH-FREQUENCY TEST ####################################
-        slope = convergence_test(partial(interpolation_oscillatory_test, interp_func=create_quadratic_interpolator))
-        # measure the convergence rate of the quadratic interpolation
-        self.assertTrue(slope > 2.9)
-        # assert that the order of the error is at least 3rd order
+        slope = convergence_test(partial(interpolation_oscillatory_test, shape_factor=2))
+        # measure the convergence rate of the second-order shape interpolation
+        self.assertTrue(slope > 1.9)
+        # assert that the order of the error is at least 2nd order
         ############################################################################
 
 
-def interpolation_wave_test(nx, interp_func):
+def interpolation_wave_test(nx, shape_factor):
     # Define a symmetric domain
     x_wind = 2.0 * jnp.pi
     y_wind = 2.0 * jnp.pi
@@ -197,9 +188,7 @@ def interpolation_wave_test(nx, interp_func):
     # f(x,y,z) = sin(x) * cos(y) * sin(z)
     analytical_field = jnp.sin(X) * jnp.cos(Y) * jnp.sin(Z)
 
-    # Create the trilinear interpolator
     grid = (x_grid, y_grid, z_grid)
-    interpolator = interp_func(analytical_field, grid)
 
     # Create test points that are offset from grid points
     # This tests the interpolation accuracy between grid points
@@ -219,7 +208,9 @@ def interpolation_wave_test(nx, interp_func):
     analytical_values = jnp.sin(x_test_flat) * jnp.cos(y_test_flat) * jnp.sin(z_test_flat)
 
     # Interpolate values at test points
-    interpolated_values = interpolator(x_test_flat, y_test_flat, z_test_flat)
+    interpolated_values = interpolate_field_to_particles(
+        analytical_field, x_test_flat, y_test_flat, z_test_flat, grid, shape_factor
+    )
 
     # Compute mean squared error
     error = mae(interpolated_values, analytical_values)
@@ -227,7 +218,7 @@ def interpolation_wave_test(nx, interp_func):
     return error, dx
 
 
-def interpolation_polynomial_test(nx, interp_func):
+def interpolation_polynomial_test(nx, shape_factor):
 
     # Define domain
     x_wind = 1.0
@@ -249,9 +240,7 @@ def interpolation_polynomial_test(nx, interp_func):
     # This has continuous derivatives and tests interpolation of curved surfaces
     analytical_field = X**3 * Y + Y**3 * Z + Z**3 * X
 
-    # Create interpolator
     grid = (x_grid, y_grid, z_grid)
-    interpolator = interp_func(analytical_field, grid)
 
     # Test at mid-points between grid points (maximum interpolation error)
     n_test = max(4, nx)  # Ensure we have enough test points
@@ -272,7 +261,9 @@ def interpolation_polynomial_test(nx, interp_func):
                         z_test_flat**3 * x_test_flat)
 
     # Interpolated values
-    interpolated_values = interpolator(x_test_flat, y_test_flat, z_test_flat)
+    interpolated_values = interpolate_field_to_particles(
+        analytical_field, x_test_flat, y_test_flat, z_test_flat, grid, shape_factor
+    )
 
     # Compute error
     error = mae(interpolated_values, analytical_values)
@@ -280,7 +271,7 @@ def interpolation_polynomial_test(nx, interp_func):
     return error, dx
 
 
-def interpolation_oscillatory_test(nx, interp_func):
+def interpolation_oscillatory_test(nx, shape_factor):
 
     # Define domain
     x_wind = jnp.pi
@@ -301,9 +292,7 @@ def interpolation_oscillatory_test(nx, interp_func):
     # High-frequency test function: f(x,y,z) = cos(2x) * sin(3y) * cos(4z)
     analytical_field = jnp.cos(2*X) * jnp.sin(3*Y) * jnp.cos(4*Z)
 
-    # Create interpolator
     grid = (x_grid, y_grid, z_grid)
-    interpolator = interp_func(analytical_field, grid)
 
     # Test points slightly offset from grid
     n_test = max(6, nx)
@@ -324,7 +313,9 @@ def interpolation_oscillatory_test(nx, interp_func):
                         jnp.cos(4*z_test_flat))
 
     # Interpolated values
-    interpolated_values = interpolator(x_test_flat, y_test_flat, z_test_flat)
+    interpolated_values = interpolate_field_to_particles(
+        analytical_field, x_test_flat, y_test_flat, z_test_flat, grid, shape_factor
+    )
 
     # Compute error
     error = mae(interpolated_values, analytical_values)

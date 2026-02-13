@@ -20,4 +20,3 @@ from . import boris
 from . import rho
 from . import evolve
 from .solvers import vector_potential
-from .solvers import curl_curl_form
