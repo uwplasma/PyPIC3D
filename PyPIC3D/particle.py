@@ -1,6 +1,7 @@
 import numpy as np
 import jax
 from jax import jit
+from functools import partial
 import jax.numpy as jnp
 from jax.tree_util import register_pytree_node_class
 
@@ -430,6 +431,54 @@ def compute_index(x, dx, window):
     scaled_x = x + window/2
     return jnp.floor( scaled_x / dx).astype(int)
 
+
+@partial(jit, static_argnames=("periodic", "reflecting"))
+def apply_axis_boundary_condition(x, v, wind, half_wind, periodic, reflecting):
+    """
+    Apply boundary conditions to particle positions and velocities along a single axis.
+    This function handles three types of boundary conditions: periodic, reflecting, and open.
+    Particles that cross the boundary are treated according to the specified condition type.
+    Args:
+        x (jnp.ndarray): Particle positions along the axis.
+        v (jnp.ndarray): Particle velocities along the axis.
+        wind (float): The width of the domain (full extent from -half_wind to half_wind).
+        half_wind (float): Half the domain width, used to determine boundary positions.
+        periodic (bool): If True, apply periodic boundary conditions (particles wrap around).
+        reflecting (bool): If True, apply reflecting boundary conditions (particle velocities reverse).
+                          Only evaluated if periodic is False.
+    Returns:
+        tuple: A tuple of (x_out, v_out) where:
+            - x_out (jnp.ndarray): Updated particle positions after applying boundary conditions.
+            - v_out (jnp.ndarray): Updated particle velocities after applying boundary conditions.
+    Notes:
+        - Periodic BC: Particles that exceed ±half_wind are wrapped to the opposite side.
+        - Reflecting BC: Particles at boundaries have their velocities reversed (x position unchanged).
+        - Open BC (default): Particles and velocities pass through unchanged.
+    """
+
+    def periodic_bc(state):
+        x_in, v_in = state
+        x_out = x_in + wind * (x_in < -half_wind) - wind * (x_in > half_wind)
+        return x_out, v_in
+    # if periodic is True, apply periodic boundary conditions by wrapping positions around the domain
+
+    def reflecting_bc(state):
+        x_in, v_in = state
+        v_out = jnp.where((x_in >= half_wind) | (x_in <= -half_wind), -v_in, v_in)
+        return x_in, v_out
+    # if reflecting is True, apply reflecting boundary conditions by reversing velocities at the boundaries
+
+    def identity_bc(state):
+        return state
+    # if neither periodic nor reflecting, return the positions and velocities unchanged
+
+    return jax.lax.cond(
+        periodic,
+        periodic_bc,
+        lambda state: jax.lax.cond(reflecting, reflecting_bc, identity_bc, state),
+        (x, v),
+    )
+
 @register_pytree_node_class
 class particle_species:
     """
@@ -501,9 +550,18 @@ class particle_species:
         self.x_wind = xwind
         self.y_wind = ywind
         self.z_wind = zwind
+        self.half_x_wind = 0.5 * xwind
+        self.half_y_wind = 0.5 * ywind
+        self.half_z_wind = 0.5 * zwind
         self.x_bc = x_bc
         self.y_bc = y_bc
         self.z_bc = z_bc
+        self.x_periodic = x_bc == 'periodic'
+        self.x_reflecting = x_bc == 'reflecting'
+        self.y_periodic = y_bc == 'periodic'
+        self.y_reflecting = y_bc == 'reflecting'
+        self.z_periodic = z_bc == 'periodic'
+        self.z_reflecting = z_bc == 'reflecting'
         # boundary conditions for each dimension
         self.update_x = update_x
         self.update_y = update_y
@@ -603,26 +661,15 @@ class particle_species:
         return self.mass * self.weight * jnp.sum(jnp.sqrt(self.v1**2 + self.v2**2 + self.v3**2))
     
     def boundary_conditions(self):
-        if self.x_bc == 'periodic':
-            self.x1 = jnp.where(self.x1 > self.x_wind/2,  self.x1 - self.x_wind, \
-                            jnp.where(self.x1 < -self.x_wind/2, self.x1 + self.x_wind, self.x1))
-        elif self.x_bc == 'reflecting':
-            self.v1 = jnp.where((self.x1 >= self.x_wind/2) | (self.x1 <= -self.x_wind/2), -self.v1, self.v1)
-        # apply boundary conditions to the x position of the particles
+        x1, x2, x3 = self.x1, self.x2, self.x3
+        v1, v2, v3 = self.v1, self.v2, self.v3
 
-        if self.y_bc == 'periodic':
-            self.x2 = jnp.where(self.x2 > self.y_wind/2,  self.x2 - self.y_wind, \
-                            jnp.where(self.x2 < -self.y_wind/2, self.x2 + self.y_wind, self.x2))
-        elif self.y_bc == 'reflecting':
-            self.v2 = jnp.where((self.x2 >= self.y_wind/2) | (self.x2 <= -self.y_wind/2), -self.v2, self.v2)
-        # apply boundary conditions to the y position of the particles
+        x1, v1 = apply_axis_boundary_condition(x1, v1, self.x_wind, self.half_x_wind, self.x_periodic, self.x_reflecting)
+        x2, v2 = apply_axis_boundary_condition(x2, v2, self.y_wind, self.half_y_wind, self.y_periodic, self.y_reflecting)
+        x3, v3 = apply_axis_boundary_condition(x3, v3, self.z_wind, self.half_z_wind, self.z_periodic, self.z_reflecting)
 
-        if self.z_bc == 'periodic':
-            self.x3 = jnp.where(self.x3 > self.z_wind/2,  self.x3 - self.z_wind, \
-                            jnp.where(self.x3 < -self.z_wind/2, self.x3 + self.z_wind, self.x3))
-        elif self.z_bc == 'reflecting':
-            self.v3 = jnp.where((self.x3 >= self.z_wind/2) | (self.x3 <= -self.z_wind/2), -self.v3, self.v3)
-        # apply boundary conditions to the z position of the particles
+        self.x1, self.x2, self.x3 = x1, x2, x3
+        self.v1, self.v2, self.v3 = v1, v2, v3
    
     def update_position(self):
         if self.update_pos:
