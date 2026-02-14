@@ -9,7 +9,7 @@ from PyPIC3D.utils import digital_filter, wrap_around, bilinear_filter
 from PyPIC3D.shapes import get_first_order_weights, get_second_order_weights
 
 @partial(jit, static_argnames=("filter",))
-def J_from_rhov(particles, J, constants, world, grid, filter='bilinear'):
+def J_from_rhov(particles, J, constants, world, grid=None, filter='bilinear'):
     """
     Compute the current density from the charge density and particle velocities.
 
@@ -22,6 +22,9 @@ def J_from_rhov(particles, J, constants, world, grid, filter='bilinear'):
     Returns:
         tuple: Updated current density arrays (Jx, Jy, Jz) for the x, y, and z directions respectively.
     """
+
+    if grid is None:
+        grid = world['grids']['center']
 
     dx = world['dx']
     dy = world['dy']
@@ -196,11 +199,14 @@ def _roll_old_weights_to_new_frame(old_w_list, shift):
     return [rolled[i, :] for i in range(5)]
 
 
-def Esirkepov_current(particles, J, constants, world, grid, filter=None):
+def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
     """
     Local per-particle Esirkepov deposition that works for 1D/2D/3D by setting inactive dims to size 1.
     J is a tuple (Jx,Jy,Jz) arrays shaped (Nx,Ny,Nz).
     """
+    if grid is None:
+        grid = world['grids']['center']
+
     Jx, Jy, Jz = J
     Nx, Ny, Nz = Jx.shape
     dx, dy, dz, dt = world["dx"], world["dy"], world["dz"], world["dt"]

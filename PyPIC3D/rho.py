@@ -32,7 +32,7 @@ def compute_rho(particles, rho, world, constants):
     x_wind = world['x_wind']
     y_wind = world['y_wind']
     z_wind = world['z_wind']
-    grid   = world['grid']
+    grid = world['grids']['vertex']
     Nx, Ny, Nz = rho.shape
     # get the shape of the charge density array
 

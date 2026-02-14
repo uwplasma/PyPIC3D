@@ -54,6 +54,19 @@ from PyPIC3D.J import (
 from PyPIC3D.solvers.vector_potential import initialize_vector_potential
 
 
+def _encode_field_bc(bc_name):
+    """
+    Encode field boundary condition labels into integer codes for JAX-safe storage.
+    """
+    bc_codes = {
+        "periodic": 0,
+        "conducting": 1,
+    }
+    if bc_name not in bc_codes:
+        raise ValueError(f"Unsupported field boundary condition: {bc_name}")
+    return bc_codes[bc_name]
+
+
 def default_parameters():
     """
     Returns a dictionary of default parameters for the simulation.
@@ -152,15 +165,14 @@ def initialize_simulation(toml_file):
             Jx, Jy, Jz (jax.numpy.ndarray): Current density components.
             phi (jax.numpy.ndarray): Electric potential.
             rho (jax.numpy.ndarray): Charge density.
-            E_grid, B_grid (dict): Grids for electric and magnetic fields.
-            world (dict): Dictionary containing world parameters such as spatial resolution and domain size.
+            world (dict): Dictionary containing world parameters such as spatial resolution, domain size,
+                field boundary conditions, and all simulation grids.
             simulation_parameters (dict): Dictionary containing simulation parameters.
             constants (dict): Dictionary containing physical constants.
             plotting_parameters (dict): Dictionary containing parameters for plotting.
             plasma_parameters (dict): Dictionary containing plasma parameters.
             M (jax.numpy.ndarray or None): Preconditioner matrix, if neural network preconditioning is used.
             solver (str): Solver type, either "spectral" or "fdtd".
-            bc (str): Boundary conditions.
             electrostatic (bool): Flag indicating if the simulation is electrostatic.
             verbose (bool): Flag indicating if verbose output is enabled.
             GPUs (int): Number of GPUs to use.
@@ -186,7 +198,6 @@ def initialize_simulation(toml_file):
     t_wind = simulation_parameters['t_wind']
     electrostatic = simulation_parameters['electrostatic']
     solver = simulation_parameters['solver']
-    bcs = [simulation_parameters['x_bc'], simulation_parameters['y_bc'], simulation_parameters['z_bc']]
     relativistic = simulation_parameters['relativistic']
     verbose = simulation_parameters['verbose']
     GPUs = simulation_parameters['GPUs']
@@ -222,7 +233,24 @@ def initialize_simulation(toml_file):
     # adjust t_wind if both dt and Nt are provided
 
 
-    world = {'dt': dt, 'Nt': Nt, 'dx': dx, 'dy': dy, 'dz': dz, 'Nx': Nx, 'Ny': Ny, 'Nz': Nz, 'x_wind': x_wind, 'y_wind': y_wind, 'z_wind': z_wind, 'grid': None}
+    world = {
+        'dt': dt,
+        'Nt': Nt,
+        'dx': dx,
+        'dy': dy,
+        'dz': dz,
+        'Nx': Nx,
+        'Ny': Ny,
+        'Nz': Nz,
+        'x_wind': x_wind,
+        'y_wind': y_wind,
+        'z_wind': z_wind,
+        'boundary_conditions': {
+            'x': _encode_field_bc(simulation_parameters['x_bc']),
+            'y': _encode_field_bc(simulation_parameters['y_bc']),
+            'z': _encode_field_bc(simulation_parameters['z_bc']),
+        },
+    }
     # set the simulation world parameters
 
     world = convert_to_jax_compatible(world)
@@ -238,8 +266,11 @@ def initialize_simulation(toml_file):
     B_grid, E_grid = build_yee_grid(world)
     # build the Yee grid for the fields
 
-    world['grid'] = E_grid
-    # set the grid in the world parameters
+    world['grids'] = {
+        'vertex': E_grid,
+        'center': B_grid,
+    }
+    # set the grids in the world parameters
 
     if not os.path.exists(f"{simulation_parameters['output_dir']}/data"):
         os.makedirs(f"{simulation_parameters['output_dir']}/data")
@@ -347,8 +378,8 @@ def initialize_simulation(toml_file):
     # put the particles on the GPU if GPUs are enabled
 
 
-    return evolve_loop, particles, fields, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, \
-        solver, bcs, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic
+    return evolve_loop, particles, fields, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, \
+        solver, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic
 
 
 

@@ -399,7 +399,18 @@ class TestParticleMethods(unittest.TestCase):
         )
 
         constants = {'C': 3e8, 'alpha' : 1.0}
-        world = {'dx': dx, 'dy': dy, 'dz': dz, 'Nx': 10, 'Ny': 10, 'Nz': 10, 'x_wind': self.x_wind, 'y_wind': self.y_wind, 'z_wind': self.z_wind, "grid": grid}
+        world = {
+            'dx': dx,
+            'dy': dy,
+            'dz': dz,
+            'Nx': 10,
+            'Ny': 10,
+            'Nz': 10,
+            'x_wind': self.x_wind,
+            'y_wind': self.y_wind,
+            'z_wind': self.z_wind,
+            "grids": {"vertex": grid, "center": grid},
+        }
         # define constants and world parameters
 
         num_rho = compute_rho([species], num_rho, world, constants)
@@ -435,7 +446,7 @@ class TestParticleMethods(unittest.TestCase):
             "dx": dx, "dy": dy, "dz": dz,
             "Nx": Nx, "Ny": Ny, "Nz": Nz,
             "x_wind": x_wind, "y_wind": y_wind, "z_wind": z_wind,
-            "dt": dt, 'grid': grid
+            "dt": dt, "grids": {"vertex": grid, "center": grid}
         }
 
         constants = {"C": 3e8, "alpha": 1.0}

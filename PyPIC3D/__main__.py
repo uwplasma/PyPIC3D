@@ -50,15 +50,14 @@ from PyPIC3D.rho import compute_rho
 def run_PyPIC3D(config_file):
     ##################################### INITIALIZE SIMULATION ################################################
 
-    loop, particles, fields, E_grid, B_grid, world, simulation_parameters, constants, plotting_parameters, \
-            plasma_parameters, solver, bcs, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic = initialize_simulation(config_file)
+    loop, particles, fields, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, solver, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic = initialize_simulation(config_file)
     # initialize the simulation
 
-    jit_loop = jax.jit(loop, static_argnames=('curl_func', 'J_func','solver', 'x_bc', 'y_bc', 'z_bc', 'relativistic'))
+    jit_loop = jax.jit(loop, static_argnames=('curl_func', 'J_func', 'solver', 'relativistic'))
 
     dt = world['dt']
     output_dir = simulation_parameters['output_dir']
-    x_bc, y_bc, z_bc = bcs
+    vertex_grid = world['grids']['vertex']
     # unpack relevant parameters
 
     scalar_field_names = ["rho", "mass_density"]
@@ -118,7 +117,7 @@ def run_PyPIC3D(config_file):
                 # calculate the mass density based on the particle positions
 
                 fields_mag = [rho[:,world['Ny']//2,:], mass_density[:,world['Ny']//2,:]]
-                plot_field_slice_vtk(fields_mag, scalar_field_names, 1, E_grid, t, "scalar_field", output_dir, world)
+                plot_field_slice_vtk(fields_mag, scalar_field_names, 1, vertex_grid, t, "scalar_field", output_dir, world)
                 # Plot the scalar fields in VTK format
 
 
@@ -126,7 +125,7 @@ def run_PyPIC3D(config_file):
                 vector_field_slices = [ [E[0][:,world['Ny']//2,:], E[1][:,world['Ny']//2,:], E[2][:,world['Ny']//2,:]],
                                         [B[0][:,world['Ny']//2,:], B[1][:,world['Ny']//2,:], B[2][:,world['Ny']//2,:]],
                                         [J[0][:,world['Ny']//2,:], J[1][:,world['Ny']//2,:], J[2][:,world['Ny']//2,:]]]
-                plot_vectorfield_slice_vtk(vector_field_slices, vector_field_names, 1, E_grid, t, 'vector_field', output_dir, world)
+                plot_vectorfield_slice_vtk(vector_field_slices, vector_field_names, 1, vertex_grid, t, 'vector_field', output_dir, world)
                 # Plot the vector fields in VTK format
 
             if plotting_parameters['plot_vtk_particles']:
@@ -144,7 +143,16 @@ def run_PyPIC3D(config_file):
             fields = (E, B, J, rho, *rest)
             # repack the fields
 
-        particles, fields = jit_loop(particles, fields, E_grid, B_grid, world, constants, curl_func, J_func, solver, x_bc, y_bc, z_bc, relativistic=relativistic)
+        particles, fields = jit_loop(
+            particles,
+            fields,
+            world,
+            constants,
+            curl_func,
+            J_func,
+            solver,
+            relativistic=relativistic,
+        )
         # time loop to update the particles and fields
 
 

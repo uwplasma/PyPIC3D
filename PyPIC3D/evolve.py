@@ -18,8 +18,8 @@ from PyPIC3D.solvers.vector_potential import (
     E_from_A, B_from_A, update_vector_potential
 )
 
-@partial(jit, static_argnames=("curl_func", "J_func", "solver", "x_bc", "y_bc", "z_bc", "relativistic"))
-def time_loop_electrostatic(particles, fields, vertex_grid, center_grid, world, constants, curl_func, J_func, solver, x_bc, y_bc, z_bc, relativistic=True):
+@partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic"))
+def time_loop_electrostatic(particles, fields, world, constants, curl_func, J_func, solver, relativistic=True):
     """
     Advances the simulation by one time step for an electrostatic Particle-In-Cell (PIC) loop.
 
@@ -32,14 +32,11 @@ def time_loop_electrostatic(particles, fields, vertex_grid, center_grid, world, 
     Args:
         particles (list): List of particle objects to be advanced.
         fields (tuple): Tuple containing the field arrays (E, B, J, rho, phi).
-        vertex_grid (ndarray): Grid representing the electric field.
-        center_grid (ndarray): Grid representing the magnetic field.
         world (dict): Dictionary containing simulation parameters (e.g., time step 'dt').
         constants (dict): Dictionary of physical constants used in the simulation.
         curl_func (callable): Function to compute the curl of a field (not used in this function).
         J_func (callable): Function to compute the current density (not used in this function).
         solver (callable): Function or object to solve the Poisson equation for the electric field.
-        bc (object): Boundary condition object or function for the field solver.
 
     Returns:
         tuple: Updated particles list and fields tuple (E, B, J, rho, phi).
@@ -47,6 +44,8 @@ def time_loop_electrostatic(particles, fields, vertex_grid, center_grid, world, 
 
     E, B, J, rho, phi = fields
     # unpack the fields
+    center_grid = world['grids']['center']
+    vertex_grid = world['grids']['vertex']
 
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
@@ -58,7 +57,7 @@ def time_loop_electrostatic(particles, fields, vertex_grid, center_grid, world, 
         # update the particle positions
 
     ############### SOLVE E FIELD ############################################################################################
-    E, phi, rho = calculateE(world, particles, constants, rho, phi, solver, bc)
+    E, phi, rho = calculateE(world, particles, constants, rho, phi, solver, 'periodic')
     # calculate the electric field using the Poisson equation
 
     fields = (E, B, J, rho, phi)
@@ -71,8 +70,8 @@ def time_loop_electrostatic(particles, fields, vertex_grid, center_grid, world, 
     return particles, fields
 
 
-@partial(jit, static_argnames=("curl_func", "J_func", "solver", "x_bc", "y_bc", "z_bc", "relativistic"))
-def time_loop_electrodynamic(particles, fields, vertex_grid, center_grid, world, constants, curl_func, J_func, solver, x_bc, y_bc, z_bc, relativistic=True):
+@partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic"))
+def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_func, solver, relativistic=True):
     """
     Advance an electrodynamic Particle-In-Cell (PIC) system by one time step.
     This routine performs, in order:
@@ -89,12 +88,6 @@ def time_loop_electrodynamic(particles, fields, vertex_grid, center_grid, world,
         `boundary_conditions()` method.
     fields : tuple
         Tuple of field arrays/objects in the form `(E, B, J, rho, phi)`.
-    vertex_grid : object
-        Grid definition for vertex-centered quantities; passed through to the
-        particle pusher.
-    center_grid : object
-        Grid definition for cell/centered quantities; used by the particle pusher
-        and current deposition.
     world : dict
         Simulation configuration. Must contain `world['dt']` (time step).
     constants : object or dict
@@ -103,12 +96,9 @@ def time_loop_electrodynamic(particles, fields, vertex_grid, center_grid, world,
         Function/operator used by field update routines to compute curls.
     J_func : callable
         Current deposition function with signature like
-        `J_func(particles, J, constants, world, center_grid) -> J`.
+        `J_func(particles, J, constants, world) -> J`.
     solver : object
         Reserved/placeholder for a solver interface (currently unused).
-    x_bc, y_bc, z_bc : object
-        Boundary condition specifications for x, y, and z directions; forwarded to
-        `update_E` and `update_B`.
     relativistic : bool, optional
         If True, perform a relativistic Boris push; otherwise use the
         non-relativistic variant.
@@ -129,6 +119,8 @@ def time_loop_electrodynamic(particles, fields, vertex_grid, center_grid, world,
 
     E, B, J, rho, phi = fields
     # unpack the fields
+    center_grid = world['grids']['center']
+    vertex_grid = world['grids']['vertex']
 
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
@@ -140,11 +132,11 @@ def time_loop_electrodynamic(particles, fields, vertex_grid, center_grid, world,
         # update the particle positions
 
     ################ FIELD UPDATE ################################################################################################
-    J = J_func(particles, J, constants, world, center_grid)
+    J = J_func(particles, J, constants, world)
     # calculate the current density based on the selected method
-    E = update_E(E, B, J, world, constants, curl_func, x_bc, y_bc, z_bc)
+    E = update_E(E, B, J, world, constants, curl_func)
     # update the electric field using the curl of the magnetic field
-    B = update_B(E, B, world, constants, curl_func, x_bc, y_bc, z_bc)
+    B = update_B(E, B, world, constants, curl_func)
     # update the magnetic field using the curl of the electric field
 
     for i in range(len(particles)):
@@ -158,8 +150,8 @@ def time_loop_electrodynamic(particles, fields, vertex_grid, center_grid, world,
     return particles, fields
 
 
-@partial(jit, static_argnames=("curl_func", "J_func", "solver", "x_bc", "y_bc", "z_bc", "relativistic"))
-def time_loop_vector_potential(particles, fields, vertex_grid, center_grid, world, constants, curl_func, J_func, solver, x_bc, y_bc, z_bc, relativistic=True):
+@partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic"))
+def time_loop_vector_potential(particles, fields, world, constants, curl_func, J_func, solver, relativistic=True):
     """
     Advance a PIC (Particle-In-Cell) simulation by one time step using a
     vector-potential formulation for the electromagnetic fields.
@@ -180,12 +172,6 @@ def time_loop_vector_potential(particles, fields, vertex_grid, center_grid, worl
         Field tuple in the order `(E, B, J, rho, phi, A2, A1, A0)`, where `A2`
         denotes the newest vector potential, `A1` the previous, and `A0` the
         older one (used for time differencing).
-    vertex_grid : Any
-        Grid/mesh information at vertices (used for field computations and/or
-        interpolation).
-    center_grid : Any
-        Grid/mesh information at cell centers (used for particle push and current
-        deposition).
     world : dict
         Simulation parameters. Must at least contain `'dt'` (time step).
     constants : Any
@@ -194,12 +180,9 @@ def time_loop_vector_potential(particles, fields, vertex_grid, center_grid, worl
         Reserved/unused in the current implementation (kept for API compatibility).
     J_func : Callable
         Function to compute/update current density, called as:
-        `J_func(particles, J, constants, world, center_grid)`.
+        `J_func(particles, J, constants, world)`.
     solver : Any
         Reserved/unused in the current implementation (kept for API compatibility).
-    x_bc, y_bc, z_bc : Any
-        Reserved/unused in the current implementation (boundary conditions are
-        currently applied via each particle's `boundary_conditions()` method).
     relativistic : bool, optional
         If True, the particle pusher is invoked in relativistic mode.
 
@@ -218,12 +201,14 @@ def time_loop_vector_potential(particles, fields, vertex_grid, center_grid, worl
       then `A2` is computed from the current density via `update_vector_potential`.
     - Electric and magnetic fields are recomputed using `E_from_A` and `B_from_A`
       with `interpolation_order=2`.
-    - Several parameters (`curl_func`, `solver`, `x_bc`, `y_bc`, `z_bc`) are
+    - Several parameters (`curl_func`, `solver`) are
       currently not used inside this function but may be part of a broader API.
     """
 
     E, B, J, rho, phi, A2, A1, A0 = fields
     # unpack the fields
+    center_grid = world['grids']['center']
+    vertex_grid = world['grids']['vertex']
 
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
@@ -245,7 +230,7 @@ def time_loop_vector_potential(particles, fields, vertex_grid, center_grid, worl
     # calculate the electric field from the vector potential using centered finite difference
     B = B_from_A(A1, world, center_grid, vertex_grid, interpolation_order=2)
     # calculate the magnetic field from the vector potential using centered finite difference
-    J = J_func(particles, J, constants, world, center_grid)
+    J = J_func(particles, J, constants, world)
     # calculate the current density using the selected method
 
     for i in range(len(particles)):
