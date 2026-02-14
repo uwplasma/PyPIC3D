@@ -35,6 +35,11 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter='bilinear'):
     # get the world parameters
 
     Jx, Jy, Jz = J
+    x_active = Jx.shape[0] != 1
+    y_active = Jx.shape[1] != 1
+    z_active = Jx.shape[2] != 1
+    # infer effective dimensionality from the current-grid shape
+
     # unpack the values of J
     Jx = Jx.at[:, :, :].set(0)
     Jy = Jy.at[:, :, :].set(0)
@@ -57,9 +62,6 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter='bilinear'):
         z = z - vz * world['dt'] / 2
         # step back to half time step positions for proper time staggering
 
-        # x0 = jnp.floor( (x - grid[0][0]) / dx).astype(int)
-        # y0 = jnp.floor( (y - grid[1][0]) / dy).astype(int)
-        # z0 = jnp.floor( (z - grid[2][0]) / dz).astype(int)
         x0 = jax.lax.cond(
             shape_factor == 1,
             lambda _: jnp.floor( (x - grid[0][0]) / dx).astype(int),
@@ -134,19 +136,53 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter='bilinear'):
         y_weights_node = jnp.asarray(y_weights_node)  # (Sy, Np)
         z_weights_node = jnp.asarray(z_weights_node)  # (Sz, Np)
 
-        ii, jj, kk = jnp.meshgrid(jnp.arange(3), jnp.arange(3), jnp.arange(3), indexing="ij")
-        combos = jnp.stack([ii.ravel(), jj.ravel(), kk.ravel()], axis=1)  # (27, 3)
+        # Keep full shape-factor computation but collapse inactive axes to an
+        # effective stencil of size 1 to avoid redundant deposition work.
+        if x_active:
+            xpts_eff = xpts
+            x_weights_node_eff = x_weights_node
+            x_weights_face_eff = x_weights_face
+        else:
+            xpts_eff = jnp.zeros((1, xpts.shape[1]), dtype=xpts.dtype)
+            x_weights_node_eff = jnp.sum(x_weights_node, axis=0, keepdims=True)
+            x_weights_face_eff = jnp.sum(x_weights_face, axis=0, keepdims=True)
+
+        if y_active:
+            ypts_eff = ypts
+            y_weights_node_eff = y_weights_node
+            y_weights_face_eff = y_weights_face
+        else:
+            ypts_eff = jnp.zeros((1, ypts.shape[1]), dtype=ypts.dtype)
+            y_weights_node_eff = jnp.sum(y_weights_node, axis=0, keepdims=True)
+            y_weights_face_eff = jnp.sum(y_weights_face, axis=0, keepdims=True)
+
+        if z_active:
+            zpts_eff = zpts
+            z_weights_node_eff = z_weights_node
+            z_weights_face_eff = z_weights_face
+        else:
+            zpts_eff = jnp.zeros((1, zpts.shape[1]), dtype=zpts.dtype)
+            z_weights_node_eff = jnp.sum(z_weights_node, axis=0, keepdims=True)
+            z_weights_face_eff = jnp.sum(z_weights_face, axis=0, keepdims=True)
+
+        ii, jj, kk = jnp.meshgrid(
+            jnp.arange(xpts_eff.shape[0]),
+            jnp.arange(ypts_eff.shape[0]),
+            jnp.arange(zpts_eff.shape[0]),
+            indexing="ij",
+        )
+        combos = jnp.stack([ii.ravel(), jj.ravel(), kk.ravel()], axis=1)  # (Sx*Sy*Sz, 3)
 
         def idx_and_dJ_values(idx):
             i, j, k = idx
             # unpack the stencil indices
-            ix = xpts[i, ...]
-            iy = ypts[j, ...]
-            iz = zpts[k, ...]
+            ix = xpts_eff[i, ...]
+            iy = ypts_eff[j, ...]
+            iz = zpts_eff[k, ...]
             # get the grid indices for this stencil point
-            valx = (dq * vx) * x_weights_face[i, ...] * y_weights_node[j, ...] * z_weights_node[k, ...]
-            valy = (dq * vy) * x_weights_node[i, ...] * y_weights_face[j, ...] * z_weights_node[k, ...]
-            valz = (dq * vz) * x_weights_node[i, ...] * y_weights_node[j, ...] * z_weights_face[k, ...]
+            valx = (dq * vx) * x_weights_face_eff[i, ...] * y_weights_node_eff[j, ...] * z_weights_node_eff[k, ...]
+            valy = (dq * vy) * x_weights_node_eff[i, ...] * y_weights_face_eff[j, ...] * z_weights_node_eff[k, ...]
+            valz = (dq * vz) * x_weights_node_eff[i, ...] * y_weights_node_eff[j, ...] * z_weights_face_eff[k, ...]
             # calculate the current contributions for this stencil point
             return ix, iy, iz, valx, valy, valz
         
