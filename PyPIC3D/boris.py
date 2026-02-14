@@ -217,6 +217,10 @@ def interpolate_field_to_particles(field, x, y, z, grid, shape_factor):
     Ny = len(y_grid)
     Nz = len(z_grid)
     # grid point counts for each direction
+    x_active = Nx != 1
+    y_active = Ny != 1
+    z_active = Nz != 1
+    # infer effective dimensionality from grid extents
 
     dx = x_grid[1] - x_grid[0] if Nx > 1 else 1.0
     dy = y_grid[1] - y_grid[0] if Ny > 1 else 1.0
@@ -276,18 +280,47 @@ def interpolate_field_to_particles(field, x, y, z, grid, shape_factor):
     zpts = jnp.asarray([z_minus1, z0, z1])
     # place all the points in a list
 
+    # Keep full shape-factor computation but collapse inactive axes to an
+    # effective stencil size of 1 to avoid redundant interpolation work.
+    if x_active:
+        xpts_eff = xpts
+        x_weights_eff = x_weights
+    else:
+        xpts_eff = jnp.zeros((1, xpts.shape[1]), dtype=xpts.dtype)
+        x_weights_eff = jnp.sum(x_weights, axis=0, keepdims=True)
+
+    if y_active:
+        ypts_eff = ypts
+        y_weights_eff = y_weights
+    else:
+        ypts_eff = jnp.zeros((1, ypts.shape[1]), dtype=ypts.dtype)
+        y_weights_eff = jnp.sum(y_weights, axis=0, keepdims=True)
+
+    if z_active:
+        zpts_eff = zpts
+        z_weights_eff = z_weights
+    else:
+        zpts_eff = jnp.zeros((1, zpts.shape[1]), dtype=zpts.dtype)
+        z_weights_eff = jnp.sum(z_weights, axis=0, keepdims=True)
+
     def stencil_contribution(stencil_idx):
         i, j, k = stencil_idx
         return (
-            field[xpts[i, ...], ypts[j, ...], zpts[k, ...]]
-            * x_weights[i, ...]
-            * y_weights[j, ...]
-            * z_weights[k, ...]
+            field[xpts_eff[i, ...], ypts_eff[j, ...], zpts_eff[k, ...]]
+            * x_weights_eff[i, ...]
+            * y_weights_eff[j, ...]
+            * z_weights_eff[k, ...]
         )
-    # define a function to compute the contribution from each point in the 3x3x3 stencil
+    # define a function to compute the contribution from each point in the effective stencil
 
-    stencil_indicies = jnp.asarray( [[i, j, k] for i in range(3) for j in range(3) for k in range(3)] )
-    # compute the contribution from each point in the 3x3x3 stencil and add them to an array
+    ii, jj, kk = jnp.meshgrid(
+        jnp.arange(xpts_eff.shape[0]),
+        jnp.arange(ypts_eff.shape[0]),
+        jnp.arange(zpts_eff.shape[0]),
+        indexing="ij",
+    )
+    stencil_indicies = jnp.stack([ii.ravel(), jj.ravel(), kk.ravel()], axis=1)
+    # build effective stencil indices with shape (Sx*Sy*Sz, 3)
 
     interpolated_field = jnp.sum(jax.vmap(stencil_contribution)(stencil_indicies), axis=0)
     # sum the contributions from all stencil points to get the final interpolated field value at each particle position
