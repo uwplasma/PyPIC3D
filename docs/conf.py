@@ -1,10 +1,11 @@
 import os
 import sys
+
 sys.path.insert(0, os.path.abspath('..'))
 
 project = 'PyPIC3D'
 author = 'Christopher Woolford'
-release = '0.1.0'
+release = '0.1.3'
 
 extensions = [
     'sphinx.ext.autodoc',
@@ -18,4 +19,4 @@ exclude_patterns = []
 
 html_theme = 'sphinx_rtd_theme'
 html_static_path = ['images']
-html_logo = "images/PyPICLogo.png"
+html_logo = 'images/PyPICLogo.png'

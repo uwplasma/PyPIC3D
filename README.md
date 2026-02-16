@@ -1,62 +1,101 @@
 <div align="center">
-    <img src="docs/images/PyPICLogo.png" alt="PyPIC3D Logo" width="400">
+  <img src="docs/images/PyPICLogo.png" alt="PyPIC3D Logo" width="400">
 </div>
 
 ## PyPIC3D
 
-PyPIC3D is a 3D particle-in-cell (PIC) simulation code developed in Python, leveraging the Jax library for high-performance numerical computing. The primary goal of this project is to explore the feasibility of using Python and Jax for plasma simulations, which are traditionally performed using languages like C++ and Fortran.
-
-### Key Features
-
-- **JAX acceleration**: Leverages JAX for high-performance numerical kernels and JIT compilation.
-- **Multiple solvers**: Supports FDTD, PSTD (spectral), vector potential, curl-curl, and electrostatic workflows.
-- **Config-driven runs**: Simulations are configured via TOML files and executed with a single CLI command.
-
-### Applications
-
-PyPIC3D can be used for various plasma simulation applications, including but not limited to:
-
-- **Stellarator Simulations**: Investigating the behavior of plasma in stellarator devices, which are used in fusion research.
-- **Optimization**: Utilizing autodifferentiation for optimizing plasma configurations and parameters.
-- **Surrogate Modeling**: Creating surrogate models to approximate plasma behavior, reducing computational costs for large-scale simulations.
-
-### Installation
-PyPIC3D can be install from the PyPI repository using PIP by running the following command:
+PyPIC3D is a 3D particle-in-cell (PIC) plasma simulation code written in Python with JAX.
+It is built around a config-driven CLI workflow:
 
 ```bash
-    pip install PyPIC3D
+PyPIC3D --config path/to/config.toml
 ```
 
-PyPIC3D can also be installed from source by cloning the repository and running the following:
+## What It Does
+
+- Advances charged particle species with a Boris particle pusher.
+- Deposits current with either `j_from_rhov` or `esirkepov`.
+- Evolves fields with a first-order Yee electrodynamic update or an electrostatic Poisson solve.
+- Writes diagnostics, VTK outputs, and optional openPMD files.
+
+## Installation
+
+From PyPI:
+
 ```bash
-    cd PyPIC3D
-    pip install .
+pip install PyPIC3D
 ```
 
-### Getting Started
-To get started with PyPIC3D, follow the instructions in the read the docs to create a configuration file
-or use an existing demo.
-
-To run PyPIC3D on a configuration file, run the following command:
+From source:
 
 ```bash
-PyPIC3D --config filename.toml
+git clone <repo-url>
+cd PyPIC3D
+pip install .
 ```
 
-### Code Structure
+For development:
 
-The PyPIC3D codebase is organized into several key sections:
+```bash
+pip install -e .
+```
 
-- **Core**: Core PIC functionality including particle push, field solvers, and diagnostics.
-- **Demos**: Example configurations for common plasma phenomena and regression tests.
-- **Tests**: Unit and integration tests that validate the simulation components.
+## Quick Start
 
-Each section is designed to be modular and easily extensible, allowing users to customize and expand the functionality of PyPIC3D according to their needs.
+Run a packaged demo from the repository root:
 
-### Contributing
+```bash
+PyPIC3D --config demos/two_stream/two_stream.toml
+```
 
-Contributions to PyPIC3D are welcome. Please refer to the contributing guidelines in the repository for more information on how to contribute.
+Simulation outputs are written to `<output_dir>/data` (default: current working directory).
 
-### License
+## Documentation Map
 
-This project is licensed under the MIT License. See the LICENSE file for details.
+Primary docs live in `docs/` (Sphinx + reStructuredText):
+
+- `docs/index.rst`: doc entry point and navigation.
+- `docs/usage.rst`: runtime configuration and CLI behavior.
+- `docs/solvers.rst`: electrodynamic/electrostatic update paths.
+- `docs/chargeconservation.rst`: current deposition methods.
+- `docs/grid.rst`: grid layouts and boundary model.
+- `docs/particles.rst`: species model and initialization.
+- `docs/demos.rst`: demo catalog and run commands.
+- `docs/architecture.rst`: module-level architecture and data flow.
+- `docs/development.rst`: setup, tests, docs build, debugging notes.
+- `docs/contributing.rst`: contribution workflow.
+
+## Repository Layout
+
+```text
+PyPIC3D/
+  __main__.py              # CLI entrypoint
+  initialization.py        # config/defaults + world/fields/particles setup
+  evolve.py                # per-step simulation loops
+  particle.py              # particle species model + initialization
+  J.py                     # current deposition methods
+  rho.py                   # charge deposition
+  solvers/                 # field solvers and operators
+  diagnostics/             # plotting, VTK, openPMD writers
+  utils.py                 # config, IO, helper math/utilities
+
+demos/                     # runnable example configurations
+tests/                     # pytest suite
+```
+
+## Testing
+
+```bash
+pytest
+```
+
+## Build Docs
+
+```bash
+pip install -r docs/requirements.in
+sphinx-build -b html docs docs/_build/html
+```
+
+## License
+
+MIT. See `LICENSE`.
