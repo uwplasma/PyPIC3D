@@ -1,8 +1,6 @@
-import jax
 import jax.numpy as jnp
 from jax import jit
 from jax import lax
-import functools
 from functools import partial
 # import external libraries
 
@@ -12,10 +10,27 @@ from PyPIC3D.rho import compute_rho
 from PyPIC3D.utils import digital_filter
 # import internal libraries
 
+BC_PERIODIC = 0
+BC_CONDUCTING = 1
 
 
-@partial(jit, static_argnames=("curl_func", "x_bc", "y_bc", "z_bc"))
-def update_E(E, B, J, world, constants, curl_func, x_bc, y_bc, z_bc):
+def _get_field_bc_code(world, axis):
+    """
+    Get the boundary condition code for an axis, supporting legacy and refactored world schemas.
+    """
+    if 'boundary_conditions' in world and axis in world['boundary_conditions']:
+        bc = world['boundary_conditions'][axis]
+    else:
+        legacy_key = f"{axis}_bc"
+        bc = world[legacy_key] if legacy_key in world else BC_PERIODIC
+
+    if isinstance(bc, str):
+        return BC_CONDUCTING if bc == "conducting" else BC_PERIODIC
+    return bc
+
+
+@partial(jit, static_argnames=("curl_func",))
+def update_E(E, B, J, world, constants, curl_func):
     """
     Update the electric field components (Ex, Ey, Ez) based on the given parameters.
 
@@ -40,6 +55,9 @@ def update_E(E, B, J, world, constants, curl_func, x_bc, y_bc, z_bc):
 
     dt = world['dt']
     dx, dy, dz = world['dx'], world['dy'], world['dz']
+    x_bc = _get_field_bc_code(world, 'x')
+    y_bc = _get_field_bc_code(world, 'y')
+    z_bc = _get_field_bc_code(world, 'z')
     # get the time resolution and grid spacings
     C = constants['C']
     eps = constants['eps']
@@ -71,7 +89,7 @@ def update_E(E, B, J, world, constants, curl_func, x_bc, y_bc, z_bc):
     
     ### X BC ###
     Ey = lax.cond(
-        x_bc == 'conducting',
+        x_bc == BC_CONDUCTING,
         lambda Ey: Ey.at[0,:,:].set(0.0).at[-1,:,:].set(0.0).at[-2,:,:].set(0.0),
         # the left inner cell next to the boundary to 0,
         # and the right 2 inner cells next to the boundary to 0
@@ -80,7 +98,7 @@ def update_E(E, B, J, world, constants, curl_func, x_bc, y_bc, z_bc):
     )
 
     Ez = lax.cond(
-        x_bc == 'conducting',
+        x_bc == BC_CONDUCTING,
         lambda Ez: Ez.at[0,:,:].set(0.0).at[-1,:,:].set(0.0).at[-2,:,:].set(0.0),
         # the left inner cell next to the boundary to 0,
         # and the right 2 inner cells next to the boundary to 0
@@ -91,7 +109,7 @@ def update_E(E, B, J, world, constants, curl_func, x_bc, y_bc, z_bc):
 
     ### Y BC ###
     Ex = lax.cond(
-        y_bc == 'conducting',
+        y_bc == BC_CONDUCTING,
         lambda Ex: Ex.at[:,0,:].set(0.0).at[:,-1,:].set(0.0).at[:,-2,:].set(0.0),
         # the left inner cell next to the boundary to 0,
         # and the right 2 inner cells next to the boundary to 0
@@ -100,7 +118,7 @@ def update_E(E, B, J, world, constants, curl_func, x_bc, y_bc, z_bc):
     )
 
     Ez = lax.cond(
-        y_bc == 'conducting',
+        y_bc == BC_CONDUCTING,
         lambda Ez: Ez.at[:,0,:].set(0.0).at[:,-1,:].set(0.0).at[:,-2,:].set(0.0),
         # the left inner cell next to the boundary to 0,
         # and the right 2 inner cells next to the boundary to 0
@@ -111,7 +129,7 @@ def update_E(E, B, J, world, constants, curl_func, x_bc, y_bc, z_bc):
 
     ### Z BC ###
     Ex = lax.cond(
-        z_bc == 'conducting',
+        z_bc == BC_CONDUCTING,
         lambda Ex: Ex.at[:,:,0].set(0.0).at[:,:,-1].set(0.0).at[:,:,-2].set(0.0),
         # the left inner cell next to the boundary to 0,
         # and the right 2 inner cells next to the boundary to 0
@@ -120,7 +138,7 @@ def update_E(E, B, J, world, constants, curl_func, x_bc, y_bc, z_bc):
     )
 
     Ey = lax.cond(
-        z_bc == 'conducting',
+        z_bc == BC_CONDUCTING,
         lambda Ey: Ey.at[:,:,0].set(0.0).at[:,:,-1].set(0.0).at[:,:,-2].set(0.0),
         # the left inner cell next to the boundary to 0,
         # and the right 2 inner cells next to the boundary to 0
@@ -138,8 +156,8 @@ def update_E(E, B, J, world, constants, curl_func, x_bc, y_bc, z_bc):
     return (Ex, Ey, Ez)
 
 
-@partial(jit, static_argnames=("curl_func", "x_bc", "y_bc", "z_bc"))
-def update_B(E, B, world, constants, curl_func, x_bc, y_bc, z_bc):
+@partial(jit, static_argnames=("curl_func",))
+def update_B(E, B, world, constants, curl_func):
     """
     Update the magnetic field components (Bx, By, Bz) using the curl of the electric field.
 

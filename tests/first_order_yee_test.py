@@ -27,7 +27,8 @@ class TestFieldsMethods(unittest.TestCase):
             'dt': 0.01,
             'x_wind': 1.0,
             'y_wind': 1.0,
-            'z_wind': 1.0
+            'z_wind': 1.0,
+            'boundary_conditions': {'x': 0, 'y': 0, 'z': 0},
         }
         # Use normalized units to avoid numerical issues
         self.constants = {
@@ -95,7 +96,6 @@ class TestFieldsMethods(unittest.TestCase):
         dt = self.world['dt']
         c = self.constants['C']
         eps = self.constants['eps']
-        x_bc, y_bc, z_bc = 'periodic', 'periodic', 'periodic'
 
         # Wave parameters
         wavelength = 4 * dz * 32  # 4 wavelengths across domain
@@ -134,7 +134,7 @@ class TestFieldsMethods(unittest.TestCase):
         B_initial = (Bx_initial, By_initial, Bz_initial)
         J = (Jx, Jy, Jz)
 
-        Ex_computed, Ey_computed, Ez_computed = update_E(E_initial, B_initial, J, self.world, self.constants, curl_func, x_bc, y_bc, z_bc)
+        Ex_computed, Ey_computed, Ez_computed = update_E(E_initial, B_initial, J, self.world, self.constants, curl_func)
 
         # Check shapes
         self.assertEqual(Ex_computed.shape, (100, 100, 100))
@@ -163,7 +163,6 @@ class TestFieldsMethods(unittest.TestCase):
         dx, dy, dz = self.world['dx'], self.world['dy'], self.world['dz']
         dt = self.world['dt']
         c = self.constants['C']
-        x_bc, y_bc, z_bc = 'periodic', 'periodic', 'periodic'
 
 
         # Wave parameters (same as test_update_E)
@@ -197,7 +196,7 @@ class TestFieldsMethods(unittest.TestCase):
         E_initial = (Ex_initial, Ey_initial, Ez_initial)
         B_initial = (Bx_initial, By_initial, Bz_initial)
 
-        Bx_computed, By_computed, Bz_computed = update_B(E_initial, B_initial, self.world, self.constants, curl_func, x_bc, y_bc, z_bc)
+        Bx_computed, By_computed, Bz_computed = update_B(E_initial, B_initial, self.world, self.constants, curl_func)
 
         # Check shapes
         self.assertEqual(Bx_computed.shape, (100, 100, 100))
