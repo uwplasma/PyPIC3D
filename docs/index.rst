@@ -1,20 +1,60 @@
 PyPIC3D Documentation
 =====================
 
-PyPIC3D is a JAX-based particle-in-cell code for electrodynamic and electrostatic
-plasma simulations. Runs are configured with TOML and executed from the CLI.
+.. container:: hero
 
-Quick Start
------------
+   PyPIC3D is a JAX-based particle-in-cell code for electrodynamic and
+   electrostatic plasma simulation. Runs are composed with TOML, launched
+   from the CLI, and instrumented for diagnostics in Python or VTK.
 
-1. Install the package and dependencies.
-2. Start with :doc:`usage` for the minimum valid configuration.
-3. Run a demo from :doc:`demos`.
-4. Use :doc:`development` for local testing and docs builds.
+   .. container:: hero-actions
+
+      `Launch a demo <demos.html>`__
+      `See usage requirements <usage.html>`__
+
+.. container:: hero-callout
+
+   **Focused for researchers**
+
+   PyPIC3D bundles grid-saving workflows, solver diagnostics, and fully
+   typed configuration validation so you can prototype experiments for 3D
+   reconnection, shocks, and turbulence faster.
+
+   `Browse feature demos <demos.html>`__
+
+Quick navigation
+----------------
+
+.. cards::
+   :columns: 3
+   :gutter: 1.25rem
+   :class: features
+
+   * **Minimal CLI onboarding**  
+     Install the package, configure :doc:`usage`, then execute a demo while
+     capturing diagnostics.
+
+   * **Solver pipeline**  
+     Understand Yee, PSTD, and conservation steps in :doc:`solvers`.
+
+   * **Simulation grid design**  
+     Built-in helpers for species, grids, particles, and boundaries live in :doc:`grid`.
+
+   * **Particle diagnostics**  
+     Visualize scaling, charges, and diagnostics in :doc:`particles`.
+
+   * **Development workflow**  
+     Tests, docs builds, and local helpers are described in :doc:`development`.
+
+   * **Join in**  
+     Contribution instructions, dev workflow, and community notes are in :doc:`contributing`.
+
+Contents
+--------
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents
+   :caption: Dive deeper
 
    usage
    solvers
@@ -32,3 +72,4 @@ Indices and tables
 - :ref:`genindex`
 - :ref:`modindex`
 - :ref:`search`
+
