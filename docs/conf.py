@@ -18,6 +18,6 @@ templates_path = ['_templates']
 exclude_patterns = []
 
 html_theme = 'furo'
-html_static_path = ['_static']
-html_logo = '_static/PyPICLogo.png'
+html_static_path = ['images']
+html_logo = 'images/PyPICLogo.png'
 html_css_files = ['custom.css']
