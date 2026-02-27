@@ -1,120 +1,103 @@
-Solvers Overview
-================
+Field Solvers
+=============
+
+PyPIC3D supports two production runtime modes selected from
+``simulation_parameters``.
+
+Runtime Modes
+-------------
+
+Electrostatic mode
+^^^^^^^^^^^^^^^^^^
+
+Set:
+
+.. code-block:: toml
+
+    electrostatic = true
+
+Per step, PyPIC3D:
+
+1. Pushes particles.
+2. Deposits ``rho``.
+3. Solves Poisson's equation for ``phi``.
+4. Computes ``E = -grad(phi)``.
+
+The ``solver`` key controls the electrostatic gradient operator:
+
+- ``solver = "spectral"``: spectral gradient
+- any other value: centered finite-difference gradient
+
+Electrodynamic mode
+^^^^^^^^^^^^^^^^^^^
+
+Set:
+
+.. code-block:: toml
+
+    electrostatic = false
+
+Per step, PyPIC3D:
+
+1. Pushes particles.
+2. Deposits current ``J``.
+3. Updates ``E``.
+4. Updates ``B``.
+
+The electrodynamic update uses first-order Yee-style kernels in
+``PyPIC3D.solvers.first_order_yee``.
+
+Vector potential mode
+^^^^^^^^^^^^^^^^^^^^^
+
+``solver = "vector_potential"`` currently raises ``NotImplementedError`` during
+initialization.
+
+Electrodynamic Update Equations
+-------------------------------
 
 .. math::
 
-    \nabla \cdot \mathbf{E} = \frac{\rho}{\epsilon_0}
-
-    \nabla \cdot \mathbf{B} = 0
-
-    \nabla \times \mathbf{E} = -\frac{\partial \mathbf{B}}{\partial t}
-
-    \nabla \times \mathbf{B} = \mu_0 \mathbf{J} + \mu_0 \epsilon_0 \frac{\partial \mathbf{E}}{\partial t}
-
-PyPIC3D provides multiple time integrators for Maxwell's equations and related
-formulations. Select a solver by setting
-``simulation_parameters.solver`` in the TOML configuration.
-
-Initialization
---------------
-
-The electric field is initialized as 0 by default, but can be initialized using the following equation:
+    \mathbf{E}^{n+1} = \mathbf{E}^{n} + \Delta t
+    \left(c^2 \nabla \times \mathbf{B}^{n} - \frac{\mathbf{J}^{n}}{\epsilon_0}\right)
 
 .. math::
 
-    \nabla^2 \mathbf{\phi} = \frac{-\rho}{\epsilon_0}
+    \mathbf{B}^{n+1} = \mathbf{B}^{n} - \Delta t \left(\nabla \times \mathbf{E}^{n+1}\right)
 
-PyPIC3D can solve for the initial electric field using both spectral and finite
-difference methods. The magnetic field is initialized to zero.
+PyPIC3D additionally applies a digital filter controlled by
+``constants.alpha`` to field components each update.
 
-.. Successive Over-Relaxation (SOR)
-.. ++++++++++++++++++++++++++++++++
+Boundary Conditions
+-------------------
 
-.. The Successive Over-Relaxation (SOR) method is an iterative method used to solve linear systems of equations. The SOR method is used to solve the Poisson equation for the electric field in PyPIC3D.
-.. The algorithm is as follows:
+Field boundary conditions are defined by:
 
-.. 1. Initialize the electric potential to an array of random values.
-.. 2. Iterate until convergence:
-..     a. For each grid point, update the electric potential using the formula:
+- ``simulation_parameters.x_bc``
+- ``simulation_parameters.y_bc``
+- ``simulation_parameters.z_bc``
 
-..         .. math::
+Supported values:
 
-..             \phi_{i,j,k}^{n+1} = (1 - \omega) \phi_{i,j,k}^n
-..             + \frac{\omega}{6} (\phi_{i+1,j,k}^{n+1} + \phi_{i-1,j,k}^{n} + \phi_{i,j+1,k}^{n+1} + \phi_{i,j-1,k}^{n} + \phi_{i,j,k+1}^{n+1} + \phi_{i,j,k-1}^{n}) - \frac{\rho_{i,j,k}}{6 \epsilon_0}
+- ``periodic``
+- ``conducting``
 
+For conducting boundaries, tangential electric-field components are zeroed on
+boundary faces during the ``E`` update.
 
-..     b. Check for convergence by calculating the residual:
-    
-..         .. math::
+Current Deposition Selection
+----------------------------
 
-..             \text{residual} = \max(| \nabla^2 \phi_{i,j,k}^{n} - \frac{\rho_{i,j,k}}{\epsilon_0} |) 
-        
+Current deposition is selected by:
 
-.. Conjugate Gradient Method
-.. ++++++++++++++++++++++++++
+.. code-block:: toml
 
-.. The Conjugate Gradient Method is an iterative method used to solve linear systems of equations. The Conjugate Gradient Method is used to solve the Poisson equation for the electric field in PyPIC3D.
+    current_calculation = "j_from_rhov"
 
+or
 
-First-Order Yee Solvers
------------------------
-PyPIC3D evolves the electric and magnetic fields on a staggered Yee grid using
-either a pseudo-spectral time-domain (PSTD) solver or a centered finite
-difference time-domain (FDTD) solver.
+.. code-block:: toml
 
-Spectral (PSTD)
-***************
-.. math::
+    current_calculation = "esirkepov"
 
-        \tilde{\mathbf{E}}^{n+1} = \tilde{\mathbf{E}}^n + C^2 \Delta t ( ik \times \tilde{\mathbf{B}}^n - \mu_0 \tilde{J^n} )
-
-        \tilde{\mathbf{B}}^{n+1} = \tilde{\mathbf{B}}^n - \Delta t ( ik \times \tilde{\mathbf{E}}^{n+1} )
-
-Finite Difference (FDTD)
-************************
-
-.. math::
-
-    \mathbf{E}^{n+1} = \mathbf{E}^n + \Delta t \left( \nabla \times \mathbf{B}^n - \frac{\mathbf{J}^n}{\epsilon_0} \right)
-
-    \mathbf{B}^{n+1} = \mathbf{B}^n - \Delta t \left( \nabla \times \mathbf{E}^{n+1} \right)
-
-
-
-
-Vector Potential Solver
------------------------
-
-PyPIC3D also includes a vector potential formulation that evolves :math:`\mathbf{A}`
-under the temporal gauge:
-
-.. math::
-    \mathbf{A}_0 = 0
-
-    \frac{\partial^2_t \mathbf{A}}{c^2} - \nabla^2 \mathbf{A} = \mu_0 \mathbf{J} - \nabla (\nabla \cdot \mathbf{A})
-
-
-Under this formulation, the electric and magnetic fields are calculated from the vector potential as the following:
-
-.. math::
-    \mathbf{E} = -\partial_t \mathbf{A}
-
-    \mathbf{B} = \nabla \times \mathbf{A}
-
-The vector potential is advanced in time using a backward Euler update, and the
-electric and magnetic fields are reconstructed with centered finite differences.
-
-Curl-Curl Solver
-----------------
-
-The curl-curl solver advances the fields using a second-order finite difference
-formulation that evolves both :math:`\mathbf{E}` and :math:`\mathbf{B}` from
-their previous two time levels. Enable it with
-``simulation_parameters.solver = "curl_curl"``.
-
-Electrostatic Mode
-------------------
-
-For electrostatic simulations, set ``simulation_parameters.electrostatic = true``.
-In this mode, the electric field is computed from the Poisson equation each
-time step and the magnetic field remains static.
+See :doc:`chargeconservation` for behavior and tradeoffs.
