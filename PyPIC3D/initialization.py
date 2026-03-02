@@ -21,11 +21,6 @@ from PyPIC3D.utils import (
     make_dir, compute_energy, build_collocated_grid
 )
 
-
-from PyPIC3D.solvers.first_order_yee import (
-    calculateE
-)
-
 from PyPIC3D.solvers.pstd import (
     spectral_curl
 )

@@ -11,7 +11,11 @@ from PyPIC3D.boris import (
 )
 
 from PyPIC3D.solvers.first_order_yee import (
-    update_E, update_B, calculateE
+    update_E, update_B
+)
+
+from PyPIC3D.solvers.electrostatic_yee import (
+    calculate_electrostatic_fields
 )
 
 from PyPIC3D.solvers.vector_potential import (
@@ -57,7 +61,7 @@ def time_loop_electrostatic(particles, fields, world, constants, curl_func, J_fu
         # update the particle positions
 
     ############### SOLVE E FIELD ############################################################################################
-    E, phi, rho = calculateE(world, particles, constants, rho, phi, solver, 'periodic')
+    E, phi, rho = calculate_electrostatic_fields(world, particles, constants, rho, phi, solver, 'periodic')
     # calculate the electric field using the Poisson equation
 
     fields = (E, B, J, rho, phi)

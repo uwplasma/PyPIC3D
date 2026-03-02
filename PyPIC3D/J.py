@@ -202,13 +202,13 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter='bilinear'):
             operand=J_
         )
 
-        alpha = constants['alpha']
-        J_ = jax.lax.cond(
-            filter == 'digital',
-            lambda J_: digital_filter(J_, alpha),
-            lambda J_: J_,
-            operand=J_
-        )
+        # alpha = constants['alpha']
+        # J_ = jax.lax.cond(
+        #     filter == 'digital',
+        #     lambda J_: digital_filter(J_, alpha),
+        #     lambda J_: J_,
+        #     operand=J_
+        # )
         return J_
     # define a filtering function
 
