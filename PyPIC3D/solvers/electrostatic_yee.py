@@ -8,6 +8,24 @@ from PyPIC3D.solvers.fdtd import centered_finite_difference_gradient
 from PyPIC3D.solvers.pstd import spectral_gradient
 from PyPIC3D.utils import digital_filter
 
+BC_PERIODIC = 0
+BC_CONDUCTING = 1
+
+
+def _get_field_bc_code(world, axis):
+    """
+    Get the boundary condition code for an axis, supporting legacy and refactored world schemas.
+    """
+    if 'boundary_conditions' in world and axis in world['boundary_conditions']:
+        bc = world['boundary_conditions'][axis]
+    else:
+        legacy_key = f"{axis}_bc"
+        bc = world[legacy_key] if legacy_key in world else BC_PERIODIC
+
+    if isinstance(bc, str):
+        return BC_CONDUCTING if bc == "conducting" else BC_PERIODIC
+    return bc
+
 
 @jit
 def solve_poisson_with_fft(rho, constants, world):
@@ -68,52 +86,85 @@ def solve_poisson_with_conjugate_gradient(rho, phi, constants, world, tol=1e-6, 
     dz = world['dz']
     eps = constants['eps']
 
-    rhs = rho / eps
-    rhs = rhs - jnp.mean(rhs)
-    phi = phi - jnp.mean(phi)
+    x_bc = _get_field_bc_code(world, 'x')
+    y_bc = _get_field_bc_code(world, 'y')
+    z_bc = _get_field_bc_code(world, 'z')
+    # get the boundary condition codes for each axis, supporting legacy and refactored world schemas
 
-    tiny = jnp.asarray(1e-30, dtype=phi.dtype)
-    tolerance_squared = jnp.asarray(tol, dtype=phi.dtype) ** 2
+    def lapl(field):
+        dfdx2 = (jnp.roll(field, shift=1, axis=0) + jnp.roll(field, shift=-1, axis=0) - 2.0 * field) / (dx * dx)
+        dfdy2 = (jnp.roll(field, shift=1, axis=1) + jnp.roll(field, shift=-1, axis=1) - 2.0 * field) / (dy * dy)
+        dfdz2 = (jnp.roll(field, shift=1, axis=2) + jnp.roll(field, shift=-1, axis=2) - 2.0 * field) / (dz * dz)
+        return dfdx2 + dfdy2 + dfdz2
+    # compute the laplacian of the potential
 
-    def apply_negative_laplacian(field):
-        laplacian_x = (jnp.roll(field, shift=1, axis=0) + jnp.roll(field, shift=-1, axis=0) - 2.0 * field) / (dx * dx)
-        laplacian_y = (jnp.roll(field, shift=1, axis=1) + jnp.roll(field, shift=-1, axis=1) - 2.0 * field) / (dy * dy)
-        laplacian_z = (jnp.roll(field, shift=1, axis=2) + jnp.roll(field, shift=-1, axis=2) - 2.0 * field) / (dz * dz)
-        return -(laplacian_x + laplacian_y + laplacian_z)
+    def apply_x_bc(field):
+        return lax.cond(
+            x_bc == BC_CONDUCTING,
+            lambda f: f.at[0, :, :].set(0.0).at[-1, :, :].set(0.0),
+            lambda f: f,
+            field
+        )
 
-    residual = rhs - apply_negative_laplacian(phi)
-    direction = residual
-    residual_norm_squared = jnp.sum(residual * residual)
+    def apply_y_bc(field):
+        return lax.cond(
+            y_bc == BC_CONDUCTING,
+            lambda f: f.at[:, 0, :].set(0.0).at[:, -1, :].set(0.0),
+            lambda f: f,
+            field
+        )
 
-    def cond_fun(state):
-        _, _, _, residual_norm_squared, iteration = state
-        return jnp.logical_and(iteration < max_iter, residual_norm_squared > tolerance_squared)
+    def apply_z_bc(field):
+        return lax.cond(
+            z_bc == BC_CONDUCTING,
+            lambda f: f.at[:, :, 0].set(0.0).at[:, :, -1].set(0.0),
+            lambda f: f,
+            field
+        )
+
 
     def body_fun(state):
-        phi, residual, direction, residual_norm_squared, iteration = state
+        phi, r, p, k = state
 
-        operator_direction = apply_negative_laplacian(direction)
-        denominator = jnp.sum(direction * operator_direction)
-        denominator = jnp.where(jnp.abs(denominator) < tiny, tiny, denominator)
+        alpha = -1*jnp.sum(r * r) / jnp.sum(p * lapl(p))
+        # compute the optimal step size in the direction of the residual
+        phi_next = phi + alpha * p
+        # update the potential guess
+        phi_next = apply_x_bc(phi_next)
+        phi_next = apply_y_bc(phi_next)
+        phi_next = apply_z_bc(phi_next)
+        # apply boundary conditions to the new potential guess
 
-        alpha = residual_norm_squared / denominator
-        phi_next = phi + alpha * direction
-        residual_next = residual - alpha * operator_direction
-        residual_norm_squared_next = jnp.sum(residual_next * residual_next)
+        r_next = r + alpha * lapl(p)
+        # compute the new residual after stepping in the direction of p
+        beta = jnp.sum(r_next * r_next) / jnp.sum(r * r)
+        # compute the optimal scaling for the new search direction
+        p_next = r_next + beta * p
+        # compute the new search direction as a combination of the new residual and the previous search direction
 
-        beta_denominator = jnp.where(residual_norm_squared < tiny, tiny, residual_norm_squared)
-        beta = residual_norm_squared_next / beta_denominator
-        direction_next = residual_next + beta * direction
+        return phi_next, r_next, p_next, k + 1
+    # perform one iteration of the conjugate gradient method
 
-        return phi_next, residual_next, direction_next, residual_norm_squared_next, iteration + 1
+    def cond_fun(state):
+        phi, r, p, k = state
 
-    phi, _, _, _, _ = lax.while_loop(
+        norm_r = jnp.sum(r * r)
+        # compute the squared L2 norm of the residual for convergence checking
+        return jnp.logical_and(k < max_iter, norm_r > tol**2)
+    # if the residual norm is above the tolerance and we haven't exceeded max iterations, continue iterating
+
+
+    residual = rho / eps + lapl(phi)
+    # compute the error in the Poisson equation with the current potential guess
+
+    phi, residual, p, iteration = lax.while_loop(
         cond_fun,
         body_fun,
-        (phi, residual, direction, residual_norm_squared, 0),
+        (phi, residual, residual, 0),
     )
+    # run the conjugate gradient iterations until convergence or max iterations reached
 
-    phi = phi - jnp.mean(phi)
+
     return phi
 
 
