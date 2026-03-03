@@ -7,6 +7,7 @@ import os
 from . import boris_test
 from . import boundaryconditions_test
 from . import errors_test
+from . import electrostatic_yee_test
 from . import fdtd_test
 from . import first_order_yee_test
 from . import initialization_test
