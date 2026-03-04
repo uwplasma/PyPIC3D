@@ -1,0 +1,56 @@
+# This is a configuration file for PyPIC3D
+[simulation_parameters]
+name = "2D Reconnection Simulation"
+Nt = 200
+dt = 2.5e-11
+solver = 'fdtd'
+Nx = 300
+Ny = 1
+Nz = 300
+x_wind = 6.82
+y_wind = 1
+z_wind = 3.41
+z_bc = "conducting"
+verbose = false
+electrostatic = false
+cfl = 0.99
+shape_factor = 2
+current_calculation = "j_from_rhov"
+relativistic = true
+
+[plotting]
+plotting_interval = 1
+plot_openpmd_particles = false
+plot_openpmd_fields = true
+
+[field1]
+name = "Bx field"
+type = 3
+path = "Bx_initial.npy"
+
+[field2]
+name = "By field"
+type = 4
+path = "By_initial.npy"
+
+[field3]
+name = "Bz field"
+type = 5
+path = "Bz_initial.npy"
+
+[particle1]
+name = "electrons"
+N_per_cell = 200
+charge = -1.602e-19
+mass   = 9.1093837e-31
+vth = 3.35e7
+ds_per_debye = 1.0
+z_bc = "reflecting"
+
+[particle3]
+name = "ions"
+N_per_cell = 200
+charge = 1.602e-19
+mass = 3.64e-28
+vth = 3.75e6
+z_bc = "reflecting"
