@@ -11,7 +11,12 @@ jax.config.update('jax_platform_name', 'cpu')
 from . import errors
 from . import boundaryconditions
 from . import initialization
-from . import particle
+from .particles import particle_initialization
+from .particles import species_class
+from .deposition import shapes
+from .deposition import Esirkepov
+from .deposition import J_from_rhov
+from .deposition import rho
 from .diagnostics import plotting
 from . import utils
 from .solvers import pstd

@@ -3,7 +3,7 @@ from jax import jit
 from jax import lax
 from functools import partial
 
-from PyPIC3D.rho import compute_rho
+from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.solvers.fdtd import centered_finite_difference_gradient
 from PyPIC3D.solvers.pstd import spectral_gradient
 from PyPIC3D.utils import digital_filter

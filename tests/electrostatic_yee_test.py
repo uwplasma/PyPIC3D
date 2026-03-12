@@ -3,7 +3,7 @@ import unittest
 import jax
 import jax.numpy as jnp
 
-from PyPIC3D.particle import particle_species
+from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.solvers.electrostatic_yee import (
     solve_poisson_with_fft,
     solve_poisson_with_conjugate_gradient,

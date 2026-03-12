@@ -9,7 +9,8 @@ import matplotlib.pyplot as plt
 import jax.numpy as jnp
 #from memory_profiler import profile
 
-from PyPIC3D.particle import (
+
+from PyPIC3D.particles.particle_initialization import (
     load_particles_from_toml
 )
 
@@ -43,9 +44,8 @@ from PyPIC3D.evolve import (
     time_loop_electrodynamic, time_loop_electrostatic, time_loop_vector_potential
 )
 
-from PyPIC3D.J import (
-    J_from_rhov, Esirkepov_current
-)
+from PyPIC3D.deposition.Esirkepov import Esirkepov_current
+from PyPIC3D.deposition.J_from_rhov import J_from_rhov
 from PyPIC3D.solvers.vector_potential import initialize_vector_potential
 
 
