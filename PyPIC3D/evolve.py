@@ -7,7 +7,8 @@ from jax import jit
 from functools import partial
 
 from PyPIC3D.boris import (
-    particle_push
+    particle_push,
+    particle_push_indexed,
 )
 
 from PyPIC3D.solvers.first_order_yee import (
@@ -22,7 +23,7 @@ from PyPIC3D.solvers.vector_potential import (
     E_from_A, B_from_A, update_vector_potential
 )
 
-@partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic"))
+@partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic"), donate_argnums=(0, 1))
 def time_loop_electrostatic(particles, fields, world, constants, curl_func, J_func, solver, relativistic=True):
     """
     Advances the simulation by one time step for an electrostatic Particle-In-Cell (PIC) loop.
@@ -74,8 +75,7 @@ def time_loop_electrostatic(particles, fields, world, constants, curl_func, J_fu
     return particles, fields
 
 
-@partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic"))
-def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_func, solver, relativistic=True):
+def time_loop_electrodynamic_inline(particles, fields, world, constants, curl_func, J_func, solver, relativistic=True):
     """
     Advance an electrodynamic Particle-In-Cell (PIC) system by one time step.
     This routine performs, in order:
@@ -154,7 +154,37 @@ def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_f
     return particles, fields
 
 
-@partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic"))
+@partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic"), donate_argnums=(0, 1))
+def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_func, solver, relativistic=True):
+    return time_loop_electrodynamic_inline(
+        particles,
+        fields,
+        world,
+        constants,
+        curl_func,
+        J_func,
+        solver,
+        relativistic=relativistic,
+    )
+
+
+@partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic"), donate_argnums=(0, 1))
+def time_loop_electrodynamic_indexed(particles, fields, world, constants, curl_func, J_func, solver, relativistic=True):
+    E, B, J, rho, phi = fields
+
+    for i in range(len(particles)):
+        particles[i] = particle_push_indexed(particles[i], E, B, world, constants, relativistic=relativistic)
+        particles[i].update_position(world)
+
+    J = J_func(particles, J, constants, world)
+    E = update_E(E, B, J, world, constants, curl_func)
+    B = update_B(E, B, world, constants, curl_func)
+
+    fields = (E, B, J, rho, phi)
+    return particles, fields
+
+
+@partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic"), donate_argnums=(0, 1))
 def time_loop_vector_potential(particles, fields, world, constants, curl_func, J_func, solver, relativistic=True):
     """
     Advance a PIC (Particle-In-Cell) simulation by one time step using a
