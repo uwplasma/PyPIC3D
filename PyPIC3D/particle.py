@@ -535,24 +535,26 @@ class particle_species:
             xwind, ywind, zwind, dx, dy, dz, weight=1, x_bc="periodic", y_bc="periodic", \
                 z_bc="periodic", update_x=True, update_y=True, update_z=True, \
                 update_vx=True, update_vy=True, update_vz=True, update_pos=True, update_v=True, shape=1, dt = 0):
+        # Keep particle metadata as plain Python scalars so PyTree aux_data does not
+        # trigger device work or extra jitted scalar kernels when reconstructed.
         self.name = name
-        self.N_particles = N_particles
-        self.charge = charge
-        self.mass = mass
-        self.weight = weight
-        self.T = T
+        self.N_particles = int(N_particles)
+        self.charge = float(charge)
+        self.mass = float(mass)
+        self.weight = float(weight)
+        self.T = float(T)
         self.v1 = v1
         self.v2 = v2
         self.v3 = v3
-        self.dx = dx
-        self.dy = dy
-        self.dz = dz
-        self.x_wind = xwind
-        self.y_wind = ywind
-        self.z_wind = zwind
-        self.half_x_wind = 0.5 * xwind
-        self.half_y_wind = 0.5 * ywind
-        self.half_z_wind = 0.5 * zwind
+        self.dx = float(dx)
+        self.dy = float(dy)
+        self.dz = float(dz)
+        self.x_wind = float(xwind)
+        self.y_wind = float(ywind)
+        self.z_wind = float(zwind)
+        self.half_x_wind = 0.5 * self.x_wind
+        self.half_y_wind = 0.5 * self.y_wind
+        self.half_z_wind = 0.5 * self.z_wind
         self.x_bc = x_bc
         self.y_bc = y_bc
         self.z_bc = z_bc
@@ -572,7 +574,7 @@ class particle_species:
         self.update_pos = update_pos
         self.update_v   = update_v
         self.shape = shape
-        self.dt = dt
+        self.dt = float(dt)
 
         self.x1 = x1
         self.x2 = x2
@@ -710,38 +712,41 @@ class particle_species:
                 update_vx, update_vy, update_vz, shape, dt  = aux_data
 
 
-        obj = cls(
-            name=name,
-            N_particles=N_particles,
-            charge=charge,
-            mass=mass,
-            T=T,
-            x1=x1,
-            x2=x2,
-            x3=x3,
-            v1=v1,
-            v2=v2,
-            v3=v3,
-            xwind=x_wind,
-            ywind=y_wind,
-            zwind=z_wind,
-            dx=dx,
-            dy=dy,
-            dz=dz,
-            weight=weight,
-            x_bc=x_bc,
-            y_bc=y_bc,
-            z_bc=z_bc,
-            update_x=update_x,
-            update_y=update_y,
-            update_z=update_z,
-            update_vx=update_vx,
-            update_vy=update_vy,
-            update_vz=update_vz,
-            update_pos=update_pos,
-            update_v=update_v,
-            shape=shape,
-            dt=dt
-        )
+        obj = cls.__new__(cls)
+
+        obj.name = name
+        obj.N_particles = int(N_particles)
+        obj.charge = float(charge)
+        obj.mass = float(mass)
+        obj.weight = float(weight)
+        obj.T = float(T)
+
+        obj.v1, obj.v2, obj.v3 = v1, v2, v3
+        obj.x1, obj.x2, obj.x3 = x1, x2, x3
+
+        obj.dx = float(dx)
+        obj.dy = float(dy)
+        obj.dz = float(dz)
+        obj.x_wind = float(x_wind)
+        obj.y_wind = float(y_wind)
+        obj.z_wind = float(z_wind)
+        obj.half_x_wind = 0.5 * obj.x_wind
+        obj.half_y_wind = 0.5 * obj.y_wind
+        obj.half_z_wind = 0.5 * obj.z_wind
+
+        obj.x_bc, obj.y_bc, obj.z_bc = x_bc, y_bc, z_bc
+        obj.x_periodic = x_bc == 'periodic'
+        obj.x_reflecting = x_bc == 'reflecting'
+        obj.y_periodic = y_bc == 'periodic'
+        obj.y_reflecting = y_bc == 'reflecting'
+        obj.z_periodic = z_bc == 'periodic'
+        obj.z_reflecting = z_bc == 'reflecting'
+
+        obj.update_x, obj.update_y, obj.update_z = update_x, update_y, update_z
+        obj.update_vx, obj.update_vy, obj.update_vz = update_vx, update_vy, update_vz
+        obj.update_pos, obj.update_v = update_pos, update_v
+
+        obj.shape = shape
+        obj.dt = float(dt)
 
         return obj

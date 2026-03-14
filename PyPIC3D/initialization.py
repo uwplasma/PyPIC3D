@@ -5,7 +5,6 @@ import os
 import functools
 from functools import partial
 import toml
-import matplotlib.pyplot as plt
 import jax.numpy as jnp
 #from memory_profiler import profile
 
@@ -33,11 +32,6 @@ from PyPIC3D.solvers.fdtd import (
 from PyPIC3D.diagnostics.plotting import (
     plot_initial_histograms
 )
-
-from PyPIC3D.diagnostics.openPMD import (
-    write_openpmd_initial_particles, write_openpmd_initial_fields
-)
-
 
 from PyPIC3D.evolve import (
     time_loop_electrodynamic, time_loop_electrostatic, time_loop_vector_potential
@@ -121,6 +115,9 @@ def default_parameters():
         "shape_factor" : 1, # shape factor for the simulation (1 for 1st order, 2 for 2nd order)
         "current_calculation": "j_from_rhov",  # current calculation method: esirkepov, villasenor_buneman, j_from_rhov
         "filter_j": "bilinear",  # filter for the current density: bilinear, digital, none
+        "use_scan": False,  # batch timesteps with lax.scan to reduce dispatch overhead
+        "scan_chunk": 256,  # number of timesteps per compiled scan chunk
+        "platform_name": "cpu",  # cpu|gpu (if supported by your JAX install)
     }
     # dictionary for simulation parameters
 
@@ -248,12 +245,6 @@ def initialize_simulation(toml_file):
     }
     # set the simulation world parameters
 
-    world = convert_to_jax_compatible(world)
-    constants = convert_to_jax_compatible(constants)
-    simulation_parameters = convert_to_jax_compatible(simulation_parameters)
-    plotting_parameters = convert_to_jax_compatible(plotting_parameters)
-    # convert the world parameters to jax compatible format
-
     # if solver == "vector_potential":
     #     B_grid, E_grid = build_collocated_grid(world)
     #     # build the grid for the fields
@@ -275,12 +266,24 @@ def initialize_simulation(toml_file):
     particles = load_particles_from_toml(toml_file, simulation_parameters, world, constants)
     # load the particles from the configuration file
 
-    for species in particles:
-        name = species.get_name()
-        name = name.replace(" ", "_")
-        # replace spaces with underscores in the name
-        plot_initial_histograms(species, world, path=f"{simulation_parameters['output_dir']}/data", name=name)
-        # plot the initial histograms of the particles
+    # Convert `world` and `constants` to JAX-compatible PyTrees after particle creation,
+    # so particle metadata (dx/dt/domain size) stays as plain Python scalars and doesn't
+    # induce per-step device work when PyTrees are reconstructed.
+    grids = world.pop("grids", None)
+    world = convert_to_jax_compatible(world)
+    if grids is not None:
+        world["grids"] = grids
+    constants = convert_to_jax_compatible(constants)
+
+    if plotting_parameters.get("plotting", True):
+        for species in particles:
+            name = species.get_name().replace(" ", "_")
+            plot_initial_histograms(
+                species,
+                world,
+                path=f"{simulation_parameters['output_dir']}/data",
+                name=name,
+            )
 
     print_stats(world)
     # print the statistics of the simulation
@@ -295,7 +298,13 @@ def initialize_simulation(toml_file):
     particle_sanity_check(particles)
     # ensure the arrays for the particles are of the correct shape
 
-    if plotting_parameters['dump_particles']:
+    if plotting_parameters.get('dump_particles', False):
+        try:
+            from PyPIC3D.diagnostics.openPMD import write_openpmd_initial_particles
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError(
+                "openpmd-api is required for `dump_particles=true` diagnostics."
+            ) from e
         write_openpmd_initial_particles(particles, world, constants, simulation_parameters['output_dir'])
     # write the initial particles to an openPMD file
 
@@ -307,7 +316,7 @@ def initialize_simulation(toml_file):
     # convert the E, B, and J tuples into one big list
     fields = load_external_fields_from_toml(fields, toml_file)
     # add any external fields to the simulation
-    E, B, J = fields[:3], fields[3:6], fields[6:9]
+    E, B, J = tuple(fields[:3]), tuple(fields[3:6]), tuple(fields[6:9])
     # convert the fields list back into tuples
 
     if solver == "spectral":
@@ -362,7 +371,13 @@ def initialize_simulation(toml_file):
         fields = (E, B, J, rho, phi)
         # define the fields tuple for the electrodynamic and electrostatic solvers
 
-    if plotting_parameters['dump_fields']:
+    if plotting_parameters.get('dump_fields', False):
+        try:
+            from PyPIC3D.diagnostics.openPMD import write_openpmd_initial_fields
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError(
+                "openpmd-api is required for `dump_fields=true` diagnostics."
+            ) from e
         write_openpmd_initial_fields(fields, world, simulation_parameters['output_dir'], filename="initial_fields.h5")
     # write the initial fields to an openPMD file
 
