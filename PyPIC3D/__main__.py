@@ -8,7 +8,7 @@ from sys import path
 import os
 import time
 import jax
-from jax import block_until_ready
+from jax import block_until_ready, lax
 import jax.numpy as jnp
 from tqdm import tqdm
 
@@ -21,10 +21,6 @@ from PyPIC3D.diagnostics.plotting import (
 
 from PyPIC3D.diagnostics.openPMD import (
     write_openpmd_particles, write_openpmd_fields
-)
-
-from PyPIC3D.diagnostics.vtk import (
-    plot_field_slice_vtk, plot_vectorfield_slice_vtk, plot_vtk_particles
 )
 
 from PyPIC3D.utils import (
@@ -53,8 +49,6 @@ def run_PyPIC3D(config_file):
     loop, particles, fields, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, solver, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic = initialize_simulation(config_file)
     # initialize the simulation
 
-    jit_loop = jax.jit(loop, static_argnames=('curl_func', 'J_func', 'solver', 'relativistic'))
-
     dt = world['dt']
     output_dir = simulation_parameters['output_dir']
     vertex_grid = world['grids']['vertex']
@@ -77,12 +71,43 @@ def run_PyPIC3D(config_file):
 
     ###################################################### SIMULATION LOOP #####################################
 
-    for t in tqdm(range(Nt)):
+    scan_chunk = int(simulation_parameters.get("scan_chunk", 1))
+    plotting_interval = int(plotting_parameters["plotting_interval"])
+
+    if scan_chunk < 1:
+        raise ValueError("simulation_parameters.scan_chunk must be >= 1")
+
+    if scan_chunk > 1 and (plotting_interval % scan_chunk) != 0:
+        raise ValueError(
+            f"scan_chunk={scan_chunk} requires plotting_interval to be a multiple of scan_chunk "
+            f"(got plotting_interval={plotting_interval})."
+        )
+
+    def make_advance(n_steps):
+        def advance(particles, fields, world, constants, curl_func, J_func, solver, relativistic=True):
+            def body(_, state):
+                p, f = state
+                return loop(p, f, world, constants, curl_func, J_func, solver, relativistic=relativistic)
+
+            return lax.fori_loop(0, n_steps, body, (particles, fields))
+
+        return jax.jit(
+            advance,
+            static_argnames=("curl_func", "J_func", "solver", "relativistic"),
+            donate_argnums=(0, 1),
+        )
+
+    advance_full = make_advance(scan_chunk) if scan_chunk > 1 else None
+    tail = Nt % scan_chunk
+    advance_tail = make_advance(tail) if (scan_chunk > 1 and tail) else None
+
+    step_iter = range(0, Nt, scan_chunk) if scan_chunk > 1 else range(Nt)
+    for t in tqdm(step_iter):
 
         # plot the data
-        if t % plotting_parameters['plotting_interval'] == 0:
+        if t % plotting_interval == 0:
 
-            plot_num = t // plotting_parameters['plotting_interval']
+            plot_num = t // plotting_interval
             # determine the plot number
 
             E, B, J, rho, *rest = fields
@@ -111,6 +136,11 @@ def run_PyPIC3D(config_file):
 
 
             if plotting_parameters['plot_vtk_scalars']:
+                try:
+                    from PyPIC3D.diagnostics.vtk import plot_field_slice_vtk
+                except ModuleNotFoundError as e:
+                    raise ModuleNotFoundError("VTK diagnostics requested but 'vtk' is not installed.") from e
+
                 rho = compute_rho(particles, rho, world, constants)
                 # calculate the charge density based on the particle positions
                 mass_density = compute_mass_density(particles, rho, world)
@@ -122,6 +152,11 @@ def run_PyPIC3D(config_file):
 
 
             if plotting_parameters['plot_vtk_vectors']:
+                try:
+                    from PyPIC3D.diagnostics.vtk import plot_vectorfield_slice_vtk
+                except ModuleNotFoundError as e:
+                    raise ModuleNotFoundError("VTK diagnostics requested but 'vtk' is not installed.") from e
+
                 vector_field_slices = [ [E[0][:,world['Ny']//2,:], E[1][:,world['Ny']//2,:], E[2][:,world['Ny']//2,:]],
                                         [B[0][:,world['Ny']//2,:], B[1][:,world['Ny']//2,:], B[2][:,world['Ny']//2,:]],
                                         [J[0][:,world['Ny']//2,:], J[1][:,world['Ny']//2,:], J[2][:,world['Ny']//2,:]]]
@@ -129,6 +164,11 @@ def run_PyPIC3D(config_file):
                 # Plot the vector fields in VTK format
 
             if plotting_parameters['plot_vtk_particles']:
+                try:
+                    from PyPIC3D.diagnostics.vtk import plot_vtk_particles
+                except ModuleNotFoundError as e:
+                    raise ModuleNotFoundError("VTK diagnostics requested but 'vtk' is not installed.") from e
+
                 plot_vtk_particles(particles, plot_num, output_dir)
             # Plot the particles in VTK format
 
@@ -143,34 +183,60 @@ def run_PyPIC3D(config_file):
             fields = (E, B, J, rho, *rest)
             # repack the fields
 
-        particles, fields = jit_loop(
-            particles,
-            fields,
-            world,
-            constants,
-            curl_func,
-            J_func,
-            solver,
-            relativistic=relativistic,
-        )
-        # time loop to update the particles and fields
+        if scan_chunk == 1:
+            particles, fields = loop(
+                particles,
+                fields,
+                world,
+                constants,
+                curl_func,
+                J_func,
+                solver,
+                relativistic=relativistic,
+            )
+        else:
+            if (t + scan_chunk) <= Nt:
+                particles, fields = advance_full(
+                    particles,
+                    fields,
+                    world,
+                    constants,
+                    curl_func,
+                    J_func,
+                    solver,
+                    relativistic=relativistic,
+                )
+            else:
+                particles, fields = advance_tail(
+                    particles,
+                    fields,
+                    world,
+                    constants,
+                    curl_func,
+                    J_func,
+                    solver,
+                    relativistic=relativistic,
+                )
+        # advance the particles and fields
 
 
     return Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles, fields, world
 
 def main():
     ###################### JAX SETTINGS ########################################################################
-    jax.config.update("jax_enable_x64", True)
-    # set Jax to use 64 bit precision
+    toml_file = load_config_file()
+    # load the configuration file
+
+    enable_x64 = bool(toml_file.get("simulation_parameters", {}).get("enable_x64", True))
+    jax.config.update("jax_enable_x64", enable_x64)
+    # set Jax precision (default preserves legacy behavior)
+
     # jax.config.update("jax_debug_nans", True)
     # debugging for nans
     jax.config.update('jax_platform_name', 'cpu')
     # set Jax to use CPUs
     #jax.config.update("jax_disable_jit", True)
     ############################################################################################################
-
-    toml_file = load_config_file()
-    # load the configuration file
 
     start = time.time()
     # start the timer

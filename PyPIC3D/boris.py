@@ -1,6 +1,7 @@
 import jax
 from jax import jit
 import jax.numpy as jnp
+from functools import partial
 
 from PyPIC3D.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.utils import wrap_around
@@ -63,23 +64,124 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic
 
 
     #################### BORIS ALGORITHM ####################################
-    boris_vmap              = jax.vmap(boris_single_particle, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None, None))
-    relativistic_boris_vmap = jax.vmap(relativistic_boris_single_particle, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None, None))
-    # vectorize the Boris algorithm for batch processing
-
     newvx, newvy, newvz = jax.lax.cond(
         relativistic == True,
-        lambda _: relativistic_boris_vmap(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, q, m, dt, constants),
-        lambda _: boris_vmap(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, q, m, dt, constants),
-        operand=None
+        lambda _: relativistic_boris_push(
+            vx,
+            vy,
+            vz,
+            efield_atx,
+            efield_aty,
+            efield_atz,
+            bfield_atx,
+            bfield_aty,
+            bfield_atz,
+            q,
+            m,
+            dt,
+            constants,
+        ),
+        lambda _: boris_push(
+            vx,
+            vy,
+            vz,
+            efield_atx,
+            efield_aty,
+            efield_atz,
+            bfield_atx,
+            bfield_aty,
+            bfield_atz,
+            q,
+            m,
+            dt,
+        ),
+        operand=None,
     )
-    # apply the Boris algorithm to update the velocities of the particles
+    # apply the Boris algorithm (vectorized over particles)
     #########################################################################
 
 
     particles.set_velocity(newvx, newvy, newvz)
     # set the new velocities of the particles
     return particles
+
+
+def boris_push(vx, vy, vz, ex, ey, ez, bx, by, bz, q, m, dt):
+    qmdt2 = q * dt / (2 * m)
+
+    vminus_x = vx + qmdt2 * ex
+    vminus_y = vy + qmdt2 * ey
+    vminus_z = vz + qmdt2 * ez
+
+    t_x = qmdt2 * bx
+    t_y = qmdt2 * by
+    t_z = qmdt2 * bz
+
+    t2 = t_x * t_x + t_y * t_y + t_z * t_z
+    inv = 1.0 / (1.0 + t2)
+    s_x = 2.0 * t_x * inv
+    s_y = 2.0 * t_y * inv
+    s_z = 2.0 * t_z * inv
+
+    vprime_x = vminus_x + (vminus_y * t_z - vminus_z * t_y)
+    vprime_y = vminus_y + (vminus_z * t_x - vminus_x * t_z)
+    vprime_z = vminus_z + (vminus_x * t_y - vminus_y * t_x)
+
+    vplus_x = vminus_x + (vprime_y * s_z - vprime_z * s_y)
+    vplus_y = vminus_y + (vprime_z * s_x - vprime_x * s_z)
+    vplus_z = vminus_z + (vprime_x * s_y - vprime_y * s_x)
+
+    newvx = vplus_x + qmdt2 * ex
+    newvy = vplus_y + qmdt2 * ey
+    newvz = vplus_z + qmdt2 * ez
+
+    return newvx, newvy, newvz
+
+
+def relativistic_boris_push(vx, vy, vz, ex, ey, ez, bx, by, bz, q, m, dt, constants):
+    C = constants["C"]
+    qmdt2 = q * dt / (2 * m)
+
+    v2_over_c2 = (vx * vx + vy * vy + vz * vz) / (C * C)
+    gamma = 1.0 / jnp.sqrt(1.0 - v2_over_c2)
+
+    uminus_x = vx * gamma + qmdt2 * ex
+    uminus_y = vy * gamma + qmdt2 * ey
+    uminus_z = vz * gamma + qmdt2 * ez
+
+    uminus2_over_c2 = (uminus_x * uminus_x + uminus_y * uminus_y + uminus_z * uminus_z) / (C * C)
+    gamma_minus = jnp.sqrt(1.0 + uminus2_over_c2)
+
+    t_x = (qmdt2 * bx) / gamma_minus
+    t_y = (qmdt2 * by) / gamma_minus
+    t_z = (qmdt2 * bz) / gamma_minus
+
+    t2 = t_x * t_x + t_y * t_y + t_z * t_z
+    inv = 1.0 / (1.0 + t2)
+    s_x = 2.0 * t_x * inv
+    s_y = 2.0 * t_y * inv
+    s_z = 2.0 * t_z * inv
+
+    uprime_x = uminus_x + (uminus_y * t_z - uminus_z * t_y)
+    uprime_y = uminus_y + (uminus_z * t_x - uminus_x * t_z)
+    uprime_z = uminus_z + (uminus_x * t_y - uminus_y * t_x)
+
+    uplus_x = uminus_x + (uprime_y * s_z - uprime_z * s_y)
+    uplus_y = uminus_y + (uprime_z * s_x - uprime_x * s_z)
+    uplus_z = uminus_z + (uprime_x * s_y - uprime_y * s_x)
+
+    newu_x = uplus_x + qmdt2 * ex
+    newu_y = uplus_y + qmdt2 * ey
+    newu_z = uplus_z + qmdt2 * ez
+
+    newu2_over_c2 = (newu_x * newu_x + newu_y * newu_y + newu_z * newu_z) / (C * C)
+    new_gamma = jnp.sqrt(1.0 + newu2_over_c2)
+
+    newvx = newu_x / new_gamma
+    newvy = newu_y / new_gamma
+    newvz = newu_z / new_gamma
+
+    return newvx, newvy, newvz
 
 @jit
 def boris_single_particle(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, q, m, dt, constants):
@@ -194,7 +296,7 @@ def relativistic_boris_single_particle(vx, vy, vz, efield_atx, efield_aty, efiel
     return newv[0], newv[1], newv[2]
 
 
-@jit
+@partial(jit, static_argnames=("shape_factor",))
 def interpolate_field_to_particles(field, x, y, z, grid, shape_factor):
     """
     Interpolate a Yee-grid field component to particle positions using PIC shape functions.
@@ -227,24 +329,14 @@ def interpolate_field_to_particles(field, x, y, z, grid, shape_factor):
     dz = z_grid[1] - z_grid[0] if Nz > 1 else 1.0
     # grid spacing in each direction
 
-    x0 = jax.lax.cond(
-        shape_factor == 1,
-        lambda _: jnp.floor((x - xmin) / dx).astype(int),
-        lambda _: jnp.round((x - xmin) / dx).astype(int),
-        operand=None,
-    )
-    y0 = jax.lax.cond(
-        shape_factor == 1,
-        lambda _: jnp.floor((y - ymin) / dy).astype(int),
-        lambda _: jnp.round((y - ymin) / dy).astype(int),
-        operand=None,
-    )
-    z0 = jax.lax.cond(
-        shape_factor == 1,
-        lambda _: jnp.floor((z - zmin) / dz).astype(int),
-        lambda _: jnp.round((z - zmin) / dz).astype(int),
-        operand=None,
-    )
+    if shape_factor == 1:
+        x0 = jnp.floor((x - xmin) / dx).astype(jnp.int32)
+        y0 = jnp.floor((y - ymin) / dy).astype(jnp.int32)
+        z0 = jnp.floor((z - zmin) / dz).astype(jnp.int32)
+    else:
+        x0 = jnp.round((x - xmin) / dx).astype(jnp.int32)
+        y0 = jnp.round((y - ymin) / dy).astype(jnp.int32)
+        z0 = jnp.round((z - zmin) / dz).astype(jnp.int32)
     # compute the stencil anchor points (cell-left for first order, nearest node for second order)
 
     deltax = (x - xmin) - x0 * dx
@@ -252,12 +344,10 @@ def interpolate_field_to_particles(field, x, y, z, grid, shape_factor):
     deltaz = (z - zmin) - z0 * dz
     # determine the distance from the closest grid nodes
 
-    x_weights, y_weights, z_weights = jax.lax.cond(
-        shape_factor == 1,
-        lambda _: get_first_order_weights(deltax, deltay, deltaz, dx, dy, dz),
-        lambda _: get_second_order_weights(deltax, deltay, deltaz, dx, dy, dz),
-        operand=None,
-    )
+    if shape_factor == 1:
+        x_weights, y_weights, z_weights = get_first_order_weights(deltax, deltay, deltaz, dx, dy, dz)
+    else:
+        x_weights, y_weights, z_weights = get_second_order_weights(deltax, deltay, deltaz, dx, dy, dz)
     x_weights = jnp.asarray(x_weights)
     y_weights = jnp.asarray(y_weights)
     z_weights = jnp.asarray(z_weights)
@@ -279,6 +369,15 @@ def interpolate_field_to_particles(field, x, y, z, grid, shape_factor):
     ypts = jnp.asarray([y_minus1, y0, y1])
     zpts = jnp.asarray([z_minus1, z0, z1])
     # place all the points in a list
+
+    if shape_factor == 1:
+        # drop the redundant (-1) stencil point for first-order (its weights are identically 0)
+        xpts = xpts[1:, ...]
+        ypts = ypts[1:, ...]
+        zpts = zpts[1:, ...]
+        x_weights = x_weights[1:, ...]
+        y_weights = y_weights[1:, ...]
+        z_weights = z_weights[1:, ...]
 
     # Keep full shape-factor computation but collapse inactive axes to an
     # effective stencil size of 1 to avoid redundant interpolation work.
@@ -303,26 +402,14 @@ def interpolate_field_to_particles(field, x, y, z, grid, shape_factor):
         zpts_eff = jnp.zeros((1, zpts.shape[1]), dtype=zpts.dtype)
         z_weights_eff = jnp.sum(z_weights, axis=0, keepdims=True)
 
-    def stencil_contribution(stencil_idx):
-        i, j, k = stencil_idx
-        return (
-            field[xpts_eff[i, ...], ypts_eff[j, ...], zpts_eff[k, ...]]
-            * x_weights_eff[i, ...]
-            * y_weights_eff[j, ...]
-            * z_weights_eff[k, ...]
-        )
-    # define a function to compute the contribution from each point in the effective stencil
-
-    ii, jj, kk = jnp.meshgrid(
-        jnp.arange(xpts_eff.shape[0]),
-        jnp.arange(ypts_eff.shape[0]),
-        jnp.arange(zpts_eff.shape[0]),
-        indexing="ij",
+    field_vals = field[
+        xpts_eff[:, None, None, :],
+        ypts_eff[None, :, None, :],
+        zpts_eff[None, None, :, :],
+    ]
+    weights = (
+        x_weights_eff[:, None, None, :]
+        * y_weights_eff[None, :, None, :]
+        * z_weights_eff[None, None, :, :]
     )
-    stencil_indicies = jnp.stack([ii.ravel(), jj.ravel(), kk.ravel()], axis=1)
-    # build effective stencil indices with shape (Sx*Sy*Sz, 3)
-
-    interpolated_field = jnp.sum(jax.vmap(stencil_contribution)(stencil_indicies), axis=0)
-    # sum the contributions from all stencil points to get the final interpolated field value at each particle position
-
-    return interpolated_field
+    return jnp.sum(field_vals * weights, axis=(0, 1, 2))

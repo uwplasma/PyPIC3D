@@ -60,11 +60,6 @@ def update_E(E, B, J, world, constants, curl_func):
     eps = constants['eps']
     # get the time resolution and necessary constants
 
-    Bx = jnp.pad(Bx, ((1,1), (1,1), (1,1)), mode="wrap")
-    By = jnp.pad(By, ((1,1), (1,1), (1,1)), mode="wrap")
-    Bz = jnp.pad(Bz, ((1,1), (1,1), (1,1)), mode="wrap")
-    # pad the magnetic field components for periodic boundary conditions
-
     dBz_dy = (jnp.roll(Bz, shift=-1, axis=1) - Bz) / dy
     dBx_dy = (jnp.roll(Bx, shift=-1, axis=1) - Bx) / dy
     dBy_dz = (jnp.roll(By, shift=-1, axis=2) - By) / dz
@@ -72,9 +67,9 @@ def update_E(E, B, J, world, constants, curl_func):
     dBz_dx = (jnp.roll(Bz, shift=-1, axis=0) - Bz) / dx
     dBy_dx = (jnp.roll(By, shift=-1, axis=0) - By) / dx
 
-    curl_x = (dBz_dy - dBy_dz)[1:-1,1:-1,1:-1]
-    curl_y = (dBx_dz - dBz_dx)[1:-1,1:-1,1:-1]
-    curl_z = (dBy_dx - dBx_dy)[1:-1,1:-1,1:-1]
+    curl_x = dBz_dy - dBy_dz
+    curl_y = dBx_dz - dBz_dx
+    curl_z = dBy_dx - dBx_dy
     # calculate the curl of the magnetic field
 
     Ex = Ex + ( C**2 * curl_x - Jx / eps ) * dt
@@ -180,11 +175,6 @@ def update_B(E, B, world, constants, curl_func):
     Bx, By, Bz = B
     # unpack the E and B fields
 
-    Ex = jnp.pad(Ex, ((1,1), (1,1), (1,1)), mode="wrap")
-    Ey = jnp.pad(Ey, ((1,1), (1,1), (1,1)), mode="wrap")
-    Ez = jnp.pad(Ez, ((1,1), (1,1), (1,1)), mode="wrap")
-    # pad the electric field components for periodic boundary conditions
-
     dEz_dy = (Ez - jnp.roll(Ez, shift=1, axis=1)) / dy
     dEx_dy = (Ex - jnp.roll(Ex, shift=1, axis=1)) / dy
     dEy_dz = (Ey - jnp.roll(Ey, shift=1, axis=2)) / dz
@@ -192,9 +182,9 @@ def update_B(E, B, world, constants, curl_func):
     dEz_dx = (Ez - jnp.roll(Ez, shift=1, axis=0)) / dx
     dEy_dx = (Ey - jnp.roll(Ey, shift=1, axis=0)) / dx
 
-    curl_x = (dEz_dy - dEy_dz)[1:-1,1:-1,1:-1]
-    curl_y = (dEx_dz - dEz_dx)[1:-1,1:-1,1:-1]
-    curl_z = (dEy_dx - dEx_dy)[1:-1,1:-1,1:-1]
+    curl_x = dEz_dy - dEy_dz
+    curl_y = dEx_dz - dEz_dx
+    curl_z = dEy_dx - dEx_dy
     # calculate the curl of the electric field
 
     Bx = Bx - dt*curl_x
@@ -209,4 +199,3 @@ def update_B(E, B, world, constants, curl_func):
     # apply a digital filter to the magnetic field components
 
     return (Bx, By, Bz)
-

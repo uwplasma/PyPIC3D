@@ -39,24 +39,38 @@ def wrap_around(ix, size):
 @jit
 def bilinear_filter(phi, mode="wrap"):
     """
-    Apply a 3D (tri-linear) smoothing filter to a 3D array using a separable
-    [1, 2, 1]/4 kernel in each dimension.
+    Apply a tri-linear smoothing filter using a separable [1, 2, 1]/4 kernel
+    in each spatial dimension.
 
     Args:
-        phi (jnp.ndarray): 3D field array with shape (Nx, Ny, Nz).
+        phi (jnp.ndarray): Field array with leading spatial shape (Nx, Ny, Nz).
+            Any trailing feature dimensions are preserved (e.g. (Nx, Ny, Nz, 3)).
         mode (str): Padding mode passed to jnp.pad (default: "wrap").
 
     Returns:
         jnp.ndarray: Filtered array with the same shape as phi.
     """
-    k1 = jnp.array([1.0, 2.0, 1.0], dtype=phi.dtype) / 4.0  # sums to 1
-    k3 = k1[:, None, None] * k1[None, :, None] * k1[None, None, :]  # (3,3,3), sums to 1
+    if mode == "wrap":
+        quarter = jnp.asarray(0.25, dtype=phi.dtype)
+
+        def smooth_axis(arr, axis):
+            return (jnp.roll(arr, 1, axis=axis) + 2 * arr + jnp.roll(arr, -1, axis=axis)) * quarter
+
+        phi = smooth_axis(phi, 0)
+        phi = smooth_axis(phi, 1)
+        phi = smooth_axis(phi, 2)
+        return phi
+
+    if phi.ndim != 3:
+        raise ValueError("bilinear_filter only supports non-wrap mode for 3D arrays.")
+
+    k1 = jnp.array([1.0, 2.0, 1.0], dtype=phi.dtype) / 4.0
+    k3 = k1[:, None, None] * k1[None, :, None] * k1[None, None, :]
 
     kernel = jnp.zeros((3, 3, 3, 1, 1), dtype=phi.dtype)
     kernel = kernel.at[:, :, :, 0, 0].set(k3)
 
     padded_phi = jnp.pad(phi, ((1, 1), (1, 1), (1, 1)), mode=mode)
-
     filtered = jax.lax.conv_general_dilated(
         padded_phi[jnp.newaxis, ..., jnp.newaxis],
         kernel,
@@ -80,24 +94,18 @@ def digital_filter(phi, alpha):
         ndarray: Filtered field array.
     """
     neighbor_weight = (1 - alpha) / 6
-    kernel = jnp.zeros((3, 3, 3, 1, 1), dtype=phi.dtype)
-    kernel = kernel.at[1, 1, 1, 0, 0].set(alpha)
-    kernel = kernel.at[0, 1, 1, 0, 0].set(neighbor_weight)
-    kernel = kernel.at[2, 1, 1, 0, 0].set(neighbor_weight)
-    kernel = kernel.at[1, 0, 1, 0, 0].set(neighbor_weight)
-    kernel = kernel.at[1, 2, 1, 0, 0].set(neighbor_weight)
-    kernel = kernel.at[1, 1, 0, 0, 0].set(neighbor_weight)
-    kernel = kernel.at[1, 1, 2, 0, 0].set(neighbor_weight)
-
-    padded_phi = jnp.pad(phi, ((1, 1), (1, 1), (1, 1)), mode="wrap")
-    filtered = jax.lax.conv_general_dilated(
-        padded_phi[jnp.newaxis, ..., jnp.newaxis],
-        kernel,
-        window_strides=(1, 1, 1),
-        padding="VALID",
-        dimension_numbers=("NDHWC", "DHWIO", "NDHWC"),
+    return (
+        alpha * phi
+        + neighbor_weight
+        * (
+            jnp.roll(phi, 1, axis=0)
+            + jnp.roll(phi, -1, axis=0)
+            + jnp.roll(phi, 1, axis=1)
+            + jnp.roll(phi, -1, axis=1)
+            + jnp.roll(phi, 1, axis=2)
+            + jnp.roll(phi, -1, axis=2)
+        )
     )
-    return jnp.squeeze(filtered, axis=(0, 4))
 
 def mae(x, y):
     """

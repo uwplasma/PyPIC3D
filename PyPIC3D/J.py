@@ -29,24 +29,17 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter='bilinear'):
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
-    Nx = world['Nx']
-    Ny = world['Ny']
-    Nz = world['Nz']
-    # get the world parameters
-
     Jx, Jy, Jz = J
+    Nx, Ny, Nz = Jx.shape
+    # get the world parameters
     x_active = Jx.shape[0] != 1
     y_active = Jx.shape[1] != 1
     z_active = Jx.shape[2] != 1
     # infer effective dimensionality from the current-grid shape
 
-    # unpack the values of J
-    Jx = Jx.at[:, :, :].set(0)
-    Jy = Jy.at[:, :, :].set(0)
-    Jz = Jz.at[:, :, :].set(0)
-    # initialize the current arrays as 0
-    J = (Jx, Jy, Jz)
-    # initialize the current density as a tuple
+    J_stack = jnp.stack((Jx, Jy, Jz), axis=-1)
+    J_stack = jnp.zeros_like(J_stack)
+    # keep J together so deposition and filtering can be fused across components
 
     for species in particles:
         shape_factor = species.get_shape()
@@ -62,24 +55,14 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter='bilinear'):
         z = z - vz * world['dt'] / 2
         # step back to half time step positions for proper time staggering
 
-        x0 = jax.lax.cond(
-            shape_factor == 1,
-            lambda _: jnp.floor( (x - grid[0][0]) / dx).astype(int),
-            lambda _: jnp.round( (x - grid[0][0]) / dx).astype(int),
-            operand=None
-        )
-        y0 = jax.lax.cond(
-            shape_factor == 1,
-            lambda _: jnp.floor( (y - grid[1][0]) / dy).astype(int),
-            lambda _: jnp.round( (y - grid[1][0]) / dy).astype(int),
-            operand=None
-        )
-        z0 = jax.lax.cond(
-            shape_factor == 1,
-            lambda _: jnp.floor( (z - grid[2][0]) / dz).astype(int),
-            lambda _: jnp.round( (z - grid[2][0]) / dz).astype(int),
-            operand=None
-        )
+        if shape_factor == 1:
+            x0 = jnp.floor((x - grid[0][0]) / dx).astype(jnp.int32)
+            y0 = jnp.floor((y - grid[1][0]) / dy).astype(jnp.int32)
+            z0 = jnp.floor((z - grid[2][0]) / dz).astype(jnp.int32)
+        else:
+            x0 = jnp.round((x - grid[0][0]) / dx).astype(jnp.int32)
+            y0 = jnp.round((y - grid[1][0]) / dy).astype(jnp.int32)
+            z0 = jnp.round((z - grid[2][0]) / dz).astype(jnp.int32)
         # calculate the nearest grid point based on shape factor
 
         deltax_node = (x - grid[0][0]) - (x0 * dx)
@@ -109,19 +92,12 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter='bilinear'):
         zpts = [z_minus1, z0, z1]
         # place all the points in a list
 
-        x_weights_node, y_weights_node, z_weights_node = jax.lax.cond(
-            shape_factor == 1,
-            lambda _: get_first_order_weights( deltax_node, deltay_node, deltaz_node, dx, dy, dz),
-            lambda _: get_second_order_weights(deltax_node, deltay_node, deltaz_node, dx, dy, dz),
-            operand=None
-        )
-
-        x_weights_face, y_weights_face, z_weights_face = jax.lax.cond(
-            shape_factor == 1,
-            lambda _: get_first_order_weights( deltax_face, deltay_face, deltaz_face, dx, dy, dz),
-            lambda _: get_second_order_weights(deltax_face, deltay_face, deltaz_face, dx, dy, dz),
-            operand=None
-        )
+        if shape_factor == 1:
+            x_weights_node, y_weights_node, z_weights_node = get_first_order_weights(deltax_node, deltay_node, deltaz_node, dx, dy, dz)
+            x_weights_face, y_weights_face, z_weights_face = get_first_order_weights(deltax_face, deltay_face, deltaz_face, dx, dy, dz)
+        else:
+            x_weights_node, y_weights_node, z_weights_node = get_second_order_weights(deltax_node, deltay_node, deltaz_node, dx, dy, dz)
+            x_weights_face, y_weights_face, z_weights_face = get_second_order_weights(deltax_face, deltay_face, deltaz_face, dx, dy, dz)
         # get the weights for node and face positions
 
         xpts = jnp.asarray(xpts)  # (Sx, Np)
@@ -135,6 +111,18 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter='bilinear'):
         x_weights_node = jnp.asarray(x_weights_node)  # (Sx, Np)
         y_weights_node = jnp.asarray(y_weights_node)  # (Sy, Np)
         z_weights_node = jnp.asarray(z_weights_node)  # (Sz, Np)
+
+        if shape_factor == 1:
+            # drop the redundant (-1) stencil point for first-order (its weights are identically 0)
+            xpts = xpts[1:, ...]
+            ypts = ypts[1:, ...]
+            zpts = zpts[1:, ...]
+            x_weights_face = x_weights_face[1:, ...]
+            y_weights_face = y_weights_face[1:, ...]
+            z_weights_face = z_weights_face[1:, ...]
+            x_weights_node = x_weights_node[1:, ...]
+            y_weights_node = y_weights_node[1:, ...]
+            z_weights_node = z_weights_node[1:, ...]
 
         # Keep full shape-factor computation but collapse inactive axes to an
         # effective stencil of size 1 to avoid redundant deposition work.
@@ -184,41 +172,41 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter='bilinear'):
             valy = (dq * vy) * x_weights_node_eff[i, ...] * y_weights_face_eff[j, ...] * z_weights_node_eff[k, ...]
             valz = (dq * vz) * x_weights_node_eff[i, ...] * y_weights_node_eff[j, ...] * z_weights_face_eff[k, ...]
             # calculate the current contributions for this stencil point
-            return ix, iy, iz, valx, valy, valz
+            return ix, iy, iz, jnp.stack((valx, valy, valz), axis=-1)
         
-        ix, iy, iz, valx, valy, valz = jax.vmap(idx_and_dJ_values)(combos)  # each: (M, Np)
+        ix, iy, iz, dJ = jax.vmap(idx_and_dJ_values)(combos)  # (M,Np), (M,Np), (M,Np), (M,Np,3)
         # vectorized computation of indices and current contributions
 
-        Jx = Jx.at[(ix, iy, iz)].add(valx, mode="drop")
-        Jy = Jy.at[(ix, iy, iz)].add(valy, mode="drop")
-        Jz = Jz.at[(ix, iy, iz)].add(valz, mode="drop")
-        # deposit the current contributions into the global J arrays
+        ix_flat = ix.reshape(-1)
+        iy_flat = iy.reshape(-1)
+        iz_flat = iz.reshape(-1)
+        dJ_flat = dJ.reshape(-1, 3)
 
-    def filter_func(J_, filter):
-        J_ = jax.lax.cond(
-            filter == 'bilinear',
-            lambda J_: bilinear_filter(J_),
-            lambda J_: J_,
-            operand=J_
+        in_bounds = (
+            (ix_flat >= 0)
+            & (ix_flat < Nx)
+            & (iy_flat >= 0)
+            & (iy_flat < Ny)
+            & (iz_flat >= 0)
+            & (iz_flat < Nz)
         )
 
-        # alpha = constants['alpha']
-        # J_ = jax.lax.cond(
-        #     filter == 'digital',
-        #     lambda J_: digital_filter(J_, alpha),
-        #     lambda J_: J_,
-        #     operand=J_
-        # )
-        return J_
-    # define a filtering function
+        ix_flat = jnp.clip(ix_flat, 0, Nx - 1)
+        iy_flat = jnp.clip(iy_flat, 0, Ny - 1)
+        iz_flat = jnp.clip(iz_flat, 0, Nz - 1)
 
-    Jx = filter_func(Jx, filter)
-    Jy = filter_func(Jy, filter)
-    Jz = filter_func(Jz, filter)
-    # apply the selected filter to each component of J
-    J = (Jx, Jy, Jz)
+        idx_flat = ix_flat + Nx * (iy_flat + Ny * iz_flat)
+        dJ_flat = jnp.where(in_bounds[:, None], dJ_flat, 0)
 
-    return J
+        J_flat = jax.ops.segment_sum(dJ_flat, idx_flat, num_segments=Nx * Ny * Nz)
+        J_stack = J_stack + J_flat.reshape((Nx, Ny, Nz, 3))
+        # segment_sum avoids large scatter updates on CPU
+
+    if filter == "bilinear":
+        J_stack = bilinear_filter(J_stack)
+    # (optional) digital filter disabled by default
+
+    return (J_stack[..., 0], J_stack[..., 1], J_stack[..., 2])
 
 def _roll_old_weights_to_new_frame(old_w_list, shift):
     """

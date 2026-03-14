@@ -113,9 +113,11 @@ def default_parameters():
         "Nt": None,  # number of time steps
         "electrostatic": False,  # boolean for electrostatic simulation
         "relativistic": True,  # boolean for relativistic simulation
+        "enable_x64": True,  # enable 64-bit JAX dtypes (slower but higher precision)
         "benchmark": False, # boolean for using the profiler
         "verbose": False, # boolean for printing verbose output
         "GPUs": False, # boolean for using GPUs
+        "scan_chunk": 1,  # advance multiple steps per dispatch (1 keeps legacy per-step loop)
         "cfl"  : 1.0, # CFL condition number
         "ds_per_debye" : None, # number of grid spacings per debye length
         "shape_factor" : 1, # shape factor for the simulation (1 for 1st order, 2 for 2nd order)
@@ -248,11 +250,8 @@ def initialize_simulation(toml_file):
     }
     # set the simulation world parameters
 
-    world = convert_to_jax_compatible(world)
-    constants = convert_to_jax_compatible(constants)
-    simulation_parameters = convert_to_jax_compatible(simulation_parameters)
-    plotting_parameters = convert_to_jax_compatible(plotting_parameters)
-    # convert the world parameters to jax compatible format
+    # Keep scalar parameters as Python types so JAX can treat them as static
+    # (avoids traced metadata in PyTrees and enables compile-time specialization).
 
     # if solver == "vector_potential":
     #     B_grid, E_grid = build_collocated_grid(world)
@@ -307,8 +306,8 @@ def initialize_simulation(toml_file):
     # convert the E, B, and J tuples into one big list
     fields = load_external_fields_from_toml(fields, toml_file)
     # add any external fields to the simulation
-    E, B, J = fields[:3], fields[3:6], fields[6:9]
-    # convert the fields list back into tuples
+    E, B, J = tuple(fields[:3]), tuple(fields[3:6]), tuple(fields[6:9])
+    # convert the fields list back into tuples (JAX scan expects stable PyTree types)
 
     if solver == "spectral":
         curl_func = functools.partial(spectral_curl, world=world)
