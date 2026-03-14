@@ -2,27 +2,30 @@ import jax
 import jax.numpy as jnp
 from functools import partial
 
-from PyPIC3D.utils import wrap_around
 
-
-def _init_index_and_frac(x, xmin, dx, shape_factor):
+def _init_index_and_frac(x, xmin, dx, shape_factor, n):
     s = (x - xmin) / dx
     if shape_factor == 1:
-        i0 = jnp.floor(s).astype(jnp.int32)
+        s_mod = jnp.mod(s, n)
+        i0 = jnp.floor(s_mod).astype(jnp.int32)
+        r = s_mod - i0
     else:
-        i0 = jnp.round(s).astype(jnp.int32)
-    r = s - i0
+        s_adj = jnp.mod(s + 0.5, n) - 0.5
+        i0 = jnp.round(s_adj).astype(jnp.int32)
+        r = s_adj - i0
     return i0, r
 
 
 def _advance_index_and_frac(i0, r, dr, n, shape_factor):
-    r_new = r + dr
+    s = i0 + r + dr
     if shape_factor == 1:
-        shift = jnp.floor(r_new).astype(jnp.int32)
+        s_mod = jnp.mod(s, n)
+        i0_new = jnp.floor(s_mod).astype(jnp.int32)
+        r_new = s_mod - i0_new
     else:
-        shift = jnp.floor(r_new + 0.5).astype(jnp.int32)
-    r_new = r_new - shift
-    i0_new = wrap_around(i0 + shift, n)
+        s_adj = jnp.mod(s + 0.5, n) - 0.5
+        i0_new = jnp.round(s_adj).astype(jnp.int32)
+        r_new = s_adj - i0_new
     return i0_new, r_new
 
 
@@ -297,12 +300,9 @@ def to_indexed_particles(particles, world):
     for species in particles:
         x, y, z = species.get_forward_position()
         shape = species.get_shape()
-        i1, r1 = _init_index_and_frac(x, xmin, world["dx"], shape)
-        i2, r2 = _init_index_and_frac(y, ymin, world["dy"], shape)
-        i3, r3 = _init_index_and_frac(z, zmin, world["dz"], shape)
-        i1 = wrap_around(i1, world["Nx"])
-        i2 = wrap_around(i2, world["Ny"])
-        i3 = wrap_around(i3, world["Nz"])
+        i1, r1 = _init_index_and_frac(x, xmin, world["dx"], shape, world["Nx"])
+        i2, r2 = _init_index_and_frac(y, ymin, world["dy"], shape, world["Ny"])
+        i3, r3 = _init_index_and_frac(z, zmin, world["dz"], shape, world["Nz"])
         v1, v2, v3 = species.get_velocity()
 
         indexed.append(

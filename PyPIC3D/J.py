@@ -291,11 +291,11 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter='bilinear', sh
         # step back to half time step positions for proper time staggering
 
         if Ny == 1 and Nz == 1:
-            J_stack = _deposit_1d(J_stack, dq, vx, vy, vz, x, grid[0][0], dx, world["dt"], shape_factor, Nx)
+            J_stack = J_stack + _deposit_1d(J_stack, dq, vx, vy, vz, x, grid[0][0], dx, world["dt"], shape_factor, Nx)
             continue
         if Nz == 1:
             y = y - vy * dt / 2
-            J_stack = _deposit_2d(
+            J_stack = J_stack + _deposit_2d(
                 J_stack,
                 dq,
                 vx,
