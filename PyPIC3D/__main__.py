@@ -204,8 +204,9 @@ def main():
     # set Jax to use 64 bit precision (configurable via `simulation_parameters.enable_x64`)
     # jax.config.update("jax_debug_nans", True)
     # debugging for nans
-    jax.config.update('jax_platform_name', 'cpu')
-    # set Jax to use CPUs
+    platform = toml_file.get("simulation_parameters", {}).get("platform_name", "cpu")
+    jax.config.update("jax_platform_name", platform)
+    # set Jax platform via config (default: cpu)
     #jax.config.update("jax_disable_jit", True)
     ############################################################################################################
 

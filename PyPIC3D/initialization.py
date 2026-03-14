@@ -117,6 +117,7 @@ def default_parameters():
         "filter_j": "bilinear",  # filter for the current density: bilinear, digital, none
         "use_scan": False,  # batch timesteps with lax.scan to reduce dispatch overhead
         "scan_chunk": 256,  # number of timesteps per compiled scan chunk
+        "platform_name": "cpu",  # cpu|gpu (if supported by your JAX install)
     }
     # dictionary for simulation parameters
 
