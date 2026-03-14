@@ -122,8 +122,8 @@ def main() -> None:
     x = range(len(labels))
     width = 0.38
     fig, ax = plt.subplots(figsize=(9, 4))
-    ax.bar([i - width / 2 for i in x], main_vals, width, label=f"main ({main_sha[:8]})")
-    ax.bar([i + width / 2 for i in x], branch_vals, width, label=f"this PR ({head_sha[:8]})")
+    ax.bar([i - width / 2 for i in x], main_vals, width, label="origin/main")
+    ax.bar([i + width / 2 for i in x], branch_vals, width, label="this PR")
     ax.set_xticks(list(x))
     ax.set_xticklabels(labels, rotation=0)
     ax.set_ylabel("seconds / step (median)")
@@ -161,8 +161,8 @@ def main() -> None:
         samples[side] = r["samples"]
 
     fig, ax = plt.subplots(figsize=(9, 4))
-    ax.plot(samples["main"]["t"], samples["main"]["electric_energy"], label=f"main ({main_sha[:8]})")
-    ax.plot(samples["branch"]["t"], samples["branch"]["electric_energy"], label=f"this PR ({head_sha[:8]})", linestyle="--")
+    ax.plot(samples["main"]["t"], samples["main"]["electric_energy"], label="origin/main")
+    ax.plot(samples["branch"]["t"], samples["branch"]["electric_energy"], label="this PR", linestyle="--")
     ax.set_xlabel("time (s)")
     ax.set_ylabel("Electric field energy (J)")
     ax.set_title("Two-stream: electric field energy vs time")
@@ -172,8 +172,8 @@ def main() -> None:
     plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(9, 4))
-    ax.semilogy(samples["main"]["t"], samples["main"]["energy_error"], label=f"main ({main_sha[:8]})")
-    ax.semilogy(samples["branch"]["t"], samples["branch"]["energy_error"], label=f"this PR ({head_sha[:8]})", linestyle="--")
+    ax.semilogy(samples["main"]["t"], samples["main"]["energy_error"], label="origin/main")
+    ax.semilogy(samples["branch"]["t"], samples["branch"]["energy_error"], label="this PR", linestyle="--")
     ax.set_xlabel("time (s)")
     ax.set_ylabel("relative energy error")
     ax.set_title("Two-stream: energy error residual vs time")

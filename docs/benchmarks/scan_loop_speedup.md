@@ -24,10 +24,13 @@ Generated figures live in `docs/benchmarks/images/`:
 - `docs/benchmarks/images/runtime_s_per_step.png`
 - `docs/benchmarks/images/speedup.png`
 
+The raw numbers used for the plots (including the `origin/main` SHA and the SHA benchmarked for this PR) are saved in:
+
+- `docs/benchmarks/benchmark_summary.json`
+
 ## Accuracy (two-stream)
 
 Energy trajectory comparisons:
 
 - `docs/benchmarks/images/two_stream_electric_energy.png`
 - `docs/benchmarks/images/two_stream_energy_error.png`
-
