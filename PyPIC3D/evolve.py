@@ -74,8 +74,7 @@ def time_loop_electrostatic(particles, fields, world, constants, curl_func, J_fu
     return particles, fields
 
 
-@partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic"), donate_argnums=(0, 1))
-def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_func, solver, relativistic=True):
+def time_loop_electrodynamic_inline(particles, fields, world, constants, curl_func, J_func, solver, relativistic=True):
     """
     Advance an electrodynamic Particle-In-Cell (PIC) system by one time step.
     This routine performs, in order:
@@ -152,6 +151,20 @@ def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_f
     
 
     return particles, fields
+
+
+@partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic"), donate_argnums=(0, 1))
+def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_func, solver, relativistic=True):
+    return time_loop_electrodynamic_inline(
+        particles,
+        fields,
+        world,
+        constants,
+        curl_func,
+        J_func,
+        solver,
+        relativistic=relativistic,
+    )
 
 
 @partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic"), donate_argnums=(0, 1))

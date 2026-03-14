@@ -50,16 +50,45 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic
     ################## INTERPOLATE FIELDS TO PARTICLE POSITIONS ##############
     Ex, Ey, Ez = E
     # unpack the electric field components
-    efield_atx = interpolate_field_to_particles(Ex, x, y, z, Ex_grid, shape_factor)
-    efield_aty = interpolate_field_to_particles(Ey, x, y, z, Ey_grid, shape_factor)
-    efield_atz = interpolate_field_to_particles(Ez, x, y, z, Ez_grid, shape_factor)
-    # calculate the electric field at the particle positions on the Yee-staggered component grids
     Bx, By, Bz = B
     # unpack the magnetic field components
-    bfield_atx = interpolate_field_to_particles(Bx, x, y, z, Bx_grid, shape_factor)
-    bfield_aty = interpolate_field_to_particles(By, x, y, z, By_grid, shape_factor)
-    bfield_atz = interpolate_field_to_particles(Bz, x, y, z, Bz_grid, shape_factor)
-    # calculate the magnetic field at the particle positions on the Yee-staggered component grids
+
+    Ny = len(grid[1])
+    Nz = len(grid[2])
+
+    if Ny == 1 and Nz == 1:
+        node_stack = jnp.stack((Ey, Ez, Bx), axis=-1)
+        face_stack = jnp.stack((Ex, By, Bz), axis=-1)
+
+        node_vals = interpolate_field_to_particles(node_stack, x, y, z, (grid[0], grid[1], grid[2]), shape_factor)
+        face_vals = interpolate_field_to_particles(face_stack, x, y, z, (staggered_grid[0], grid[1], grid[2]), shape_factor)
+
+        efield_aty, efield_atz, bfield_atx = node_vals[:, 0], node_vals[:, 1], node_vals[:, 2]
+        efield_atx, bfield_aty, bfield_atz = face_vals[:, 0], face_vals[:, 1], face_vals[:, 2]
+
+    elif Nz == 1:
+        ex_by = jnp.stack((Ex, By), axis=-1)
+        ey_bx = jnp.stack((Ey, Bx), axis=-1)
+
+        ex_by_vals = interpolate_field_to_particles(ex_by, x, y, z, Ex_grid, shape_factor)
+        ey_bx_vals = interpolate_field_to_particles(ey_bx, x, y, z, Ey_grid, shape_factor)
+        ez_vals = interpolate_field_to_particles(Ez, x, y, z, Ez_grid, shape_factor)
+        bz_vals = interpolate_field_to_particles(Bz, x, y, z, Bz_grid, shape_factor)
+
+        efield_atx, bfield_aty = ex_by_vals[:, 0], ex_by_vals[:, 1]
+        efield_aty, bfield_atx = ey_bx_vals[:, 0], ey_bx_vals[:, 1]
+        efield_atz = ez_vals
+        bfield_atz = bz_vals
+
+    else:
+        efield_atx = interpolate_field_to_particles(Ex, x, y, z, Ex_grid, shape_factor)
+        efield_aty = interpolate_field_to_particles(Ey, x, y, z, Ey_grid, shape_factor)
+        efield_atz = interpolate_field_to_particles(Ez, x, y, z, Ez_grid, shape_factor)
+        # calculate the electric field at the particle positions on the Yee-staggered component grids
+        bfield_atx = interpolate_field_to_particles(Bx, x, y, z, Bx_grid, shape_factor)
+        bfield_aty = interpolate_field_to_particles(By, x, y, z, By_grid, shape_factor)
+        bfield_atz = interpolate_field_to_particles(Bz, x, y, z, Bz_grid, shape_factor)
+        # calculate the magnetic field at the particle positions on the Yee-staggered component grids
     #########################################################################
 
 
@@ -331,18 +360,43 @@ def interpolate_field_to_particles(field, x, y, z, grid, shape_factor):
 
     if shape_factor == 1:
         x0 = jnp.floor((x - xmin) / dx).astype(jnp.int32)
-        y0 = jnp.floor((y - ymin) / dy).astype(jnp.int32)
-        z0 = jnp.floor((z - zmin) / dz).astype(jnp.int32)
     else:
         x0 = jnp.round((x - xmin) / dx).astype(jnp.int32)
-        y0 = jnp.round((y - ymin) / dy).astype(jnp.int32)
-        z0 = jnp.round((z - zmin) / dz).astype(jnp.int32)
     # compute the stencil anchor points (cell-left for first order, nearest node for second order)
 
     deltax = (x - xmin) - x0 * dx
+    # determine the distance from the closest grid nodes
+
+    if x_active and (not y_active) and (not z_active):
+        x0 = wrap_around(x0, Nx)
+        if shape_factor == 1:
+            r = deltax / dx
+            xpts = jnp.stack((x0, wrap_around(x0 + 1, Nx)), axis=0)
+            xw = jnp.stack((1.0 - r, r), axis=0)
+        else:
+            r = deltax / dx
+            xpts = jnp.stack((wrap_around(x0 - 1, Nx), x0, wrap_around(x0 + 1, Nx)), axis=0)
+            xw = jnp.stack(
+                (
+                    0.5 * (0.5 - r) ** 2,
+                    0.75 - r**2,
+                    0.5 * (0.5 + r) ** 2,
+                ),
+                axis=0,
+            )
+        if field.ndim == 4:
+            return jnp.sum(field[xpts, 0, 0, :] * xw[:, :, None], axis=0)
+        return jnp.sum(field[xpts, 0, 0] * xw, axis=0)
+
+    if shape_factor == 1:
+        y0 = jnp.floor((y - ymin) / dy).astype(jnp.int32)
+        z0 = jnp.floor((z - zmin) / dz).astype(jnp.int32)
+    else:
+        y0 = jnp.round((y - ymin) / dy).astype(jnp.int32)
+        z0 = jnp.round((z - zmin) / dz).astype(jnp.int32)
+
     deltay = (y - ymin) - y0 * dy
     deltaz = (z - zmin) - z0 * dz
-    # determine the distance from the closest grid nodes
 
     if shape_factor == 1:
         x_weights, y_weights, z_weights = get_first_order_weights(deltax, deltay, deltaz, dx, dy, dz)
@@ -412,4 +466,6 @@ def interpolate_field_to_particles(field, x, y, z, grid, shape_factor):
         * y_weights_eff[None, :, None, :]
         * z_weights_eff[None, None, :, :]
     )
+    if field.ndim == 4:
+        weights = weights[..., None]
     return jnp.sum(field_vals * weights, axis=(0, 1, 2))

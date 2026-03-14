@@ -46,7 +46,39 @@ from PyPIC3D.rho import compute_rho
 def run_PyPIC3D(config_file):
     ##################################### INITIALIZE SIMULATION ################################################
 
-    loop, particles, fields, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, solver, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic = initialize_simulation(config_file)
+    cfg = config_file
+    if isinstance(cfg, dict):
+        sim = cfg.setdefault("simulation_parameters", {})
+        fast_mode = sim.get("fast_mode", "off")
+        if fast_mode not in ("off", "fp32", "aggressive", "extreme"):
+            raise ValueError("simulation_parameters.fast_mode must be one of: off, fp32, aggressive, extreme")
+
+        if fast_mode in ("fp32", "aggressive", "extreme"):
+            sim["enable_x64"] = False
+
+        if fast_mode in ("aggressive", "extreme"):
+            sim["shape_factor"] = 1
+            sim["filter_j"] = "none"
+
+            plot = cfg.setdefault("plotting", {})
+            for key in (
+                "plot_phasespace",
+                "plot_vtk_particles",
+                "plot_vtk_scalars",
+                "plot_vtk_vectors",
+                "plot_openpmd_particles",
+                "plot_openpmd_fields",
+                "dump_particles",
+                "dump_fields",
+            ):
+                plot[key] = False
+            plot["plotting_interval"] = 10**9
+
+        if fast_mode == "extreme":
+            # opt-in physics approximation for maximum throughput
+            sim["relativistic"] = False
+
+    loop, particles, fields, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, solver, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic = initialize_simulation(cfg)
     # initialize the simulation
 
     dt = world['dt']
@@ -73,6 +105,9 @@ def run_PyPIC3D(config_file):
 
     scan_chunk = int(simulation_parameters.get("scan_chunk", 1))
     plotting_interval = int(plotting_parameters["plotting_interval"])
+    fast_mode = str(simulation_parameters.get("fast_mode", "off"))
+    advance_impl = str(simulation_parameters.get("advance_impl", "fori"))
+    scan_unroll = int(simulation_parameters.get("scan_unroll", 1))
 
     if scan_chunk < 1:
         raise ValueError("simulation_parameters.scan_chunk must be >= 1")
@@ -85,6 +120,20 @@ def run_PyPIC3D(config_file):
 
     def make_advance(n_steps):
         def advance(particles, fields, world, constants, curl_func, J_func, solver, relativistic=True):
+            if fast_mode == "aggressive" and advance_impl == "scan":
+                def scan_body(carry, _):
+                    p, f = carry
+                    return loop(p, f, world, constants, curl_func, J_func, solver, relativistic=relativistic), None
+
+                (particles, fields), _ = lax.scan(
+                    scan_body,
+                    (particles, fields),
+                    xs=None,
+                    length=n_steps,
+                    unroll=scan_unroll,
+                )
+                return particles, fields
+
             def body(_, state):
                 p, f = state
                 return loop(p, f, world, constants, curl_func, J_func, solver, relativistic=relativistic)
@@ -100,6 +149,34 @@ def run_PyPIC3D(config_file):
     advance_full = make_advance(scan_chunk) if scan_chunk > 1 else None
     tail = Nt % scan_chunk
     advance_tail = make_advance(tail) if (scan_chunk > 1 and tail) else None
+
+    outputs_enabled = any(
+        plotting_parameters.get(k, False)
+        for k in (
+            "plot_phasespace",
+            "plot_vtk_scalars",
+            "plot_vtk_vectors",
+            "plot_vtk_particles",
+            "plot_openpmd_particles",
+            "plot_openpmd_fields",
+            "dump_particles",
+            "dump_fields",
+        )
+    )
+
+    if (not outputs_enabled) and plotting_interval > Nt:
+        advance_all = make_advance(Nt)
+        particles, fields = advance_all(
+            particles,
+            fields,
+            world,
+            constants,
+            curl_func,
+            J_func,
+            solver,
+            relativistic=relativistic,
+        )
+        return Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles, fields, world
 
     step_iter = range(0, Nt, scan_chunk) if scan_chunk > 1 else range(Nt)
     for t in tqdm(step_iter):
@@ -227,7 +304,11 @@ def main():
     toml_file = load_config_file()
     # load the configuration file
 
-    enable_x64 = bool(toml_file.get("simulation_parameters", {}).get("enable_x64", True))
+    sim = toml_file.get("simulation_parameters", {}) if isinstance(toml_file, dict) else {}
+    fast_mode = sim.get("fast_mode", "off")
+    enable_x64 = bool(sim.get("enable_x64", True))
+    if fast_mode in ("fp32", "aggressive", "extreme"):
+        enable_x64 = False
     jax.config.update("jax_enable_x64", enable_x64)
     # set Jax precision (default preserves legacy behavior)
 

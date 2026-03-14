@@ -60,10 +60,13 @@ def update_E(E, B, J, world, constants, curl_func):
     eps = constants['eps']
     # get the time resolution and necessary constants
 
-    dBz_dy = (jnp.roll(Bz, shift=-1, axis=1) - Bz) / dy
-    dBx_dy = (jnp.roll(Bx, shift=-1, axis=1) - Bx) / dy
-    dBy_dz = (jnp.roll(By, shift=-1, axis=2) - By) / dz
-    dBx_dz = (jnp.roll(Bx, shift=-1, axis=2) - Bx) / dz
+    Ny = Ex.shape[1]
+    Nz = Ex.shape[2]
+
+    dBz_dy = (jnp.roll(Bz, shift=-1, axis=1) - Bz) / dy if Ny != 1 else 0.0
+    dBx_dy = (jnp.roll(Bx, shift=-1, axis=1) - Bx) / dy if Ny != 1 else 0.0
+    dBy_dz = (jnp.roll(By, shift=-1, axis=2) - By) / dz if Nz != 1 else 0.0
+    dBx_dz = (jnp.roll(Bx, shift=-1, axis=2) - Bx) / dz if Nz != 1 else 0.0
     dBz_dx = (jnp.roll(Bz, shift=-1, axis=0) - Bz) / dx
     dBy_dx = (jnp.roll(By, shift=-1, axis=0) - By) / dx
 
@@ -175,10 +178,13 @@ def update_B(E, B, world, constants, curl_func):
     Bx, By, Bz = B
     # unpack the E and B fields
 
-    dEz_dy = (Ez - jnp.roll(Ez, shift=1, axis=1)) / dy
-    dEx_dy = (Ex - jnp.roll(Ex, shift=1, axis=1)) / dy
-    dEy_dz = (Ey - jnp.roll(Ey, shift=1, axis=2)) / dz
-    dEx_dz = (Ex - jnp.roll(Ex, shift=1, axis=2)) / dz
+    Ny = Ex.shape[1]
+    Nz = Ex.shape[2]
+
+    dEz_dy = (Ez - jnp.roll(Ez, shift=1, axis=1)) / dy if Ny != 1 else 0.0
+    dEx_dy = (Ex - jnp.roll(Ex, shift=1, axis=1)) / dy if Ny != 1 else 0.0
+    dEy_dz = (Ey - jnp.roll(Ey, shift=1, axis=2)) / dz if Nz != 1 else 0.0
+    dEx_dz = (Ex - jnp.roll(Ex, shift=1, axis=2)) / dz if Nz != 1 else 0.0
     dEz_dx = (Ez - jnp.roll(Ez, shift=1, axis=0)) / dx
     dEy_dx = (Ey - jnp.roll(Ey, shift=1, axis=0)) / dx
 

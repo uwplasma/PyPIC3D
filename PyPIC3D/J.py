@@ -8,8 +8,127 @@ from jax import lax
 from PyPIC3D.utils import digital_filter, wrap_around, bilinear_filter
 from PyPIC3D.shapes import get_first_order_weights, get_second_order_weights
 
-@partial(jit, static_argnames=("filter",))
-def J_from_rhov(particles, J, constants, world, grid=None, filter='bilinear'):
+
+def _weights_order1(r):
+    w0 = 1.0 - r
+    w1 = r
+    return jnp.stack((w0, w1), axis=0)
+
+
+def _weights_order2(r):
+    w0 = 0.5 * (0.5 - r) ** 2
+    w1 = 0.75 - r**2
+    w2 = 0.5 * (0.5 + r) ** 2
+    return jnp.stack((w0, w1, w2), axis=0)
+
+
+def _deposit_1d(J_stack, dq, vx, vy, vz, x, grid_x0, dx, dt, shape_factor, Nx):
+    if shape_factor == 1:
+        x0 = jnp.floor((x - grid_x0) / dx).astype(jnp.int32)
+        deltax_node = (x - grid_x0) - x0 * dx
+        deltax_face = (x - grid_x0) - (x0 + 0.5) * dx
+
+        r_node = deltax_node / dx
+        r_face = deltax_face / dx
+
+        w_node = _weights_order1(r_node)  # (2,Np)
+        w_face = _weights_order1(r_face)  # (2,Np)
+
+        ix = jnp.stack((x0, x0 + 1), axis=0)
+        ix = wrap_around(ix, Nx)
+    else:
+        x0 = jnp.round((x - grid_x0) / dx).astype(jnp.int32)
+        deltax_node = (x - grid_x0) - x0 * dx
+        deltax_face = (x - grid_x0) - (x0 + 0.5) * dx
+
+        r_node = deltax_node / dx
+        r_face = deltax_face / dx
+
+        w_node = _weights_order2(r_node)  # (3,Np)
+        w_face = _weights_order2(r_face)  # (3,Np)
+
+        ix = jnp.stack((x0 - 1, x0, x0 + 1), axis=0)
+        ix = wrap_around(ix, Nx)
+
+    # Jx uses face weights; Jy/Jz use node weights.
+    val = jnp.stack(
+        (
+            (dq * vx)[None, :] * w_face,
+            (dq * vy)[None, :] * w_node,
+            (dq * vz)[None, :] * w_node,
+        ),
+        axis=-1,
+    )  # (S,Np,3)
+
+    comp = jnp.arange(3, dtype=ix.dtype)[None, None, :]  # (1,1,3)
+    idx = ix[:, :, None] + comp * jnp.asarray(Nx, dtype=ix.dtype)  # (S,Np,3)
+
+    out = jnp.bincount(
+        idx.reshape(-1),
+        weights=val.reshape(-1),
+        length=Nx * 3,
+    ).reshape(3, Nx)
+
+    Jx, Jy, Jz = out[0], out[1], out[2]
+    return jnp.stack((Jx, Jy, Jz), axis=-1).reshape((Nx, 1, 1, 3))
+
+
+def _deposit_2d(J_stack, dq, vx, vy, vz, x, y, xmin, ymin, dx, dy, dt, shape_factor, Nx, Ny):
+    if shape_factor == 1:
+        x0 = jnp.floor((x - xmin) / dx).astype(jnp.int32)
+        y0 = jnp.floor((y - ymin) / dy).astype(jnp.int32)
+        deltax_node = (x - xmin) - x0 * dx
+        deltay_node = (y - ymin) - y0 * dy
+        deltax_face = (x - xmin) - (x0 + 0.5) * dx
+        deltay_face = (y - ymin) - (y0 + 0.5) * dy
+
+        wx_node = _weights_order1(deltax_node / dx)  # (2,Np)
+        wy_node = _weights_order1(deltay_node / dy)  # (2,Np)
+        wx_face = _weights_order1(deltax_face / dx)  # (2,Np)
+        wy_face = _weights_order1(deltay_face / dy)  # (2,Np)
+
+        ix = jnp.stack((x0, x0 + 1), axis=0)
+        iy = jnp.stack((y0, y0 + 1), axis=0)
+        ix = wrap_around(ix, Nx)
+        iy = wrap_around(iy, Ny)
+    else:
+        x0 = jnp.round((x - xmin) / dx).astype(jnp.int32)
+        y0 = jnp.round((y - ymin) / dy).astype(jnp.int32)
+        deltax_node = (x - xmin) - x0 * dx
+        deltay_node = (y - ymin) - y0 * dy
+        deltax_face = (x - xmin) - (x0 + 0.5) * dx
+        deltay_face = (y - ymin) - (y0 + 0.5) * dy
+
+        wx_node = _weights_order2(deltax_node / dx)  # (3,Np)
+        wy_node = _weights_order2(deltay_node / dy)  # (3,Np)
+        wx_face = _weights_order2(deltax_face / dx)  # (3,Np)
+        wy_face = _weights_order2(deltay_face / dy)  # (3,Np)
+
+        ix = jnp.stack((x0 - 1, x0, x0 + 1), axis=0)
+        iy = jnp.stack((y0 - 1, y0, y0 + 1), axis=0)
+        ix = wrap_around(ix, Nx)
+        iy = wrap_around(iy, Ny)
+
+    idx = ix[:, None, :] + Nx * iy[None, :, :]  # (Sx,Sy,Np)
+    idx_flat = idx.reshape(-1)
+
+    # weights for each component
+    wjx = wx_face[:, None, :] * wy_node[None, :, :]
+    wjy = wx_node[:, None, :] * wy_face[None, :, :]
+    wjz = wx_node[:, None, :] * wy_node[None, :, :]
+
+    valx = (dq * vx)[None, None, :] * wjx
+    valy = (dq * vy)[None, None, :] * wjy
+    valz = (dq * vz)[None, None, :] * wjz
+
+    vals = jnp.stack((valx, valy, valz), axis=-1).reshape(-1, 3)
+    J_flat = jax.ops.segment_sum(vals, idx_flat, num_segments=Nx * Ny)  # (Nx*Ny,3)
+    J2 = J_flat.reshape((Nx, Ny, 3))[:, :, None, :]
+    return J2
+
+
+@partial(jit, static_argnames=("filter", "shape_factor"))
+def J_from_rhov(particles, J, constants, world, grid=None, filter='bilinear', shape_factor=2):
     """
     Compute the current density from the charge density and particle velocities.
 
@@ -37,12 +156,10 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter='bilinear'):
     z_active = Jx.shape[2] != 1
     # infer effective dimensionality from the current-grid shape
 
-    J_stack = jnp.stack((Jx, Jy, Jz), axis=-1)
-    J_stack = jnp.zeros_like(J_stack)
+    J_stack = jnp.zeros((Nx, Ny, Nz, 3), dtype=Jx.dtype)
     # keep J together so deposition and filtering can be fused across components
 
     for species in particles:
-        shape_factor = species.get_shape()
         charge = species.get_charge()
         dq = charge / (dx * dy * dz)
         # calculate the charge density contribution per particle
@@ -50,10 +167,36 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter='bilinear'):
         vx, vy, vz = species.get_velocity()
         # get the particles positions and velocities
 
-        x = x - vx * world['dt'] / 2
-        y = y - vy * world['dt'] / 2
-        z = z - vz * world['dt'] / 2
+        dt = world["dt"]
+        x = x - vx * dt / 2
         # step back to half time step positions for proper time staggering
+
+        if Ny == 1 and Nz == 1:
+            J_stack = _deposit_1d(J_stack, dq, vx, vy, vz, x, grid[0][0], dx, world["dt"], shape_factor, Nx)
+            continue
+        if Nz == 1:
+            y = y - vy * dt / 2
+            J_stack = _deposit_2d(
+                J_stack,
+                dq,
+                vx,
+                vy,
+                vz,
+                x,
+                y,
+                grid[0][0],
+                grid[1][0],
+                dx,
+                dy,
+                world["dt"],
+                shape_factor,
+                Nx,
+                Ny,
+            )
+            continue
+
+        y = y - vy * dt / 2
+        z = z - vz * dt / 2
 
         if shape_factor == 1:
             x0 = jnp.floor((x - grid[0][0]) / dx).astype(jnp.int32)
@@ -79,9 +222,9 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter='bilinear'):
         y0 = wrap_around(y0, Ny)
         z0 = wrap_around(z0, Nz)
         # wrap around the grid points for periodic boundary conditions
-        x1 = wrap_around(x0+1, Nx)
-        y1 = wrap_around(y0+1, Ny)
-        z1 = wrap_around(z0+1, Nz)
+        x1 = wrap_around(x0 + 1, Nx)
+        y1 = wrap_around(y0 + 1, Ny)
+        z1 = wrap_around(z0 + 1, Nz)
         # calculate the right grid point
         x_minus1 = x0 - 1
         y_minus1 = y0 - 1

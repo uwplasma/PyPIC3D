@@ -40,7 +40,10 @@ from PyPIC3D.diagnostics.openPMD import (
 
 
 from PyPIC3D.evolve import (
-    time_loop_electrodynamic, time_loop_electrostatic, time_loop_vector_potential
+    time_loop_electrodynamic,
+    time_loop_electrodynamic_inline,
+    time_loop_electrostatic,
+    time_loop_vector_potential,
 )
 
 from PyPIC3D.J import (
@@ -97,6 +100,7 @@ def default_parameters():
         "name": "Default Simulation",
         "output_dir": os.getcwd(),
         "solver": "fdtd",  # solver: spectral, fdtd, vector_potential, curl_curl
+        "fast_mode": "off",  # off | fp32 | aggressive | extreme (trades accuracy for speed)
         "particle_bc": "periodic",  # particle boundary conditions: periodic, absorb, reflect
         # "bc": "periodic",  # boundary conditions: periodic, dirichlet, neumann
         "x_bc": "periodic",  # x boundary conditions: periodic, conducting
@@ -343,13 +347,20 @@ def initialize_simulation(toml_file):
         evolve_loop = time_loop_electrodynamic
     # set the evolve loop function based on the electrostatic flag
 
+    if simulation_parameters.get("fast_mode", "off") in ("aggressive", "extreme"):
+        evolve_loop = time_loop_electrodynamic_inline
+
     if simulation_parameters['current_calculation'] == "esirkepov":
         print("Using Esirkepov current calculation method")
         # raise NotImplementedError("Esirkepov current calculation method is not fully functional yet.")
         J_func = Esirkepov_current
     elif simulation_parameters['current_calculation'] == "j_from_rhov":
         print(f"Using J from rhov current calculation method with filter: {simulation_parameters['filter_j']}")
-        J_func = functools.partial(J_from_rhov, filter=simulation_parameters['filter_j'])
+        J_func = functools.partial(
+            J_from_rhov,
+            filter=simulation_parameters["filter_j"],
+            shape_factor=int(simulation_parameters["shape_factor"]),
+        )
 
 
     if solver == "vector_potential":

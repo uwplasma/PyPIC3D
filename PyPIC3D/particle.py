@@ -664,9 +664,12 @@ class particle_species:
         x1, x2, x3 = self.x1, self.x2, self.x3
         v1, v2, v3 = self.v1, self.v2, self.v3
 
-        x1, v1 = apply_axis_boundary_condition(x1, v1, self.x_wind, self.half_x_wind, self.x_periodic, self.x_reflecting)
-        x2, v2 = apply_axis_boundary_condition(x2, v2, self.y_wind, self.half_y_wind, self.y_periodic, self.y_reflecting)
-        x3, v3 = apply_axis_boundary_condition(x3, v3, self.z_wind, self.half_z_wind, self.z_periodic, self.z_reflecting)
+        if self.update_x:
+            x1, v1 = apply_axis_boundary_condition(x1, v1, self.x_wind, self.half_x_wind, self.x_periodic, self.x_reflecting)
+        if self.update_y:
+            x2, v2 = apply_axis_boundary_condition(x2, v2, self.y_wind, self.half_y_wind, self.y_periodic, self.y_reflecting)
+        if self.update_z:
+            x3, v3 = apply_axis_boundary_condition(x3, v3, self.z_wind, self.half_z_wind, self.z_periodic, self.z_reflecting)
 
         self.x1, self.x2, self.x3 = x1, x2, x3
         self.v1, self.v2, self.v3 = v1, v2, v3
