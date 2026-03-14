@@ -1,0 +1,80 @@
+{
+  "main": {
+    "ref": "origin/main",
+    "sha": "3a29cfaf8b6942bfc2f19c72235057214b835f0c",
+    "repo": "/Users/rogeriojorge/local/tests/PyPIC3D/_bench/worktrees/main-3a29cfaf",
+    "cases": {
+      "two_stream_fast": {
+        "config": "/Users/rogeriojorge/local/tests/PyPIC3D/demos/two_stream/two_stream_fast.toml",
+        "s_per_step": [
+          0.00046596000902354717,
+          0.0004893452860414982,
+          0.000486027798615396,
+          0.000491893501020968,
+          0.0004950821166858077
+        ],
+        "summary": {
+          "mean": 0.0004856617422774434,
+          "median": 0.0004893452860414982,
+          "stdev": 1.1504771359562111e-05,
+          "n": 5
+        }
+      },
+      "weibel_fast": {
+        "config": "/Users/rogeriojorge/local/tests/PyPIC3D/demos/weibel/weibel_fast.toml",
+        "s_per_step": [
+          0.00026584905572235584,
+          0.00026779051404446363,
+          0.0002618808066472411,
+          0.0002715375740081072,
+          0.0002615072298794985
+        ],
+        "summary": {
+          "mean": 0.00026571303606033326,
+          "median": 0.00026584905572235584,
+          "stdev": 4.202215080566981e-06,
+          "n": 5
+        }
+      }
+    }
+  },
+  "branch": {
+    "ref": "HEAD",
+    "sha": "3a29cfaf8b6942bfc2f19c72235057214b835f0c",
+    "repo": "/Users/rogeriojorge/local/tests/PyPIC3D",
+    "cases": {
+      "two_stream_fast": {
+        "config": "/Users/rogeriojorge/local/tests/PyPIC3D/demos/two_stream/two_stream_fast.toml",
+        "s_per_step": [
+          0.0003923701588064432,
+          0.00038563425187021494,
+          0.00038583786226809025,
+          0.00039046246092766523,
+          0.0003801190759986639
+        ],
+        "summary": {
+          "mean": 0.0003868847619742155,
+          "median": 0.00038583786226809025,
+          "stdev": 4.778174061375259e-06,
+          "n": 5
+        }
+      },
+      "weibel_fast": {
+        "config": "/Users/rogeriojorge/local/tests/PyPIC3D/demos/weibel/weibel_fast.toml",
+        "s_per_step": [
+          0.00017571193166077137,
+          0.00017485697753727436,
+          0.00017480866517871618,
+          0.00017512496560811996,
+          0.00017388572450727224
+        ],
+        "summary": {
+          "mean": 0.00017487765289843084,
+          "median": 0.00017485697753727436,
+          "stdev": 6.607369633377348e-07,
+          "n": 5
+        }
+      }
+    }
+  }
+}
