@@ -182,6 +182,44 @@ def main() -> None:
     fig.savefig(out_dir / "two_stream_energy_error.png", dpi=200)
     plt.close(fig)
 
+    # Accuracy/trajectory plots (energy + error) for weibel.
+    sample_case = Case("weibel", str(repo / "demos/weibel/weibel_fast.toml"))
+    samples = {}
+    for side, side_repo in [("main", main_repo), ("branch", head_repo)]:
+        r = _run_runner(
+            python=python,
+            runner=runner,
+            repo=side_repo,
+            config=sample_case.config,
+            steps=0,
+            warmup=0,
+            sample_every=10,
+            sample_steps=2000,
+        )
+        samples[side] = r["samples"]
+
+    fig, ax = plt.subplots(figsize=(9, 4))
+    ax.plot(samples["main"]["t"], samples["main"]["electric_energy"], label="origin/main")
+    ax.plot(samples["branch"]["t"], samples["branch"]["electric_energy"], label="this PR", linestyle="--")
+    ax.set_xlabel("time (s)")
+    ax.set_ylabel("Electric field energy (J)")
+    ax.set_title("Weibel: electric field energy vs time")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(out_dir / "weibel_electric_energy.png", dpi=200)
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(9, 4))
+    ax.semilogy(samples["main"]["t"], samples["main"]["energy_error"], label="origin/main")
+    ax.semilogy(samples["branch"]["t"], samples["branch"]["energy_error"], label="this PR", linestyle="--")
+    ax.set_xlabel("time (s)")
+    ax.set_ylabel("relative energy error")
+    ax.set_title("Weibel: energy error residual vs time")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(out_dir / "weibel_energy_error.png", dpi=200)
+    plt.close(fig)
+
     # Write a JSON summary alongside plots.
     summary_path = out_dir.parent / "benchmark_summary.json"
     (summary_path).write_text(json.dumps(results, indent=2) + "\n")

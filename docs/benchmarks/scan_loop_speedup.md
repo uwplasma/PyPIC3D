@@ -34,3 +34,5 @@ Energy trajectory comparisons:
 
 - `docs/benchmarks/images/two_stream_electric_energy.png`
 - `docs/benchmarks/images/two_stream_energy_error.png`
+- `docs/benchmarks/images/weibel_electric_energy.png`
+- `docs/benchmarks/images/weibel_energy_error.png`
