@@ -5,6 +5,7 @@ from functools import partial
 
 from PyPIC3D.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.utils import wrap_around
+from PyPIC3D.indexed_particles import _advance_index_and_frac
 
 @jit
 def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic=True, relativistic=True):
@@ -469,3 +470,139 @@ def interpolate_field_to_particles(field, x, y, z, grid, shape_factor):
     if field.ndim == 4:
         weights = weights[..., None]
     return jnp.sum(field_vals * weights, axis=(0, 1, 2))
+
+
+def _weights_from_r(r, shape_factor):
+    if shape_factor == 1:
+        return jnp.stack((1.0 - r, r), axis=0)
+    return jnp.stack(
+        (
+            0.5 * (0.5 - r) ** 2,
+            0.75 - r**2,
+            0.5 * (0.5 + r) ** 2,
+        ),
+        axis=0,
+    )
+
+
+@partial(jit, static_argnames=("shape_factor", "Nx", "Ny", "Nz"))
+def interpolate_field_indexed(field, i0, j0, k0, rx, ry, rz, shape_factor, Nx, Ny, Nz):
+    if Ny == 1 and Nz == 1:
+        xw = _weights_from_r(rx, shape_factor)
+        if shape_factor == 1:
+            xpts = jnp.stack((i0, wrap_around(i0 + 1, Nx)), axis=0)
+        else:
+            xpts = jnp.stack((wrap_around(i0 - 1, Nx), i0, wrap_around(i0 + 1, Nx)), axis=0)
+
+        if field.ndim == 4:
+            return jnp.sum(field[xpts, 0, 0, :] * xw[:, :, None], axis=0)
+        return jnp.sum(field[xpts, 0, 0] * xw, axis=0)
+
+    xw = _weights_from_r(rx, shape_factor)
+    yw = _weights_from_r(ry, shape_factor)
+    zw = _weights_from_r(rz, shape_factor)
+
+    if shape_factor == 1:
+        xpts = jnp.stack((i0, wrap_around(i0 + 1, Nx)), axis=0)
+        ypts = jnp.stack((j0, wrap_around(j0 + 1, Ny)), axis=0)
+        zpts = jnp.stack((k0, wrap_around(k0 + 1, Nz)), axis=0)
+    else:
+        xpts = jnp.stack((wrap_around(i0 - 1, Nx), i0, wrap_around(i0 + 1, Nx)), axis=0)
+        ypts = jnp.stack((wrap_around(j0 - 1, Ny), j0, wrap_around(j0 + 1, Ny)), axis=0)
+        zpts = jnp.stack((wrap_around(k0 - 1, Nz), k0, wrap_around(k0 + 1, Nz)), axis=0)
+
+    field_vals = field[
+        xpts[:, None, None, :],
+        ypts[None, :, None, :],
+        zpts[None, None, :, :],
+    ]
+    weights = xw[:, None, None, :] * yw[None, :, None, :] * zw[None, None, :, :]
+    if field.ndim == 4:
+        weights = weights[..., None]
+    return jnp.sum(field_vals * weights, axis=(0, 1, 2))
+
+
+@jit
+def particle_push_indexed(particles, E, B, world, constants, relativistic=True):
+    q = particles.get_charge()
+    m = particles.get_mass()
+    vx, vy, vz = particles.get_velocity()
+    shape_factor = particles.get_shape()
+
+    Ex, Ey, Ez = E
+    Bx, By, Bz = B
+
+    i0, j0, k0, rx, ry, rz = particles.get_indexed_position()
+
+    Nx, Ny, Nz = Ex.shape
+
+    i0s, rxs = _advance_index_and_frac(i0, rx, -0.5, Nx, shape_factor)
+    j0s, rys = _advance_index_and_frac(j0, ry, -0.5, Ny, shape_factor)
+    k0s, rzs = _advance_index_and_frac(k0, rz, -0.5, Nz, shape_factor)
+
+    if Ny == 1 and Nz == 1:
+        node_stack = jnp.stack((Ey, Ez, Bx), axis=-1)
+        face_stack = jnp.stack((Ex, By, Bz), axis=-1)
+
+        node_vals = interpolate_field_indexed(node_stack, i0, j0, k0, rx, ry, rz, shape_factor, Nx, Ny, Nz)
+        face_vals = interpolate_field_indexed(face_stack, i0s, j0, k0, rxs, ry, rz, shape_factor, Nx, Ny, Nz)
+
+        efield_aty, efield_atz, bfield_atx = node_vals[:, 0], node_vals[:, 1], node_vals[:, 2]
+        efield_atx, bfield_aty, bfield_atz = face_vals[:, 0], face_vals[:, 1], face_vals[:, 2]
+    elif Nz == 1:
+        ex_by = jnp.stack((Ex, By), axis=-1)
+        ey_bx = jnp.stack((Ey, Bx), axis=-1)
+
+        ex_by_vals = interpolate_field_indexed(ex_by, i0s, j0, k0, rxs, ry, rz, shape_factor, Nx, Ny, Nz)
+        ey_bx_vals = interpolate_field_indexed(ey_bx, i0, j0s, k0, rx, rys, rz, shape_factor, Nx, Ny, Nz)
+        ez_vals = interpolate_field_indexed(Ez, i0, j0, k0s, rx, ry, rzs, shape_factor, Nx, Ny, Nz)
+        bz_vals = interpolate_field_indexed(Bz, i0s, j0s, k0, rxs, rys, rz, shape_factor, Nx, Ny, Nz)
+
+        efield_atx, bfield_aty = ex_by_vals[:, 0], ex_by_vals[:, 1]
+        efield_aty, bfield_atx = ey_bx_vals[:, 0], ey_bx_vals[:, 1]
+        efield_atz = ez_vals
+        bfield_atz = bz_vals
+    else:
+        efield_atx = interpolate_field_indexed(Ex, i0s, j0, k0, rxs, ry, rz, shape_factor, Nx, Ny, Nz)
+        efield_aty = interpolate_field_indexed(Ey, i0, j0s, k0, rx, rys, rz, shape_factor, Nx, Ny, Nz)
+        efield_atz = interpolate_field_indexed(Ez, i0, j0, k0s, rx, ry, rzs, shape_factor, Nx, Ny, Nz)
+        bfield_atx = interpolate_field_indexed(Bx, i0, j0s, k0s, rx, rys, rzs, shape_factor, Nx, Ny, Nz)
+        bfield_aty = interpolate_field_indexed(By, i0s, j0, k0s, rxs, ry, rzs, shape_factor, Nx, Ny, Nz)
+        bfield_atz = interpolate_field_indexed(Bz, i0s, j0s, k0, rxs, rys, rz, shape_factor, Nx, Ny, Nz)
+
+    newvx, newvy, newvz = jax.lax.cond(
+        relativistic == True,
+        lambda _: relativistic_boris_push(
+            vx,
+            vy,
+            vz,
+            efield_atx,
+            efield_aty,
+            efield_atz,
+            bfield_atx,
+            bfield_aty,
+            bfield_atz,
+            q,
+            m,
+            world["dt"],
+            constants,
+        ),
+        lambda _: boris_push(
+            vx,
+            vy,
+            vz,
+            efield_atx,
+            efield_aty,
+            efield_atz,
+            bfield_atx,
+            bfield_aty,
+            bfield_atz,
+            q,
+            m,
+            world["dt"],
+        ),
+        operand=None,
+    )
+
+    particles.set_velocity(newvx, newvy, newvz)
+    return particles

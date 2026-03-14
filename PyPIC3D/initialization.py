@@ -42,13 +42,16 @@ from PyPIC3D.diagnostics.openPMD import (
 from PyPIC3D.evolve import (
     time_loop_electrodynamic,
     time_loop_electrodynamic_inline,
+    time_loop_electrodynamic_indexed,
     time_loop_electrostatic,
     time_loop_vector_potential,
 )
 
 from PyPIC3D.J import (
-    J_from_rhov, Esirkepov_current
+    J_from_rhov, Esirkepov_current, J_from_rhov_indexed
 )
+from PyPIC3D.indexed_particles import to_indexed_particles, check_periodic_bc
+from PyPIC3D.flat_particles import to_flat_particles, check_flat_compat
 from PyPIC3D.solvers.vector_potential import initialize_vector_potential
 
 
@@ -101,6 +104,7 @@ def default_parameters():
         "output_dir": os.getcwd(),
         "solver": "fdtd",  # solver: spectral, fdtd, vector_potential, curl_curl
         "fast_mode": "off",  # off | fp32 | aggressive | extreme (trades accuracy for speed)
+        "fast_backend": "default",  # default | indexed | flat (physics-preserving refactor)
         "particle_bc": "periodic",  # particle boundary conditions: periodic, absorb, reflect
         # "bc": "periodic",  # boundary conditions: periodic, dirichlet, neumann
         "x_bc": "periodic",  # x boundary conditions: periodic, conducting
@@ -346,8 +350,21 @@ def initialize_simulation(toml_file):
         print(f"Using electrodynamic solver with: {solver}")
         evolve_loop = time_loop_electrodynamic
     # set the evolve loop function based on the electrostatic flag
+    fast_backend = simulation_parameters.get("fast_backend", "default")
+    if fast_backend == "indexed":
+        if electrostatic or solver == "vector_potential":
+            raise ValueError("fast_backend='indexed' currently supports electrodynamic solver only.")
+        if not check_periodic_bc(particles):
+            raise ValueError("fast_backend='indexed' requires periodic particle boundary conditions.")
+        evolve_loop = time_loop_electrodynamic_indexed
+    elif fast_backend == "flat":
+        if electrostatic or solver == "vector_potential":
+            raise ValueError("fast_backend='flat' currently supports electrodynamic solver only.")
+        if not check_flat_compat(particles):
+            raise ValueError("fast_backend='flat' requires periodic boundary conditions and uniform particle shape.")
+        evolve_loop = time_loop_electrodynamic_inline
 
-    if simulation_parameters.get("fast_mode", "off") in ("aggressive", "extreme"):
+    if simulation_parameters.get("fast_mode", "off") in ("aggressive", "extreme") and fast_backend != "indexed":
         evolve_loop = time_loop_electrodynamic_inline
 
     if simulation_parameters['current_calculation'] == "esirkepov":
@@ -356,11 +373,22 @@ def initialize_simulation(toml_file):
         J_func = Esirkepov_current
     elif simulation_parameters['current_calculation'] == "j_from_rhov":
         print(f"Using J from rhov current calculation method with filter: {simulation_parameters['filter_j']}")
-        J_func = functools.partial(
-            J_from_rhov,
-            filter=simulation_parameters["filter_j"],
-            shape_factor=int(simulation_parameters["shape_factor"]),
-        )
+        if fast_backend == "indexed":
+            J_func = functools.partial(
+                J_from_rhov_indexed,
+                filter=simulation_parameters["filter_j"],
+            )
+        else:
+            J_func = functools.partial(
+                J_from_rhov,
+                filter=simulation_parameters["filter_j"],
+                shape_factor=int(simulation_parameters["shape_factor"]),
+            )
+
+    if fast_backend == "indexed":
+        particles = to_indexed_particles(particles, world)
+    elif fast_backend == "flat":
+        particles = to_flat_particles(particles)
 
 
     if solver == "vector_potential":

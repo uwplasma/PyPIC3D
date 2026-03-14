@@ -7,6 +7,7 @@ from jax import lax
 
 from PyPIC3D.utils import digital_filter, wrap_around, bilinear_filter
 from PyPIC3D.shapes import get_first_order_weights, get_second_order_weights
+from PyPIC3D.indexed_particles import _advance_index_and_frac
 
 
 def _weights_order1(r):
@@ -20,6 +21,12 @@ def _weights_order2(r):
     w1 = 0.75 - r**2
     w2 = 0.5 * (0.5 + r) ** 2
     return jnp.stack((w0, w1, w2), axis=0)
+
+
+def _weights_face(r, shape_factor):
+    if shape_factor == 1:
+        return _weights_order1(r - 0.5)
+    return _weights_order2(r - 0.5)
 
 
 def _deposit_1d(J_stack, dq, vx, vy, vz, x, grid_x0, dx, dt, shape_factor, Nx):
@@ -125,6 +132,118 @@ def _deposit_2d(J_stack, dq, vx, vy, vz, x, y, xmin, ymin, dx, dy, dt, shape_fac
     J_flat = jax.ops.segment_sum(vals, idx_flat, num_segments=Nx * Ny)  # (Nx*Ny,3)
     J2 = J_flat.reshape((Nx, Ny, 3))[:, :, None, :]
     return J2
+
+
+def _deposit_1d_indexed(dq, vx, vy, vz, i0, r, shape_factor, Nx):
+    if shape_factor == 1:
+        ix = jnp.stack((i0, wrap_around(i0 + 1, Nx)), axis=0)
+    else:
+        ix = jnp.stack((wrap_around(i0 - 1, Nx), i0, wrap_around(i0 + 1, Nx)), axis=0)
+
+    w_node = _weights_order1(r) if shape_factor == 1 else _weights_order2(r)
+    w_face = _weights_face(r, shape_factor)
+
+    val = jnp.stack(
+        (
+            (dq * vx)[None, :] * w_face,
+            (dq * vy)[None, :] * w_node,
+            (dq * vz)[None, :] * w_node,
+        ),
+        axis=-1,
+    )
+
+    comp = jnp.arange(3, dtype=ix.dtype)[None, None, :]
+    idx = ix[:, :, None] + comp * jnp.asarray(Nx, dtype=ix.dtype)
+
+    out = jnp.bincount(idx.reshape(-1), weights=val.reshape(-1), length=Nx * 3).reshape(3, Nx)
+    Jx, Jy, Jz = out[0], out[1], out[2]
+    return jnp.stack((Jx, Jy, Jz), axis=-1).reshape((Nx, 1, 1, 3))
+
+
+def _deposit_2d_indexed(dq, vx, vy, vz, i0, j0, rx, ry, shape_factor, Nx, Ny):
+    if shape_factor == 1:
+        ix = jnp.stack((i0, wrap_around(i0 + 1, Nx)), axis=0)
+        iy = jnp.stack((j0, wrap_around(j0 + 1, Ny)), axis=0)
+    else:
+        ix = jnp.stack((wrap_around(i0 - 1, Nx), i0, wrap_around(i0 + 1, Nx)), axis=0)
+        iy = jnp.stack((wrap_around(j0 - 1, Ny), j0, wrap_around(j0 + 1, Ny)), axis=0)
+
+    wx_node = _weights_order1(rx) if shape_factor == 1 else _weights_order2(rx)
+    wy_node = _weights_order1(ry) if shape_factor == 1 else _weights_order2(ry)
+    wx_face = _weights_face(rx, shape_factor)
+    wy_face = _weights_face(ry, shape_factor)
+
+    idx = ix[:, None, :] + Nx * iy[None, :, :]
+    idx_flat = idx.reshape(-1)
+
+    wjx = wx_face[:, None, :] * wy_node[None, :, :]
+    wjy = wx_node[:, None, :] * wy_face[None, :, :]
+    wjz = wx_node[:, None, :] * wy_node[None, :, :]
+
+    valx = (dq * vx)[None, None, :] * wjx
+    valy = (dq * vy)[None, None, :] * wjy
+    valz = (dq * vz)[None, None, :] * wjz
+
+    vals = jnp.stack((valx, valy, valz), axis=-1).reshape(-1, 3)
+    J_flat = jax.ops.segment_sum(vals, idx_flat, num_segments=Nx * Ny)
+    return J_flat.reshape((Nx, Ny, 3))[:, :, None, :]
+
+
+def _deposit_3d_indexed(dq, vx, vy, vz, i0, j0, k0, rx, ry, rz, shape_factor, Nx, Ny, Nz):
+    if shape_factor == 1:
+        xpts = jnp.stack((i0, wrap_around(i0 + 1, Nx)), axis=0)
+        ypts = jnp.stack((j0, wrap_around(j0 + 1, Ny)), axis=0)
+        zpts = jnp.stack((k0, wrap_around(k0 + 1, Nz)), axis=0)
+        x_weights_node = _weights_order1(rx)
+        y_weights_node = _weights_order1(ry)
+        z_weights_node = _weights_order1(rz)
+        x_weights_face = _weights_face(rx, shape_factor)
+        y_weights_face = _weights_face(ry, shape_factor)
+        z_weights_face = _weights_face(rz, shape_factor)
+    else:
+        xpts = jnp.stack((wrap_around(i0 - 1, Nx), i0, wrap_around(i0 + 1, Nx)), axis=0)
+        ypts = jnp.stack((wrap_around(j0 - 1, Ny), j0, wrap_around(j0 + 1, Ny)), axis=0)
+        zpts = jnp.stack((wrap_around(k0 - 1, Nz), k0, wrap_around(k0 + 1, Nz)), axis=0)
+        x_weights_node = _weights_order2(rx)
+        y_weights_node = _weights_order2(ry)
+        z_weights_node = _weights_order2(rz)
+        x_weights_face = _weights_face(rx, shape_factor)
+        y_weights_face = _weights_face(ry, shape_factor)
+        z_weights_face = _weights_face(rz, shape_factor)
+
+    if shape_factor == 1:
+        xpts = xpts
+        ypts = ypts
+        zpts = zpts
+
+    ii, jj, kk = jnp.meshgrid(
+        jnp.arange(xpts.shape[0]),
+        jnp.arange(ypts.shape[0]),
+        jnp.arange(zpts.shape[0]),
+        indexing="ij",
+    )
+    combos = jnp.stack([ii.ravel(), jj.ravel(), kk.ravel()], axis=1)
+
+    def idx_and_dJ_values(idx):
+        i, j, k = idx
+        ix = xpts[i, ...]
+        iy = ypts[j, ...]
+        iz = zpts[k, ...]
+        valx = (dq * vx) * x_weights_face[i, ...] * y_weights_node[j, ...] * z_weights_node[k, ...]
+        valy = (dq * vy) * x_weights_node[i, ...] * y_weights_face[j, ...] * z_weights_node[k, ...]
+        valz = (dq * vz) * x_weights_node[i, ...] * y_weights_node[j, ...] * z_weights_face[k, ...]
+        return ix, iy, iz, jnp.stack((valx, valy, valz), axis=-1)
+
+    ix, iy, iz, dJ = jax.vmap(idx_and_dJ_values)(combos)
+
+    ix_flat = ix.reshape(-1)
+    iy_flat = iy.reshape(-1)
+    iz_flat = iz.reshape(-1)
+    dJ_flat = dJ.reshape(-1, 3)
+
+    idx_flat = ix_flat + Nx * (iy_flat + Ny * iz_flat)
+    J_flat = jax.ops.segment_sum(dJ_flat, idx_flat, num_segments=Nx * Ny * Nz)
+    return J_flat.reshape((Nx, Ny, Nz, 3))
 
 
 @partial(jit, static_argnames=("filter", "shape_factor"))
@@ -348,6 +467,48 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter='bilinear', sh
     if filter == "bilinear":
         J_stack = bilinear_filter(J_stack)
     # (optional) digital filter disabled by default
+
+    return (J_stack[..., 0], J_stack[..., 1], J_stack[..., 2])
+
+
+@partial(jit, static_argnames=("filter",))
+def J_from_rhov_indexed(particles, J, constants, world, grid=None, filter="bilinear"):
+    if grid is None:
+        grid = world["grids"]["center"]
+
+    dx = world["dx"]
+    dy = world["dy"]
+    dz = world["dz"]
+    Jx, Jy, Jz = J
+    Nx, Ny, Nz = Jx.shape
+
+    J_stack = jnp.zeros((Nx, Ny, Nz, 3), dtype=Jx.dtype)
+
+    dt = world["dt"]
+    for species in particles:
+        charge = species.get_charge()
+        dq = charge / (dx * dy * dz)
+        vx, vy, vz = species.get_velocity()
+        i0, j0, k0, rx, ry, rz = species.get_indexed_position()
+        shape_factor = species.get_shape()
+
+        i0b, rxb = _advance_index_and_frac(i0, rx, -vx * dt / (2 * dx), Nx, shape_factor)
+
+        if Ny == 1 and Nz == 1:
+            J_stack = J_stack + _deposit_1d_indexed(dq, vx, vy, vz, i0b, rxb, shape_factor, Nx)
+            continue
+
+        j0b, ryb = _advance_index_and_frac(j0, ry, -vy * dt / (2 * dy), Ny, shape_factor)
+
+        if Nz == 1:
+            J_stack = J_stack + _deposit_2d_indexed(dq, vx, vy, vz, i0b, j0b, rxb, ryb, shape_factor, Nx, Ny)
+            continue
+
+        k0b, rzb = _advance_index_and_frac(k0, rz, -vz * dt / (2 * dz), Nz, shape_factor)
+        J_stack = J_stack + _deposit_3d_indexed(dq, vx, vy, vz, i0b, j0b, k0b, rxb, ryb, rzb, shape_factor, Nx, Ny, Nz)
+
+    if filter == "bilinear":
+        J_stack = bilinear_filter(J_stack)
 
     return (J_stack[..., 0], J_stack[..., 1], J_stack[..., 2])
 
