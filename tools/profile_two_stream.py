@@ -24,6 +24,7 @@ def main() -> None:
 
     import jax
     from jax import block_until_ready
+    from jax import lax
     import jax.profiler
 
     from PyPIC3D.initialization import initialize_simulation
@@ -53,60 +54,101 @@ def main() -> None:
     ) = initialize_simulation(toml_file)
     dt = float(world["dt"])
     nt = int(world["Nt"])
+    use_scan = bool(simulation_parameters.get("use_scan", False))
+    scan_chunk = int(simulation_parameters.get("scan_chunk", 256) or 256)
 
     out_dir = Path(args.out) if args.out else Path(simulation_parameters["output_dir"]) / "profile"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Warmup to pay compilation cost outside the trace.
-    for _ in range(max(0, args.warmup)):
-        particles, fields = loop(
-            particles,
-            fields,
-            world,
-            constants,
-            curl_func,
-            J_func,
-            solver,
-            relativistic=relativistic,
-        )
-        block_until_ready(fields[0][0])
+    if use_scan:
+        def _scan_chunk(particles, fields, *, n_steps: int):
+            def body(carry, _):
+                p, f = carry
+                p, f = loop(
+                    p,
+                    f,
+                    world,
+                    constants,
+                    curl_func,
+                    J_func,
+                    solver,
+                    relativistic=relativistic,
+                )
+                return (p, f), None
 
-    # Best-effort HLO dump for the step function.
+            (p, f), _ = lax.scan(body, (particles, fields), xs=None, length=n_steps)
+            return p, f
+
+        scan_chunk_jit = jax.jit(_scan_chunk, donate_argnums=(0, 1), static_argnames=("n_steps",))
+
+        for _ in range(max(0, args.warmup)):
+            particles, fields = scan_chunk_jit(particles, fields, n_steps=scan_chunk)
+            block_until_ready(fields[0][0])
+    else:
+        # Warmup to pay compilation cost outside the trace.
+        for _ in range(max(0, args.warmup)):
+            particles, fields = loop(
+                particles,
+                fields,
+                world,
+                constants,
+                curl_func,
+                J_func,
+                solver,
+                relativistic=relativistic,
+            )
+            block_until_ready(fields[0][0])
+
+    # Best-effort HLO dump (step or scan chunk).
     try:
-        lowered = loop.lower(
-            particles,
-            fields,
-            world,
-            constants,
-            curl_func,
-            J_func,
-            solver,
-            relativistic=relativistic,
-        )
+        if use_scan:
+            lowered = scan_chunk_jit.lower(particles, fields, n_steps=scan_chunk)
+        else:
+            lowered = loop.lower(
+                particles,
+                fields,
+                world,
+                constants,
+                curl_func,
+                J_func,
+                solver,
+                relativistic=relativistic,
+            )
         hlo_comp = lowered.compiler_ir(dialect="hlo")
         hlo = hlo_comp.as_hlo_text() if hasattr(hlo_comp, "as_hlo_text") else str(hlo_comp)
-        _maybe_write_text(out_dir / "step.hlo.txt", hlo)
+        _maybe_write_text(out_dir / ("scan_chunk.hlo.txt" if use_scan else "step.hlo.txt"), hlo)
     except Exception as e:
         _maybe_write_text(out_dir / "hlo_dump_error.txt", repr(e))
 
-    steps = min(int(args.steps), nt)
+    steps_total = min(int(args.steps), nt)
+    if use_scan:
+        steps = max(scan_chunk, (steps_total // scan_chunk) * scan_chunk)
+    else:
+        steps = steps_total
 
     trace_dir = out_dir / "trace"
     trace_dir.mkdir(parents=True, exist_ok=True)
     jax.profiler.start_trace(str(trace_dir), create_perfetto_trace=True)
 
     start = time.time()
-    for i in range(steps):
-        particles, fields = loop(
-            particles,
-            fields,
-            world,
-            constants,
-            curl_func,
-            J_func,
-            solver,
-            relativistic=relativistic,
-        )
+    if use_scan:
+        remaining = steps
+        while remaining:
+            k = scan_chunk if remaining >= scan_chunk else remaining
+            particles, fields = scan_chunk_jit(particles, fields, n_steps=k)
+            remaining -= k
+    else:
+        for _ in range(steps):
+            particles, fields = loop(
+                particles,
+                fields,
+                world,
+                constants,
+                curl_func,
+                J_func,
+                solver,
+                relativistic=relativistic,
+            )
     block_until_ready(fields[0][0])
     end = time.time()
 
@@ -118,6 +160,8 @@ def main() -> None:
             [
                 f"config={config_path}",
                 f"enable_x64={enable_x64}",
+                f"use_scan={use_scan}",
+                f"scan_chunk={scan_chunk}",
                 f"dt={dt}",
                 f"steps={steps}",
                 f"wall_s={end - start}",
