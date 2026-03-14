@@ -2,7 +2,7 @@ import jax
 import plotly
 import tqdm
 import pyevtk
-from jax import jit
+from jax import jit, lax
 import argparse
 import jax.numpy as jnp
 import functools
@@ -39,24 +39,38 @@ def wrap_around(ix, size):
 @jit
 def bilinear_filter(phi, mode="wrap"):
     """
-    Apply a 3D (tri-linear) smoothing filter to a 3D array using a separable
-    [1, 2, 1]/4 kernel in each dimension.
+    Apply a tri-linear smoothing filter using a separable [1, 2, 1]/4 kernel
+    in each spatial dimension.
 
     Args:
-        phi (jnp.ndarray): 3D field array with shape (Nx, Ny, Nz).
+        phi (jnp.ndarray): Field array with leading spatial shape (Nx, Ny, Nz).
+            Any trailing feature dimensions are preserved (e.g. (Nx, Ny, Nz, 3)).
         mode (str): Padding mode passed to jnp.pad (default: "wrap").
 
     Returns:
         jnp.ndarray: Filtered array with the same shape as phi.
     """
-    k1 = jnp.array([1.0, 2.0, 1.0], dtype=phi.dtype) / 4.0  # sums to 1
-    k3 = k1[:, None, None] * k1[None, :, None] * k1[None, None, :]  # (3,3,3), sums to 1
+    if mode == "wrap":
+        quarter = jnp.asarray(0.25, dtype=phi.dtype)
+
+        def smooth_axis(arr, axis):
+            return (jnp.roll(arr, 1, axis=axis) + 2 * arr + jnp.roll(arr, -1, axis=axis)) * quarter
+
+        phi = smooth_axis(phi, 0)
+        phi = smooth_axis(phi, 1)
+        phi = smooth_axis(phi, 2)
+        return phi
+
+    if phi.ndim != 3:
+        raise ValueError("bilinear_filter only supports non-wrap mode for 3D arrays.")
+
+    k1 = jnp.array([1.0, 2.0, 1.0], dtype=phi.dtype) / 4.0
+    k3 = k1[:, None, None] * k1[None, :, None] * k1[None, None, :]
 
     kernel = jnp.zeros((3, 3, 3, 1, 1), dtype=phi.dtype)
     kernel = kernel.at[:, :, :, 0, 0].set(k3)
 
     padded_phi = jnp.pad(phi, ((1, 1), (1, 1), (1, 1)), mode=mode)
-
     filtered = jax.lax.conv_general_dilated(
         padded_phi[jnp.newaxis, ..., jnp.newaxis],
         kernel,
@@ -79,25 +93,22 @@ def digital_filter(phi, alpha):
     Returns:
         ndarray: Filtered field array.
     """
-    neighbor_weight = (1 - alpha) / 6
-    kernel = jnp.zeros((3, 3, 3, 1, 1), dtype=phi.dtype)
-    kernel = kernel.at[1, 1, 1, 0, 0].set(alpha)
-    kernel = kernel.at[0, 1, 1, 0, 0].set(neighbor_weight)
-    kernel = kernel.at[2, 1, 1, 0, 0].set(neighbor_weight)
-    kernel = kernel.at[1, 0, 1, 0, 0].set(neighbor_weight)
-    kernel = kernel.at[1, 2, 1, 0, 0].set(neighbor_weight)
-    kernel = kernel.at[1, 1, 0, 0, 0].set(neighbor_weight)
-    kernel = kernel.at[1, 1, 2, 0, 0].set(neighbor_weight)
+    def apply(phi):
+        neighbor_weight = (1 - alpha) / 6
+        return (
+            alpha * phi
+            + neighbor_weight
+            * (
+                jnp.roll(phi, 1, axis=0)
+                + jnp.roll(phi, -1, axis=0)
+                + jnp.roll(phi, 1, axis=1)
+                + jnp.roll(phi, -1, axis=1)
+                + jnp.roll(phi, 1, axis=2)
+                + jnp.roll(phi, -1, axis=2)
+            )
+        )
 
-    padded_phi = jnp.pad(phi, ((1, 1), (1, 1), (1, 1)), mode="wrap")
-    filtered = jax.lax.conv_general_dilated(
-        padded_phi[jnp.newaxis, ..., jnp.newaxis],
-        kernel,
-        window_strides=(1, 1, 1),
-        padding="VALID",
-        dimension_numbers=("NDHWC", "DHWIO", "NDHWC"),
-    )
-    return jnp.squeeze(filtered, axis=(0, 4))
+    return lax.cond(alpha == 1.0, lambda phi: phi, apply, phi)
 
 def mae(x, y):
     """
@@ -222,11 +233,10 @@ def compute_energy(particles, E, B, world, constants):
         mass = species.get_mass()
         vx, vy, vz = species.get_velocity()
         v2 = vx**2 + vy**2 + vz**2
-        gamma = 1.0 / jnp.sqrt(1 - v2 / C**2)
-        momentum2 = jnp.square(mass * gamma ) * v2
-        # compute the squared momentum for each particle
-        KE = jnp.sum( jnp.sqrt( momentum2 * C**2 + mass**2 * C**4) - mass * C**2 )
-        # compute the kinetic energy for this species
+        # Relativistic KE: use m c^2 (gamma - 1) to avoid catastrophic cancellation,
+        # especially in fp32 fast modes.
+        gamma = 1.0 / jnp.sqrt(jnp.maximum(1.0 - v2 / C**2, 0.0))
+        KE = jnp.sum(mass * C**2 * (gamma - 1.0))
         kinetic_energy += KE
         # add to total kinetic energy
 
