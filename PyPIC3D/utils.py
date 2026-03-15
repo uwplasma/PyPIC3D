@@ -696,6 +696,9 @@ def dump_parameters_to_toml(simulation_stats, simulation_parameters, plasma_para
     }
 
     for particle in particles:
+        if hasattr(particle, "species_meta") and particle.species_meta:
+            config["particles"].extend(particle.species_meta)
+            continue
         particle_dict = {
             "name": particle.name,
             "N_particles": float(particle.N_particles),
