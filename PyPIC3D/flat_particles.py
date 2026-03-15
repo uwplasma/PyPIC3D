@@ -111,6 +111,10 @@ class flat_particle_species:
     def get_shape(self):
         return self.shape
 
+    def momentum(self):
+        vmag = jnp.sqrt(self.v1**2 + self.v2**2 + self.v3**2)
+        return jnp.sum(vmag * self.mass * self.weight)
+
     def set_velocity(self, v1, v2, v3):
         if self.update_v:
             if self.update_vx:
