@@ -38,6 +38,10 @@ from PyPIC3D.diagnostics.openPMD import (
     write_openpmd_initial_particles, write_openpmd_initial_fields
 )
 
+from PyPIC3D.flat_particles import (
+    to_flat_particles, check_flat_compat
+)
+
 
 from PyPIC3D.evolve import (
     time_loop_electrodynamic, time_loop_electrostatic, time_loop_vector_potential
@@ -97,6 +101,7 @@ def default_parameters():
         "name": "Default Simulation",
         "output_dir": os.getcwd(),
         "solver": "fdtd",  # solver: spectral, fdtd, vector_potential, curl_curl
+        "fast_backend": "flat",  # flat | default (flat when compatible, else fallback)
         "particle_bc": "periodic",  # particle boundary conditions: periodic, absorb, reflect
         # "bc": "periodic",  # boundary conditions: periodic, dirichlet, neumann
         "x_bc": "periodic",  # x boundary conditions: periodic, conducting
@@ -294,6 +299,18 @@ def initialize_simulation(toml_file):
 
     particle_sanity_check(particles)
     # ensure the arrays for the particles are of the correct shape
+
+    fast_backend = simulation_parameters.get("fast_backend", "flat")
+    if fast_backend == "flat":
+        if electrostatic or solver == "vector_potential":
+            print("fast_backend='flat' not supported for electrostatic/vector_potential; falling back to default")
+            simulation_parameters["fast_backend"] = "default"
+        elif not check_flat_compat(particles):
+            print("fast_backend='flat' incompatible with species layout; falling back to default")
+            simulation_parameters["fast_backend"] = "default"
+        else:
+            particles = to_flat_particles(particles)
+            simulation_parameters["fast_backend"] = "flat"
 
     if plotting_parameters['dump_particles']:
         write_openpmd_initial_particles(particles, world, constants, simulation_parameters['output_dir'])
