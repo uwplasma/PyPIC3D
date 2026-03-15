@@ -237,8 +237,16 @@ class flat_particle_species:
         )
 
 
+def _normalize_attr(value):
+    try:
+        return jnp.asarray(value).item()
+    except Exception:
+        return value
+
+
 def _same(attr_list):
-    return len(set(attr_list)) == 1
+    norm = [_normalize_attr(v) for v in attr_list]
+    return len(set(norm)) == 1
 
 
 def check_flat_compat(particles):
