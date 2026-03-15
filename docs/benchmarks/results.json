@@ -1,0 +1,42 @@
+{
+  "cases": {
+    "two_stream": {
+      "overrides": {
+        "t_wind": 1.6239e-07
+      },
+      "perf": {
+        "baseline_main": {
+          "time_per_iteration": 0.003241772231760853,
+          "total_simulation_time": 15.939794063568115
+        },
+        "flat_default": {
+          "time_per_iteration": 0.00109709068020597,
+          "total_simulation_time": 5.394394874572754
+        }
+      },
+      "speedup_per_step": 2.9548808409822938,
+      "speedup_total": 2.9548808409822938
+    },
+    "weibel": {
+      "overrides": {
+        "Nt": 18000
+      },
+      "perf": {
+        "baseline_main": {
+          "time_per_iteration": 0.0011407451762093439,
+          "total_simulation_time": 20.53341317176819
+        },
+        "flat_default": {
+          "time_per_iteration": 0.0009320051140255398,
+          "total_simulation_time": 16.776092052459717
+        }
+      },
+      "speedup_per_step": 1.223968794851574,
+      "speedup_total": 1.223968794851574
+    }
+  },
+  "variants": {
+    "baseline_main": "Main",
+    "flat_default": "Flat default"
+  }
+}
