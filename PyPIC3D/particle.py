@@ -652,6 +652,9 @@ class particle_species:
     def set_weight(self, weight):
         self.weight = weight
 
+    def get_weight(self):
+        return self.weight
+
     def kinetic_energy(self):
         v2 = jnp.square(self.v1) + jnp.square(self.v2) + jnp.square(self.v3)
         # compute the square of the velocity

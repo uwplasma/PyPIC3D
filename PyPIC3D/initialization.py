@@ -300,6 +300,11 @@ def initialize_simulation(toml_file):
     particle_sanity_check(particles)
     # ensure the arrays for the particles are of the correct shape
 
+    if plotting_parameters['dump_particles']:
+        write_openpmd_initial_particles(particles, world, constants, simulation_parameters['output_dir'])
+    # write the initial particles to an openPMD file
+
+
     fast_backend = simulation_parameters.get("fast_backend", "flat")
     if fast_backend == "flat":
         if electrostatic or solver == "vector_potential":
@@ -309,12 +314,12 @@ def initialize_simulation(toml_file):
             print("fast_backend='flat' incompatible with species layout; falling back to default")
             simulation_parameters["fast_backend"] = "default"
         else:
+            print("Using flat particle backend for simulation")
             particles = to_flat_particles(particles)
             simulation_parameters["fast_backend"] = "flat"
+    # check if we can use the flat particle backend for faster performance, and convert to flat particles if possible
 
-    if plotting_parameters['dump_particles']:
-        write_openpmd_initial_particles(particles, world, constants, simulation_parameters['output_dir'])
-    # write the initial particles to an openPMD file
+
 
     E, B, J, phi, rho = initialize_fields(Nx, Ny, Nz)
     # initialize the electric and magnetic fields

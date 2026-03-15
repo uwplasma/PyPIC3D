@@ -107,6 +107,9 @@ class flat_particle_species:
 
     def get_mass(self):
         return self.mass * self.weight
+    
+    def get_weight(self):
+        return self.weight
 
     def get_shape(self):
         return self.shape
