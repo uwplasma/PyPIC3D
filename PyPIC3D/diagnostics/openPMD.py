@@ -113,8 +113,29 @@ def write_openpmd_particles_to_iteration(iteration, particles, constants):
         gamma = _ensure_openpmd_array(gamma)
 
         num_particles = x.shape[0]
-        particle_mass = float(species.mass)
-        particle_charge = float(species.charge)
+        # number of particles in this species
+
+        particle_mass = species.get_mass()
+        particle_charge = species.get_charge()
+        weights         = species.get_weight()
+        # get the particle mass, charge, and weight for this species
+
+
+        if jnp.ndim(weights) == 0:
+            weights = np.full(num_particles, float(weights), dtype=np.float64)
+        else:
+            weights = _ensure_openpmd_array(weights)
+
+        if jnp.ndim(particle_mass) == 0:
+            masses = np.full(num_particles, float(particle_mass), dtype=np.float64)
+        else:
+            masses = _ensure_openpmd_array(particle_mass)
+        
+        if jnp.ndim(particle_charge) == 0:
+            charges = np.full(num_particles, float(particle_charge), dtype=np.float64)
+        else:
+            charges = _ensure_openpmd_array(particle_charge)
+        # ensure weights, masses, and charges are 1D arrays of the correct length for openPMD output
 
         position = species_group["position"]
         for component, data in zip(("x", "y", "z"), (x, y, z)):
@@ -123,6 +144,7 @@ def write_openpmd_particles_to_iteration(iteration, particles, constants):
             record_component.store_chunk(data, [0], [num_particles])
             record_component.unit_SI = 1.0
 
+        # positionOffset: required by openPMD consumers (WarpX expects it)
         pos_off = species_group["positionOffset"]
         zeros = np.zeros(num_particles, dtype=np.float64)
         for comp in ("x", "y", "z"):
@@ -135,25 +157,24 @@ def write_openpmd_particles_to_iteration(iteration, particles, constants):
         for component, data in zip(("x", "y", "z"), (vx, vy, vz)):
             record_component = momentum[component]
             record_component.reset_dataset(io.Dataset(data.dtype, [num_particles]))
-            record_component.store_chunk(data * particle_mass * gamma, [0], [num_particles])
+            momenta = data * masses * gamma
+            # compute the momentum for each particle
+            record_component.store_chunk(momenta, [0], [num_particles])
             record_component.unit_SI = 1.0
 
         weighting = species_group["weighting"]
-        weights = np.full(num_particles, float(species.weight), dtype=np.float64)
         weighting.reset_dataset(io.Dataset(weights.dtype, [num_particles]))
         weighting.store_chunk(weights, [0], [num_particles])
         weighting.unit_SI = 1.0
 
         charge = species_group["charge"]
-        charges = np.full(num_particles, particle_charge, dtype=np.float64)
         charge.reset_dataset(io.Dataset(charges.dtype, [num_particles]))
-        charge.store_chunk(charges, [0], [num_particles])
+        charge.store_chunk(charges / weights, [0], [num_particles])
         charge.unit_SI = 1.0
 
         mass = species_group["mass"]
-        masses = np.full(num_particles, particle_mass, dtype=np.float64)
         mass.reset_dataset(io.Dataset(masses.dtype, [num_particles]))
-        mass.store_chunk(masses, [0], [num_particles])
+        mass.store_chunk(masses / weights, [0], [num_particles])
         mass.unit_SI = 1.0
 
 
