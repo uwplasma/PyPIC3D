@@ -63,8 +63,24 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic
 
 
     #################### BORIS ALGORITHM ####################################
-    boris_vmap              = jax.vmap(boris_single_particle, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None, None))
-    relativistic_boris_vmap = jax.vmap(relativistic_boris_single_particle, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None, None))
+    if jnp.ndim(q) == 0:
+        boris_vmap = jax.vmap(
+            boris_single_particle,
+            in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None, None),
+        )
+        relativistic_boris_vmap = jax.vmap(
+            relativistic_boris_single_particle,
+            in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, None, None, None, None),
+        )
+    else:
+        boris_vmap = jax.vmap(
+            boris_single_particle,
+            in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, None, None),
+        )
+        relativistic_boris_vmap = jax.vmap(
+            relativistic_boris_single_particle,
+            in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, None, None),
+        )
     # vectorize the Boris algorithm for batch processing
 
     newvx, newvy, newvz = jax.lax.cond(

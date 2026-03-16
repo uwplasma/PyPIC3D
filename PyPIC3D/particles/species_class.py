@@ -167,6 +167,9 @@ class particle_species:
     def get_mass(self):
         return self.mass * self.weight
 
+    def get_weight(self):
+        return self.weight
+
     def get_resolution(self):
         return self.dx, self.dy, self.dz
 
