@@ -99,15 +99,27 @@ class flat_particle_species:
         half_y = self.y_wind / 2
         half_z = self.z_wind / 2
 
-        x1_back = jnp.where(x1_back > half_x, x1_back - self.x_wind, jnp.where(x1_back < -half_x, x1_back + self.x_wind, x1_back))
-        x2_back = jnp.where(x2_back > half_y, x2_back - self.y_wind, jnp.where(x2_back < -half_y, x2_back + self.y_wind, x2_back))
-        x3_back = jnp.where(x3_back > half_z, x3_back - self.z_wind, jnp.where(x3_back < -half_z, x3_back + self.z_wind, x3_back))
+        x1_back = jnp.where(
+            x1_back > half_x,
+            x1_back - self.x_wind,
+            jnp.where(x1_back < -half_x, x1_back + self.x_wind, x1_back),
+        )
+        x2_back = jnp.where(
+            x2_back > half_y,
+            x2_back - self.y_wind,
+            jnp.where(x2_back < -half_y, x2_back + self.y_wind, x2_back),
+        )
+        x3_back = jnp.where(
+            x3_back > half_z,
+            x3_back - self.z_wind,
+            jnp.where(x3_back < -half_z, x3_back + self.z_wind, x3_back),
+        )
 
         return x1_back, x2_back, x3_back
 
     def get_mass(self):
         return self.mass * self.weight
-    
+
     def get_weight(self):
         return self.weight
 
@@ -141,9 +153,21 @@ class flat_particle_species:
         half_y = self.y_wind / 2
         half_z = self.z_wind / 2
 
-        self.x1 = jnp.where(self.x1 > half_x, self.x1 - self.x_wind, jnp.where(self.x1 < -half_x, self.x1 + self.x_wind, self.x1))
-        self.x2 = jnp.where(self.x2 > half_y, self.x2 - self.y_wind, jnp.where(self.x2 < -half_y, self.x2 + self.y_wind, self.x2))
-        self.x3 = jnp.where(self.x3 > half_z, self.x3 - self.z_wind, jnp.where(self.x3 < -half_z, self.x3 + self.z_wind, self.x3))
+        self.x1 = jnp.where(
+            self.x1 > half_x,
+            self.x1 - self.x_wind,
+            jnp.where(self.x1 < -half_x, self.x1 + self.x_wind, self.x1),
+        )
+        self.x2 = jnp.where(
+            self.x2 > half_y,
+            self.x2 - self.y_wind,
+            jnp.where(self.x2 < -half_y, self.x2 + self.y_wind, self.x2),
+        )
+        self.x3 = jnp.where(
+            self.x3 > half_z,
+            self.x3 - self.z_wind,
+            jnp.where(self.x3 < -half_z, self.x3 + self.z_wind, self.x3),
+        )
 
     def tree_flatten(self):
         children = (self.x1, self.x2, self.x3, self.v1, self.v2, self.v3)

@@ -40,7 +40,7 @@ from PyPIC3D.diagnostics.fluid_quantities import (
     compute_mass_density
 )
 
-from PyPIC3D.rho import compute_rho
+from PyPIC3D.deposition.rho import compute_rho
 
 
 # Importing functions from the PyPIC3D package

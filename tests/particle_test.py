@@ -5,13 +5,16 @@ import sys
 import os
 
 
-from PyPIC3D.particle import (
-    initial_particles, particle_species
-)
+from PyPIC3D.particles.particle_initialization import (
+    initial_particles
+    )
 
-from PyPIC3D.J import J_from_rhov, Esirkepov_current
+from PyPIC3D.particles.species_class import particle_species
 
-from PyPIC3D.rho import compute_rho
+from PyPIC3D.deposition.J_from_rhov import J_from_rhov
+from PyPIC3D.deposition.Esirkepov import Esirkepov_current
+from PyPIC3D.deposition.rho import compute_rho
+
 
 
 jax.config.update("jax_enable_x64", True)

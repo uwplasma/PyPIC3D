@@ -1,5 +1,5 @@
 
-from PyPIC3D.shapes import get_first_order_weights, get_second_order_weights
+from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.utils import wrap_around
 
 import jax
