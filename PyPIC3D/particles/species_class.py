@@ -1,4 +1,3 @@
-import numpy as np
 import jax
 from jax import jit
 from functools import partial
