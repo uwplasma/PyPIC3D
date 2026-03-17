@@ -78,6 +78,10 @@ def compute_macroparticle_weight(config, particle_keys, simulation_parameters, w
             if d != 1:
                 ds2 += d**2
 
+        if ds2 == 0:
+            raise ValueError(
+                "Invalid configuration for 'ds_per_debye': at least one of dx, dy, dz must differ from 1."
+            )
         weight = 1 / (ds2) / (ds_per_debye**2) / inverse_total_debye
     else:
         weight = 1.0
