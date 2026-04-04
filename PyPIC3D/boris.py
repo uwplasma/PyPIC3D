@@ -3,7 +3,6 @@ from jax import jit
 import jax.numpy as jnp
 
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
-from PyPIC3D.utils import wrap_around
 
 @jit
 def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic=True, relativistic=True):
@@ -233,10 +232,11 @@ def interpolate_field_to_particles(field, x, y, z, grid, shape_factor):
     Ny = len(y_grid)
     Nz = len(z_grid)
     # grid point counts for each direction
-    x_active = Nx != 1
-    y_active = Ny != 1
-    z_active = Nz != 1
-    # infer effective dimensionality from grid extents
+    # With ghost cells, grids have Nx_phys+2 points. A single-cell axis
+    # (Nx_phys=1) gives 3 grid points, so check > 3 to detect active dims.
+    x_active = Nx > 3
+    y_active = Ny > 3
+    z_active = Nz > 3
 
     dx = x_grid[1] - x_grid[0] if Nx > 1 else 1.0
     dy = y_grid[1] - y_grid[0] if Ny > 1 else 1.0
@@ -279,13 +279,11 @@ def interpolate_field_to_particles(field, x, y, z, grid, shape_factor):
     z_weights = jnp.asarray(z_weights)
     # compute the shape function weights for the particles and convert them to arrays
 
-    x0 = wrap_around(x0, Nx)
-    y0 = wrap_around(y0, Ny)
-    z0 = wrap_around(z0, Nz)
-    # wrap around the grid points for periodic boundary conditions
-    x1 = wrap_around(x0+1, Nx)
-    y1 = wrap_around(y0+1, Ny)
-    z1 = wrap_around(z0+1, Nz)
+    # with ghost cells, x0 is already in [1, Nx] for interior points
+    # so x0-1, x0, x0+1 are all valid indices in [0, Nx+1]
+    x1 = x0 + 1
+    y1 = y0 + 1
+    z1 = z0 + 1
     # calculate the right grid point
     x_minus1 = x0 - 1
     y_minus1 = y0 - 1

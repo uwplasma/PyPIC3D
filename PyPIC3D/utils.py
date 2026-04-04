@@ -37,17 +37,19 @@ def wrap_around(ix, size):
     return jnp.mod(ix, size)
 
 @jit
-def bilinear_filter(phi, mode="wrap"):
+def bilinear_filter(phi):
     """
-    Apply a 3D (tri-linear) smoothing filter to a 3D array using a separable
+    Apply a 3D (tri-linear) smoothing filter to a ghost-celled 3D array using a separable
     [1, 2, 1]/4 kernel in each dimension.
 
+    The ghost cells provide the boundary information for the convolution.
+    The filtered result is written back into the interior of the field.
+
     Args:
-        phi (jnp.ndarray): 3D field array with shape (Nx, Ny, Nz).
-        mode (str): Padding mode passed to jnp.pad (default: "wrap").
+        phi (jnp.ndarray): 3D field array with shape (Nx+2, Ny+2, Nz+2) including ghost cells.
 
     Returns:
-        jnp.ndarray: Filtered array with the same shape as phi.
+        jnp.ndarray: Field with filtered interior and original ghost cells.
     """
     k1 = jnp.array([1.0, 2.0, 1.0], dtype=phi.dtype) / 4.0  # sums to 1
     k3 = k1[:, None, None] * k1[None, :, None] * k1[None, None, :]  # (3,3,3), sums to 1
@@ -55,29 +57,31 @@ def bilinear_filter(phi, mode="wrap"):
     kernel = jnp.zeros((3, 3, 3, 1, 1), dtype=phi.dtype)
     kernel = kernel.at[:, :, :, 0, 0].set(k3)
 
-    padded_phi = jnp.pad(phi, ((1, 1), (1, 1), (1, 1)), mode=mode)
-
     filtered = jax.lax.conv_general_dilated(
-        padded_phi[jnp.newaxis, ..., jnp.newaxis],
+        phi[jnp.newaxis, ..., jnp.newaxis],
         kernel,
         window_strides=(1, 1, 1),
         padding="VALID",
         dimension_numbers=("NDHWC", "DHWIO", "NDHWC"),
         feature_group_count=1,
     )
-    return jnp.squeeze(filtered, axis=(0, 4))
+    # convolution with VALID padding on (Nx+2, Ny+2, Nz+2) produces (Nx, Ny, Nz) interior
+    return phi.at[1:-1, 1:-1, 1:-1].set(jnp.squeeze(filtered, axis=(0, 4)))
 
 @jit
 def digital_filter(phi, alpha):
     """
-    Apply a digital filter to a field.
+    Apply a digital filter to a ghost-celled field.
+
+    The ghost cells provide the boundary information for the convolution.
+    The filtered result is written back into the interior of the field.
 
     Args:
-        phi (ndarray): Field array.
+        phi (ndarray): Field array with shape (Nx+2, Ny+2, Nz+2) including ghost cells.
         alpha (float): Filter coefficient.
 
     Returns:
-        ndarray: Filtered field array.
+        ndarray: Field with filtered interior and original ghost cells.
     """
     neighbor_weight = (1 - alpha) / 6
     kernel = jnp.zeros((3, 3, 3, 1, 1), dtype=phi.dtype)
@@ -89,15 +93,15 @@ def digital_filter(phi, alpha):
     kernel = kernel.at[1, 1, 0, 0, 0].set(neighbor_weight)
     kernel = kernel.at[1, 1, 2, 0, 0].set(neighbor_weight)
 
-    padded_phi = jnp.pad(phi, ((1, 1), (1, 1), (1, 1)), mode="wrap")
     filtered = jax.lax.conv_general_dilated(
-        padded_phi[jnp.newaxis, ..., jnp.newaxis],
+        phi[jnp.newaxis, ..., jnp.newaxis],
         kernel,
         window_strides=(1, 1, 1),
         padding="VALID",
         dimension_numbers=("NDHWC", "DHWIO", "NDHWC"),
     )
-    return jnp.squeeze(filtered, axis=(0, 4))
+    # convolution with VALID padding on (Nx+2, Ny+2, Nz+2) produces (Nx, Ny, Nz) interior
+    return phi.at[1:-1, 1:-1, 1:-1].set(jnp.squeeze(filtered, axis=(0, 4)))
 
 def mae(x, y):
     """
@@ -203,12 +207,12 @@ def compute_energy(particles, E, B, world, constants):
 
     Ex, Ey, Ez = E
     Bx, By, Bz = B
-    # E2_integral = jnp.squeeze( nd_trapezoid(Ex**2 + Ey**2 + Ez**2, dxs))
-    # B2_integral = jnp.squeeze( nd_trapezoid(Bx**2 + By**2 + Bz**2, dxs))
+    # use interior slices to exclude ghost cells from the energy integral
+    interior = (slice(1, -1), slice(1, -1), slice(1, -1))
     dV = dx * dy * dz
     # calculate the volume element
-    E2_integral = jnp.sum(Ex**2 + Ey**2 + Ez**2) * dV
-    B2_integral = jnp.sum(Bx**2 + By**2 + Bz**2) * dV
+    E2_integral = jnp.sum(Ex[interior]**2 + Ey[interior]**2 + Ez[interior]**2) * dV
+    B2_integral = jnp.sum(Bx[interior]**2 + By[interior]**2 + Bz[interior]**2) * dV
     # Integrate E^2 and B^2 over the grid using trapezoidal rule
     e_energy = 0.5 * constants['eps'] * E2_integral
     b_energy = 0.5 / constants['mu'] * B2_integral
@@ -470,7 +474,9 @@ def convert_to_jax_compatible(data):
 
 def build_collocated_grid(world):
     """
-    Builds a co-allocated grid based on the provided world parameters.
+    Builds a co-allocated grid including ghost cell positions.
+
+    The returned grid has Nx+2 points per axis (1 ghost cell on each side).
 
     Args:
         world (dict): A dictionary containing the following keys:
@@ -483,7 +489,7 @@ def build_collocated_grid(world):
 
     Returns:
         tuple: A tuple containing two elements:
-            - grid (tuple): A tuple of three arrays representing the grid points in the x, y, and z directions.
+            - grid (tuple): A tuple of three arrays representing the grid points including ghost positions.
             - grid (tuple): A duplicate of the first grid tuple.
     """
 
@@ -494,13 +500,20 @@ def build_collocated_grid(world):
     y_wind = world['y_wind']
     z_wind = world['z_wind']
     # get the grid parameters
-    grid = jnp.arange(-x_wind/2, x_wind/2, dx), jnp.arange(-y_wind/2, y_wind/2, dy), jnp.arange(-z_wind/2, z_wind/2, dz)
-    # create the grid space
+    grid = (
+        jnp.arange(-x_wind/2 - dx, x_wind/2 + dx, dx),
+        jnp.arange(-y_wind/2 - dy, y_wind/2 + dy, dy),
+        jnp.arange(-z_wind/2 - dz, z_wind/2 + dz, dz),
+    )
+    # create the grid space with ghost cell positions
     return grid, grid
 
 def build_yee_grid(world):
     """
-    Builds a Yee grid and a staggered Yee grid based on the provided world parameters.
+    Builds a Yee grid and a staggered Yee grid including ghost cell positions.
+
+    The returned grids have Nx+2 points per axis (1 ghost cell on each side).
+    The physical interior corresponds to indices [1:-1].
 
     Args:
         world (dict): A dictionary containing the following keys:
@@ -513,8 +526,8 @@ def build_yee_grid(world):
 
     Returns:
         tuple: A tuple containing two elements:
-            - grid (tuple of jnp.ndarray): The Yee grid with three arrays representing the x, y, and z coordinates.
-            - staggered_grid (tuple of jnp.ndarray): The staggered Yee grid with three arrays representing the x, y, and z coordinates.
+            - grid (tuple of jnp.ndarray): The Yee vertex grid with Nx+2 points including ghost positions.
+            - staggered_grid (tuple of jnp.ndarray): The staggered Yee grid with Nx+2 points including ghost positions.
     """
 
     dx = world['dx']
@@ -524,9 +537,18 @@ def build_yee_grid(world):
     y_wind = world['y_wind']
     z_wind = world['z_wind']
     # get the grid parameters
-    grid = jnp.arange(-x_wind/2, x_wind/2, dx), jnp.arange(-y_wind/2, y_wind/2, dy), jnp.arange(-z_wind/2, z_wind/2, dz)
-    staggered_grid = jnp.arange(-x_wind/2 + dx/2, x_wind/2 + dx/2, dx), jnp.arange(-y_wind/2 + dy/2, y_wind/2 + dy/2, dy), jnp.arange(-z_wind/2 + dz/2, z_wind/2 + dz/2, dz)
-    # create the grid space
+
+    grid = (
+        jnp.arange(-x_wind/2 - dx, x_wind/2 + dx, dx),
+        jnp.arange(-y_wind/2 - dy, y_wind/2 + dy, dy),
+        jnp.arange(-z_wind/2 - dz, z_wind/2 + dz, dz),
+    )
+    staggered_grid = (
+        jnp.arange(-x_wind/2 + dx/2 - dx, x_wind/2 + dx/2 + dx, dx),
+        jnp.arange(-y_wind/2 + dy/2 - dy, y_wind/2 + dy/2 + dy, dy),
+        jnp.arange(-z_wind/2 + dz/2 - dz, z_wind/2 + dz/2 + dz, dz),
+    )
+    # create the grid space with ghost cell positions on each side
     return grid, staggered_grid
 
 def precondition(NN, phi, rho, model=None):
@@ -621,11 +643,13 @@ def load_external_fields_from_toml(fields, config):
 
         external_field = jnp.load(field_path)
 
-        # Check if the external field shape matches the existing field shape
-        if external_field.shape != fields[field_type].shape:
-            raise ValueError(f"Shape mismatch for field '{field_name}': external field shape {external_field.shape} does not match expected shape {fields[field_type].shape}")
+        # External fields are (Nx, Ny, Nz), add them to the interior of the ghost-celled arrays
+        interior = (slice(1, -1), slice(1, -1), slice(1, -1))
+        interior_shape = fields[field_type][interior].shape
+        if external_field.shape != interior_shape:
+            raise ValueError(f"Shape mismatch for field '{field_name}': external field shape {external_field.shape} does not match expected interior shape {interior_shape}")
 
-        fields[field_type] = fields[field_type] + external_field
+        fields[field_type] = fields[field_type].at[interior].add(external_field)
         print(f"Field loaded successfully: {field_name}")
 
     return fields

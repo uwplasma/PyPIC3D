@@ -4,8 +4,9 @@ import jax.numpy as jnp
 from functools import partial
 from jax import lax
 
-from PyPIC3D.utils import digital_filter, wrap_around, bilinear_filter
+from PyPIC3D.utils import digital_filter, bilinear_filter
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
+from PyPIC3D.boundaryconditions import fold_ghost_cells
 
 
 def _roll_old_weights_to_new_frame(old_w_list, shift):
@@ -33,9 +34,11 @@ def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
     Jy = Jy.at[:, :, :].set(0)
     Jz = Jz.at[:, :, :].set(0)
 
-    x_active = Nx != 1
-    y_active = Ny != 1
-    z_active = Nz != 1
+    # use physical grid sizes to determine active dimensions
+    # (array shape includes ghost cells, so shape != 1 is always True)
+    x_active = world["Nx"] != 1
+    y_active = world["Ny"] != 1
+    z_active = world["Nz"] != 1
 
     for species in particles:
         q = species.get_charge()
@@ -97,21 +100,21 @@ def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
         shift_y = y0 - old_y0
         shift_z = z0 - old_z0
 
-        x0 = wrap_around(x0, Nx)
-        y0 = wrap_around(y0, Ny)
-        z0 = wrap_around(z0, Nz)
-        x1 = wrap_around(x0 + 1, Nx)
-        y1 = wrap_around(y0 + 1, Ny)
-        z1 = wrap_around(z0 + 1, Nz)
-        x2 = wrap_around(x0 + 2, Nx)
-        y2 = wrap_around(y0 + 2, Ny)
-        z2 = wrap_around(z0 + 2, Nz)
-        x_minus1 = wrap_around(x0 - 1, Nx)
-        y_minus1 = wrap_around(y0 - 1, Ny)
-        z_minus1 = wrap_around(z0 - 1, Nz)
-        x_minus2 = wrap_around(x0 - 2, Nx)
-        y_minus2 = wrap_around(y0 - 2, Ny)
-        z_minus2 = wrap_around(z0 - 2, Nz)
+        # Esirkepov uses a 5-point stencil (x0-2 to x0+2) which can exceed
+        # the single ghost cell layer. Use mod wrapping to keep indices valid.
+        # Nx here is the full array size (physical Nx + 2 ghost cells).
+        x1 = jnp.mod(x0 + 1, Nx)
+        y1 = jnp.mod(y0 + 1, Ny)
+        z1 = jnp.mod(z0 + 1, Nz)
+        x2 = jnp.mod(x0 + 2, Nx)
+        y2 = jnp.mod(y0 + 2, Ny)
+        z2 = jnp.mod(z0 + 2, Nz)
+        x_minus1 = jnp.mod(x0 - 1, Nx)
+        y_minus1 = jnp.mod(y0 - 1, Ny)
+        z_minus1 = jnp.mod(z0 - 1, Nz)
+        x_minus2 = jnp.mod(x0 - 2, Nx)
+        y_minus2 = jnp.mod(y0 - 2, Ny)
+        z_minus2 = jnp.mod(z0 - 2, Nz)
 
         xpts = [x_minus2, x_minus1, x0, x1, x2]
         ypts = [y_minus2, y_minus1, y0, y1, y2]
@@ -236,6 +239,14 @@ def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
                 for j in range(5):
                     for k in range(5):
                         Jz = Jz.at[xpts[i], ypts[j], zpts[k]].add(Fz[i, j, k, :], mode="drop")
+
+    bc_x = world['boundary_conditions']['x']
+    bc_y = world['boundary_conditions']['y']
+    bc_z = world['boundary_conditions']['z']
+    Jx = fold_ghost_cells(Jx, bc_x, bc_y, bc_z)
+    Jy = fold_ghost_cells(Jy, bc_x, bc_y, bc_z)
+    Jz = fold_ghost_cells(Jz, bc_x, bc_y, bc_z)
+    # fold ghost cell deposits back into interior
 
     return (Jx, Jy, Jz)
 

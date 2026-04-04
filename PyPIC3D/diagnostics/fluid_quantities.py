@@ -1,6 +1,5 @@
 
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
-from PyPIC3D.utils import wrap_around
 
 import jax
 import jax.numpy as jnp
@@ -58,9 +57,10 @@ def compute_mass_density(particles, rho, world):
         deltaz = z - jnp.floor(z / dz) * dz
         # Calculate the difference between the particle position and the nearest grid point
 
-        x1 = wrap_around(x0 + 1, Nx)
-        y1 = wrap_around(y0 + 1, Ny)
-        z1 = wrap_around(z0 + 1, Nz)
+        # with ghost cells, x0 is already in [1, Nx] for interior points
+        x1 = x0 + 1
+        y1 = y0 + 1
+        z1 = z0 + 1
         # Calculate the index of the next grid point
 
         x_minus1 = x0 - 1
@@ -144,9 +144,10 @@ def compute_velocity_field(particles, field, direction, world):
         deltaz = z - jnp.floor(z / dz) * dz
         # Calculate the difference between the particle position and the nearest grid point
 
-        x1 = wrap_around(x0 + 1, Nx)
-        y1 = wrap_around(y0 + 1, Ny)
-        z1 = wrap_around(z0 + 1, Nz)
+        # with ghost cells, x0 is already in [1, Nx] for interior points
+        x1 = x0 + 1
+        y1 = y0 + 1
+        z1 = z0 + 1
         # Calculate the index of the next grid point
 
         x_minus1 = x0 - 1
@@ -215,9 +216,10 @@ def compute_pressure_field(particles, field, velocity_field, direction, world):
         deltaz = z - jnp.floor(z / dz) * dz
         # Calculate the difference between the particle position and the nearest grid point
 
-        x1 = wrap_around(x0 + 1, Nx)
-        y1 = wrap_around(y0 + 1, Ny)
-        z1 = wrap_around(z0 + 1, Nz)
+        # with ghost cells, x0 is already in [1, Nx] for interior points
+        x1 = x0 + 1
+        y1 = y0 + 1
+        z1 = z0 + 1
         # Calculate the index of the next grid point
 
         x_minus1 = x0 - 1

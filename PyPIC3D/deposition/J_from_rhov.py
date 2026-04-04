@@ -4,8 +4,9 @@ import jax.numpy as jnp
 from functools import partial
 from jax import lax
 
-from PyPIC3D.utils import digital_filter, wrap_around, bilinear_filter
+from PyPIC3D.utils import digital_filter, bilinear_filter
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
+from PyPIC3D.boundaryconditions import fold_ghost_cells
 
 
 @partial(jit, static_argnames=("filter",))
@@ -23,9 +24,9 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter="bilinear"):
     Nz = world["Nz"]
 
     Jx, Jy, Jz = J
-    x_active = Jx.shape[0] != 1
-    y_active = Jx.shape[1] != 1
-    z_active = Jx.shape[2] != 1
+    x_active = Nx != 1
+    y_active = Ny != 1
+    z_active = Nz != 1
 
     Jx = Jx.at[:, :, :].set(0)
     Jy = Jy.at[:, :, :].set(0)
@@ -70,12 +71,10 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter="bilinear"):
         deltay_face = (y - grid[1][0]) - (y0 + 0.5) * dy
         deltaz_face = (z - grid[2][0]) - (z0 + 0.5) * dz
 
-        x0 = wrap_around(x0, Nx)
-        y0 = wrap_around(y0, Ny)
-        z0 = wrap_around(z0, Nz)
-        x1 = wrap_around(x0 + 1, Nx)
-        y1 = wrap_around(y0 + 1, Ny)
-        z1 = wrap_around(z0 + 1, Nz)
+        # with ghost cells, x0 is already in [1, Nx] for interior points
+        x1 = x0 + 1
+        y1 = y0 + 1
+        z1 = z0 + 1
         x_minus1 = x0 - 1
         y_minus1 = y0 - 1
         z_minus1 = z0 - 1
@@ -175,6 +174,14 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter="bilinear"):
         Jx = Jx.at[(ix, iy, iz)].add(valx, mode="drop")
         Jy = Jy.at[(ix, iy, iz)].add(valy, mode="drop")
         Jz = Jz.at[(ix, iy, iz)].add(valz, mode="drop")
+
+    bc_x = world['boundary_conditions']['x']
+    bc_y = world['boundary_conditions']['y']
+    bc_z = world['boundary_conditions']['z']
+    Jx = fold_ghost_cells(Jx, bc_x, bc_y, bc_z)
+    Jy = fold_ghost_cells(Jy, bc_x, bc_y, bc_z)
+    Jz = fold_ghost_cells(Jz, bc_x, bc_y, bc_z)
+    # fold ghost cell deposits back into interior
 
     def filter_func(J_, filter):
         J_ = jax.lax.cond(

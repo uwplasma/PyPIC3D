@@ -57,8 +57,8 @@ def run_PyPIC3D(config_file):
 
     dt = world['dt']
     output_dir = simulation_parameters['output_dir']
-    vertex_grid = world['grids']['vertex']
-    # unpack relevant parameters
+    vertex_grid = tuple(g[1:-1] for g in world['grids']['vertex'])
+    # unpack the physical interior of the vertex grid (strip ghost cell positions)
 
     scalar_field_names = ["rho", "mass_density"]
     vector_field_names = ["E", "B", "J"]
@@ -116,15 +116,19 @@ def run_PyPIC3D(config_file):
                 mass_density = compute_mass_density(particles, rho, world)
                 # calculate the mass density based on the particle positions
 
-                fields_mag = [rho[:,world['Ny']//2,:], mass_density[:,world['Ny']//2,:]]
+                y_mid = world['Ny']//2 + 1
+                # midplane index shifted by 1 for ghost cells
+                fields_mag = [rho[1:-1, y_mid, 1:-1], mass_density[1:-1, y_mid, 1:-1]]
                 plot_field_slice_vtk(fields_mag, scalar_field_names, 1, vertex_grid, t, "scalar_field", output_dir, world)
                 # Plot the scalar fields in VTK format
 
 
             if plotting_parameters['plot_vtk_vectors']:
-                vector_field_slices = [ [E[0][:,world['Ny']//2,:], E[1][:,world['Ny']//2,:], E[2][:,world['Ny']//2,:]],
-                                        [B[0][:,world['Ny']//2,:], B[1][:,world['Ny']//2,:], B[2][:,world['Ny']//2,:]],
-                                        [J[0][:,world['Ny']//2,:], J[1][:,world['Ny']//2,:], J[2][:,world['Ny']//2,:]]]
+                y_mid = world['Ny']//2 + 1
+                # midplane index shifted by 1 for ghost cells
+                vector_field_slices = [ [E[0][1:-1, y_mid, 1:-1], E[1][1:-1, y_mid, 1:-1], E[2][1:-1, y_mid, 1:-1]],
+                                        [B[0][1:-1, y_mid, 1:-1], B[1][1:-1, y_mid, 1:-1], B[2][1:-1, y_mid, 1:-1]],
+                                        [J[0][1:-1, y_mid, 1:-1], J[1][1:-1, y_mid, 1:-1], J[2][1:-1, y_mid, 1:-1]]]
                 plot_vectorfield_slice_vtk(vector_field_slices, vector_field_names, 1, vertex_grid, t, 'vector_field', output_dir, world)
                 # Plot the vector fields in VTK format
 

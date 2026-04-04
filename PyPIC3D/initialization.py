@@ -52,6 +52,8 @@ from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
 from PyPIC3D.solvers.vector_potential import initialize_vector_potential
 
+from PyPIC3D.boundaryconditions import update_ghost_cells
+
 
 def _encode_field_bc(bc_name):
     """
@@ -332,6 +334,15 @@ def initialize_simulation(toml_file):
     E, B, J = fields[:3], fields[3:6], fields[6:9]
     # convert the fields list back into tuples
 
+    bc_x = world['boundary_conditions']['x']
+    bc_y = world['boundary_conditions']['y']
+    bc_z = world['boundary_conditions']['z']
+    # get the boundary condition codes
+
+    E = tuple(update_ghost_cells(comp, bc_x, bc_y, bc_z) for comp in E)
+    B = tuple(update_ghost_cells(comp, bc_x, bc_y, bc_z) for comp in B)
+    # fill ghost cells for the initial E and B fields
+
     if solver == "spectral":
         curl_func = functools.partial(spectral_curl, world=world)
     else:
@@ -404,38 +415,41 @@ def initialize_fields(Nx, Ny, Nz):
     """
     Initializes the electric and magnetic field arrays, as well as the electric potential and charge density arrays.
 
+    All arrays include ghost cells and have shape (Nx+2, Ny+2, Nz+2).
+    The physical interior corresponds to indices [1:-1, 1:-1, 1:-1].
+
     Args:
-        Nx (int): Number of grid points in the x-direction.
-        Ny (int): Number of grid points in the y-direction.
-        Nz (int): Number of grid points in the z-direction.
+        Nx (int): Number of physical grid points in the x-direction.
+        Ny (int): Number of physical grid points in the y-direction.
+        Nz (int): Number of physical grid points in the z-direction.
 
     Returns:
-        Ex (ndarray): Electric field array in the x-direction.
-        Ey (ndarray): Electric field array in the y-direction.
-        Ez (ndarray): Electric field array in the z-direction.
-        Bx (ndarray): Magnetic field array in the x-direction.
-        By (ndarray): Magnetic field array in the y-direction.
-        Bz (ndarray): Magnetic field array in the z-direction.
-        phi (ndarray): Electric potential array.
-        rho (ndarray): Charge density array.
+        E (tuple): Electric field arrays (Ex, Ey, Ez) each with shape (Nx+2, Ny+2, Nz+2).
+        B (tuple): Magnetic field arrays (Bx, By, Bz) each with shape (Nx+2, Ny+2, Nz+2).
+        J (tuple): Current density arrays (Jx, Jy, Jz) each with shape (Nx+2, Ny+2, Nz+2).
+        phi (ndarray): Electric potential array with shape (Nx+2, Ny+2, Nz+2).
+        rho (ndarray): Charge density array with shape (Nx+2, Ny+2, Nz+2).
     """
-    # get the number of grid points in each direction
-    Ex = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
-    Ey = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
-    Ez = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+    # all fields include ghost cells: shape is (Nx+2, Ny+2, Nz+2)
+    ghost_shape = (Nx + 2, Ny + 2, Nz + 2)
+
+    Ex = jax.numpy.zeros(shape = ghost_shape)
+    Ey = jax.numpy.zeros(shape = ghost_shape)
+    Ez = jax.numpy.zeros(shape = ghost_shape)
     # initialize the electric field arrays as 0
-    Bx = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
-    By = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
-    Bz = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+
+    Bx = jax.numpy.zeros(shape = ghost_shape)
+    By = jax.numpy.zeros(shape = ghost_shape)
+    Bz = jax.numpy.zeros(shape = ghost_shape)
     # initialize the magnetic field arrays as 0
 
-    Jx = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
-    Jy = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
-    Jz = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+    Jx = jax.numpy.zeros(shape = ghost_shape)
+    Jy = jax.numpy.zeros(shape = ghost_shape)
+    Jz = jax.numpy.zeros(shape = ghost_shape)
     # initialize the current density arrays as 0
 
-    phi = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
-    rho = jax.numpy.zeros(shape = (Nx, Ny, Nz) )
+    phi = jax.numpy.zeros(shape = ghost_shape)
+    rho = jax.numpy.zeros(shape = ghost_shape)
     # initialize the electric potential and charge density arrays as 0
 
     return (Ex, Ey, Ez), (Bx, By, Bz), (Jx, Jy, Jz), phi, rho

@@ -1,9 +1,202 @@
-from jax import jit
+from jax import jit, lax
 from jax.tree_util import register_pytree_node_class
 import jax.numpy as jnp
 
 # Christopher Woolford, Oct 22 2024
 # This file contains functions that apply boundary conditions to a field.
+
+BC_PERIODIC = 0
+BC_CONDUCTING = 1
+
+
+@jit
+def update_ghost_cells(field, bc_x, bc_y, bc_z):
+    """
+    Fill ghost cells of a (Nx+2, Ny+2, Nz+2) field based on boundary conditions.
+
+    For periodic boundaries, ghost cells are copied from the opposite interior edge.
+    For conducting boundaries, ghost cells are set to zero.
+
+    Args:
+        field (ndarray): 3D field array with shape (Nx+2, Ny+2, Nz+2).
+        bc_x, bc_y, bc_z (int): Boundary condition codes per axis (0=periodic, 1=conducting).
+
+    Returns:
+        ndarray: Field with ghost cells updated.
+    """
+    # x-axis ghost cells
+    field = lax.cond(
+        bc_x == BC_PERIODIC,
+        lambda f: f.at[0, :, :].set(f[-2, :, :]).at[-1, :, :].set(f[1, :, :]),
+        lambda f: f.at[0, :, :].set(0.0).at[-1, :, :].set(0.0),
+        operand=field
+    )
+
+    # y-axis ghost cells
+    field = lax.cond(
+        bc_y == BC_PERIODIC,
+        lambda f: f.at[:, 0, :].set(f[:, -2, :]).at[:, -1, :].set(f[:, 1, :]),
+        lambda f: f.at[:, 0, :].set(0.0).at[:, -1, :].set(0.0),
+        operand=field
+    )
+
+    # z-axis ghost cells
+    field = lax.cond(
+        bc_z == BC_PERIODIC,
+        lambda f: f.at[:, :, 0].set(f[:, :, -2]).at[:, :, -1].set(f[:, :, 1]),
+        lambda f: f.at[:, :, 0].set(0.0).at[:, :, -1].set(0.0),
+        operand=field
+    )
+
+    return field
+
+
+@jit
+def fold_ghost_cells(field, bc_x, bc_y, bc_z):
+    """
+    Fold ghost cell deposits back into the interior after deposition.
+
+    For periodic boundaries, ghost cell values are added to the corresponding
+    interior cells on the opposite side, then the ghost cells are cleared.
+    For conducting boundaries, ghost cells are simply cleared.
+
+    Args:
+        field (ndarray): 3D field array with shape (Nx+2, Ny+2, Nz+2).
+        bc_x, bc_y, bc_z (int): Boundary condition codes per axis (0=periodic, 1=conducting).
+
+    Returns:
+        ndarray: Field with ghost cell deposits folded back into the interior.
+    """
+    # x-axis: fold ghost deposits back to interior
+    field = lax.cond(
+        bc_x == BC_PERIODIC,
+        lambda f: f.at[-2, :, :].add(f[-1, :, :]).at[1, :, :].add(f[0, :, :]),
+        lambda f: f,
+        operand=field
+    )
+    field = field.at[0, :, :].set(0.0).at[-1, :, :].set(0.0)
+    # clear x ghost cells
+
+    # y-axis: fold ghost deposits back to interior
+    field = lax.cond(
+        bc_y == BC_PERIODIC,
+        lambda f: f.at[:, -2, :].add(f[:, -1, :]).at[:, 1, :].add(f[:, 0, :]),
+        lambda f: f,
+        operand=field
+    )
+    field = field.at[:, 0, :].set(0.0).at[:, -1, :].set(0.0)
+    # clear y ghost cells
+
+    # z-axis: fold ghost deposits back to interior
+    field = lax.cond(
+        bc_z == BC_PERIODIC,
+        lambda f: f.at[:, :, -2].add(f[:, :, -1]).at[:, :, 1].add(f[:, :, 0]),
+        lambda f: f,
+        operand=field
+    )
+    field = field.at[:, :, 0].set(0.0).at[:, :, -1].set(0.0)
+    # clear z ghost cells
+
+    return field
+
+
+@jit
+def apply_conducting_bc(E, bc_x, bc_y, bc_z):
+    """
+    Enforce conducting boundary conditions by zeroing tangential E at boundaries.
+
+    On a conducting wall normal to x: Ey and Ez are zero at x boundaries.
+    On a conducting wall normal to y: Ex and Ez are zero at y boundaries.
+    On a conducting wall normal to z: Ex and Ey are zero at z boundaries.
+
+    Args:
+        E (tuple): Electric field components (Ex, Ey, Ez), each (Nx+2, Ny+2, Nz+2).
+        bc_x, bc_y, bc_z (int): Boundary condition codes per axis (0=periodic, 1=conducting).
+
+    Returns:
+        tuple: Electric field components with conducting BCs applied.
+    """
+    Ex, Ey, Ez = E
+
+    ### x-boundary conducting: zero tangential Ey, Ez ###
+    Ey = lax.cond(
+        bc_x == BC_CONDUCTING,
+        lambda f: f.at[1, :, :].set(0.0).at[-2, :, :].set(0.0).at[-3, :, :].set(0.0),
+        lambda f: f,
+        operand=Ey
+    )
+    Ez = lax.cond(
+        bc_x == BC_CONDUCTING,
+        lambda f: f.at[1, :, :].set(0.0).at[-2, :, :].set(0.0).at[-3, :, :].set(0.0),
+        lambda f: f,
+        operand=Ez
+    )
+
+    ### y-boundary conducting: zero tangential Ex, Ez ###
+    Ex = lax.cond(
+        bc_y == BC_CONDUCTING,
+        lambda f: f.at[:, 1, :].set(0.0).at[:, -2, :].set(0.0).at[:, -3, :].set(0.0),
+        lambda f: f,
+        operand=Ex
+    )
+    Ez = lax.cond(
+        bc_y == BC_CONDUCTING,
+        lambda f: f.at[:, 1, :].set(0.0).at[:, -2, :].set(0.0).at[:, -3, :].set(0.0),
+        lambda f: f,
+        operand=Ez
+    )
+
+    ### z-boundary conducting: zero tangential Ex, Ey ###
+    Ex = lax.cond(
+        bc_z == BC_CONDUCTING,
+        lambda f: f.at[:, :, 1].set(0.0).at[:, :, -2].set(0.0).at[:, :, -3].set(0.0),
+        lambda f: f,
+        operand=Ex
+    )
+    Ey = lax.cond(
+        bc_z == BC_CONDUCTING,
+        lambda f: f.at[:, :, 1].set(0.0).at[:, :, -2].set(0.0).at[:, :, -3].set(0.0),
+        lambda f: f,
+        operand=Ey
+    )
+
+    return (Ex, Ey, Ez)
+
+
+@jit
+def apply_scalar_conducting_bc(field, bc_x, bc_y, bc_z):
+    """
+    Enforce conducting boundary conditions on a scalar field (e.g. phi).
+
+    Sets the field to zero at each conducting boundary face.
+
+    Args:
+        field (ndarray): 3D scalar field with shape (Nx+2, Ny+2, Nz+2).
+        bc_x, bc_y, bc_z (int): Boundary condition codes per axis (0=periodic, 1=conducting).
+
+    Returns:
+        ndarray: Scalar field with conducting BCs applied.
+    """
+    field = lax.cond(
+        bc_x == BC_CONDUCTING,
+        lambda f: f.at[1, :, :].set(0.0).at[-2, :, :].set(0.0),
+        lambda f: f,
+        operand=field
+    )
+    field = lax.cond(
+        bc_y == BC_CONDUCTING,
+        lambda f: f.at[:, 1, :].set(0.0).at[:, -2, :].set(0.0),
+        lambda f: f,
+        operand=field
+    )
+    field = lax.cond(
+        bc_z == BC_CONDUCTING,
+        lambda f: f.at[:, :, 1].set(0.0).at[:, :, -2].set(0.0),
+        lambda f: f,
+        operand=field
+    )
+    return field
+
 
 def apply_supergaussian_boundary_condition(field, boundary_thickness, order, strength):
     """

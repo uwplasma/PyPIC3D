@@ -2,8 +2,9 @@ import jax
 from jax import jit
 import jax.numpy as jnp
 
-from PyPIC3D.utils import digital_filter, wrap_around
+from PyPIC3D.utils import digital_filter
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
+from PyPIC3D.boundaryconditions import fold_ghost_cells
 
 
 @jit
@@ -48,13 +49,10 @@ def compute_rho(particles, rho, world, constants):
         deltay = y - (y0 * dy + grid[1][0])
         deltaz = z - (z0 * dz + grid[2][0])
 
-        x0 = wrap_around(x0, Nx)
-        y0 = wrap_around(y0, Ny)
-        z0 = wrap_around(z0, Nz)
-
-        x1 = wrap_around(x0 + 1, Nx)
-        y1 = wrap_around(y0 + 1, Ny)
-        z1 = wrap_around(z0 + 1, Nz)
+        # with ghost cells, x0 is already in [1, Nx] for interior points
+        x1 = x0 + 1
+        y1 = y0 + 1
+        z1 = z0 + 1
 
         x_minus1 = x0 - 1
         y_minus1 = y0 - 1
@@ -77,6 +75,12 @@ def compute_rho(particles, rho, world, constants):
                     rho = rho.at[xpts[i], ypts[j], zpts[k]].add(
                         dq * x_weights[i] * y_weights[j] * z_weights[k], mode="drop"
                     )
+
+    bc_x = world['boundary_conditions']['x']
+    bc_y = world['boundary_conditions']['y']
+    bc_z = world['boundary_conditions']['z']
+    rho = fold_ghost_cells(rho, bc_x, bc_y, bc_z)
+    # fold ghost cell deposits back into interior
 
     alpha = constants["alpha"]
     rho = digital_filter(rho, alpha)
