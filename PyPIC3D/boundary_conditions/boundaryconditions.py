@@ -1,28 +1,40 @@
+# Christopher Woolford, April 6th 2026
+# Field-level boundary condition operations for ghost-celled 3D arrays.
+
 from jax import jit, lax
 import jax.numpy as jnp
+# import external libraries
 
-from PyPIC3D.boundary_conditions.ghost_cells import BC_CONDUCTING, BC_PERIODIC
-
-# Christopher Woolford, Oct 22 2024
-# This file contains functions that apply boundary conditions to a field.
+from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
+# import internal modules
 
 
 @jit
 def update_ghost_cells(field, bc_x, bc_y, bc_z):
     """
-    Fill ghost cells of a (Nx+2, Ny+2, Nz+2) field based on boundary conditions.
+    Fill ghost cells of a 3D field from its interior based on boundary conditions.
 
-    For periodic boundaries, ghost cells are copied from the opposite interior edge.
-    For conducting boundaries, ghost cells are set to zero.
+    Ghost cells provide the halo data needed by finite-difference stencils
+    that reach across the domain boundary. For periodic BCs, the ghost
+    layer mirrors the opposite interior edge. For conducting BCs, ghost
+    cells are zeroed (Dirichlet condition).
+
+    The field is assumed to have shape (Nx+2, Ny+2, Nz+2) with one ghost
+    cell on each side per axis. Indices [0] and [-1] are ghost cells;
+    indices [1] and [-2] are the first and last interior cells.
 
     Args:
-        field (ndarray): 3D field array with shape (Nx+2, Ny+2, Nz+2).
-        bc_x, bc_y, bc_z (int): Boundary condition codes per axis (0=periodic, 1=conducting).
+        field (jnp.ndarray): 3D field array with shape (Nx+2, Ny+2, Nz+2).
+        bc_x (int): Boundary condition code for the x-axis (BC_PERIODIC or BC_CONDUCTING).
+        bc_y (int): Boundary condition code for the y-axis.
+        bc_z (int): Boundary condition code for the z-axis.
 
     Returns:
-        ndarray: Field with ghost cells updated.
+        jnp.ndarray: Field with ghost cells filled.
     """
     # x-axis ghost cells
+    # Periodic: ghost[0] <- interior[-2], ghost[-1] <- interior[1]
+    # Conducting: ghost[0] = ghost[-1] = 0
     field = lax.cond(
         bc_x == BC_PERIODIC,
         lambda f: f.at[0, :, :].set(f[-2, :, :]).at[-1, :, :].set(f[1, :, :]),
@@ -52,18 +64,25 @@ def update_ghost_cells(field, bc_x, bc_y, bc_z):
 @jit
 def fold_ghost_cells(field, bc_x, bc_y, bc_z):
     """
-    Fold ghost cell deposits back into the interior after deposition.
+    Fold ghost cell deposits back into the interior after particle deposition.
 
-    For periodic boundaries, ghost cell values are added to the corresponding
-    interior cells on the opposite side, then the ghost cells are cleared.
-    For conducting boundaries, ghost cells are simply cleared.
+    During charge/current deposition, particles near the boundary may
+    deposit into ghost cells. This function adds those ghost deposits to
+    the corresponding interior cells and then clears the ghost layer.
+
+    For periodic BCs, ghost deposits are added to the opposite interior
+    edge (ghost[0] -> interior[1], ghost[-1] -> interior[-2]).
+    For conducting BCs, ghost deposits are simply discarded.
+    In both cases, ghost cells are cleared to zero after folding.
 
     Args:
-        field (ndarray): 3D field array with shape (Nx+2, Ny+2, Nz+2).
-        bc_x, bc_y, bc_z (int): Boundary condition codes per axis (0=periodic, 1=conducting).
+        field (jnp.ndarray): 3D field array with shape (Nx+2, Ny+2, Nz+2).
+        bc_x (int): Boundary condition code for the x-axis (BC_PERIODIC or BC_CONDUCTING).
+        bc_y (int): Boundary condition code for the y-axis.
+        bc_z (int): Boundary condition code for the z-axis.
 
     Returns:
-        ndarray: Field with ghost cell deposits folded back into the interior.
+        jnp.ndarray: Field with ghost cell deposits folded back into the interior.
     """
     # x-axis: fold ghost deposits back to interior
     field = lax.cond(
@@ -72,8 +91,8 @@ def fold_ghost_cells(field, bc_x, bc_y, bc_z):
         lambda f: f,
         operand=field
     )
+    # Clear x ghost cells after folding (both periodic and conducting)
     field = field.at[0, :, :].set(0.0).at[-1, :, :].set(0.0)
-    # clear x ghost cells
 
     # y-axis: fold ghost deposits back to interior
     field = lax.cond(
@@ -82,8 +101,8 @@ def fold_ghost_cells(field, bc_x, bc_y, bc_z):
         lambda f: f,
         operand=field
     )
+    # Clear y ghost cells after folding
     field = field.at[:, 0, :].set(0.0).at[:, -1, :].set(0.0)
-    # clear y ghost cells
 
     # z-axis: fold ghost deposits back to interior
     field = lax.cond(
@@ -92,8 +111,8 @@ def fold_ghost_cells(field, bc_x, bc_y, bc_z):
         lambda f: f,
         operand=field
     )
+    # Clear z ghost cells after folding
     field = field.at[:, :, 0].set(0.0).at[:, :, -1].set(0.0)
-    # clear z ghost cells
 
     return field
 
@@ -103,16 +122,24 @@ def apply_conducting_bc(E, bc_x, bc_y, bc_z):
     """
     Enforce conducting boundary conditions by zeroing tangential E at boundaries.
 
-    On a conducting wall normal to x: Ey and Ez are zero at x boundaries.
-    On a conducting wall normal to y: Ex and Ez are zero at y boundaries.
-    On a conducting wall normal to z: Ex and Ey are zero at z boundaries.
+    On a perfectly conducting wall, the tangential electric field must vanish.
+    On a ghost-celled (Nx+2, Ny+2, Nz+2) grid, the first physical face is
+    at index [1] and the last at index [-2].
+
+    For a conducting wall normal to a given axis, the two tangential
+    components are zeroed at both boundary faces along that axis:
+        - Wall normal to x: zero Ey, Ez at x-boundaries [1] and [-2].
+        - Wall normal to y: zero Ex, Ez at y-boundaries [1] and [-2].
+        - Wall normal to z: zero Ex, Ey at z-boundaries [1] and [-2].
 
     Args:
-        E (tuple): Electric field components (Ex, Ey, Ez), each (Nx+2, Ny+2, Nz+2).
-        bc_x, bc_y, bc_z (int): Boundary condition codes per axis (0=periodic, 1=conducting).
+        E (tuple): Electric field components (Ex, Ey, Ez), each with shape (Nx+2, Ny+2, Nz+2).
+        bc_x (int): Boundary condition code for the x-axis (BC_PERIODIC or BC_CONDUCTING).
+        bc_y (int): Boundary condition code for the y-axis.
+        bc_z (int): Boundary condition code for the z-axis.
 
     Returns:
-        tuple: Electric field components with conducting BCs applied.
+        tuple: Electric field components (Ex, Ey, Ez) with conducting BCs applied.
     """
     Ex, Ey, Ez = E
 
@@ -164,16 +191,19 @@ def apply_conducting_bc(E, bc_x, bc_y, bc_z):
 @jit
 def apply_scalar_conducting_bc(field, bc_x, bc_y, bc_z):
     """
-    Enforce conducting boundary conditions on a scalar field (e.g. phi).
+    Enforce conducting boundary conditions on a scalar field (e.g. electric potential phi).
 
-    Sets the field to zero at each conducting boundary face.
+    Sets the field to zero at each conducting boundary face. On a
+    ghost-celled grid, boundary faces are at interior indices [1] and [-2].
 
     Args:
-        field (ndarray): 3D scalar field with shape (Nx+2, Ny+2, Nz+2).
-        bc_x, bc_y, bc_z (int): Boundary condition codes per axis (0=periodic, 1=conducting).
+        field (jnp.ndarray): 3D scalar field with shape (Nx+2, Ny+2, Nz+2).
+        bc_x (int): Boundary condition code for the x-axis (BC_PERIODIC or BC_CONDUCTING).
+        bc_y (int): Boundary condition code for the y-axis.
+        bc_z (int): Boundary condition code for the z-axis.
 
     Returns:
-        ndarray: Scalar field with conducting BCs applied.
+        jnp.ndarray: Scalar field with conducting BCs applied.
     """
     field = lax.cond(
         bc_x == BC_CONDUCTING,
@@ -196,20 +226,27 @@ def apply_scalar_conducting_bc(field, bc_x, bc_y, bc_z):
     return field
 
 
+# No @jit: the Python for-loop is unrolled during JAX tracing by any
+# JIT-compiled caller, so explicit JIT here would cause tracing errors.
 def apply_supergaussian_boundary_condition(field, boundary_thickness, order, strength):
     """
-    Apply Super-Gaussian absorbing boundary conditions to the given field.
+    Apply a super-Gaussian absorbing boundary layer to damp fields near domain edges.
+
+    Multiplies the field by an exponential damping profile that increases
+    toward the boundary: exp(-strength * (distance / thickness)^order).
+    This is applied symmetrically on all six faces of the 3D domain.
 
     Args:
-        field (ndarray): The field to which the Super-Gaussian boundary condition is applied.
-        boundary_thickness (int): The thickness of the absorbing boundary layer.
-        order (int): The order of the Super-Gaussian function.
-        strength (float): The strength of the absorption.
+        field (jnp.ndarray): 3D field array with shape (Nx, Ny, Nz).
+        boundary_thickness (int): Number of cells in the absorbing layer.
+        order (int): Exponent of the super-Gaussian profile (higher = sharper transition).
+        strength (float): Amplitude of the damping (dimensionless).
 
     Returns:
-        ndarray: The field with Super-Gaussian boundary conditions applied.
+        jnp.ndarray: Field with absorbing boundary damping applied.
     """
     def supergaussian_factor(x, thickness, order, strength):
+        """Compute the damping factor at distance x from the boundary."""
         return jnp.exp(-strength * (x / thickness)**order)
 
     nx, ny, nz = field.shape
@@ -224,16 +261,21 @@ def apply_supergaussian_boundary_condition(field, boundary_thickness, order, str
 
     return field
 
+
 @jit
 def apply_zero_boundary_condition(field):
     """
-    Apply zero boundary conditions to the given field.
+    Zero all six boundary faces of a 3D field.
+
+    Sets the outermost slice on each axis to zero. This is a simple
+    Dirichlet-zero condition applied directly to the array boundaries,
+    without distinguishing ghost cells from physical cells.
 
     Args:
-        field (ndarray): The field to which the zero boundary condition is applied.
+        field (jnp.ndarray): 3D field array of any shape.
 
     Returns:
-        ndarray: The field with zero boundary conditions applied.
+        jnp.ndarray: Field with all boundary faces set to zero.
     """
     field = field.at[0, :, :].set(0)
     field = field.at[-1, :, :].set(0)

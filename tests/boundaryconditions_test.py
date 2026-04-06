@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import sys
 import os
 
-from PyPIC3D.boundary_conditions.ghost_cells import BC_CONDUCTING, BC_PERIODIC
+from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 from PyPIC3D.boundary_conditions.boundaryconditions import (
     apply_supergaussian_boundary_condition, apply_zero_boundary_condition,
     update_ghost_cells, fold_ghost_cells, apply_conducting_bc,

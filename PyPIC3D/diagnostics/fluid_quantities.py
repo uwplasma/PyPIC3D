@@ -1,6 +1,6 @@
 
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
-from PyPIC3D.boundary_conditions.ghost_cells import collapse_axis_stencil, prepare_particle_axis_stencil
+from PyPIC3D.boundary_conditions.grid_and_stencil import collapse_axis_stencil, prepare_particle_axis_stencil
 from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, update_ghost_cells
 
 import jax

@@ -13,7 +13,7 @@ from jax.tree_util import tree_map
 from datetime import datetime
 import importlib.metadata
 from scipy import stats
-from PyPIC3D.boundary_conditions.ghost_cells import build_collocated_axis, build_staggered_axis
+from PyPIC3D.boundary_conditions.grid_and_stencil import build_collocated_axis, build_staggered_axis
 # import external libraries
 
 def setup_pmd_files(file_path, name, extension=".bp"):

@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from functools import partial
 from jax import lax
 
-from PyPIC3D.boundary_conditions.ghost_cells import (
+from PyPIC3D.boundary_conditions.grid_and_stencil import (
     axis_has_active_cells,
     collapse_axis_stencil,
     prepare_particle_axis_stencil,

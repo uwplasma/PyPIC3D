@@ -3,7 +3,7 @@ import unittest
 import jax
 import jax.numpy as jnp
 
-from PyPIC3D.boundary_conditions.ghost_cells import (
+from PyPIC3D.boundary_conditions.grid_and_stencil import (
     BC_CONDUCTING,
     BC_PERIODIC,
     axis_has_active_cells,

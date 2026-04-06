@@ -3,7 +3,7 @@ from jax import jit
 import jax.numpy as jnp
 from functools import partial
 
-from PyPIC3D.boundary_conditions.ghost_cells import (
+from PyPIC3D.boundary_conditions.grid_and_stencil import (
     BC_PERIODIC,
     axis_has_active_cells,
     collapse_axis_stencil,

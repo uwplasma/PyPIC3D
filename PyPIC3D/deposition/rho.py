@@ -2,7 +2,7 @@ import jax
 from jax import jit
 import jax.numpy as jnp
 
-from PyPIC3D.boundary_conditions.ghost_cells import (
+from PyPIC3D.boundary_conditions.grid_and_stencil import (
     collapse_axis_stencil,
     prepare_particle_axis_stencil,
 )
