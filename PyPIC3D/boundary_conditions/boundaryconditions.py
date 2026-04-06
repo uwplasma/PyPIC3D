@@ -1,12 +1,10 @@
 from jax import jit, lax
-from jax.tree_util import register_pytree_node_class
 import jax.numpy as jnp
+
+from PyPIC3D.boundary_conditions.ghost_cells import BC_CONDUCTING, BC_PERIODIC
 
 # Christopher Woolford, Oct 22 2024
 # This file contains functions that apply boundary conditions to a field.
-
-BC_PERIODIC = 0
-BC_CONDUCTING = 1
 
 
 @jit

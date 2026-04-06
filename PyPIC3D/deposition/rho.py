@@ -2,13 +2,13 @@ import jax
 from jax import jit
 import jax.numpy as jnp
 
-from PyPIC3D.utils import (
+from PyPIC3D.boundary_conditions.ghost_cells import (
     collapse_axis_stencil,
-    digital_filter,
     prepare_particle_axis_stencil,
 )
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, update_ghost_cells
+from PyPIC3D.utils import digital_filter
 
 
 @jit

@@ -4,15 +4,16 @@ import jax.numpy as jnp
 from functools import partial
 from jax import lax
 
-from PyPIC3D.utils import (
+from PyPIC3D.boundary_conditions.ghost_cells import (
+    BC_PERIODIC,
     axis_has_active_cells,
     build_axis_stencil_points,
     compute_particle_anchor,
     inactive_axis_index,
     particle_axis_offset,
 )
+from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, update_ghost_cells
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
-from PyPIC3D.boundary_conditions.boundaryconditions import BC_PERIODIC, fold_ghost_cells, update_ghost_cells
 
 
 def _roll_old_weights_to_new_frame(old_w_list, shift):

@@ -4,14 +4,14 @@ import jax.numpy as jnp
 from functools import partial
 from jax import lax
 
-from PyPIC3D.utils import (
+from PyPIC3D.boundary_conditions.ghost_cells import (
     axis_has_active_cells,
-    bilinear_filter,
     collapse_axis_stencil,
     prepare_particle_axis_stencil,
 )
-from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, update_ghost_cells
+from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
+from PyPIC3D.utils import bilinear_filter
 
 
 def _remap_staggered_periodic_ghosts(points, position, axis_size, wind):

@@ -3,13 +3,13 @@ from jax import jit
 import jax.numpy as jnp
 from functools import partial
 
-from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
-from PyPIC3D.utils import (
+from PyPIC3D.boundary_conditions.ghost_cells import (
     BC_PERIODIC,
     axis_has_active_cells,
     collapse_axis_stencil,
     prepare_particle_axis_stencil,
 )
+from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 
 @jit
 def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic=True, relativistic=True):

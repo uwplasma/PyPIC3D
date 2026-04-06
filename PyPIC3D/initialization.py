@@ -52,6 +52,7 @@ from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
 from PyPIC3D.solvers.vector_potential import initialize_vector_potential
 
+from PyPIC3D.boundary_conditions.ghost_cells import BC_CONDUCTING, BC_PERIODIC
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 
 
@@ -60,8 +61,8 @@ def _encode_field_bc(bc_name):
     Encode field boundary condition labels into integer codes for JAX-safe storage.
     """
     bc_codes = {
-        "periodic": 0,
-        "conducting": 1,
+        "periodic": BC_PERIODIC,
+        "conducting": BC_CONDUCTING,
     }
     if bc_name not in bc_codes:
         raise ValueError(f"Unsupported field boundary condition: {bc_name}")
