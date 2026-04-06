@@ -7,7 +7,7 @@ from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.solvers.fdtd import centered_finite_difference_gradient
 from PyPIC3D.solvers.pstd import spectral_gradient
 from PyPIC3D.utils import digital_filter
-from PyPIC3D.boundaryconditions import (
+from PyPIC3D.boundary_conditions.boundaryconditions import (
     update_ghost_cells, apply_scalar_conducting_bc
 )
 
@@ -122,7 +122,7 @@ def solve_poisson_with_conjugate_gradient(rho, phi, constants, world, tol=1e-6, 
         beta = jnp.sum(r_next * r_next) / jnp.sum(r * r)
         # compute the optimal scaling for the new search direction
         p_next = p.at[1:-1, 1:-1, 1:-1].set(r_next + beta * p[1:-1, 1:-1, 1:-1])
-        p_next = update_ghost_cells(p_next, bc_x, bc_y, bc_z)
+        p_next = apply_bc(p_next)
         # compute the new search direction
 
         return phi_next, r_next, p_next, k + 1
@@ -136,12 +136,13 @@ def solve_poisson_with_conjugate_gradient(rho, phi, constants, world, tol=1e-6, 
         return jnp.logical_and(k < max_iter, norm_r > tol**2)
     # if the residual norm is above the tolerance and we haven't exceeded max iterations, continue iterating
 
+    phi = apply_bc(phi)
     residual = rho[1:-1, 1:-1, 1:-1] / eps + lapl(phi)
     # compute the error in the Poisson equation with the current potential guess
 
     p0 = jnp.zeros_like(phi)
     p0 = p0.at[1:-1, 1:-1, 1:-1].set(residual)
-    p0 = update_ghost_cells(p0, bc_x, bc_y, bc_z)
+    p0 = apply_bc(p0)
     # initialize the search direction with ghost cells
 
     phi, residual, p, iteration = lax.while_loop(
@@ -151,7 +152,7 @@ def solve_poisson_with_conjugate_gradient(rho, phi, constants, world, tol=1e-6, 
     )
     # run the conjugate gradient iterations until convergence or max iterations reached
 
-    return phi
+    return apply_bc(phi)
 
 
 @partial(jit, static_argnames=("solver", "bc"))
@@ -176,6 +177,9 @@ def calculate_electrostatic_fields(world, particles, constants, rho, phi, solver
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
+    bc_x = world['boundary_conditions']['x']
+    bc_y = world['boundary_conditions']['y']
+    bc_z = world['boundary_conditions']['z']
 
     rho = compute_rho(particles, rho, world, constants)
 
@@ -186,12 +190,12 @@ def calculate_electrostatic_fields(world, particles, constants, rho, phi, solver
         operand=None,
     )
 
+    phi = update_ghost_cells(phi, bc_x, bc_y, bc_z)
+    # refresh ghost cells before any stencil-based post-processing
+
     alpha = constants['alpha']
     phi = digital_filter(phi, alpha)
-
-    bc_x = world['boundary_conditions']['x']
-    bc_y = world['boundary_conditions']['y']
-    bc_z = world['boundary_conditions']['z']
+    phi = apply_scalar_conducting_bc(phi, bc_x, bc_y, bc_z)
     phi = update_ghost_cells(phi, bc_x, bc_y, bc_z)
     # update ghost cells after filtering
 

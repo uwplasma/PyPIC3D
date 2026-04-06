@@ -1,5 +1,7 @@
 
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
+from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, update_ghost_cells
+from PyPIC3D.utils import collapse_axis_stencil, prepare_particle_axis_stencil
 
 import jax
 import jax.numpy as jnp
@@ -27,10 +29,11 @@ def compute_mass_density(particles, rho, world):
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
-    x_wind = world['x_wind']
-    y_wind = world['y_wind']
-    z_wind = world['z_wind']
+    grid = world['grids']['vertex']
     Nx, Ny, Nz = rho.shape
+    bc_x = world['boundary_conditions']['x']
+    bc_y = world['boundary_conditions']['y']
+    bc_z = world['boundary_conditions']['z']
     # get the shape of the charge density array
 
     rho = jnp.zeros_like(rho)
@@ -47,31 +50,15 @@ def compute_mass_density(particles, rho, world):
         x, y, z = species.get_position()
         # get the position of the particles in the species
 
-        x0 = jnp.floor((x + x_wind / 2) / dx).astype(int)
-        y0 = jnp.floor((y + y_wind / 2) / dy).astype(int)
-        z0 = jnp.floor((z + z_wind / 2) / dz).astype(int)
-        # Calculate the nearest grid points
-
-        deltax = x - jnp.floor(x / dx) * dx
-        deltay = y - jnp.floor(y / dy) * dy
-        deltaz = z - jnp.floor(z / dz) * dz
-        # Calculate the difference between the particle position and the nearest grid point
-
-        # with ghost cells, x0 is already in [1, Nx] for interior points
-        x1 = x0 + 1
-        y1 = y0 + 1
-        z1 = z0 + 1
-        # Calculate the index of the next grid point
-
-        x_minus1 = x0 - 1
-        y_minus1 = y0 - 1
-        z_minus1 = z0 - 1
-        # Calculate the index of the previous grid point
-
-        xpts = [x_minus1, x0, x1]
-        ypts = [y_minus1, y0, y1]
-        zpts = [z_minus1, z0, z1]
-        # place all the points in a list
+        _, _, deltax, xpts = prepare_particle_axis_stencil(
+            x, grid[0], Nx, shape_factor, bc_x, wind=world['x_wind'], ghost_cells=True
+        )
+        _, _, deltay, ypts = prepare_particle_axis_stencil(
+            y, grid[1], Ny, shape_factor, bc_y, wind=world['y_wind'], ghost_cells=True
+        )
+        _, _, deltaz, zpts = prepare_particle_axis_stencil(
+            z, grid[2], Nz, shape_factor, bc_z, wind=world['z_wind'], ghost_cells=True
+        )
 
         x_weights, y_weights, z_weights = jax.lax.cond(
             shape_factor == 1,
@@ -81,6 +68,16 @@ def compute_mass_density(particles, rho, world):
         )
         # get the weighting factors based on the shape factor
 
+        xpts = jnp.asarray(xpts)
+        ypts = jnp.asarray(ypts)
+        zpts = jnp.asarray(zpts)
+        x_weights = jnp.asarray(x_weights)
+        y_weights = jnp.asarray(y_weights)
+        z_weights = jnp.asarray(z_weights)
+        xpts, x_weights = collapse_axis_stencil(xpts, x_weights, Nx, ghost_cells=True)
+        ypts, y_weights = collapse_axis_stencil(ypts, y_weights, Ny, ghost_cells=True)
+        zpts, z_weights = collapse_axis_stencil(zpts, z_weights, Nz, ghost_cells=True)
+
 
         for i in range(3):
             for j in range(3):
@@ -88,6 +85,8 @@ def compute_mass_density(particles, rho, world):
                     rho = rho.at[xpts[i], ypts[j], zpts[k]].add( dm * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
         # distribute the mass of the particles to the grid points using the weighting factors
 
+    rho = fold_ghost_cells(rho, bc_x, bc_y, bc_z)
+    rho = update_ghost_cells(rho, bc_x, bc_y, bc_z)
     return rho
 
 @jit
@@ -112,10 +111,11 @@ def compute_velocity_field(particles, field, direction, world):
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
-    x_wind = world['x_wind']
-    y_wind = world['y_wind']
-    z_wind = world['z_wind']
+    grid = world['grids']['vertex']
     Nx, Ny, Nz = field.shape
+    bc_x = world['boundary_conditions']['x']
+    bc_y = world['boundary_conditions']['y']
+    bc_z = world['boundary_conditions']['z']
     # get the shape of the velocity field array
 
     field = jnp.zeros_like(field)
@@ -134,31 +134,15 @@ def compute_velocity_field(particles, field, direction, world):
         dv = jnp.array([vx, vy, vz])[direction] / N_particles
         # select the velocity component based on the direction
 
-        x0 = jnp.floor((x + x_wind / 2) / dx).astype(int)
-        y0 = jnp.floor((y + y_wind / 2) / dy).astype(int)
-        z0 = jnp.floor((z + z_wind / 2) / dz).astype(int)
-        # Calculate the nearest grid points
-
-        deltax = x - jnp.floor(x / dx) * dx
-        deltay = y - jnp.floor(y / dy) * dy
-        deltaz = z - jnp.floor(z / dz) * dz
-        # Calculate the difference between the particle position and the nearest grid point
-
-        # with ghost cells, x0 is already in [1, Nx] for interior points
-        x1 = x0 + 1
-        y1 = y0 + 1
-        z1 = z0 + 1
-        # Calculate the index of the next grid point
-
-        x_minus1 = x0 - 1
-        y_minus1 = y0 - 1
-        z_minus1 = z0 - 1
-        # Calculate the index of the previous grid point
-
-        xpts = [x_minus1, x0, x1]
-        ypts = [y_minus1, y0, y1]
-        zpts = [z_minus1, z0, z1]
-        # place all the points in a list
+        _, _, deltax, xpts = prepare_particle_axis_stencil(
+            x, grid[0], Nx, shape_factor, bc_x, wind=world['x_wind'], ghost_cells=True
+        )
+        _, _, deltay, ypts = prepare_particle_axis_stencil(
+            y, grid[1], Ny, shape_factor, bc_y, wind=world['y_wind'], ghost_cells=True
+        )
+        _, _, deltaz, zpts = prepare_particle_axis_stencil(
+            z, grid[2], Nz, shape_factor, bc_z, wind=world['z_wind'], ghost_cells=True
+        )
 
         x_weights, y_weights, z_weights = jax.lax.cond(
             shape_factor == 1,
@@ -168,12 +152,24 @@ def compute_velocity_field(particles, field, direction, world):
         )
         # get the weighting factors based on the shape factor
 
+        xpts = jnp.asarray(xpts)
+        ypts = jnp.asarray(ypts)
+        zpts = jnp.asarray(zpts)
+        x_weights = jnp.asarray(x_weights)
+        y_weights = jnp.asarray(y_weights)
+        z_weights = jnp.asarray(z_weights)
+        xpts, x_weights = collapse_axis_stencil(xpts, x_weights, Nx, ghost_cells=True)
+        ypts, y_weights = collapse_axis_stencil(ypts, y_weights, Ny, ghost_cells=True)
+        zpts, z_weights = collapse_axis_stencil(zpts, z_weights, Nz, ghost_cells=True)
+
         for i in range(3):
             for j in range(3):
                 for k in range(3):
                     field = field.at[xpts[i], ypts[j], zpts[k]].add( dv * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
         # distribute the velocity of the particles to the grid points using the weighting factors
 
+    field = fold_ghost_cells(field, bc_x, bc_y, bc_z)
+    field = update_ghost_cells(field, bc_x, bc_y, bc_z)
     return field
 
 
@@ -185,10 +181,11 @@ def compute_pressure_field(particles, field, velocity_field, direction, world):
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
-    x_wind = world['x_wind']
-    y_wind = world['y_wind']
-    z_wind = world['z_wind']
+    grid = world['grids']['vertex']
     Nx, Ny, Nz = field.shape
+    bc_x = world['boundary_conditions']['x']
+    bc_y = world['boundary_conditions']['y']
+    bc_z = world['boundary_conditions']['z']
     # get the shape of the velocity field array
 
     field = jnp.zeros_like(field)
@@ -206,31 +203,15 @@ def compute_pressure_field(particles, field, velocity_field, direction, world):
         v = jnp.array([vx, vy, vz])[direction]
         # select the velocity component based on the direction
 
-        x0 = jnp.floor((x + x_wind / 2) / dx).astype(int)
-        y0 = jnp.floor((y + y_wind / 2) / dy).astype(int)
-        z0 = jnp.floor((z + z_wind / 2) / dz).astype(int)
-        # Calculate the nearest grid points
-
-        deltax = x - jnp.floor(x / dx) * dx
-        deltay = y - jnp.floor(y / dy) * dy
-        deltaz = z - jnp.floor(z / dz) * dz
-        # Calculate the difference between the particle position and the nearest grid point
-
-        # with ghost cells, x0 is already in [1, Nx] for interior points
-        x1 = x0 + 1
-        y1 = y0 + 1
-        z1 = z0 + 1
-        # Calculate the index of the next grid point
-
-        x_minus1 = x0 - 1
-        y_minus1 = y0 - 1
-        z_minus1 = z0 - 1
-        # Calculate the index of the previous grid point
-
-        xpts = [x_minus1, x0, x1]
-        ypts = [y_minus1, y0, y1]
-        zpts = [z_minus1, z0, z1]
-        # place all the points in a list
+        _, _, deltax, xpts = prepare_particle_axis_stencil(
+            x, grid[0], Nx, shape_factor, bc_x, wind=world['x_wind'], ghost_cells=True
+        )
+        _, _, deltay, ypts = prepare_particle_axis_stencil(
+            y, grid[1], Ny, shape_factor, bc_y, wind=world['y_wind'], ghost_cells=True
+        )
+        _, _, deltaz, zpts = prepare_particle_axis_stencil(
+            z, grid[2], Nz, shape_factor, bc_z, wind=world['z_wind'], ghost_cells=True
+        )
 
         x_weights, y_weights, z_weights = jax.lax.cond(
             shape_factor == 1,
@@ -240,6 +221,16 @@ def compute_pressure_field(particles, field, velocity_field, direction, world):
         )
         # get the weighting factors based on the shape factor
 
+        xpts = jnp.asarray(xpts)
+        ypts = jnp.asarray(ypts)
+        zpts = jnp.asarray(zpts)
+        x_weights = jnp.asarray(x_weights)
+        y_weights = jnp.asarray(y_weights)
+        z_weights = jnp.asarray(z_weights)
+        xpts, x_weights = collapse_axis_stencil(xpts, x_weights, Nx, ghost_cells=True)
+        ypts, y_weights = collapse_axis_stencil(ypts, y_weights, Ny, ghost_cells=True)
+        zpts, z_weights = collapse_axis_stencil(zpts, z_weights, Nz, ghost_cells=True)
+
         for i in range(3):
             for j in range(3):
                 for k in range(3):
@@ -248,4 +239,6 @@ def compute_pressure_field(particles, field, velocity_field, direction, world):
                     field = field.at[xpts[i], ypts[j], zpts[k]].add( vbar**2 * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
         # distribute the pressure moment of the particles to the grid points using the weighting factors
 
+    field = fold_ghost_cells(field, bc_x, bc_y, bc_z)
+    field = update_ghost_cells(field, bc_x, bc_y, bc_z)
     return field

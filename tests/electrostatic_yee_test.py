@@ -12,7 +12,7 @@ from PyPIC3D.solvers.electrostatic_yee import (
 from PyPIC3D.solvers.fdtd import centered_finite_difference_gradient
 from PyPIC3D.solvers.pstd import spectral_gradient
 from PyPIC3D.utils import build_yee_grid
-from PyPIC3D.boundaryconditions import update_ghost_cells
+from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 
 jax.config.update("jax_enable_x64", True)
 

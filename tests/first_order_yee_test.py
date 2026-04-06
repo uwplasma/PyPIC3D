@@ -8,7 +8,7 @@ import os
 from PyPIC3D.initialization import initialize_fields
 from PyPIC3D.solvers.first_order_yee import update_E, update_B
 from PyPIC3D.utils import build_yee_grid
-from PyPIC3D.boundaryconditions import update_ghost_cells
+from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 
 from PyPIC3D.solvers.fdtd import centered_finite_difference_curl
 

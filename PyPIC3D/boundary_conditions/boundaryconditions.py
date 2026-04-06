@@ -121,13 +121,13 @@ def apply_conducting_bc(E, bc_x, bc_y, bc_z):
     ### x-boundary conducting: zero tangential Ey, Ez ###
     Ey = lax.cond(
         bc_x == BC_CONDUCTING,
-        lambda f: f.at[1, :, :].set(0.0).at[-2, :, :].set(0.0).at[-3, :, :].set(0.0),
+        lambda f: f.at[1, :, :].set(0.0).at[-2, :, :].set(0.0),
         lambda f: f,
         operand=Ey
     )
     Ez = lax.cond(
         bc_x == BC_CONDUCTING,
-        lambda f: f.at[1, :, :].set(0.0).at[-2, :, :].set(0.0).at[-3, :, :].set(0.0),
+        lambda f: f.at[1, :, :].set(0.0).at[-2, :, :].set(0.0),
         lambda f: f,
         operand=Ez
     )
@@ -135,13 +135,13 @@ def apply_conducting_bc(E, bc_x, bc_y, bc_z):
     ### y-boundary conducting: zero tangential Ex, Ez ###
     Ex = lax.cond(
         bc_y == BC_CONDUCTING,
-        lambda f: f.at[:, 1, :].set(0.0).at[:, -2, :].set(0.0).at[:, -3, :].set(0.0),
+        lambda f: f.at[:, 1, :].set(0.0).at[:, -2, :].set(0.0),
         lambda f: f,
         operand=Ex
     )
     Ez = lax.cond(
         bc_y == BC_CONDUCTING,
-        lambda f: f.at[:, 1, :].set(0.0).at[:, -2, :].set(0.0).at[:, -3, :].set(0.0),
+        lambda f: f.at[:, 1, :].set(0.0).at[:, -2, :].set(0.0),
         lambda f: f,
         operand=Ez
     )
@@ -149,13 +149,13 @@ def apply_conducting_bc(E, bc_x, bc_y, bc_z):
     ### z-boundary conducting: zero tangential Ex, Ey ###
     Ex = lax.cond(
         bc_z == BC_CONDUCTING,
-        lambda f: f.at[:, :, 1].set(0.0).at[:, :, -2].set(0.0).at[:, :, -3].set(0.0),
+        lambda f: f.at[:, :, 1].set(0.0).at[:, :, -2].set(0.0),
         lambda f: f,
         operand=Ex
     )
     Ey = lax.cond(
         bc_z == BC_CONDUCTING,
-        lambda f: f.at[:, :, 1].set(0.0).at[:, :, -2].set(0.0).at[:, :, -3].set(0.0),
+        lambda f: f.at[:, :, 1].set(0.0).at[:, :, -2].set(0.0),
         lambda f: f,
         operand=Ey
     )

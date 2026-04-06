@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 # import external libraries
 
 from . import errors
-from . import boundaryconditions
+from .boundary_conditions import boundaryconditions
 from . import initialization
 from . import utils
 from . import boris

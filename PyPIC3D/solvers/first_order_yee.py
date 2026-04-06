@@ -4,7 +4,7 @@ from functools import partial
 # import external libraries
 
 from PyPIC3D.utils import digital_filter
-from PyPIC3D.boundaryconditions import update_ghost_cells, apply_conducting_bc
+from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells, apply_conducting_bc
 # import internal libraries
 
 
@@ -70,6 +70,11 @@ def update_E(E, B, J, world, constants, curl_func):
         Ez[1:-1, 1:-1, 1:-1] + (C**2 * curl_z - Jz[1:-1, 1:-1, 1:-1] / eps) * dt
     )
     # update the electric field from Maxwell's equations
+
+    Ex = update_ghost_cells(Ex, bc_x, bc_y, bc_z)
+    Ey = update_ghost_cells(Ey, bc_x, bc_y, bc_z)
+    Ez = update_ghost_cells(Ez, bc_x, bc_y, bc_z)
+    # refresh ghost cells before any stencil-based post-processing
 
     alpha = constants['alpha']
     Ex = digital_filter(Ex, alpha)
@@ -138,6 +143,11 @@ def update_B(E, B, world, constants, curl_func):
     By = By.at[1:-1, 1:-1, 1:-1].set(By[1:-1, 1:-1, 1:-1] - dt * curl_y)
     Bz = Bz.at[1:-1, 1:-1, 1:-1].set(Bz[1:-1, 1:-1, 1:-1] - dt * curl_z)
     # update the magnetic field from Maxwell's equations
+
+    Bx = update_ghost_cells(Bx, bc_x, bc_y, bc_z)
+    By = update_ghost_cells(By, bc_x, bc_y, bc_z)
+    Bz = update_ghost_cells(Bz, bc_x, bc_y, bc_z)
+    # refresh ghost cells before any stencil-based post-processing
 
     alpha = constants['alpha']
     Bx = digital_filter(Bx, alpha)

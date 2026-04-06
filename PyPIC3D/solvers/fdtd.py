@@ -4,7 +4,7 @@ from jax import jit
 from jax import lax
 # import external libraries
 
-from PyPIC3D.boundaryconditions import apply_zero_boundary_condition
+from PyPIC3D.boundary_conditions.boundaryconditions import apply_zero_boundary_condition
 
 def solve_poisson_sor(phi, rho, dx, dy, dz, eps, omega=1.5, tol=1e-6, max_iter=10000):
     """

@@ -31,6 +31,12 @@ class TestUtilsFunctions(unittest.TestCase):
         grid, staggered = build_yee_grid(self.world)
         self.assertEqual(len(grid), 3)
         self.assertEqual(len(staggered), 3)
+        self.assertEqual(len(grid[0]), self.world['Nx'] + 2)
+        self.assertEqual(len(grid[1]), self.world['Ny'] + 2)
+        self.assertEqual(len(grid[2]), self.world['Nz'] + 2)
+        self.assertEqual(len(staggered[0]), self.world['Nx'] + 2)
+        self.assertEqual(len(staggered[1]), self.world['Ny'] + 2)
+        self.assertEqual(len(staggered[2]), self.world['Nz'] + 2)
         #  Check that the grid and staggered arrays have the expected lengths
 
     def test_check_stability(self):

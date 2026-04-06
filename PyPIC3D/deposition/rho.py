@@ -2,9 +2,13 @@ import jax
 from jax import jit
 import jax.numpy as jnp
 
-from PyPIC3D.utils import digital_filter
+from PyPIC3D.utils import (
+    collapse_axis_stencil,
+    digital_filter,
+    prepare_particle_axis_stencil,
+)
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
-from PyPIC3D.boundaryconditions import fold_ghost_cells
+from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, update_ghost_cells
 
 
 @jit
@@ -15,6 +19,9 @@ def compute_rho(particles, rho, world, constants):
     dz = world["dz"]
     grid = world["grids"]["vertex"]
     Nx, Ny, Nz = rho.shape
+    bc_x = world["boundary_conditions"]["x"]
+    bc_y = world["boundary_conditions"]["y"]
+    bc_z = world["boundary_conditions"]["z"]
 
     rho = jnp.zeros_like(rho)
 
@@ -22,45 +29,42 @@ def compute_rho(particles, rho, world, constants):
         shape_factor = species.get_shape()
         q = species.get_charge()
         dq = q / dx / dy / dz
-        x, y, z = species.get_position()
+        x, y, z = species.get_forward_position()
+        vx, vy, vz = species.get_velocity()
+        dt = species.dt
+        # Deposit from the unwrapped half-step-back position so periodic seam
+        # contributions land in the ghost cells instead of being pre-wrapped.
+        x = x - vx * dt / 2
+        y = y - vy * dt / 2
+        z = z - vz * dt / 2
 
-        x0 = jax.lax.cond(
-            shape_factor == 1,
-            lambda _: jnp.floor((x - grid[0][0]) / dx).astype(int),
-            lambda _: jnp.round((x - grid[0][0]) / dx).astype(int),
-            operand=None,
+        x, _, deltax, xpts = prepare_particle_axis_stencil(
+            x,
+            grid[0],
+            Nx,
+            shape_factor,
+            bc_x,
+            wind=world["x_wind"],
+            ghost_cells=True,
         )
-
-        y0 = jax.lax.cond(
-            shape_factor == 1,
-            lambda _: jnp.floor((y - grid[1][0]) / dy).astype(int),
-            lambda _: jnp.round((y - grid[1][0]) / dy).astype(int),
-            operand=None,
+        y, _, deltay, ypts = prepare_particle_axis_stencil(
+            y,
+            grid[1],
+            Ny,
+            shape_factor,
+            bc_y,
+            wind=world["y_wind"],
+            ghost_cells=True,
         )
-
-        z0 = jax.lax.cond(
-            shape_factor == 1,
-            lambda _: jnp.floor((z - grid[2][0]) / dz).astype(int),
-            lambda _: jnp.round((z - grid[2][0]) / dz).astype(int),
-            operand=None,
+        z, _, deltaz, zpts = prepare_particle_axis_stencil(
+            z,
+            grid[2],
+            Nz,
+            shape_factor,
+            bc_z,
+            wind=world["z_wind"],
+            ghost_cells=True,
         )
-
-        deltax = x - (x0 * dx + grid[0][0])
-        deltay = y - (y0 * dy + grid[1][0])
-        deltaz = z - (z0 * dz + grid[2][0])
-
-        # with ghost cells, x0 is already in [1, Nx] for interior points
-        x1 = x0 + 1
-        y1 = y0 + 1
-        z1 = z0 + 1
-
-        x_minus1 = x0 - 1
-        y_minus1 = y0 - 1
-        z_minus1 = z0 - 1
-
-        xpts = [x_minus1, x0, x1]
-        ypts = [y_minus1, y0, y1]
-        zpts = [z_minus1, z0, z1]
 
         x_weights, y_weights, z_weights = jax.lax.cond(
             shape_factor == 1,
@@ -69,20 +73,31 @@ def compute_rho(particles, rho, world, constants):
             operand=None,
         )
 
-        for i in range(3):
-            for j in range(3):
-                for k in range(3):
+        xpts = jnp.asarray(xpts)
+        ypts = jnp.asarray(ypts)
+        zpts = jnp.asarray(zpts)
+        x_weights = jnp.asarray(x_weights)
+        y_weights = jnp.asarray(y_weights)
+        z_weights = jnp.asarray(z_weights)
+
+        xpts, x_weights = collapse_axis_stencil(xpts, x_weights, Nx, ghost_cells=True)
+        ypts, y_weights = collapse_axis_stencil(ypts, y_weights, Ny, ghost_cells=True)
+        zpts, z_weights = collapse_axis_stencil(zpts, z_weights, Nz, ghost_cells=True)
+
+        for i in range(xpts.shape[0]):
+            for j in range(ypts.shape[0]):
+                for k in range(zpts.shape[0]):
                     rho = rho.at[xpts[i], ypts[j], zpts[k]].add(
                         dq * x_weights[i] * y_weights[j] * z_weights[k], mode="drop"
                     )
 
-    bc_x = world['boundary_conditions']['x']
-    bc_y = world['boundary_conditions']['y']
-    bc_z = world['boundary_conditions']['z']
     rho = fold_ghost_cells(rho, bc_x, bc_y, bc_z)
     # fold ghost cell deposits back into interior
+    rho = update_ghost_cells(rho, bc_x, bc_y, bc_z)
+    # refresh ghost cells before any stencil-based post-processing
 
     alpha = constants["alpha"]
     rho = digital_filter(rho, alpha)
+    rho = update_ghost_cells(rho, bc_x, bc_y, bc_z)
 
     return rho
