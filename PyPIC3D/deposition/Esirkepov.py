@@ -42,32 +42,6 @@ def _collapse_esirkepov_axis(points, current_weights, old_weights, axis_size):
     return collapsed_points, collapsed_current, collapsed_old
 
 
-def _shift_active_current_points(points, position, bc, wind):
-    """Map cumulative Esirkepov currents onto the correct active-face index."""
-    shifted_interior = lax.cond(
-        bc == BC_PERIODIC,
-        lambda pts: jnp.roll(pts, -1, axis=0),
-        lambda pts: jnp.concatenate([pts[1:, :], pts[-1:, :]], axis=0),
-        operand=points,
-    )
-    shifted_seam = lax.cond(
-        bc == BC_PERIODIC,
-        lambda pts: jnp.roll(pts, 1, axis=0),
-        lambda pts: pts,
-        operand=points,
-    )
-    return lax.cond(
-        bc == BC_PERIODIC,
-        lambda pts: jnp.where(
-            (position[jnp.newaxis, ...] > 0.5 * wind) | (position[jnp.newaxis, ...] < -0.5 * wind),
-            shifted_seam,
-            shifted_interior,
-        ),
-        lambda pts: shifted_interior,
-        operand=points,
-    )
-
-
 def _remap_staggered_periodic_ghosts(points, position, axis_size, wind):
     """Route out-of-domain staggered Esirkepov stencils into the ghost across the seam."""
     points = jnp.where(
@@ -246,15 +220,11 @@ def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
         Jx_loc = jnp.cumsum(Fx, axis=0)
         Jy_loc = jnp.cumsum(Fy, axis=1)
         Jz_loc = jnp.cumsum(Fz, axis=2)
-        xpts_Jx = _shift_active_current_points(xpts, x, bc_x, world["x_wind"])
-        ypts_Jy = _shift_active_current_points(ypts, y, bc_y, world["y_wind"])
-        zpts_Jz = _shift_active_current_points(zpts, z, bc_z, world["z_wind"])
-
         if x_active:
             for i in range(5):
                 for j in range(5):
                     for k in range(5):
-                        Jx = Jx.at[xpts_Jx[i, :], ypts[j, :], zpts[k, :]].add(Jx_loc[i, j, k, :], mode="drop")
+                        Jx = Jx.at[xpts[i, :], ypts[j, :], zpts[k, :]].add(Jx_loc[i, j, k, :], mode="drop")
         else:
             for i in range(5):
                 for j in range(5):
@@ -265,7 +235,7 @@ def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
             for i in range(5):
                 for j in range(5):
                     for k in range(5):
-                        Jy = Jy.at[xpts[i, :], ypts_Jy[j, :], zpts[k, :]].add(Jy_loc[i, j, k, :], mode="drop")
+                        Jy = Jy.at[xpts[i, :], ypts[j, :], zpts[k, :]].add(Jy_loc[i, j, k, :], mode="drop")
         else:
             for i in range(5):
                 for j in range(5):
@@ -276,7 +246,7 @@ def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
             for i in range(5):
                 for j in range(5):
                     for k in range(5):
-                        Jz = Jz.at[xpts[i, :], ypts[j, :], zpts_Jz[k, :]].add(Jz_loc[i, j, k, :], mode="drop")
+                        Jz = Jz.at[xpts[i, :], ypts[j, :], zpts[k, :]].add(Jz_loc[i, j, k, :], mode="drop")
         else:
             for i in range(5):
                 for j in range(5):
