@@ -37,7 +37,7 @@ from PyPIC3D.initialization import (
 )
 
 from PyPIC3D.diagnostics.fluid_quantities import (
-    compute_mass_density
+    compute_mass_density, compute_velocity_field
 )
 
 from PyPIC3D.deposition.rho import compute_rho
@@ -141,7 +141,26 @@ def run_PyPIC3D(config_file):
             # Write the particles in openPMD format
 
             if plotting_parameters['plot_openpmd_fields']:
-                write_openpmd_fields(fields, world, os.path.join(output_dir, "data"), plot_num, t,  "fields", ".h5")
+                interior = (slice(1, -1), slice(1, -1), slice(1, -1))
+
+                Ux = compute_velocity_field(particles, rho, 0, world)
+                Uy = compute_velocity_field(particles, rho, 1, world)
+                Uz = compute_velocity_field(particles, rho, 2, world)
+                # compute the velocity field for each component
+                U = (Ux, Uy, Uz)
+
+                
+                field_map = {
+                    "E": tuple(comp[interior] for comp in E),
+                    "B": tuple(comp[interior] for comp in B),
+                    "J": tuple(comp[interior] for comp in J),
+                    "U": tuple(comp[interior] for comp in U),
+                    "rho": rho[interior],
+                }
+                # create a field map for the interior of the domain (strip ghost cells)
+
+
+                write_openpmd_fields(field_map, world, os.path.join(output_dir, "data"), plot_num, t,  "fields", ".h5")
             # Write the fields in openPMD format
 
             fields = (E, B, J, rho, *rest)

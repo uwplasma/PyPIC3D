@@ -198,7 +198,7 @@ def write_openpmd_particles_to_iteration(iteration, particles, constants):
         mass.unit_SI = 1.0
 
 
-def write_openpmd_fields(fields, world, output_dir, plot_t, t, filename="fields", file_extension=".bp"):
+def write_openpmd_fields(field_map, world, output_dir, plot_t, t, filename="fields", file_extension=".bp"):
     """
     Write all field data to an openPMD file for visualization in ParaView/VisIt.
 
@@ -211,10 +211,11 @@ def write_openpmd_fields(fields, world, output_dir, plot_t, t, filename="fields"
         filename (str): Base name for the openPMD file.
         file_extension (str): File extension for the openPMD series (for example, ".bp").
     """
-    field_map = _fields_to_interior_map(fields)
+    # field_map = _fields_to_interior_map(fields)
     # extract physical interior (strip ghost cells)
 
-    Nx, Ny, Nz = field_map["rho"].shape
+    # Nx, Ny, Nz = field_map["rho"].shape
+    Nx, Ny, Nz = world["Nx"], world["Ny"], world["Nz"]
     active_dims = (Nx > 1, Ny > 1, Nz > 1)
     # determine active dimensions from interior shape
 

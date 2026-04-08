@@ -20,7 +20,7 @@ GPUs=true
 
 [plotting]
 plotting_interval = 10
-plot_openpmd_fields = true
+#plot_openpmd_fields = true
 
 
 [field1]
