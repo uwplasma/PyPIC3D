@@ -72,7 +72,10 @@ def fold_ghost_cells(field, bc_x, bc_y, bc_z):
 
     For periodic BCs, ghost deposits are added to the opposite interior
     edge (ghost[0] -> interior[1], ghost[-1] -> interior[-2]).
-    For conducting BCs, ghost deposits are simply discarded.
+
+    For conducting BCs with reflecting particles, ghost deposits are reflected 
+    back into the domain with opposite sign.
+
     In both cases, ghost cells are cleared to zero after folding.
 
     Args:
@@ -88,7 +91,7 @@ def fold_ghost_cells(field, bc_x, bc_y, bc_z):
     field = lax.cond(
         bc_x == BC_PERIODIC,
         lambda f: f.at[-2, :, :].add(f[-1, :, :]).at[1, :, :].add(f[0, :, :]),
-        lambda f: f,
+        lambda f: f.at[-2, :, :].add(-1 * f[0, :, :]).at[1, :, :].add(-1 * f[-1, :, :]),
         operand=field
     )
     # Clear x ghost cells after folding (both periodic and conducting)
@@ -98,7 +101,7 @@ def fold_ghost_cells(field, bc_x, bc_y, bc_z):
     field = lax.cond(
         bc_y == BC_PERIODIC,
         lambda f: f.at[:, -2, :].add(f[:, -1, :]).at[:, 1, :].add(f[:, 0, :]),
-        lambda f: f,
+        lambda f: f.at[:, -2, :].add(-1 * f[:, 0, :]).at[:, 1, :].add(-1 * f[:, -1, :]),
         operand=field
     )
     # Clear y ghost cells after folding
@@ -108,7 +111,7 @@ def fold_ghost_cells(field, bc_x, bc_y, bc_z):
     field = lax.cond(
         bc_z == BC_PERIODIC,
         lambda f: f.at[:, :, -2].add(f[:, :, -1]).at[:, :, 1].add(f[:, :, 0]),
-        lambda f: f,
+        lambda f: f.at[:, :, -2].add(-1 * f[:, :, 0]).at[:, :, 1].add(-1 * f[:, :, -1]),
         operand=field
     )
     # Clear z ghost cells after folding
