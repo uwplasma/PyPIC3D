@@ -11,6 +11,39 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
 )
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 
+
+def _supports_parallel_shards(particles):
+    return (
+        getattr(particles, "backend", "") == "flat_sharded"
+        and getattr(particles, "sharding_active", False)
+        and getattr(particles, "n_devices", 1) <= jax.local_device_count()
+    )
+
+
+def particle_push_sharded(particles, E, B, grid, staggered_grid, dt, constants, relativistic=True):
+    """
+    Push a sharded flat-particle species one shard at a time.
+
+    When the particle arrays are device-sharded, use `pmap` across the shard axis.
+    Otherwise fall back to `vmap` so the sharded backend remains testable on CPU.
+    """
+
+    def push_one(species_shard):
+        return particle_push(
+            species_shard,
+            E,
+            B,
+            grid,
+            staggered_grid,
+            dt,
+            constants,
+            relativistic=relativistic,
+        )
+
+    if _supports_parallel_shards(particles):
+        return jax.pmap(push_one)(particles)
+    return jax.vmap(push_one)(particles)
+
 @jit
 def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic=True, relativistic=True):
     """

@@ -4,19 +4,24 @@ name = "Demo of a Orszag_TangVortex with 30,000 electrons"
 t_wind = 0.75e-8
 bc = 'periodic'
 solver = 'fdtd'
-Nx = 100
-Ny = 100
+Nx = 400
+Ny = 400
 Nz = 1
 x_wind = 1
 y_wind = 1
 z_wind = 1
 verbose = false
 electrostatic = false
-cfl = 0.4
+cfl = 0.7
 shape_factor = 1
+fast_backend = "flat_sharded"
+current_calculation = "j_from_rhov"
+GPUs=true
 
 [plotting]
 plotting_interval = 10
+plot_openpmd_fields = true
+
 
 [field1]
 name = "Bx field"
@@ -30,7 +35,7 @@ path = "By.npy"
 
 [particle1]
 name = "electrons"
-N_particles = 1000000
+N_particles = 32000000
 ds_per_debye = 1.0
 charge = -1.602e-19
 mass   = 9.1093837e-31
@@ -44,7 +49,7 @@ initial_vz = 'electron_vz.npy'
 
 [particle2]
 name = "ions"
-N_particles = 1000000
+N_particles = 32000000
 charge = 1.602e-19
 mass = 1.67e-27
 initial_x = 'ion_x.npy'

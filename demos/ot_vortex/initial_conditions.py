@@ -2,8 +2,8 @@ import numpy as np
 
 x_wind = 1
 y_wind = 1
-nx = 100
-ny = 100
+nx = 400
+ny = 400
 dx = x_wind / nx
 dy = y_wind / ny
 # spatial resolution
@@ -24,8 +24,8 @@ Bx = -B0 * np.sin(2 * np.pi * Y / y_wind)
 By = B0 * np.sin(4 * np.pi * X / x_wind)
 # components of the magnetic field
 
-N_particles = 1000000
-N_ions      = 1000000
+N_particles = 32000000
+N_ions      = 32000000
 # number of particles
 
 electron_x = np.random.uniform(-x_wind / 2, x_wind / 2, N_particles)
