@@ -149,13 +149,18 @@ def run_PyPIC3D(config_file):
                 # compute the velocity field for each component
                 U = (Ux, Uy, Uz)
 
+
+                mass_density = compute_mass_density(particles, rho, world)
+                # calculate the mass density based on the particle positions
+
                 
                 field_map = {
                     "E": tuple(comp[interior] for comp in E),
                     "B": tuple(comp[interior] for comp in B),
                     "J": tuple(comp[interior] for comp in J),
                     "U": tuple(comp[interior] for comp in U),
-                    "rho": rho[interior],
+                    # "rho": rho[interior],
+                    "mass_density": mass_density[interior]
                 }
                 # create a field map for the interior of the domain (strip ghost cells)
 

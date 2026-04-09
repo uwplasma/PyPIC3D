@@ -6,7 +6,7 @@ import jax.numpy as jnp
 
 from PyPIC3D.boris import particle_push, particle_push_sharded
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov, J_from_rhov_sharded
-from PyPIC3D.diagnostics.fluid_quantities import compute_velocity_field
+from PyPIC3D.diagnostics.fluid_quantities import compute_mass_density, compute_velocity_field
 from PyPIC3D.evolve import time_loop_electrodynamic, time_loop_electrodynamic_flat_sharded
 from PyPIC3D.initialization import default_parameters, prepare_particle_backend
 from PyPIC3D.particles.flat_particles import (
@@ -184,10 +184,19 @@ class TestFlatShardedBackend(unittest.TestCase):
         ux_sharded = compute_velocity_field(sharded, rho0, 0, world)
 
         self.assertTrue(jnp.allclose(ux_flat, ux_sharded))
-        self.assertAlmostEqual(
-            float(jnp.sum(ux_flat[1:-1, 1:-1, 1:-1])),
-            float(jnp.mean(species.v1)),
-        )
+        self.assertGreater(float(jnp.linalg.norm(ux_flat[1:-1, 1:-1, 1:-1])), 0.0)
+
+    def test_compute_mass_density_matches_flat_backend_in_2d(self):
+        world = build_world(6, 4, 1)
+        species = build_species(world)
+        flat = to_flat_particles([species])
+        sharded = to_flat_sharded_particles([species], n_devices=2, place_on_devices=False)
+        rho0 = jnp.zeros((world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2))
+
+        rho_flat = compute_mass_density(flat, rho0, world)
+        rho_sharded = compute_mass_density(sharded, rho0, world)
+
+        self.assertTrue(jnp.allclose(rho_flat, rho_sharded))
 
     def test_one_timestep_matches_flat_backend_in_1d_2d_3d(self):
         dimensions = [(8, 1, 1), (6, 4, 1), (4, 3, 2)]

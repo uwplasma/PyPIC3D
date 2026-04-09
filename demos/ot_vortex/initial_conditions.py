@@ -10,8 +10,18 @@ dy = y_wind / ny
 
 x = np.arange(-x_wind / 2, x_wind / 2, dx)
 y = np.arange(-y_wind / 2, y_wind / 2, dy)
-X, Y = np.meshgrid(x, y)
+# X, Y = np.meshgrid(x, y)
 # define the grid
+
+
+#### YEE GRID ####
+x_ = np.arange(-x_wind / 2 + dx/2, x_wind / 2 + dx/2, dx)
+y_ = np.arange(-y_wind / 2 + dy/2, y_wind / 2 + dy/2, dy)
+# define the staggered grid for the Yee solver (shifted by one half cell size to account for ghost cells)
+
+Bx_X, Bx_Y = np.meshgrid(x_, y)
+By_X, By_Y = np.meshgrid(x, y_)
+# create the staggered grids for the magnetic field components
 
 B0 = 0.01 #1/ np.sqrt(4 * np.pi)
 # magnetic field strength
@@ -20,12 +30,12 @@ C  = 2.9e8
 V0 = 0.3*C
 # velocity magnitude
 
-Bx = -B0 * np.sin(2 * np.pi * Y / y_wind)
-By = B0 * np.sin(4 * np.pi * X / x_wind)
+Bx = -B0 * np.sin(2 * np.pi * Bx_Y / y_wind)
+By = B0 * np.sin(4 * np.pi * By_X / x_wind)
 # components of the magnetic field
 
-N_particles = 32000000
-N_ions      = 32000000
+N_particles = 16000000
+N_ions      = 16000000
 # number of particles
 
 electron_x = np.random.uniform(-x_wind / 2, x_wind / 2, N_particles)

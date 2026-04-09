@@ -2,14 +2,60 @@
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.boundary_conditions.grid_and_stencil import collapse_axis_stencil, prepare_particle_axis_stencil
 from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, update_ghost_cells
+from PyPIC3D.particles.flat_particles import flat_particle_species, unpad_sharded_array
 
 import jax
 import jax.numpy as jnp
 from jax import jit
 
 
+def _flatten_diagnostic_species(species):
+    if getattr(species, "backend", "") != "flat_sharded":
+        return species
+
+    count = int(species.unpadded_particle_count)
+    return flat_particle_species(
+        name=species.name,
+        N_particles=count,
+        charge=unpad_sharded_array(species.charge, count),
+        mass=unpad_sharded_array(species.mass, count),
+        weight=unpad_sharded_array(species.weight, count),
+        T=unpad_sharded_array(species.T, count),
+        x1=unpad_sharded_array(species.x1, count),
+        x2=unpad_sharded_array(species.x2, count),
+        x3=unpad_sharded_array(species.x3, count),
+        v1=unpad_sharded_array(species.v1, count),
+        v2=unpad_sharded_array(species.v2, count),
+        v3=unpad_sharded_array(species.v3, count),
+        x_wind=species.x_wind,
+        y_wind=species.y_wind,
+        z_wind=species.z_wind,
+        dx=species.dx,
+        dy=species.dy,
+        dz=species.dz,
+        x_bc=species.x_bc,
+        y_bc=species.y_bc,
+        z_bc=species.z_bc,
+        update_pos=species.update_pos,
+        update_v=species.update_v,
+        update_x=species.update_x,
+        update_y=species.update_y,
+        update_z=species.update_z,
+        update_vx=species.update_vx,
+        update_vy=species.update_vy,
+        update_vz=species.update_vz,
+        shape=species.shape,
+        dt=species.dt,
+        species_meta=species.species_meta,
+    )
+
+
+def _normalize_particles_for_diagnostics(particles):
+    return [_flatten_diagnostic_species(species) for species in particles]
+
+
 @jit
-def compute_mass_density(particles, rho, world):
+def _compute_mass_density(particles, rho, world):
     """
     Compute the mass density (rho) for a given set of particles in a simulation world.
     Parameters:
@@ -89,8 +135,13 @@ def compute_mass_density(particles, rho, world):
     rho = update_ghost_cells(rho, bc_x, bc_y, bc_z)
     return rho
 
+
+def compute_mass_density(particles, rho, world):
+    return _compute_mass_density(_normalize_particles_for_diagnostics(particles), rho, world)
+
+
 @jit
-def compute_velocity_field(particles, field, direction, world):
+def _compute_velocity_field(particles, field, direction, world):
     """
     Compute the velocity field (v) for a given set of particles in a simulation world.
     Parameters:
@@ -173,10 +224,13 @@ def compute_velocity_field(particles, field, direction, world):
     return field
 
 
+def compute_velocity_field(particles, field, direction, world):
+    return _compute_velocity_field(_normalize_particles_for_diagnostics(particles), field, direction, world)
+
 
 
 @jit
-def compute_pressure_field(particles, field, velocity_field, direction, world):
+def _compute_pressure_field(particles, field, velocity_field, direction, world):
 
     dx = world['dx']
     dy = world['dy']
@@ -242,3 +296,13 @@ def compute_pressure_field(particles, field, velocity_field, direction, world):
     field = fold_ghost_cells(field, bc_x, bc_y, bc_z)
     field = update_ghost_cells(field, bc_x, bc_y, bc_z)
     return field
+
+
+def compute_pressure_field(particles, field, velocity_field, direction, world):
+    return _compute_pressure_field(
+        _normalize_particles_for_diagnostics(particles),
+        field,
+        velocity_field,
+        direction,
+        world,
+    )
