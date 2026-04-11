@@ -40,16 +40,21 @@ from PyPIC3D.diagnostics.openPMD import (
 )
 
 from PyPIC3D.particles.flat_particles import (
-    to_flat_particles, check_flat_compat
+    to_flat_particles,
+    to_flat_sharded_particles,
+    check_flat_compat,
 )
 
 
 from PyPIC3D.evolve import (
-    time_loop_electrodynamic, time_loop_electrostatic, time_loop_vector_potential
+    time_loop_electrodynamic,
+    time_loop_electrodynamic_flat_sharded,
+    time_loop_electrostatic,
+    time_loop_vector_potential,
 )
 
 from PyPIC3D.deposition.Esirkepov import Esirkepov_current
-from PyPIC3D.deposition.J_from_rhov import J_from_rhov
+from PyPIC3D.deposition.J_from_rhov import J_from_rhov, J_from_rhov_sharded
 from PyPIC3D.solvers.vector_potential import initialize_vector_potential
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
@@ -104,7 +109,7 @@ def default_parameters():
         "name": "Default Simulation",
         "output_dir": os.getcwd(),
         "solver": "fdtd",  # solver: spectral, fdtd, vector_potential, curl_curl
-        "fast_backend": "flat",  # flat | default (flat when compatible, else fallback)
+        "fast_backend": "flat",  # flat | flat_sharded | default
         "particle_bc": "periodic",  # particle boundary conditions: periodic, absorb, reflect
         # "bc": "periodic",  # boundary conditions: periodic, dirichlet, neumann
         "x_bc": "periodic",  # x boundary conditions: periodic, conducting
@@ -149,6 +154,96 @@ def setup_write_dir(simulation_parameters, plotting_parameters):
         # get the output directory from the simulation parameters
         make_dir(f'{output_dir}/data')
         # make the directory for the data
+
+
+def get_gpu_runtime_report():
+    report = {
+        "runtime_ok": False,
+        "device_count": 0,
+        "devices": [],
+        "error": None,
+    }
+    try:
+        devices = list(jax.devices("gpu"))
+        report["devices"] = devices
+        report["device_count"] = len(devices)
+        report["runtime_ok"] = len(devices) > 0
+    except RuntimeError as exc:
+        report["error"] = f"{type(exc).__name__}: {exc}"
+    return report
+
+
+def describe_flat_sharded_runtime(report, particles):
+    species = particles[0]
+    return (
+        "flat_sharded runtime:"
+        f" devices={report['device_count']},"
+        f" shard_size={species.particles_per_shard},"
+        f" real_particles={species.unpadded_particle_count},"
+        f" padded_particles={species.padded_particle_count},"
+        f" sharding_active={species.sharding_active}"
+    )
+
+
+def prepare_particle_backend(
+    particles,
+    simulation_parameters,
+    electrostatic,
+    solver,
+    gpu_report=None,
+):
+    fast_backend = simulation_parameters.get("fast_backend", "flat")
+    flat_compatible = check_flat_compat(particles)
+    gpu_report = gpu_report or get_gpu_runtime_report()
+
+    if fast_backend == "flat":
+        if electrostatic or solver == "vector_potential":
+            print("fast_backend='flat' not supported for electrostatic/vector_potential; falling back to default")
+            simulation_parameters["fast_backend"] = "default"
+        elif not flat_compatible:
+            print("fast_backend='flat' incompatible with species layout; falling back to default")
+            simulation_parameters["fast_backend"] = "default"
+        else:
+            print("Using flat particle backend for simulation")
+            particles = to_flat_particles(particles)
+            simulation_parameters["fast_backend"] = "flat"
+        return particles, simulation_parameters["fast_backend"], gpu_report
+
+    if fast_backend == "flat_sharded":
+        if electrostatic or solver == "vector_potential":
+            print("fast_backend='flat_sharded' not supported for electrostatic/vector_potential; falling back to default")
+            simulation_parameters["fast_backend"] = "default"
+        elif not flat_compatible:
+            print("fast_backend='flat_sharded' incompatible with species layout; falling back to default")
+            simulation_parameters["fast_backend"] = "default"
+        elif simulation_parameters["current_calculation"] != "j_from_rhov":
+            print("fast_backend='flat_sharded' currently requires current_calculation='j_from_rhov'; falling back to flat")
+            particles = to_flat_particles(particles)
+            simulation_parameters["fast_backend"] = "flat"
+        elif not simulation_parameters["GPUs"]:
+            print("fast_backend='flat_sharded' requires GPUs=True; falling back to flat")
+            particles = to_flat_particles(particles)
+            simulation_parameters["fast_backend"] = "flat"
+        elif gpu_report["device_count"] < 2:
+            print(
+                "fast_backend='flat_sharded' requires at least 2 visible GPU devices; "
+                f"falling back to flat. Runtime status: {gpu_report['error'] or 'insufficient GPU devices'}"
+            )
+            particles = to_flat_particles(particles)
+            simulation_parameters["fast_backend"] = "flat"
+        else:
+            particles = to_flat_sharded_particles(
+                particles,
+                devices=gpu_report["devices"],
+                place_on_devices=True,
+            )
+            simulation_parameters["fast_backend"] = "flat_sharded"
+            print("Using sharded flat particle backend for simulation")
+            print(describe_flat_sharded_runtime(gpu_report, particles))
+        return particles, simulation_parameters["fast_backend"], gpu_report
+
+    simulation_parameters["fast_backend"] = "default"
+    return particles, simulation_parameters["fast_backend"], gpu_report
 
 
 #@profile
@@ -308,19 +403,14 @@ def initialize_simulation(toml_file):
     # write the initial particles to an openPMD file
 
 
-    fast_backend = simulation_parameters.get("fast_backend", "flat")
-    if fast_backend == "flat":
-        if electrostatic or solver == "vector_potential":
-            print("fast_backend='flat' not supported for electrostatic/vector_potential; falling back to default")
-            simulation_parameters["fast_backend"] = "default"
-        elif not check_flat_compat(particles):
-            print("fast_backend='flat' incompatible with species layout; falling back to default")
-            simulation_parameters["fast_backend"] = "default"
-        else:
-            print("Using flat particle backend for simulation")
-            particles = to_flat_particles(particles)
-            simulation_parameters["fast_backend"] = "flat"
-    # check if we can use the flat particle backend for faster performance, and convert to flat particles if possible
+    gpu_report = get_gpu_runtime_report() if GPUs or simulation_parameters.get("fast_backend") == "flat_sharded" else None
+    particles, selected_backend, gpu_report = prepare_particle_backend(
+        particles,
+        simulation_parameters,
+        electrostatic,
+        solver,
+        gpu_report=gpu_report,
+    )
 
 
 
@@ -375,7 +465,11 @@ def initialize_simulation(toml_file):
 
     else:
         print(f"Using electrodynamic solver with: {solver}")
-        evolve_loop = time_loop_electrodynamic
+        evolve_loop = (
+            time_loop_electrodynamic_flat_sharded
+            if selected_backend == "flat_sharded"
+            else time_loop_electrodynamic
+        )
     # set the evolve loop function based on the electrostatic flag
 
     if simulation_parameters['current_calculation'] == "esirkepov":
@@ -384,7 +478,8 @@ def initialize_simulation(toml_file):
         J_func = Esirkepov_current
     elif simulation_parameters['current_calculation'] == "j_from_rhov":
         print(f"Using J from rhov current calculation method with filter: {simulation_parameters['filter_j']}")
-        J_func = functools.partial(J_from_rhov, filter=simulation_parameters['filter_j'])
+        j_from_rhov_impl = J_from_rhov_sharded if selected_backend == "flat_sharded" else J_from_rhov
+        J_func = functools.partial(j_from_rhov_impl, filter=simulation_parameters['filter_j'])
 
 
     if solver == "vector_potential":
@@ -402,8 +497,15 @@ def initialize_simulation(toml_file):
 
 
     if GPUs:
-        print(f"GPUs Detected! Using GPUs for simulation\n")
-        particles = jax.device_put(particles, jax.devices("gpu")[0])
+        if gpu_report and gpu_report["device_count"] > 0:
+            print(f"GPUs Detected! Using {gpu_report['device_count']} GPU device(s) for simulation\n")
+            if selected_backend != "flat_sharded":
+                particles = jax.device_put(particles, gpu_report["devices"][0])
+        else:
+            print(
+                "GPUs requested but JAX could not access a GPU runtime; continuing on CPU.\n"
+                f"Runtime status: {(gpu_report or {}).get('error', 'unknown GPU runtime error')}\n"
+            )
     # put the particles on the GPU if GPUs are enabled
 
 

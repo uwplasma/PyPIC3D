@@ -2,10 +2,10 @@ import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
 import jax.numpy as jnp
+import numpy as np
 import os
 import plotly.graph_objects as go
 import jax
-from functools import partial
 
 def plot_positions(particles, t, x_wind, y_wind, z_wind, path):
     """
@@ -223,11 +223,13 @@ def plot_initial_histograms(particle_species, world, name, path):
     plt.close()
 
 
-@partial(jax.jit, static_argnums=(0))
 def write_data(filename, time, data):
     """
-    Write the given time and data to a file using JAX's callback mechanism.
-    This function is designed to be used with JAX's just-in-time compilation (jit) to optimize performance.
+    Write diagnostic values to a text file from the host.
+
+    Multi-device JAX executions do not support the ordered debug callback that was
+    previously used here, so diagnostics need to materialize on the host before
+    file I/O.
 
     Args:
         filename (str): The name of the file to write to.
@@ -237,10 +239,10 @@ def write_data(filename, time, data):
     Returns:
         None
     """
+    time = np.asarray(jax.device_get(time)).item()
+    data = jax.device_get(data)
+    data_array = np.asarray(data)
+    data = data_array.item() if data_array.ndim == 0 else data_array
 
-    def write_to_file(filename, time, data):
-        with open(filename, "a") as f:
-            f.write(f"{time}, {data}\n")
-
-    return jax.debug.callback(write_to_file, filename, time, data, ordered=True)
-
+    with open(filename, "a") as f:
+        f.write(f"{time}, {data}\n")

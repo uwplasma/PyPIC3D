@@ -14,6 +14,39 @@ from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_
 from PyPIC3D.utils import bilinear_filter
 
 
+def _supports_parallel_shards(species):
+    return (
+        getattr(species, "backend", "") == "flat_sharded"
+        and getattr(species, "sharding_active", False)
+        and getattr(species, "n_devices", 1) <= jax.local_device_count()
+    )
+
+
+def J_from_rhov_sharded(particles, J, constants, world, grid=None, filter="bilinear"):
+    """
+    Deposit current for a single sharded flat-particle species.
+
+    Each shard deposits into a full-size current array independently. The per-shard
+    arrays are then summed, preserving the existing ghost-cell and filtering logic.
+    """
+
+    if len(particles) != 1:
+        raise ValueError("flat_sharded backend expects a single sharded particle container")
+
+    species = particles[0]
+    zero_J = tuple(jnp.zeros_like(component) for component in J)
+
+    def deposit_one(species_shard):
+        return J_from_rhov([species_shard], zero_J, constants, world, grid=grid, filter=filter)
+
+    if _supports_parallel_shards(species):
+        shard_currents = jax.pmap(deposit_one)(species)
+    else:
+        shard_currents = jax.vmap(deposit_one)(species)
+
+    return tuple(jnp.sum(component, axis=0) for component in shard_currents)
+
+
 def _remap_staggered_periodic_ghosts(points, position, axis_size, wind):
     """Route out-of-domain staggered deposits into the ghost that folds across the seam."""
     points = jnp.where(

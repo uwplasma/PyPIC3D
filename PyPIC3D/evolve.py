@@ -7,7 +7,8 @@ from jax import jit
 from functools import partial
 
 from PyPIC3D.boris import (
-    particle_push
+    particle_push,
+    particle_push_sharded,
 )
 
 from PyPIC3D.solvers.first_order_yee import (
@@ -152,6 +153,49 @@ def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_f
     
 
     return particles, fields
+
+
+def time_loop_electrodynamic_flat_sharded(
+    particles,
+    fields,
+    world,
+    constants,
+    curl_func,
+    J_func,
+    solver,
+    relativistic=True,
+):
+    """
+    Advance one timestep for the `flat_sharded` particle backend.
+
+    Fields remain global in v1; only the particle container is partitioned across
+    shards/devices.
+    """
+
+    del solver
+
+    E, B, J, rho, phi = fields
+    center_grid = world["grids"]["center"]
+    vertex_grid = world["grids"]["vertex"]
+
+    species = particle_push_sharded(
+        particles[0],
+        E,
+        B,
+        center_grid,
+        vertex_grid,
+        world["dt"],
+        constants,
+        relativistic=relativistic,
+    )
+    species.update_position()
+
+    J = J_func([species], J, constants, world)
+    E = update_E(E, B, J, world, constants, curl_func)
+    B = update_B(E, B, world, constants, curl_func)
+
+    species.boundary_conditions()
+    return [species], (E, B, J, rho, phi)
 
 
 @partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic"))
