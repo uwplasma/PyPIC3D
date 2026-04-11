@@ -130,7 +130,7 @@ class TestGhostCells(unittest.TestCase):
         self.assertEqual(float(result[2, 2, -1]), 0.0)
 
     def test_fold_ghost_cells_conducting(self):
-        """Conducting fold: ghost cells should just be cleared (no fold-back)."""
+        """Conducting fold: ghost cells should be reflected."""
         field = jnp.zeros((6, 6, 6))
         field = field.at[0, 2, 2].set(1.0)
         field = field.at[-1, 2, 2].set(2.0)
@@ -139,10 +139,10 @@ class TestGhostCells(unittest.TestCase):
 
         result = fold_ghost_cells(field, BC_CONDUCTING, BC_CONDUCTING, BC_CONDUCTING)
 
-        # interior should be unchanged (no fold-back for conducting)
-        self.assertAlmostEqual(float(result[1, 2, 2]), 10.0)
-        self.assertAlmostEqual(float(result[-2, 2, 2]), 20.0)
-        # ghost cells should be cleared
+        # interior should be modified by reflecting ghost cell values.
+        self.assertAlmostEqual(float(result[1, 2, 2]), 8.0)
+        self.assertAlmostEqual(float(result[-2, 2, 2]), 19.0)
+        # ghost cells should be reflected
         self.assertEqual(float(result[0, 2, 2]), 0.0)
         self.assertEqual(float(result[-1, 2, 2]), 0.0)
 
