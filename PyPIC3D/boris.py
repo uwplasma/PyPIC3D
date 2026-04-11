@@ -1,9 +1,15 @@
 import jax
 from jax import jit
 import jax.numpy as jnp
+from functools import partial
 
+from PyPIC3D.boundary_conditions.grid_and_stencil import (
+    BC_PERIODIC,
+    axis_has_active_cells,
+    collapse_axis_stencil,
+    prepare_particle_axis_stencil,
+)
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
-from PyPIC3D.utils import wrap_around
 
 @jit
 def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic=True, relativistic=True):
@@ -49,15 +55,15 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic
     ################## INTERPOLATE FIELDS TO PARTICLE POSITIONS ##############
     Ex, Ey, Ez = E
     # unpack the electric field components
-    efield_atx = interpolate_field_to_particles(Ex, x, y, z, Ex_grid, shape_factor)
-    efield_aty = interpolate_field_to_particles(Ey, x, y, z, Ey_grid, shape_factor)
-    efield_atz = interpolate_field_to_particles(Ez, x, y, z, Ez_grid, shape_factor)
+    efield_atx = interpolate_field_to_particles(Ex, x, y, z, Ex_grid, shape_factor, ghost_cells=True)
+    efield_aty = interpolate_field_to_particles(Ey, x, y, z, Ey_grid, shape_factor, ghost_cells=True)
+    efield_atz = interpolate_field_to_particles(Ez, x, y, z, Ez_grid, shape_factor, ghost_cells=True)
     # calculate the electric field at the particle positions on the Yee-staggered component grids
     Bx, By, Bz = B
     # unpack the magnetic field components
-    bfield_atx = interpolate_field_to_particles(Bx, x, y, z, Bx_grid, shape_factor)
-    bfield_aty = interpolate_field_to_particles(By, x, y, z, By_grid, shape_factor)
-    bfield_atz = interpolate_field_to_particles(Bz, x, y, z, Bz_grid, shape_factor)
+    bfield_atx = interpolate_field_to_particles(Bx, x, y, z, Bx_grid, shape_factor, ghost_cells=True)
+    bfield_aty = interpolate_field_to_particles(By, x, y, z, By_grid, shape_factor, ghost_cells=True)
+    bfield_atz = interpolate_field_to_particles(Bz, x, y, z, Bz_grid, shape_factor, ghost_cells=True)
     # calculate the magnetic field at the particle positions on the Yee-staggered component grids
     #########################################################################
 
@@ -210,8 +216,8 @@ def relativistic_boris_single_particle(vx, vy, vz, efield_atx, efield_aty, efiel
     return newv[0], newv[1], newv[2]
 
 
-@jit
-def interpolate_field_to_particles(field, x, y, z, grid, shape_factor):
+@partial(jit, static_argnames=("ghost_cells",))
+def interpolate_field_to_particles(field, x, y, z, grid, shape_factor, ghost_cells=False):
     """
     Interpolate a Yee-grid field component to particle positions using PIC shape functions.
 
@@ -225,47 +231,26 @@ def interpolate_field_to_particles(field, x, y, z, grid, shape_factor):
         ndarray: Interpolated field value at each particle position.
     """
     x_grid, y_grid, z_grid = grid
-
-    xmin, ymin, zmin = x_grid[0], y_grid[0], z_grid[0]
-    # grid minimum coordinates
-
     Nx = len(x_grid)
     Ny = len(y_grid)
     Nz = len(z_grid)
     # grid point counts for each direction
-    x_active = Nx != 1
-    y_active = Ny != 1
-    z_active = Nz != 1
-    # infer effective dimensionality from grid extents
+    x_active = axis_has_active_cells(Nx, ghost_cells=ghost_cells)
+    y_active = axis_has_active_cells(Ny, ghost_cells=ghost_cells)
+    z_active = axis_has_active_cells(Nz, ghost_cells=ghost_cells)
 
+    _, _, deltax, xpts = prepare_particle_axis_stencil(
+        x, x_grid, Nx, shape_factor, BC_PERIODIC, ghost_cells=ghost_cells
+    )
+    _, _, deltay, ypts = prepare_particle_axis_stencil(
+        y, y_grid, Ny, shape_factor, BC_PERIODIC, ghost_cells=ghost_cells
+    )
+    _, _, deltaz, zpts = prepare_particle_axis_stencil(
+        z, z_grid, Nz, shape_factor, BC_PERIODIC, ghost_cells=ghost_cells
+    )
     dx = x_grid[1] - x_grid[0] if Nx > 1 else 1.0
     dy = y_grid[1] - y_grid[0] if Ny > 1 else 1.0
     dz = z_grid[1] - z_grid[0] if Nz > 1 else 1.0
-    # grid spacing in each direction
-
-    x0 = jax.lax.cond(
-        shape_factor == 1,
-        lambda _: jnp.floor((x - xmin) / dx).astype(int),
-        lambda _: jnp.round((x - xmin) / dx).astype(int),
-        operand=None,
-    )
-    y0 = jax.lax.cond(
-        shape_factor == 1,
-        lambda _: jnp.floor((y - ymin) / dy).astype(int),
-        lambda _: jnp.round((y - ymin) / dy).astype(int),
-        operand=None,
-    )
-    z0 = jax.lax.cond(
-        shape_factor == 1,
-        lambda _: jnp.floor((z - zmin) / dz).astype(int),
-        lambda _: jnp.round((z - zmin) / dz).astype(int),
-        operand=None,
-    )
-    # compute the stencil anchor points (cell-left for first order, nearest node for second order)
-
-    deltax = (x - xmin) - x0 * dx
-    deltay = (y - ymin) - y0 * dy
-    deltaz = (z - zmin) - z0 * dz
     # determine the distance from the closest grid nodes
 
     x_weights, y_weights, z_weights = jax.lax.cond(
@@ -279,22 +264,9 @@ def interpolate_field_to_particles(field, x, y, z, grid, shape_factor):
     z_weights = jnp.asarray(z_weights)
     # compute the shape function weights for the particles and convert them to arrays
 
-    x0 = wrap_around(x0, Nx)
-    y0 = wrap_around(y0, Ny)
-    z0 = wrap_around(z0, Nz)
-    # wrap around the grid points for periodic boundary conditions
-    x1 = wrap_around(x0+1, Nx)
-    y1 = wrap_around(y0+1, Ny)
-    z1 = wrap_around(z0+1, Nz)
-    # calculate the right grid point
-    x_minus1 = x0 - 1
-    y_minus1 = y0 - 1
-    z_minus1 = z0 - 1
-    # calculate the left grid point
-    xpts = jnp.asarray([x_minus1, x0, x1])
-    ypts = jnp.asarray([y_minus1, y0, y1])
-    zpts = jnp.asarray([z_minus1, z0, z1])
-    # place all the points in a list
+    xpts = jnp.asarray(xpts)
+    ypts = jnp.asarray(ypts)
+    zpts = jnp.asarray(zpts)
 
     # Keep full shape-factor computation but collapse inactive axes to an
     # effective stencil size of 1 to avoid redundant interpolation work.
@@ -302,22 +274,19 @@ def interpolate_field_to_particles(field, x, y, z, grid, shape_factor):
         xpts_eff = xpts
         x_weights_eff = x_weights
     else:
-        xpts_eff = jnp.zeros((1, xpts.shape[1]), dtype=xpts.dtype)
-        x_weights_eff = jnp.sum(x_weights, axis=0, keepdims=True)
+        xpts_eff, x_weights_eff = collapse_axis_stencil(xpts, x_weights, Nx, ghost_cells=ghost_cells)
 
     if y_active:
         ypts_eff = ypts
         y_weights_eff = y_weights
     else:
-        ypts_eff = jnp.zeros((1, ypts.shape[1]), dtype=ypts.dtype)
-        y_weights_eff = jnp.sum(y_weights, axis=0, keepdims=True)
+        ypts_eff, y_weights_eff = collapse_axis_stencil(ypts, y_weights, Ny, ghost_cells=ghost_cells)
 
     if z_active:
         zpts_eff = zpts
         z_weights_eff = z_weights
     else:
-        zpts_eff = jnp.zeros((1, zpts.shape[1]), dtype=zpts.dtype)
-        z_weights_eff = jnp.sum(z_weights, axis=0, keepdims=True)
+        zpts_eff, z_weights_eff = collapse_axis_stencil(zpts, z_weights, Nz, ghost_cells=ghost_cells)
 
     def stencil_contribution(stencil_idx):
         i, j, k = stencil_idx

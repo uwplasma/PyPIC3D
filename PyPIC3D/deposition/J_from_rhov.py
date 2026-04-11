@@ -4,8 +4,29 @@ import jax.numpy as jnp
 from functools import partial
 from jax import lax
 
-from PyPIC3D.utils import digital_filter, wrap_around, bilinear_filter
+from PyPIC3D.boundary_conditions.grid_and_stencil import (
+    axis_has_active_cells,
+    collapse_axis_stencil,
+    prepare_particle_axis_stencil,
+)
+from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, update_ghost_cells
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
+from PyPIC3D.utils import bilinear_filter
+
+
+def _remap_staggered_periodic_ghosts(points, position, axis_size, wind):
+    """Route out-of-domain staggered deposits into the ghost that folds across the seam."""
+    points = jnp.where(
+        position[jnp.newaxis, ...] > 0.5 * wind,
+        jnp.where(points == axis_size - 1, 0, points),
+        points,
+    )
+    points = jnp.where(
+        position[jnp.newaxis, ...] < -0.5 * wind,
+        jnp.where(points == 0, axis_size - 1, points),
+        points,
+    )
+    return points
 
 
 @partial(jit, static_argnames=("filter",))
@@ -18,14 +39,15 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter="bilinear"):
     dx = world["dx"]
     dy = world["dy"]
     dz = world["dz"]
-    Nx = world["Nx"]
-    Ny = world["Ny"]
-    Nz = world["Nz"]
 
     Jx, Jy, Jz = J
-    x_active = Jx.shape[0] != 1
-    y_active = Jx.shape[1] != 1
-    z_active = Jx.shape[2] != 1
+    Nx, Ny, Nz = Jx.shape
+    x_active = axis_has_active_cells(Nx, ghost_cells=True)
+    y_active = axis_has_active_cells(Ny, ghost_cells=True)
+    z_active = axis_has_active_cells(Nz, ghost_cells=True)
+    bc_x = world["boundary_conditions"]["x"]
+    bc_y = world["boundary_conditions"]["y"]
+    bc_z = world["boundary_conditions"]["z"]
 
     Jx = Jx.at[:, :, :].set(0)
     Jy = Jy.at[:, :, :].set(0)
@@ -43,46 +65,37 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter="bilinear"):
         y = y - vy * world["dt"] / 2
         z = z - vz * world["dt"] / 2
 
-        x0 = jax.lax.cond(
-            shape_factor == 1,
-            lambda _: jnp.floor((x - grid[0][0]) / dx).astype(int),
-            lambda _: jnp.round((x - grid[0][0]) / dx).astype(int),
-            operand=None,
+        x, x0, deltax_node, xpts = prepare_particle_axis_stencil(
+            x,
+            grid[0],
+            Nx,
+            shape_factor,
+            bc_x,
+            wind=world["x_wind"],
+            ghost_cells=True,
         )
-        y0 = jax.lax.cond(
-            shape_factor == 1,
-            lambda _: jnp.floor((y - grid[1][0]) / dy).astype(int),
-            lambda _: jnp.round((y - grid[1][0]) / dy).astype(int),
-            operand=None,
+        y, y0, deltay_node, ypts = prepare_particle_axis_stencil(
+            y,
+            grid[1],
+            Ny,
+            shape_factor,
+            bc_y,
+            wind=world["y_wind"],
+            ghost_cells=True,
         )
-        z0 = jax.lax.cond(
-            shape_factor == 1,
-            lambda _: jnp.floor((z - grid[2][0]) / dz).astype(int),
-            lambda _: jnp.round((z - grid[2][0]) / dz).astype(int),
-            operand=None,
+        z, z0, deltaz_node, zpts = prepare_particle_axis_stencil(
+            z,
+            grid[2],
+            Nz,
+            shape_factor,
+            bc_z,
+            wind=world["z_wind"],
+            ghost_cells=True,
         )
-
-        deltax_node = (x - grid[0][0]) - (x0 * dx)
-        deltay_node = (y - grid[1][0]) - (y0 * dy)
-        deltaz_node = (z - grid[2][0]) - (z0 * dz)
 
         deltax_face = (x - grid[0][0]) - (x0 + 0.5) * dx
         deltay_face = (y - grid[1][0]) - (y0 + 0.5) * dy
         deltaz_face = (z - grid[2][0]) - (z0 + 0.5) * dz
-
-        x0 = wrap_around(x0, Nx)
-        y0 = wrap_around(y0, Ny)
-        z0 = wrap_around(z0, Nz)
-        x1 = wrap_around(x0 + 1, Nx)
-        y1 = wrap_around(y0 + 1, Ny)
-        z1 = wrap_around(z0 + 1, Nz)
-        x_minus1 = x0 - 1
-        y_minus1 = y0 - 1
-        z_minus1 = z0 - 1
-
-        xpts = [x_minus1, x0, x1]
-        ypts = [y_minus1, y0, y1]
-        zpts = [z_minus1, z0, z1]
 
         x_weights_node, y_weights_node, z_weights_node = jax.lax.cond(
             shape_factor == 1,
@@ -101,6 +114,24 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter="bilinear"):
         xpts = jnp.asarray(xpts)
         ypts = jnp.asarray(ypts)
         zpts = jnp.asarray(zpts)
+        xpts = jax.lax.cond(
+            bc_x == 0,
+            lambda pts: _remap_staggered_periodic_ghosts(pts, x, Nx, world["x_wind"]),
+            lambda pts: pts,
+            operand=xpts,
+        )
+        ypts = jax.lax.cond(
+            bc_y == 0,
+            lambda pts: _remap_staggered_periodic_ghosts(pts, y, Ny, world["y_wind"]),
+            lambda pts: pts,
+            operand=ypts,
+        )
+        zpts = jax.lax.cond(
+            bc_z == 0,
+            lambda pts: _remap_staggered_periodic_ghosts(pts, z, Nz, world["z_wind"]),
+            lambda pts: pts,
+            operand=zpts,
+        )
 
         x_weights_face = jnp.asarray(x_weights_face)
         y_weights_face = jnp.asarray(y_weights_face)
@@ -109,33 +140,22 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter="bilinear"):
         x_weights_node = jnp.asarray(x_weights_node)
         y_weights_node = jnp.asarray(y_weights_node)
         z_weights_node = jnp.asarray(z_weights_node)
+        xpts, x_weights_node = collapse_axis_stencil(xpts, x_weights_node, Nx, ghost_cells=True)
+        _, x_weights_face = collapse_axis_stencil(xpts, x_weights_face, Nx, ghost_cells=True)
+        ypts, y_weights_node = collapse_axis_stencil(ypts, y_weights_node, Ny, ghost_cells=True)
+        _, y_weights_face = collapse_axis_stencil(ypts, y_weights_face, Ny, ghost_cells=True)
+        zpts, z_weights_node = collapse_axis_stencil(zpts, z_weights_node, Nz, ghost_cells=True)
+        _, z_weights_face = collapse_axis_stencil(zpts, z_weights_face, Nz, ghost_cells=True)
 
-        if x_active:
-            xpts_eff = xpts
-            x_weights_node_eff = x_weights_node
-            x_weights_face_eff = x_weights_face
-        else:
-            xpts_eff = jnp.zeros((1, xpts.shape[1]), dtype=xpts.dtype)
-            x_weights_node_eff = jnp.sum(x_weights_node, axis=0, keepdims=True)
-            x_weights_face_eff = jnp.sum(x_weights_face, axis=0, keepdims=True)
-
-        if y_active:
-            ypts_eff = ypts
-            y_weights_node_eff = y_weights_node
-            y_weights_face_eff = y_weights_face
-        else:
-            ypts_eff = jnp.zeros((1, ypts.shape[1]), dtype=ypts.dtype)
-            y_weights_node_eff = jnp.sum(y_weights_node, axis=0, keepdims=True)
-            y_weights_face_eff = jnp.sum(y_weights_face, axis=0, keepdims=True)
-
-        if z_active:
-            zpts_eff = zpts
-            z_weights_node_eff = z_weights_node
-            z_weights_face_eff = z_weights_face
-        else:
-            zpts_eff = jnp.zeros((1, zpts.shape[1]), dtype=zpts.dtype)
-            z_weights_node_eff = jnp.sum(z_weights_node, axis=0, keepdims=True)
-            z_weights_face_eff = jnp.sum(z_weights_face, axis=0, keepdims=True)
+        xpts_eff = xpts
+        ypts_eff = ypts
+        zpts_eff = zpts
+        x_weights_node_eff = x_weights_node
+        y_weights_node_eff = y_weights_node
+        z_weights_node_eff = z_weights_node
+        x_weights_face_eff = x_weights_face
+        y_weights_face_eff = y_weights_face
+        z_weights_face_eff = z_weights_face
 
         ii, jj, kk = jnp.meshgrid(
             jnp.arange(xpts_eff.shape[0]),
@@ -176,6 +196,15 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter="bilinear"):
         Jy = Jy.at[(ix, iy, iz)].add(valy, mode="drop")
         Jz = Jz.at[(ix, iy, iz)].add(valz, mode="drop")
 
+    Jx = fold_ghost_cells(Jx, bc_x, bc_y, bc_z)
+    Jy = fold_ghost_cells(Jy, bc_x, bc_y, bc_z)
+    Jz = fold_ghost_cells(Jz, bc_x, bc_y, bc_z)
+    # fold ghost cell deposits back into interior
+    Jx = update_ghost_cells(Jx, bc_x, bc_y, bc_z)
+    Jy = update_ghost_cells(Jy, bc_x, bc_y, bc_z)
+    Jz = update_ghost_cells(Jz, bc_x, bc_y, bc_z)
+    # refresh ghost cells before any stencil-based post-processing
+
     def filter_func(J_, filter):
         J_ = jax.lax.cond(
             filter == "bilinear",
@@ -188,5 +217,8 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter="bilinear"):
     Jx = filter_func(Jx, filter)
     Jy = filter_func(Jy, filter)
     Jz = filter_func(Jz, filter)
+    Jx = update_ghost_cells(Jx, bc_x, bc_y, bc_z)
+    Jy = update_ghost_cells(Jy, bc_x, bc_y, bc_z)
+    Jz = update_ghost_cells(Jz, bc_x, bc_y, bc_z)
 
     return (Jx, Jy, Jz)

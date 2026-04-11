@@ -81,6 +81,26 @@ def _write_openpmd_vector_mesh(iteration, name, components, world, active_dims=(
         record.unit_SI = 1.0
 
 
+def _fields_to_interior_map(fields):
+    """Extract physical interior (strip ghost cells) from a fields tuple and return a field_map dict."""
+    E, B, J, rho, *rest = fields
+    interior = (slice(1, -1), slice(1, -1), slice(1, -1))
+    field_map = {
+        "E": tuple(comp[interior] for comp in E),
+        "B": tuple(comp[interior] for comp in B),
+        "J": tuple(comp[interior] for comp in J),
+        "rho": rho[interior],
+    }
+    if rest:
+        field_map["phi"] = rest[0][interior]
+        for idx, extra in enumerate(rest[1:], start=1):
+            if isinstance(extra, (list, tuple)):
+                field_map[f"field_{idx}"] = tuple(comp[interior] for comp in extra)
+            else:
+                field_map[f"field_{idx}"] = extra[interior]
+    return field_map
+
+
 def write_openpmd_fields_to_iteration(iteration, field_map, world, active_dims=(1,1,1)):
     for name, data in field_map.items():
         is_vector = isinstance(data, (list, tuple)) and len(data) == 3
@@ -191,24 +211,12 @@ def write_openpmd_fields(fields, world, output_dir, plot_t, t, filename="fields"
         filename (str): Base name for the openPMD file.
         file_extension (str): File extension for the openPMD series (for example, ".bp").
     """
-    E, B, J, rho, *rest = fields
-    field_map = {
-        "E": E,
-        "B": B,
-        "J": J,
-        "rho": rho,
-    }
-    # map field names to their data
+    field_map = _fields_to_interior_map(fields)
+    # extract physical interior (strip ghost cells)
 
-    if rest:
-        field_map["phi"] = rest[0]
-        for idx, extra in enumerate(rest[1:], start=1):
-            field_map[f"field_{idx}"] = extra
-    # add extra fields if present
-
-    Nx, Ny, Nz = rho.shape
+    Nx, Ny, Nz = field_map["rho"].shape
     active_dims = (Nx > 1, Ny > 1, Nz > 1)
-    # determine active dimensions
+    # determine active dimensions from interior shape
 
 
     series = _open_openpmd_series(output_dir, filename, file_extension=file_extension)
@@ -370,24 +378,12 @@ def write_openpmd_initial_fields(fields, world, output_dir, filename="initial_fi
         output_dir (str): Base output directory for the simulation.
         filename (str): openPMD file name.
     """
-    E, B, J, rho, *rest = fields
-    field_map = {
-        "E": E,
-        "B": B,
-        "J": J,
-        "rho": rho,
-    }
-    # map field names to their data
+    field_map = _fields_to_interior_map(fields)
+    # extract physical interior (strip ghost cells)
 
-    if rest:
-        field_map["phi"] = rest[0]
-        for idx, extra in enumerate(rest[1:], start=1):
-            field_map[f"field_{idx}"] = extra
-    # add extra fields if present
-
-    Nx, Ny, Nz = rho.shape
+    Nx, Ny, Nz = field_map["rho"].shape
     active_dims = (Nx > 1, Ny > 1, Nz > 1)
-    # determine active dimensions
+    # determine active dimensions from interior shape
 
 
     output_path = os.path.join(output_dir, "data", "initial_fields")

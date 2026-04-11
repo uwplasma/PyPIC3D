@@ -63,6 +63,29 @@ class TestBorisMethods(unittest.TestCase):
         self.assertLess( newvz, 0.1 )
         # make sure the z velocity is 0.0 from the magnetic field
 
+    def test_interpolate_field_to_particles_with_ghost_cells_on_reduced_axes(self):
+        field = jnp.full((6, 3, 3), 7.0)
+        x = jnp.array([-0.25, 0.0, 0.25])
+        y = jnp.zeros_like(x)
+        z = jnp.zeros_like(x)
+        grid = (
+            jnp.linspace(-0.5, 0.5, 6),
+            jnp.array([-1.0, 0.0, 1.0]),
+            jnp.array([-1.0, 0.0, 1.0]),
+        )
+
+        interpolated = interpolate_field_to_particles(
+            field,
+            x,
+            y,
+            z,
+            grid,
+            shape_factor=2,
+            ghost_cells=True,
+        )
+
+        self.assertTrue(jnp.allclose(interpolated, 7.0))
+
 
 
     def test_boris_single_particle(self):

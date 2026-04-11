@@ -1,29 +1,11 @@
 import jax.numpy as jnp
 from jax import jit
-from jax import lax
 from functools import partial
 # import external libraries
 
 from PyPIC3D.utils import digital_filter
+from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells, apply_conducting_bc
 # import internal libraries
-
-BC_PERIODIC = 0
-BC_CONDUCTING = 1
-
-
-def _get_field_bc_code(world, axis):
-    """
-    Get the boundary condition code for an axis, supporting legacy and refactored world schemas.
-    """
-    if 'boundary_conditions' in world and axis in world['boundary_conditions']:
-        bc = world['boundary_conditions'][axis]
-    else:
-        legacy_key = f"{axis}_bc"
-        bc = world[legacy_key] if legacy_key in world else BC_PERIODIC
-
-    if isinstance(bc, str):
-        return BC_CONDUCTING if bc == "conducting" else BC_PERIODIC
-    return bc
 
 
 @partial(jit, static_argnames=("curl_func",))
@@ -31,9 +13,10 @@ def update_E(E, B, J, world, constants, curl_func):
     """
     Update the electric field components (Ex, Ey, Ez) based on the given parameters.
 
+    Uses ghost cells for boundary handling. Fields have shape (Nx+2, Ny+2, Nz+2)
+    with 1 ghost cell on each side. The physical interior is [1:-1, 1:-1, 1:-1].
+
     Args:
-        grid (object): The grid object containing the simulation grid.
-        staggered_grid (object): The staggered grid object for the simulation.
         E (tuple): A tuple containing the electric field components (Ex, Ey, Ez).
         B (tuple): A tuple containing the magnetic field components (Bx, By, Bz).
         J (tuple): A tuple containing the current density components (Jx, Jy, Jz).
@@ -52,103 +35,60 @@ def update_E(E, B, J, world, constants, curl_func):
 
     dt = world['dt']
     dx, dy, dz = world['dx'], world['dy'], world['dz']
-    x_bc = _get_field_bc_code(world, 'x')
-    y_bc = _get_field_bc_code(world, 'y')
-    z_bc = _get_field_bc_code(world, 'z')
+    bc_x = world['boundary_conditions']['x']
+    bc_y = world['boundary_conditions']['y']
+    bc_z = world['boundary_conditions']['z']
     # get the time resolution and grid spacings
+
     C = constants['C']
     eps = constants['eps']
-    # get the time resolution and necessary constants
+    # get the necessary constants
 
-    Bx = jnp.pad(Bx, ((1,1), (1,1), (1,1)), mode="wrap")
-    By = jnp.pad(By, ((1,1), (1,1), (1,1)), mode="wrap")
-    Bz = jnp.pad(Bz, ((1,1), (1,1), (1,1)), mode="wrap")
-    # pad the magnetic field components for periodic boundary conditions
+    # forward differences using ghost cells
+    # B has shape (Nx+2, Ny+2, Nz+2) with valid ghost cell values
+    # slicing [1:-1, 2:, 1:-1] reaches into the ghost cell at the +1 boundary
+    dBz_dy = (Bz[1:-1, 2:, 1:-1] - Bz[1:-1, 1:-1, 1:-1]) / dy
+    dBy_dz = (By[1:-1, 1:-1, 2:] - By[1:-1, 1:-1, 1:-1]) / dz
+    dBx_dz = (Bx[1:-1, 1:-1, 2:] - Bx[1:-1, 1:-1, 1:-1]) / dz
+    dBx_dy = (Bx[1:-1, 2:, 1:-1] - Bx[1:-1, 1:-1, 1:-1]) / dy
+    dBz_dx = (Bz[2:, 1:-1, 1:-1] - Bz[1:-1, 1:-1, 1:-1]) / dx
+    dBy_dx = (By[2:, 1:-1, 1:-1] - By[1:-1, 1:-1, 1:-1]) / dx
+    # compute the forward finite differences of the magnetic field
 
-    dBz_dy = (jnp.roll(Bz, shift=-1, axis=1) - Bz) / dy
-    dBx_dy = (jnp.roll(Bx, shift=-1, axis=1) - Bx) / dy
-    dBy_dz = (jnp.roll(By, shift=-1, axis=2) - By) / dz
-    dBx_dz = (jnp.roll(Bx, shift=-1, axis=2) - Bx) / dz
-    dBz_dx = (jnp.roll(Bz, shift=-1, axis=0) - Bz) / dx
-    dBy_dx = (jnp.roll(By, shift=-1, axis=0) - By) / dx
-
-    curl_x = (dBz_dy - dBy_dz)[1:-1,1:-1,1:-1]
-    curl_y = (dBx_dz - dBz_dx)[1:-1,1:-1,1:-1]
-    curl_z = (dBy_dx - dBx_dy)[1:-1,1:-1,1:-1]
+    curl_x = dBz_dy - dBy_dz
+    curl_y = dBx_dz - dBz_dx
+    curl_z = dBy_dx - dBx_dy
     # calculate the curl of the magnetic field
 
-    Ex = Ex + ( C**2 * curl_x - Jx / eps ) * dt
-    Ey = Ey + ( C**2 * curl_y - Jy / eps ) * dt
-    Ez = Ez + ( C**2 * curl_z - Jz / eps ) * dt
+    Ex = Ex.at[1:-1, 1:-1, 1:-1].set(
+        Ex[1:-1, 1:-1, 1:-1] + (C**2 * curl_x - Jx[1:-1, 1:-1, 1:-1] / eps) * dt
+    )
+    Ey = Ey.at[1:-1, 1:-1, 1:-1].set(
+        Ey[1:-1, 1:-1, 1:-1] + (C**2 * curl_y - Jy[1:-1, 1:-1, 1:-1] / eps) * dt
+    )
+    Ez = Ez.at[1:-1, 1:-1, 1:-1].set(
+        Ez[1:-1, 1:-1, 1:-1] + (C**2 * curl_z - Jz[1:-1, 1:-1, 1:-1] / eps) * dt
+    )
     # update the electric field from Maxwell's equations
 
-    ### Conducting Boundaries ####
-    
-    ### X BC ###
-    Ey = lax.cond(
-        x_bc == BC_CONDUCTING,
-        lambda Ey: Ey.at[0,:,:].set(0.0).at[-1,:,:].set(0.0).at[-2,:,:].set(0.0),
-        # the left inner cell next to the boundary to 0,
-        # and the right 2 inner cells next to the boundary to 0
-        lambda Ey: Ey,
-        operand=Ey
-    )
-
-    Ez = lax.cond(
-        x_bc == BC_CONDUCTING,
-        lambda Ez: Ez.at[0,:,:].set(0.0).at[-1,:,:].set(0.0).at[-2,:,:].set(0.0),
-        # the left inner cell next to the boundary to 0,
-        # and the right 2 inner cells next to the boundary to 0
-        lambda Ez: Ez,
-        operand=Ez
-    )
-    # set Ey and Ez to 0 at the x boundaries for conducting boundaries
-
-    ### Y BC ###
-    Ex = lax.cond(
-        y_bc == BC_CONDUCTING,
-        lambda Ex: Ex.at[:,0,:].set(0.0).at[:,-1,:].set(0.0).at[:,-2,:].set(0.0),
-        # the left inner cell next to the boundary to 0,
-        # and the right 2 inner cells next to the boundary to 0
-        lambda Ex: Ex,
-        operand=Ex
-    )
-
-    Ez = lax.cond(
-        y_bc == BC_CONDUCTING,
-        lambda Ez: Ez.at[:,0,:].set(0.0).at[:,-1,:].set(0.0).at[:,-2,:].set(0.0),
-        # the left inner cell next to the boundary to 0,
-        # and the right 2 inner cells next to the boundary to 0
-        lambda Ez: Ez,
-        operand=Ez
-    )
-    # set Ex and Ez to 0 at the y boundaries for conducting boundaries
-
-    ### Z BC ###
-    Ex = lax.cond(
-        z_bc == BC_CONDUCTING,
-        lambda Ex: Ex.at[:,:,0].set(0.0).at[:,:,-1].set(0.0).at[:,:,-2].set(0.0),
-        # the left inner cell next to the boundary to 0,
-        # and the right 2 inner cells next to the boundary to 0
-        lambda Ex: Ex,
-        operand=Ex
-    )
-
-    Ey = lax.cond(
-        z_bc == BC_CONDUCTING,
-        lambda Ey: Ey.at[:,:,0].set(0.0).at[:,:,-1].set(0.0).at[:,:,-2].set(0.0),
-        # the left inner cell next to the boundary to 0,
-        # and the right 2 inner cells next to the boundary to 0
-        lambda Ey: Ey,
-        operand=Ey
-    )
-    # set Ex and Ey to 0 at the z boundaries for conducting boundaries
+    Ex = update_ghost_cells(Ex, bc_x, bc_y, bc_z)
+    Ey = update_ghost_cells(Ey, bc_x, bc_y, bc_z)
+    Ez = update_ghost_cells(Ez, bc_x, bc_y, bc_z)
+    # refresh ghost cells before any stencil-based post-processing
 
     alpha = constants['alpha']
     Ex = digital_filter(Ex, alpha)
     Ey = digital_filter(Ey, alpha)
     Ez = digital_filter(Ez, alpha)
     # apply a digital filter to the electric field components
+
+    Ex, Ey, Ez = apply_conducting_bc((Ex, Ey, Ez), bc_x, bc_y, bc_z)
+    # enforce conducting boundary conditions on tangential E
+
+    Ex = update_ghost_cells(Ex, bc_x, bc_y, bc_z)
+    Ey = update_ghost_cells(Ey, bc_x, bc_y, bc_z)
+    Ez = update_ghost_cells(Ez, bc_x, bc_y, bc_z)
+    # fill ghost cells with the updated values
 
     return (Ex, Ey, Ez)
 
@@ -158,9 +98,10 @@ def update_B(E, B, world, constants, curl_func):
     """
     Update the magnetic field components (Bx, By, Bz) using the curl of the electric field.
 
+    Uses ghost cells for boundary handling. Fields have shape (Nx+2, Ny+2, Nz+2)
+    with 1 ghost cell on each side. The physical interior is [1:-1, 1:-1, 1:-1].
+
     Args:
-        grid (ndarray): The grid on which the fields are defined.
-        staggered_grid (ndarray): The staggered grid for field calculations.
         E (tuple): The electric field components (Ex, Ey, Ez).
         B (tuple): The magnetic field components (Bx, By, Bz).
         world (dict): Dictionary containing simulation parameters such as 'dx', 'dy', 'dz', and 'dt'.
@@ -175,32 +116,38 @@ def update_B(E, B, world, constants, curl_func):
     # get the time resolution
     dx, dy, dz = world['dx'], world['dy'], world['dz']
     # get the grid spacings
+    bc_x = world['boundary_conditions']['x']
+    bc_y = world['boundary_conditions']['y']
+    bc_z = world['boundary_conditions']['z']
 
     Ex, Ey, Ez = E
     Bx, By, Bz = B
     # unpack the E and B fields
 
-    Ex = jnp.pad(Ex, ((1,1), (1,1), (1,1)), mode="wrap")
-    Ey = jnp.pad(Ey, ((1,1), (1,1), (1,1)), mode="wrap")
-    Ez = jnp.pad(Ez, ((1,1), (1,1), (1,1)), mode="wrap")
-    # pad the electric field components for periodic boundary conditions
+    # backward differences using ghost cells
+    # slicing [1:-1, :-2, 1:-1] reaches into the ghost cell at the -1 boundary
+    dEz_dy = (Ez[1:-1, 1:-1, 1:-1] - Ez[1:-1, :-2, 1:-1]) / dy
+    dEy_dz = (Ey[1:-1, 1:-1, 1:-1] - Ey[1:-1, 1:-1, :-2]) / dz
+    dEx_dz = (Ex[1:-1, 1:-1, 1:-1] - Ex[1:-1, 1:-1, :-2]) / dz
+    dEx_dy = (Ex[1:-1, 1:-1, 1:-1] - Ex[1:-1, :-2, 1:-1]) / dy
+    dEz_dx = (Ez[1:-1, 1:-1, 1:-1] - Ez[:-2, 1:-1, 1:-1]) / dx
+    dEy_dx = (Ey[1:-1, 1:-1, 1:-1] - Ey[:-2, 1:-1, 1:-1]) / dx
+    # compute the backward finite differences of the electric field
 
-    dEz_dy = (Ez - jnp.roll(Ez, shift=1, axis=1)) / dy
-    dEx_dy = (Ex - jnp.roll(Ex, shift=1, axis=1)) / dy
-    dEy_dz = (Ey - jnp.roll(Ey, shift=1, axis=2)) / dz
-    dEx_dz = (Ex - jnp.roll(Ex, shift=1, axis=2)) / dz
-    dEz_dx = (Ez - jnp.roll(Ez, shift=1, axis=0)) / dx
-    dEy_dx = (Ey - jnp.roll(Ey, shift=1, axis=0)) / dx
-
-    curl_x = (dEz_dy - dEy_dz)[1:-1,1:-1,1:-1]
-    curl_y = (dEx_dz - dEz_dx)[1:-1,1:-1,1:-1]
-    curl_z = (dEy_dx - dEx_dy)[1:-1,1:-1,1:-1]
+    curl_x = dEz_dy - dEy_dz
+    curl_y = dEx_dz - dEz_dx
+    curl_z = dEy_dx - dEx_dy
     # calculate the curl of the electric field
 
-    Bx = Bx - dt*curl_x
-    By = By - dt*curl_y
-    Bz = Bz - dt*curl_z
+    Bx = Bx.at[1:-1, 1:-1, 1:-1].set(Bx[1:-1, 1:-1, 1:-1] - dt * curl_x)
+    By = By.at[1:-1, 1:-1, 1:-1].set(By[1:-1, 1:-1, 1:-1] - dt * curl_y)
+    Bz = Bz.at[1:-1, 1:-1, 1:-1].set(Bz[1:-1, 1:-1, 1:-1] - dt * curl_z)
     # update the magnetic field from Maxwell's equations
+
+    Bx = update_ghost_cells(Bx, bc_x, bc_y, bc_z)
+    By = update_ghost_cells(By, bc_x, bc_y, bc_z)
+    Bz = update_ghost_cells(Bz, bc_x, bc_y, bc_z)
+    # refresh ghost cells before any stencil-based post-processing
 
     alpha = constants['alpha']
     Bx = digital_filter(Bx, alpha)
@@ -208,5 +155,9 @@ def update_B(E, B, world, constants, curl_func):
     Bz = digital_filter(Bz, alpha)
     # apply a digital filter to the magnetic field components
 
-    return (Bx, By, Bz)
+    Bx = update_ghost_cells(Bx, bc_x, bc_y, bc_z)
+    By = update_ghost_cells(By, bc_x, bc_y, bc_z)
+    Bz = update_ghost_cells(Bz, bc_x, bc_y, bc_z)
+    # fill ghost cells with the updated values
 
+    return (Bx, By, Bz)

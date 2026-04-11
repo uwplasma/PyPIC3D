@@ -12,6 +12,7 @@ from PyPIC3D.solvers.electrostatic_yee import (
 from PyPIC3D.solvers.fdtd import centered_finite_difference_gradient
 from PyPIC3D.solvers.pstd import spectral_gradient
 from PyPIC3D.utils import build_yee_grid
+from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 
 jax.config.update("jax_enable_x64", True)
 
@@ -35,6 +36,7 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
         self.dy = self.y_wind / self.Ny
         self.dz = self.z_wind / self.Nz
 
+        # Interior coordinate grid (no ghost cells) for analytical solutions
         x = jnp.linspace(0, self.x_wind, self.Nx, endpoint=False)
         y = jnp.linspace(0, self.y_wind, self.Ny, endpoint=False)
         z = jnp.linspace(0, self.z_wind, self.Nz, endpoint=False)
@@ -54,6 +56,7 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
             "x_wind": self.x_wind,
             "y_wind": self.y_wind,
             "z_wind": self.z_wind,
+            "boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
         vertex_grid, center_grid = build_yee_grid(self.world)
         self.world["grids"] = {
@@ -61,8 +64,9 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
             "center": center_grid,
         }
 
-        self.initial_rho = jnp.zeros((self.Nx, self.Ny, self.Nz))
-        self.initial_phi = jnp.zeros((self.Nx, self.Ny, self.Nz))
+        # Ghost-celled initial fields: shape (Nx+2, Ny+2, Nz+2)
+        self.initial_rho = jnp.zeros((self.Nx + 2, self.Ny + 2, self.Nz + 2))
+        self.initial_phi = jnp.zeros((self.Nx + 2, self.Ny + 2, self.Nz + 2))
 
         self.particles = [
             particle_species(
@@ -93,22 +97,35 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
         ]
 
     def test_solve_poisson_with_fft_single_mode(self):
-        phi_true = jnp.sin(self.X + self.Y + self.Z)
-        rho = 3.0 * self.constants["eps"] * phi_true
+        phi_true_interior = jnp.sin(self.X + self.Y + self.Z)
+        rho_interior = 3.0 * self.constants["eps"] * phi_true_interior
 
-        phi_num = solve_poisson_with_fft(rho, self.constants, self.world)
+        # Place rho into ghost-celled array
+        rho = jnp.zeros((self.Nx + 2, self.Ny + 2, self.Nz + 2))
+        rho = rho.at[1:-1, 1:-1, 1:-1].set(rho_interior)
+        rho = update_ghost_cells(rho, 0, 0, 0)
+
+        phi = solve_poisson_with_fft(rho, self.constants, self.world)
+
+        # Compare on interior
+        phi_num = phi[1:-1, 1:-1, 1:-1]
         phi_num = phi_num - jnp.mean(phi_num)
-        phi_true = phi_true - jnp.mean(phi_true)
+        phi_true = phi_true_interior - jnp.mean(phi_true_interior)
 
         self.assertEqual(phi_num.shape, phi_true.shape)
         self.assertTrue(jnp.allclose(phi_num, phi_true, atol=1e-10, rtol=1e-8))
 
     def test_solve_poisson_with_conjugate_gradient_single_mode(self):
-        phi_true = jnp.sin(self.X + self.Y + self.Z)
-        rhs = apply_negative_laplacian(phi_true, self.dx, self.dy, self.dz)
-        rho = rhs * self.constants["eps"]
+        phi_true_interior = jnp.sin(self.X + self.Y + self.Z)
+        rhs = apply_negative_laplacian(phi_true_interior, self.dx, self.dy, self.dz)
+        rho_interior = rhs * self.constants["eps"]
 
-        phi_num = solve_poisson_with_conjugate_gradient(
+        # Place rho into ghost-celled array
+        rho = jnp.zeros((self.Nx + 2, self.Ny + 2, self.Nz + 2))
+        rho = rho.at[1:-1, 1:-1, 1:-1].set(rho_interior)
+        rho = update_ghost_cells(rho, 0, 0, 0)
+
+        phi = solve_poisson_with_conjugate_gradient(
             rho,
             self.initial_phi,
             self.constants,
@@ -116,13 +133,16 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
             tol=1e-10,
             max_iter=4000,
         )
+
+        # Compare on interior
+        phi_num = phi[1:-1, 1:-1, 1:-1]
         phi_num = phi_num - jnp.mean(phi_num)
-        phi_true = phi_true - jnp.mean(phi_true)
+        phi_true = phi_true_interior - jnp.mean(phi_true_interior)
 
         self.assertEqual(phi_num.shape, phi_true.shape)
         self.assertTrue(jnp.allclose(phi_num, phi_true, atol=1e-7, rtol=1e-6))
 
-        residual = apply_negative_laplacian(phi_num, self.dx, self.dy, self.dz) - rho / self.constants["eps"]
+        residual = apply_negative_laplacian(phi_num, self.dx, self.dy, self.dz) - rho_interior / self.constants["eps"]
         self.assertLess(jnp.max(jnp.abs(residual)), 1e-6)
 
     def test_solver_mode_mapping(self):
@@ -136,13 +156,19 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
             "periodic",
         )
 
-        expected_phi_spectral = solve_poisson_with_fft(rho_spectral, self.constants, self.world)
-        expected_Ex_spectral, expected_Ey_spectral, expected_Ez_spectral = spectral_gradient(-1.0 * expected_phi_spectral, self.world)
+        # The spectral solver returns ghost-celled arrays
+        # Verify shapes
+        self.assertEqual(phi_spectral.shape, (self.Nx + 2, self.Ny + 2, self.Nz + 2))
+        self.assertEqual(E_spectral[0].shape, (self.Nx + 2, self.Ny + 2, self.Nz + 2))
 
-        self.assertTrue(jnp.allclose(phi_spectral, expected_phi_spectral, atol=1e-8, rtol=1e-8))
-        self.assertTrue(jnp.allclose(E_spectral[0], expected_Ex_spectral, atol=1e-8, rtol=1e-8))
-        self.assertTrue(jnp.allclose(E_spectral[1], expected_Ey_spectral, atol=1e-8, rtol=1e-8))
-        self.assertTrue(jnp.allclose(E_spectral[2], expected_Ez_spectral, atol=1e-8, rtol=1e-8))
+        # Verify spectral path: solve Poisson on interior, then gradient on interior
+        expected_phi = solve_poisson_with_fft(rho_spectral, self.constants, self.world)
+        expected_Ex, expected_Ey, expected_Ez = spectral_gradient(-1.0 * expected_phi[1:-1, 1:-1, 1:-1], self.world)
+
+        self.assertTrue(jnp.allclose(phi_spectral[1:-1, 1:-1, 1:-1], expected_phi[1:-1, 1:-1, 1:-1], atol=1e-8, rtol=1e-8))
+        self.assertTrue(jnp.allclose(E_spectral[0][1:-1, 1:-1, 1:-1], expected_Ex, atol=1e-8, rtol=1e-8))
+        self.assertTrue(jnp.allclose(E_spectral[1][1:-1, 1:-1, 1:-1], expected_Ey, atol=1e-8, rtol=1e-8))
+        self.assertTrue(jnp.allclose(E_spectral[2][1:-1, 1:-1, 1:-1], expected_Ez, atol=1e-8, rtol=1e-8))
 
         E_fdtd, phi_fdtd, rho_fdtd = calculate_electrostatic_fields(
             self.world,
@@ -161,18 +187,18 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
             self.world,
         )
         expected_Ex_fdtd, expected_Ey_fdtd, expected_Ez_fdtd = centered_finite_difference_gradient(
-            -1.0 * expected_phi_fdtd,
+            -1.0 * expected_phi_fdtd[1:-1, 1:-1, 1:-1],
             self.dx,
             self.dy,
             self.dz,
             "periodic",
         )
 
-        self.assertTrue(jnp.allclose(rho_fdtd, rho_spectral, atol=1e-12, rtol=1e-12))
-        self.assertTrue(jnp.allclose(phi_fdtd, expected_phi_fdtd, atol=1e-6, rtol=1e-6))
-        self.assertTrue(jnp.allclose(E_fdtd[0], expected_Ex_fdtd, atol=1e-6, rtol=1e-6))
-        self.assertTrue(jnp.allclose(E_fdtd[1], expected_Ey_fdtd, atol=1e-6, rtol=1e-6))
-        self.assertTrue(jnp.allclose(E_fdtd[2], expected_Ez_fdtd, atol=1e-6, rtol=1e-6))
+        self.assertTrue(jnp.allclose(rho_fdtd[1:-1, 1:-1, 1:-1], rho_spectral[1:-1, 1:-1, 1:-1], atol=1e-12, rtol=1e-12))
+        self.assertTrue(jnp.allclose(phi_fdtd[1:-1, 1:-1, 1:-1], expected_phi_fdtd[1:-1, 1:-1, 1:-1], atol=1e-6, rtol=1e-6))
+        self.assertTrue(jnp.allclose(E_fdtd[0][1:-1, 1:-1, 1:-1], expected_Ex_fdtd, atol=1e-6, rtol=1e-6))
+        self.assertTrue(jnp.allclose(E_fdtd[1][1:-1, 1:-1, 1:-1], expected_Ey_fdtd, atol=1e-6, rtol=1e-6))
+        self.assertTrue(jnp.allclose(E_fdtd[2][1:-1, 1:-1, 1:-1], expected_Ez_fdtd, atol=1e-6, rtol=1e-6))
 
 
 if __name__ == "__main__":
