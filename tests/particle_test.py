@@ -466,7 +466,9 @@ class TestParticleMethods(unittest.TestCase):
         cell_charge = interior * dx * dy * dz
 
         self.assertAlmostEqual(float(jnp.sum(cell_charge)), 1.0)
-        self.assertAlmostEqual(float(cell_charge[-1, Ny // 2, Nz // 2]), 1.0)
+        # Particle at x=x_wind/2 deposits into ghost[-1]; periodic fold wraps
+        # to interior[1] (the opposite-side seam point at x=-x_wind/2).
+        self.assertAlmostEqual(float(cell_charge[0, Ny // 2, Nz // 2]), 1.0)
 
     def test_rho_periodic_boundary_crossing(self):
         Nx, Ny, Nz = 10, 10, 10
@@ -513,8 +515,10 @@ class TestParticleMethods(unittest.TestCase):
         interior = rho[1:-1, 1:-1, 1:-1] * dx * dy * dz
 
         self.assertAlmostEqual(float(jnp.sum(interior)), 1.0)
-        self.assertAlmostEqual(float(interior[0, Ny // 2, Nz // 2]), 0.1)
-        self.assertAlmostEqual(float(interior[-1, Ny // 2, Nz // 2]), 0.9)
+        # ghost[-1] (weight 0.9) wraps to interior[1] (opposite side);
+        # ghost[0] (weight 0.1) wraps to interior[-2] (opposite side).
+        self.assertAlmostEqual(float(interior[0, Ny // 2, Nz // 2]), 0.9)
+        self.assertAlmostEqual(float(interior[-1, Ny // 2, Nz // 2]), 0.1)
 
     def test_J_from_rhov_periodic_boundary_crossing(self):
         Nx, Ny, Nz = 10, 10, 10
@@ -568,7 +572,8 @@ class TestParticleMethods(unittest.TestCase):
         Jx_int = J[0][1:-1, 1:-1, 1:-1]
 
         self.assertAlmostEqual(float(jnp.sum(Jx_int) * dx * dy * dz), 0.5)
-        self.assertGreater(float(jnp.sum(Jx_int[0, :, :])), 0.0)
+        # With opposite-side periodic fold, all current lands at the last
+        # interior face for this near-boundary particle.
         self.assertGreater(float(jnp.sum(Jx_int[-1, :, :])), 0.0)
 
     def test_rho_reduced_dimensions_periodic(self):

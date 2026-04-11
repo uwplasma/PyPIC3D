@@ -117,10 +117,10 @@ class TestGhostCells(unittest.TestCase):
 
         result = fold_ghost_cells(field, BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
 
-        # ghost[0] (1.0) should be added to interior[1] (10.0) -> 11.0
-        self.assertAlmostEqual(float(result[1, 2, 2]), 11.0)
-        # ghost[-1] (2.0) should be added to interior[-2] (20.0) -> 22.0
-        self.assertAlmostEqual(float(result[-2, 2, 2]), 22.0)
+        # ghost[-1] (2.0) wraps to interior[1] (10.0) -> 12.0
+        self.assertAlmostEqual(float(result[1, 2, 2]), 12.0)
+        # ghost[0] (1.0) wraps to interior[-2] (20.0) -> 21.0
+        self.assertAlmostEqual(float(result[-2, 2, 2]), 21.0)
         # all ghost cells should be cleared after folding
         self.assertEqual(float(result[0, 2, 2]), 0.0)
         self.assertEqual(float(result[-1, 2, 2]), 0.0)
@@ -139,9 +139,10 @@ class TestGhostCells(unittest.TestCase):
 
         result = fold_ghost_cells(field, BC_CONDUCTING, BC_CONDUCTING, BC_CONDUCTING)
 
-        # interior should be modified by reflecting ghost cell values.
-        self.assertAlmostEqual(float(result[1, 2, 2]), 8.0)
-        self.assertAlmostEqual(float(result[-2, 2, 2]), 19.0)
+        # ghost[0] (1.0) reflects to same-side interior[1] (10.0) with sign flip -> 9.0
+        self.assertAlmostEqual(float(result[1, 2, 2]), 9.0)
+        # ghost[-1] (2.0) reflects to same-side interior[-2] (20.0) with sign flip -> 18.0
+        self.assertAlmostEqual(float(result[-2, 2, 2]), 18.0)
         # ghost cells should be reflected
         self.assertEqual(float(result[0, 2, 2]), 0.0)
         self.assertEqual(float(result[-1, 2, 2]), 0.0)

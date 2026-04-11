@@ -90,18 +90,22 @@ def fold_ghost_cells(field, bc_x, bc_y, bc_z):
     # x-axis: fold ghost deposits back to interior
     field = lax.cond(
         bc_x == BC_PERIODIC,
-        lambda f: f.at[-2, :, :].add(f[-1, :, :]).at[1, :, :].add(f[0, :, :]),
-        lambda f: f.at[-2, :, :].add(-1 * f[0, :, :]).at[1, :, :].add(-1 * f[-1, :, :]),
+        lambda f: f.at[1, :, :].add(f[-1, :, :]).at[-2, :, :].add(f[0, :, :]),
+        # add the ghost deposits to the opposite inner cell.
+        lambda f: f.at[1, :, :].add(-1 * f[0, :, :]).at[-2, :, :].add(-1 * f[-1, :, :]),
+        # for conducting BCs, the ghost deposits should be reflected back with opposite sign.
         operand=field
     )
+    # if its periodic, the ghost deposits should be added to the other side.
+    # if its conducting, the ghost deposits should be reflected back with opposite sign.
     # Clear x ghost cells after folding (both periodic and conducting)
     field = field.at[0, :, :].set(0.0).at[-1, :, :].set(0.0)
 
     # y-axis: fold ghost deposits back to interior
     field = lax.cond(
         bc_y == BC_PERIODIC,
-        lambda f: f.at[:, -2, :].add(f[:, -1, :]).at[:, 1, :].add(f[:, 0, :]),
-        lambda f: f.at[:, -2, :].add(-1 * f[:, 0, :]).at[:, 1, :].add(-1 * f[:, -1, :]),
+        lambda f: f.at[:, 1, :].add(f[:, -1, :]).at[:, -2, :].add(f[:, 0, :]),
+        lambda f: f.at[:, 1, :].add(-1 * f[:, 0, :]).at[:, -2, :].add(-1 * f[:, -1, :]),
         operand=field
     )
     # Clear y ghost cells after folding
@@ -110,8 +114,8 @@ def fold_ghost_cells(field, bc_x, bc_y, bc_z):
     # z-axis: fold ghost deposits back to interior
     field = lax.cond(
         bc_z == BC_PERIODIC,
-        lambda f: f.at[:, :, -2].add(f[:, :, -1]).at[:, :, 1].add(f[:, :, 0]),
-        lambda f: f.at[:, :, -2].add(-1 * f[:, :, 0]).at[:, :, 1].add(-1 * f[:, :, -1]),
+        lambda f: f.at[:, :, 1].add(f[:, :, -1]).at[:, :, -2].add(f[:, :, 0]),
+        lambda f: f.at[:, :, 1].add(-1 * f[:, :, 0]).at[:, :, -2].add(-1 * f[:, :, -1]),
         operand=field
     )
     # Clear z ghost cells after folding
