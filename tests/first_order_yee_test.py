@@ -222,9 +222,7 @@ class TestFieldsMethods(unittest.TestCase):
         By_initial = jnp.zeros((Nx+2, Ny+2, Nz+2)).at[1:-1, 1:-1, 1:-1].set(By_int)
         Bz_initial = jnp.zeros((Nx+2, Ny+2, Nz+2)).at[1:-1, 1:-1, 1:-1].set(Bz_int)
 
-        # Fill ghost cells
-        for field in [Ex_initial, Ey_initial, Ez_initial, Bx_initial, By_initial, Bz_initial]:
-            field = update_ghost_cells(field, bc_x, bc_y, bc_z)
+
         Ex_initial = update_ghost_cells(Ex_initial, bc_x, bc_y, bc_z)
         Ey_initial = update_ghost_cells(Ey_initial, bc_x, bc_y, bc_z)
         Ez_initial = update_ghost_cells(Ez_initial, bc_x, bc_y, bc_z)
