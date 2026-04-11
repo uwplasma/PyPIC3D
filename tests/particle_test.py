@@ -16,7 +16,6 @@ from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.utils import build_yee_grid
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
-import matplotlib
 
 
 
