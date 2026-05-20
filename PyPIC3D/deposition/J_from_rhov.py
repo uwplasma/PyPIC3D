@@ -2,7 +2,6 @@ import jax
 from jax import jit
 import jax.numpy as jnp
 from functools import partial
-from jax import lax
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import (
     axis_has_active_cells,
@@ -12,21 +11,6 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
 from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, update_ghost_cells
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.utils import bilinear_filter
-
-
-def _remap_staggered_periodic_ghosts(points, position, axis_size, wind):
-    """Route out-of-domain staggered deposits into the ghost that folds across the seam."""
-    points = jnp.where(
-        position[jnp.newaxis, ...] > 0.5 * wind,
-        jnp.where(points == axis_size - 1, 0, points),
-        points,
-    )
-    points = jnp.where(
-        position[jnp.newaxis, ...] < -0.5 * wind,
-        jnp.where(points == 0, axis_size - 1, points),
-        points,
-    )
-    return points
 
 
 @partial(jit, static_argnames=("filter",))
@@ -135,28 +119,8 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter="bilinear"):
         xpts = jnp.asarray(xpts)
         ypts = jnp.asarray(ypts)
         zpts = jnp.asarray(zpts)
-        
-        xpts = jax.lax.cond(
-            bc_x == 0,
-            lambda pts: _remap_staggered_periodic_ghosts(pts, x, Nx, world["x_wind"]),
-            lambda pts: pts,
-            operand=xpts,
-        )
-        # remap the staggered periodic ghost points for the x-axis if the boundary condition is periodic (bc_x == 0). This ensures that deposits that fall into the ghost cells due to the staggered grid arrangement are correctly routed back into the domain across the periodic seam.
-        ypts = jax.lax.cond(
-            bc_y == 0,
-            lambda pts: _remap_staggered_periodic_ghosts(pts, y, Ny, world["y_wind"]),
-            lambda pts: pts,
-            operand=ypts,
-        )
-        # remap the staggered periodic ghost points for the y-axis if the boundary condition is periodic (bc_y == 0). This ensures that deposits that fall into the ghost cells due to the staggered grid arrangement are correctly routed back into the domain across the periodic seam.
-        zpts = jax.lax.cond(
-            bc_z == 0,
-            lambda pts: _remap_staggered_periodic_ghosts(pts, z, Nz, world["z_wind"]),
-            lambda pts: pts,
-            operand=zpts,
-        )
-        # remap the staggered periodic ghost points for the z-axis if the boundary condition is periodic (bc_z == 0). This ensures that deposits that fall into the ghost cells due to the staggered grid arrangement are correctly routed back into the domain across the periodic seam.
+        # Boundary ownership stays in fold_ghost_cells: deposition may write
+        # into ghost cells, and folding maps those deposits back to the domain.
 
         x_weights_face = jnp.asarray(x_weights_face)
         y_weights_face = jnp.asarray(y_weights_face)
