@@ -50,10 +50,10 @@ from PyPIC3D.deposition.rho import compute_rho
 def run_PyPIC3D(config_file):
     ##################################### INITIALIZE SIMULATION ################################################
 
-    loop, particles, fields, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, solver, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic = initialize_simulation(config_file)
+    loop, particles, fields, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, solver, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic, particle_pusher = initialize_simulation(config_file)
     # initialize the simulation
 
-    jit_loop = jax.jit(loop, static_argnames=('curl_func', 'J_func', 'solver', 'relativistic'))
+    jit_loop = jax.jit(loop, static_argnames=('curl_func', 'J_func', 'solver', 'relativistic', 'particle_pusher'))
 
     dt = world['dt']
     output_dir = simulation_parameters['output_dir']
@@ -156,6 +156,7 @@ def run_PyPIC3D(config_file):
             J_func,
             solver,
             relativistic=relativistic,
+            particle_pusher=particle_pusher,
         )
         # time loop to update the particles and fields
 

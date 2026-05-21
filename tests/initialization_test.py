@@ -20,6 +20,8 @@ class TestInitializationFunctions(unittest.TestCase):
     def test_default_parameters(self):
         plotting, sim, const = default_parameters()
         self.assertIn('Nx', sim)
+        self.assertIn('particle_pusher', sim)
+        self.assertEqual(sim['particle_pusher'], 'boris')
         self.assertIn('eps', const)
         self.assertIn('plotfields', plotting)
         # check that the default parameters contain expected keys

@@ -6,7 +6,9 @@ import os
 from functools import partial
 
 
-from PyPIC3D.boris import boris_single_particle, interpolate_field_to_particles
+from PyPIC3D.pusher.particle_push import validate_particle_pusher
+from PyPIC3D.pusher.boris import boris_single_particle, interpolate_field_to_particles
+from PyPIC3D.pusher.higuera_cary import higuera_cary_single_particle
 from PyPIC3D.utils import mae, convergence_test
 
 jax.config.update("jax_enable_x64", True)
@@ -139,6 +141,73 @@ class TestBorisMethods(unittest.TestCase):
         avg_radius  = measure_xz_radius(xs, zs)
         #print(f"Average radius: {avg_radius}")
         self.assertTrue( jnp.isclose(avg_radius, 1.28, atol=0.5) )
+
+    def test_higuera_cary_zero_field_preserves_velocity(self):
+        vx, vy, vz = higuera_cary_single_particle(
+            0.2, -0.1, 0.05,
+            0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0,
+            1.0, 1.0, 0.1,
+            {"C": 10.0},
+        )
+        # zero fields should not change the particle velocity
+        self.assertTrue(jnp.allclose(jnp.array([vx, vy, vz]), jnp.array([0.2, -0.1, 0.05])))
+
+    def test_higuera_cary_magnetic_field_preserves_speed(self):
+        vx0, vy0, vz0 = 0.2, 0.0, 0.0
+        vx, vy, vz = higuera_cary_single_particle(
+            vx0, vy0, vz0,
+            0.0, 0.0, 0.0,
+            0.0, 0.0, 1.0,
+            1.0, 1.0, 0.1,
+            {"C": 10.0},
+        )
+        # magnetic rotation should conserve speed
+        old_speed = jnp.sqrt(vx0**2 + vy0**2 + vz0**2)
+        new_speed = jnp.sqrt(vx**2 + vy**2 + vz**2)
+        self.assertTrue(jnp.allclose(new_speed, old_speed, rtol=1e-12, atol=1e-12))
+
+    def test_higuera_cary_electric_field_accelerates_along_field(self):
+        vx, vy, vz = higuera_cary_single_particle(
+            0.0, 0.0, 0.0,
+            1.0, 0.0, 0.0,
+            0.0, 0.0, 0.0,
+            1.0, 1.0, 0.1,
+            {"C": 10.0},
+        )
+        # electric field in x should accelerate the particle in x only
+        self.assertGreater(vx, 0.0)
+        self.assertTrue(jnp.allclose(jnp.array([vy, vz]), jnp.array([0.0, 0.0])))
+
+    def test_higuera_cary_vectorizes_with_per_particle_charge_and_mass(self):
+        higuera_cary_vmap = jax.vmap(
+            higuera_cary_single_particle,
+            in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, None, None),
+        )
+        newvx, newvy, newvz = higuera_cary_vmap(
+            jnp.array([0.0, 0.0]),
+            jnp.array([0.0, 0.0]),
+            jnp.array([0.0, 0.0]),
+            jnp.array([1.0, 1.0]),
+            jnp.array([0.0, 0.0]),
+            jnp.array([0.0, 0.0]),
+            jnp.array([0.0, 0.0]),
+            jnp.array([0.0, 0.0]),
+            jnp.array([0.0, 0.0]),
+            jnp.array([1.0, 2.0]),
+            jnp.array([1.0, 1.0]),
+            0.1,
+            {"C": 10.0},
+        )
+        # per-particle charge and mass should work through the vectorized path
+        self.assertEqual(newvx.shape, (2,))
+        self.assertGreater(newvx[1], newvx[0])
+        self.assertTrue(jnp.allclose(newvy, jnp.zeros(2)))
+        self.assertTrue(jnp.allclose(newvz, jnp.zeros(2)))
+
+    def test_validate_particle_pusher_rejects_unknown_name(self):
+        with self.assertRaises(ValueError):
+            validate_particle_pusher("not_a_pusher")
 
 
     def test_trilinear_convergence(self):
