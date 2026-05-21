@@ -136,8 +136,8 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter="bilinear"):
         _, y_weights_face = collapse_axis_stencil(ypts, y_weights_face, Ny, ghost_cells=True)
         zpts, z_weights_node = collapse_axis_stencil(zpts, z_weights_node, Nz, ghost_cells=True)
         _, z_weights_face = collapse_axis_stencil(zpts, z_weights_face, Nz, ghost_cells=True)
-        # if the axis has ghost cells, collapse the stencil to combine contributions from ghost cells into the corresponding interior cells.
-        
+        # Collapse stencils for inactive (single-cell) axes so deposition uses the
+        # reduced effective stencil; ghost-cell folding is handled later.
 
         xpts_eff = xpts
         ypts_eff = ypts
