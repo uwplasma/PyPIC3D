@@ -164,7 +164,7 @@ def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
         oxw = [tmp, oxw[0], oxw[1], oxw[2], tmp]
         oyw = [tmp, oyw[0], oyw[1], oyw[2], tmp]
         ozw = [tmp, ozw[0], ozw[1], ozw[2], tmp]
-        # pad the weights with zeros so they can rolled.
+        # pad the weights with zeros so they can be rolled.
 
         oxw = _roll_old_weights_to_new_frame(oxw, shift_x)
         oyw = _roll_old_weights_to_new_frame(oyw, shift_y)

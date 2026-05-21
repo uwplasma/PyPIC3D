@@ -156,7 +156,7 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter="bilinear"):
             indexing="ij",
         )
         combos = jnp.stack([ii.ravel(), jj.ravel(), kk.ravel()], axis=1)
-        # get the list of indicies to map over
+        # get the list of indices to map over
 
         def idx_and_dJ_values(idx):
             i, j, k = idx
