@@ -77,6 +77,7 @@ def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
     x_active = axis_has_active_cells(Nx, ghost_cells=True)
     y_active = axis_has_active_cells(Ny, ghost_cells=True)
     z_active = axis_has_active_cells(Nz, ghost_cells=True)
+    # determine which directions are not quasi-1D.
 
     for species in particles:
         q = species.get_charge()
@@ -84,18 +85,22 @@ def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
         vx, vy, vz = species.get_velocity()
         shape_factor = species.get_shape()
         N_particles = species.get_number_of_particles()
+        # get particle information
 
         old_x = x - vx * dt
         old_y = y - vy * dt
         old_z = z - vz * dt
+        # compute old positions by backstepping along the velocity
 
         x0 = compute_particle_anchor(x, grid[0], shape_factor)
         y0 = compute_particle_anchor(y, grid[1], shape_factor)
         z0 = compute_particle_anchor(z, grid[2], shape_factor)
+        # compute the nearest grid point to the particle's current position
 
         old_x0 = compute_particle_anchor(old_x, grid[0], shape_factor)
         old_y0 = compute_particle_anchor(old_y, grid[1], shape_factor)
         old_z0 = compute_particle_anchor(old_z, grid[2], shape_factor)
+        # compute the nearest grid point to the particle's old position
 
         deltax = particle_axis_offset(x, x0, grid[0])
         deltay = particle_axis_offset(y, y0, grid[1])
@@ -103,15 +108,19 @@ def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
         old_deltax = particle_axis_offset(old_x, old_x0, grid[0])
         old_deltay = particle_axis_offset(old_y, old_y0, grid[1])
         old_deltaz = particle_axis_offset(old_z, old_z0, grid[2])
+        # compute the particle's offset from the nearest grid point in each direction at both time steps
 
         shift_x = x0 - old_x0
         shift_y = y0 - old_y0
         shift_z = z0 - old_z0
+        # compute how many grid points the particles have shifted in each direction.
 
         offsets = jnp.asarray([-2, -1, 0, 1, 2], dtype=x0.dtype)
         xpts = build_axis_stencil_points(x0, Nx, bc_x, offsets)
         ypts = build_axis_stencil_points(y0, Ny, bc_y, offsets)
         zpts = build_axis_stencil_points(z0, Nz, bc_z, offsets)
+        # build the 5-point Esirkepov stencil in each direction.
+
         xpts = lax.cond(
             bc_x == BC_PERIODIC,
             lambda pts: _remap_staggered_periodic_ghosts(pts, x, Nx, world["x_wind"]),
@@ -130,6 +139,7 @@ def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
             lambda pts: pts,
             operand=zpts,
         )
+        # remap out-of-domain stencil points into the ghost cells across the periodic seam, if needed.
 
         xw, yw, zw = jax.lax.cond(
             shape_factor == 1,
@@ -143,6 +153,7 @@ def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
             lambda _: get_second_order_weights(old_deltax, old_deltay, old_deltaz, dx, dy, dz),
             operand=None,
         )
+        # compute the particle shape weights at the current and old time steps
 
         tmp = jnp.zeros_like(xw[0])
 
@@ -153,13 +164,16 @@ def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
         oxw = [tmp, oxw[0], oxw[1], oxw[2], tmp]
         oyw = [tmp, oyw[0], oyw[1], oyw[2], tmp]
         ozw = [tmp, ozw[0], ozw[1], ozw[2], tmp]
+        # pad the weights with zeros so they can be rolled.
 
         oxw = _roll_old_weights_to_new_frame(oxw, shift_x)
         oyw = _roll_old_weights_to_new_frame(oyw, shift_y)
         ozw = _roll_old_weights_to_new_frame(ozw, shift_z)
+        # shift the old weights into the new-cell frame so they can be differenced with the current weights.
         xpts, xw, oxw = _collapse_esirkepov_axis(xpts, xw, oxw, Nx)
         ypts, yw, oyw = _collapse_esirkepov_axis(ypts, yw, oyw, Ny)
         zpts, zw, ozw = _collapse_esirkepov_axis(zpts, zw, ozw, Nz)
+        # remove dummy stencil points for non 3D simulations
 
         if x_active and y_active and z_active:
             Wx_, Wy_, Wz_ = get_3D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, N_particles)
@@ -187,6 +201,7 @@ def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
             Wx_, Wy_, Wz_ = get_1D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, N_particles, dim=1)
         elif z_active and (not x_active) and (not y_active):
             Wx_, Wy_, Wz_ = get_1D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, N_particles, dim=2)
+        # calculate the Esirkepov weights for the active dimensions
 
         dJx = jax.lax.cond(
             x_active,
@@ -208,6 +223,7 @@ def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
             lambda _: q * vz / (dx * dy * dz) * jnp.ones(N_particles),
             operand=None,
         )
+        # compute the current contribution prefactors for each active dimension according to Esirkepov's formula
 
         Fx = dJx * Wx_
         Fy = dJy * Wy_
@@ -252,6 +268,7 @@ def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
                 for j in range(5):
                     for k in range(5):
                         Jz = Jz.at[xpts[i, :], ypts[j, :], zpts[k, :]].add(Fz[i, j, k, :], mode="drop")
+        # deposit the current contributions onto the grid.
 
     Jx = fold_ghost_cells(Jx, bc_x, bc_y, bc_z)
     Jy = fold_ghost_cells(Jy, bc_x, bc_y, bc_z)
@@ -260,6 +277,7 @@ def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
     Jx = update_ghost_cells(Jx, bc_x, bc_y, bc_z)
     Jy = update_ghost_cells(Jy, bc_x, bc_y, bc_z)
     Jz = update_ghost_cells(Jz, bc_x, bc_y, bc_z)
+    # update ghost cells according to boundary conditions to prepare for field solve
 
     return (Jx, Jy, Jz)
 

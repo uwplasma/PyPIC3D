@@ -48,6 +48,8 @@ from PyPIC3D.evolve import (
     time_loop_electrodynamic, time_loop_electrostatic, time_loop_vector_potential
 )
 
+from PyPIC3D.pusher.particle_push import validate_particle_pusher
+
 from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
 from PyPIC3D.solvers.vector_potential import initialize_vector_potential
@@ -121,6 +123,7 @@ def default_parameters():
         "Nt": None,  # number of time steps
         "electrostatic": False,  # boolean for electrostatic simulation
         "relativistic": True,  # boolean for relativistic simulation
+        "particle_pusher": "boris",  # particle pusher: boris, higuera_cary
         "benchmark": False, # boolean for using the profiler
         "verbose": False, # boolean for printing verbose output
         "GPUs": False, # boolean for using GPUs
@@ -202,6 +205,8 @@ def initialize_simulation(toml_file):
     electrostatic = simulation_parameters['electrostatic']
     solver = simulation_parameters['solver']
     relativistic = simulation_parameters['relativistic']
+    particle_pusher = simulation_parameters['particle_pusher']
+    validate_particle_pusher(particle_pusher)
     verbose = simulation_parameters['verbose']
     GPUs = simulation_parameters['GPUs']
     # set the simulation parameters
@@ -363,6 +368,8 @@ def initialize_simulation(toml_file):
         print("Relativistic simulation")
     else:
         print("Non-relativistic simulation")
+    print(f"Using {particle_pusher} particle pusher")
+    # print the selected particle pusher
 
     if electrostatic:
         print("Using electrostatic solver")
@@ -408,7 +415,7 @@ def initialize_simulation(toml_file):
 
 
     return evolve_loop, particles, fields, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, \
-        solver, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic
+        solver, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic, particle_pusher
 
 
 

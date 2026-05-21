@@ -22,8 +22,8 @@ dependencies = [
     "openpmd-api",
 ]
 
-[tool.setuptools]
-packages = ["PyPIC3D"]
+[tool.setuptools.packages.find]
+include = ["PyPIC3D*"]
 
 [project.scripts]
 PyPIC3D = "PyPIC3D.__main__:main"

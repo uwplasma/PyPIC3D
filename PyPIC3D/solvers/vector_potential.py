@@ -7,7 +7,7 @@ from PyPIC3D.solvers.fdtd import (
     centered_finite_difference_divergence,
     centered_finite_difference_gradient
 )
-from PyPIC3D.boris import interpolate_field_to_particles
+from PyPIC3D.pusher.boris import interpolate_field_to_particles
 from PyPIC3D.utils import digital_filter
 
 

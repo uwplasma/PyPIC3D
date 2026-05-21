@@ -572,9 +572,10 @@ class TestParticleMethods(unittest.TestCase):
         Jx_int = J[0][1:-1, 1:-1, 1:-1]
 
         self.assertAlmostEqual(float(jnp.sum(Jx_int) * dx * dy * dz), 0.5)
-        # With opposite-side periodic fold, all current lands at the last
-        # interior face for this near-boundary particle.
-        self.assertGreater(float(jnp.sum(Jx_int[-1, :, :])), 0.0)
+        # The interior portion stays on the last physical face; only the
+        # +x ghost deposit folds to the first physical face.
+        self.assertAlmostEqual(float(jnp.sum(Jx_int[0, :, :]) * dx * dy * dz), 0.05)
+        self.assertAlmostEqual(float(jnp.sum(Jx_int[-1, :, :]) * dx * dy * dz), 0.45)
 
     def test_rho_reduced_dimensions_periodic(self):
         Nx, Ny, Nz = 16, 1, 1
