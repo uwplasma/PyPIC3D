@@ -26,11 +26,7 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter="bilinear"):
 
     Jx, Jy, Jz = J
     Nx, Ny, Nz = Jx.shape
-    x_active = axis_has_active_cells(Nx, ghost_cells=True)
-    y_active = axis_has_active_cells(Ny, ghost_cells=True)
-    z_active = axis_has_active_cells(Nz, ghost_cells=True)
-    # determine which axes are null (N = 1) and thus can be skipped in loops to
-    # reduce computational cost for 2D and 1D simulations
+    # get the grid dimensions for the current density arrays
     bc_x = world["boundary_conditions"]["x"]
     bc_y = world["boundary_conditions"]["y"]
     bc_z = world["boundary_conditions"]["z"]
