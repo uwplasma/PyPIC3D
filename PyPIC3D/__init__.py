@@ -10,6 +10,7 @@ from . import errors
 from . import initialization
 from . import utils
 from . import boris
+from . import pusher
 from . import evolve
 
 from .solvers import vector_potential

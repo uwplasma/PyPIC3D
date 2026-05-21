@@ -6,7 +6,7 @@ import jax
 from jax import jit
 from functools import partial
 
-from PyPIC3D.boris import (
+from PyPIC3D.pusher.particle_push import (
     particle_push
 )
 
@@ -22,13 +22,13 @@ from PyPIC3D.solvers.vector_potential import (
     E_from_A, B_from_A, update_vector_potential
 )
 
-@partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic"))
-def time_loop_electrostatic(particles, fields, world, constants, curl_func, J_func, solver, relativistic=True):
+@partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic", "particle_pusher"))
+def time_loop_electrostatic(particles, fields, world, constants, curl_func, J_func, solver, relativistic=True, particle_pusher="boris"):
     """
     Advances the simulation by one time step for an electrostatic Particle-In-Cell (PIC) loop.
 
     This function performs the following steps:
-    1. Pushes all particles using the current electric and magnetic fields (typically with the Boris algorithm).
+    1. Pushes all particles using the current electric and magnetic fields with the selected particle pusher.
     2. Updates particle positions.
     3. Solves for the new electric field using the Poisson equation, updating the field and potential.
     4. Packs the updated fields and returns the new particle and field states.
@@ -54,8 +54,8 @@ def time_loop_electrostatic(particles, fields, world, constants, curl_func, J_fu
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
 
-        particles[i] = particle_push(particles[i], E, B, vertex_grid, center_grid, world['dt'], constants, relativistic=relativistic)
-        # use boris push for particle velocities
+        particles[i] = particle_push(particles[i], E, B, vertex_grid, center_grid, world['dt'], constants, relativistic=relativistic, particle_pusher=particle_pusher)
+        # use the selected particle pusher for particle velocities
 
         particles[i].update_position()
         # update the particle positions
@@ -74,12 +74,12 @@ def time_loop_electrostatic(particles, fields, world, constants, curl_func, J_fu
     return particles, fields
 
 
-@partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic"))
-def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_func, solver, relativistic=True):
+@partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic", "particle_pusher"))
+def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_func, solver, relativistic=True, particle_pusher="boris"):
     """
     Advance an electrodynamic Particle-In-Cell (PIC) system by one time step.
     This routine performs, in order:
-    1) Particle push using the Boris algorithm (optionally relativistic),
+    1) Particle push using the selected particle pusher,
     2) Particle position update,
     3) Current deposition onto the grid via the provided `J_func`,
     4) Field update (E then B) using curl operators and boundary conditions,
@@ -129,8 +129,8 @@ def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_f
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
 
-        particles[i] = particle_push(particles[i], E, B, center_grid, vertex_grid, world['dt'], constants, relativistic=relativistic)
-        # use boris push for particle velocities
+        particles[i] = particle_push(particles[i], E, B, center_grid, vertex_grid, world['dt'], constants, relativistic=relativistic, particle_pusher=particle_pusher)
+        # use the selected particle pusher for particle velocities
 
         particles[i].update_position()
         # update the particle positions
@@ -154,8 +154,8 @@ def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_f
     return particles, fields
 
 
-@partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic"))
-def time_loop_vector_potential(particles, fields, world, constants, curl_func, J_func, solver, relativistic=True):
+@partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic", "particle_pusher"))
+def time_loop_vector_potential(particles, fields, world, constants, curl_func, J_func, solver, relativistic=True, particle_pusher="boris"):
     """
     Advance a PIC (Particle-In-Cell) simulation by one time step using a
     vector-potential formulation for the electromagnetic fields.
@@ -217,8 +217,8 @@ def time_loop_vector_potential(particles, fields, world, constants, curl_func, J
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
 
-        particles[i] = particle_push(particles[i], E, B, center_grid, vertex_grid, world['dt'], constants, relativistic=relativistic)
-        # use boris push for particle velocities
+        particles[i] = particle_push(particles[i], E, B, center_grid, vertex_grid, world['dt'], constants, relativistic=relativistic, particle_pusher=particle_pusher)
+        # use the selected particle pusher for particle velocities
 
         particles[i].update_position()
         # update the particle positions

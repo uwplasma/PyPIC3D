@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 from scipy import stats
 
-from PyPIC3D.boris import interpolate_field_to_particles
+from PyPIC3D.pusher.boris import interpolate_field_to_particles
 from functools import partial
 
 
