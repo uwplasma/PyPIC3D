@@ -173,7 +173,7 @@ def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
         xpts, xw, oxw = _collapse_esirkepov_axis(xpts, xw, oxw, Nx)
         ypts, yw, oyw = _collapse_esirkepov_axis(ypts, yw, oyw, Ny)
         zpts, zw, ozw = _collapse_esirkepov_axis(zpts, zw, ozw, Nz)
-        # remove dummy stecil points for non 3D simulations
+        # remove dummy stencil points for non 3D simulations
 
         if x_active and y_active and z_active:
             Wx_, Wy_, Wz_ = get_3D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, N_particles)
