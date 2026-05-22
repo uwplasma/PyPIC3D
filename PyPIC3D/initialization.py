@@ -19,7 +19,7 @@ from PyPIC3D.utils import (
     update_parameters_from_toml,
     build_yee_grid, convert_to_jax_compatible, load_external_fields_from_toml,
     print_stats, particle_sanity_check, build_plasma_parameters_dict,
-    make_dir, compute_energy, build_collocated_grid
+    make_dir, compute_energy, build_collocated_grid, add_external_fields
 )
 
 from PyPIC3D.solvers.pstd import (
@@ -331,12 +331,17 @@ def initialize_simulation(toml_file):
 
     E, B, J, phi, rho = initialize_fields(Nx, Ny, Nz)
     # initialize the electric and magnetic fields
+    external_fields = (
+        tuple(jax.numpy.zeros_like(comp) for comp in E),
+        tuple(jax.numpy.zeros_like(comp) for comp in B),
+    )
+    # external_fields stores prescribed E/B that particles see but Maxwell does not evolve
 
     # load any external fields
     fields = [component for field in [E, B, J] for component in field]
     # convert the E, B, and J tuples into one big list
-    fields = load_external_fields_from_toml(fields, toml_file)
-    # add any external fields to the simulation
+    fields, external_fields = load_external_fields_from_toml(fields, external_fields, toml_file)
+    # route configured fields into either evolved fields or external-only fields
     E, B, J = fields[:3], fields[3:6], fields[6:9]
     # convert the fields list back into tuples
 
@@ -348,6 +353,11 @@ def initialize_simulation(toml_file):
     E = tuple(update_ghost_cells(comp, bc_x, bc_y, bc_z) for comp in E)
     B = tuple(update_ghost_cells(comp, bc_x, bc_y, bc_z) for comp in B)
     # fill ghost cells for the initial E and B fields
+    external_E, external_B = external_fields
+    external_E = tuple(update_ghost_cells(comp, bc_x, bc_y, bc_z) for comp in external_E)
+    external_B = tuple(update_ghost_cells(comp, bc_x, bc_y, bc_z) for comp in external_B)
+    external_fields = (external_E, external_B)
+    # fill ghost cells for external fields before they are interpolated to particles
 
     if solver == "spectral":
         curl_func = functools.partial(spectral_curl, world=world)
@@ -356,7 +366,9 @@ def initialize_simulation(toml_file):
 
 
     ######################### COMPUTE INITIAL ENERGY ########################################################
-    e_energy, b_energy, kinetic_energy = compute_energy(particles, E, B, world, constants)
+    total_E, total_B = add_external_fields(E, B, external_fields)
+    # energy diagnostics use the same total fields that the particle pusher sees
+    e_energy, b_energy, kinetic_energy = compute_energy(particles, total_E, total_B, world, constants)
     # compute the initial energy of the system
     print(f"Initial Electric Field Energy: {e_energy:.2e} J")
     print(f"Initial Magnetic Field Energy: {b_energy:.2e} J")
@@ -397,10 +409,10 @@ def initialize_simulation(toml_file):
     if solver == "vector_potential":
         A2, A1, A0 = initialize_vector_potential(J, world, constants)
         # initialize the vector potential A based on the current density J
-        fields = (E, B, J, rho, phi, A2, A1, A0)
+        fields = (E, B, J, rho, phi, external_fields, A2, A1, A0)
         # define the fields tuple for the vector potential solver
     else:
-        fields = (E, B, J, rho, phi)
+        fields = (E, B, J, rho, phi, external_fields)
         # define the fields tuple for the electrodynamic and electrostatic solvers
 
     if plotting_parameters['dump_fields']:

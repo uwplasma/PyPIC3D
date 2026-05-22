@@ -83,17 +83,20 @@ def _write_openpmd_vector_mesh(iteration, name, components, world, active_dims=(
 
 def _fields_to_interior_map(fields):
     """Extract physical interior (strip ghost cells) from a fields tuple and return a field_map dict."""
-    E, B, J, rho, *rest = fields
+    E, B, J, rho, phi, external_fields, *rest = fields
     interior = (slice(1, -1), slice(1, -1), slice(1, -1))
+    external_E, external_B = external_fields
     field_map = {
         "E": tuple(comp[interior] for comp in E),
         "B": tuple(comp[interior] for comp in B),
         "J": tuple(comp[interior] for comp in J),
         "rho": rho[interior],
+        "phi": phi[interior],
+        "external_E": tuple(comp[interior] for comp in external_E),
+        "external_B": tuple(comp[interior] for comp in external_B),
     }
     if rest:
-        field_map["phi"] = rest[0][interior]
-        for idx, extra in enumerate(rest[1:], start=1):
+        for idx, extra in enumerate(rest, start=1):
             if isinstance(extra, (list, tuple)):
                 field_map[f"field_{idx}"] = tuple(comp[interior] for comp in extra)
             else:

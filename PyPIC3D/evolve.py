@@ -22,6 +22,8 @@ from PyPIC3D.solvers.vector_potential import (
     E_from_A, B_from_A, update_vector_potential
 )
 
+from PyPIC3D.utils import add_external_fields
+
 @partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic", "particle_pusher"))
 def time_loop_electrostatic(particles, fields, world, constants, curl_func, J_func, solver, relativistic=True, particle_pusher="boris"):
     """
@@ -35,7 +37,7 @@ def time_loop_electrostatic(particles, fields, world, constants, curl_func, J_fu
 
     Args:
         particles (list): List of particle objects to be advanced.
-        fields (tuple): Tuple containing the field arrays (E, B, J, rho, phi).
+        fields (tuple): Tuple containing the field arrays (E, B, J, rho, phi, external_fields).
         world (dict): Dictionary containing simulation parameters (e.g., time step 'dt').
         constants (dict): Dictionary of physical constants used in the simulation.
         curl_func (callable): Function to compute the curl of a field (not used in this function).
@@ -43,18 +45,20 @@ def time_loop_electrostatic(particles, fields, world, constants, curl_func, J_fu
         solver (callable): Function or object to solve the Poisson equation for the electric field.
 
     Returns:
-        tuple: Updated particles list and fields tuple (E, B, J, rho, phi).
+        tuple: Updated particles list and fields tuple (E, B, J, rho, phi, external_fields).
     """
 
-    E, B, J, rho, phi = fields
+    E, B, J, rho, phi, external_fields = fields
     # unpack the fields
     center_grid = world['grids']['center']
     vertex_grid = world['grids']['vertex']
+    push_E, push_B = add_external_fields(E, B, external_fields)
+    # particles see evolved fields plus external-only fields
 
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
 
-        particles[i] = particle_push(particles[i], E, B, vertex_grid, center_grid, world['dt'], constants, relativistic=relativistic, particle_pusher=particle_pusher)
+        particles[i] = particle_push(particles[i], push_E, push_B, vertex_grid, center_grid, world['dt'], constants, relativistic=relativistic, particle_pusher=particle_pusher)
         # use the selected particle pusher for particle velocities
 
         particles[i].update_position()
@@ -64,7 +68,7 @@ def time_loop_electrostatic(particles, fields, world, constants, curl_func, J_fu
     E, phi, rho = calculate_electrostatic_fields(world, particles, constants, rho, phi, solver, 'periodic')
     # calculate the electric field using the Poisson equation
 
-    fields = (E, B, J, rho, phi)
+    fields = (E, B, J, rho, phi, external_fields)
     # pack the fields into a tuple
 
     for i in range(len(particles)):
@@ -91,7 +95,7 @@ def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_f
         with `particle_push(...)`, provide an `update_position()` method, and a
         `boundary_conditions()` method.
     fields : tuple
-        Tuple of field arrays/objects in the form `(E, B, J, rho, phi)`.
+        Tuple of field arrays/objects in the form `(E, B, J, rho, phi, external_fields)`.
     world : dict
         Simulation configuration. Must contain `world['dt']` (time step).
     constants : object or dict
@@ -112,8 +116,8 @@ def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_f
         Updated particle collection after push, position update, and boundary
         conditions.
     fields : tuple
-        Updated fields tuple `(E, B, J, rho, phi)` with new E, B, and J. `rho` and
-        `phi` are passed through unchanged.
+        Updated fields tuple `(E, B, J, rho, phi, external_fields)` with new E,
+        B, and J. `rho`, `phi`, and `external_fields` are passed through unchanged.
     Notes
     -----
     - The update order is: deposit J -> update E -> update B.
@@ -121,15 +125,17 @@ def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_f
     """
 
 
-    E, B, J, rho, phi = fields
+    E, B, J, rho, phi, external_fields = fields
     # unpack the fields
     center_grid = world['grids']['center']
     vertex_grid = world['grids']['vertex']
+    push_E, push_B = add_external_fields(E, B, external_fields)
+    # particles see evolved fields plus external-only fields
 
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
 
-        particles[i] = particle_push(particles[i], E, B, center_grid, vertex_grid, world['dt'], constants, relativistic=relativistic, particle_pusher=particle_pusher)
+        particles[i] = particle_push(particles[i], push_E, push_B, center_grid, vertex_grid, world['dt'], constants, relativistic=relativistic, particle_pusher=particle_pusher)
         # use the selected particle pusher for particle velocities
 
         particles[i].update_position()
@@ -147,7 +153,7 @@ def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_f
         particles[i].boundary_conditions()
         # apply boundary conditions to the particles
 
-    fields = (E, B, J, rho, phi)
+    fields = (E, B, J, rho, phi, external_fields)
     # pack the fields into a tuple
     
 
@@ -173,9 +179,9 @@ def time_loop_vector_potential(particles, fields, world, constants, curl_func, J
         with `particle_push(...)`, provide `update_position()`, and
         `boundary_conditions()` methods.
     fields : tuple
-        Field tuple in the order `(E, B, J, rho, phi, A2, A1, A0)`, where `A2`
-        denotes the newest vector potential, `A1` the previous, and `A0` the
-        older one (used for time differencing).
+        Field tuple in the order `(E, B, J, rho, phi, external_fields, A2, A1, A0)`,
+        where `external_fields` is added only for particle pushes, `A2` denotes
+        the newest vector potential, `A1` the previous, and `A0` the older one.
     world : dict
         Simulation parameters. Must at least contain `'dt'` (time step).
     constants : Any
@@ -196,8 +202,8 @@ def time_loop_vector_potential(particles, fields, world, constants, curl_func, J
         Updated particle collection after push, position update, and boundary
         conditions.
     fields : tuple
-        Updated field tuple `(E, B, J, rho, phi, A2, A1, A0)` after advancing A
-        and recomputing E, B, and J.
+        Updated field tuple `(E, B, J, rho, phi, external_fields, A2, A1, A0)`
+        after advancing A and recomputing E, B, and J.
 
     Notes
     -----
@@ -209,15 +215,17 @@ def time_loop_vector_potential(particles, fields, world, constants, curl_func, J
       currently not used inside this function but may be part of a broader API.
     """
 
-    E, B, J, rho, phi, A2, A1, A0 = fields
+    E, B, J, rho, phi, external_fields, A2, A1, A0 = fields
     # unpack the fields
     center_grid = world['grids']['center']
     vertex_grid = world['grids']['vertex']
+    push_E, push_B = add_external_fields(E, B, external_fields)
+    # particles see evolved fields plus external-only fields
 
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
 
-        particles[i] = particle_push(particles[i], E, B, center_grid, vertex_grid, world['dt'], constants, relativistic=relativistic, particle_pusher=particle_pusher)
+        particles[i] = particle_push(particles[i], push_E, push_B, center_grid, vertex_grid, world['dt'], constants, relativistic=relativistic, particle_pusher=particle_pusher)
         # use the selected particle pusher for particle velocities
 
         particles[i].update_position()
@@ -241,7 +249,7 @@ def time_loop_vector_potential(particles, fields, world, constants, curl_func, J
         particles[i].boundary_conditions()
         # apply boundary conditions to the particles
 
-    fields = (E, B, J, rho, phi, A2, A1, A0)
+    fields = (E, B, J, rho, phi, external_fields, A2, A1, A0)
     # pack the fields into a tuple
 
 
