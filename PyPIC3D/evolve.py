@@ -125,7 +125,7 @@ def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_f
     """
 
 
-    E, B, J, rho, phi, external_fields = fields
+    E, B, J, rho, phi, external_fields, *rest = fields
     # unpack the fields
     center_grid = world['grids']['center']
     vertex_grid = world['grids']['vertex']
@@ -144,16 +144,27 @@ def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_f
     ################ FIELD UPDATE ################################################################################################
     J = J_func(particles, J, constants, world)
     # calculate the current density based on the selected method
-    E = update_E(E, B, J, world, constants, curl_func)
+    if rest:
+        pml_state = rest[0]
+        E, pml_state = update_E(E, B, J, world, constants, curl_func, pml_state)
+    else:
+        pml_state = None
+        E = update_E(E, B, J, world, constants, curl_func)
     # update the electric field using the curl of the magnetic field
-    B = update_B(E, B, world, constants, curl_func)
+    if pml_state is None:
+        B = update_B(E, B, world, constants, curl_func)
+    else:
+        B, pml_state = update_B(E, B, world, constants, curl_func, pml_state)
     # update the magnetic field using the curl of the electric field
 
     for i in range(len(particles)):
         particles[i].boundary_conditions()
         # apply boundary conditions to the particles
 
-    fields = (E, B, J, rho, phi, external_fields)
+    if pml_state is None:
+        fields = (E, B, J, rho, phi, external_fields)
+    else:
+        fields = (E, B, J, rho, phi, external_fields, pml_state)
     # pack the fields into a tuple
     
 

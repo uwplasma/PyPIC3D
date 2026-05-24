@@ -56,6 +56,11 @@ from PyPIC3D.solvers.vector_potential import initialize_vector_potential
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
+from PyPIC3D.boundary_conditions.PML import (
+    build_pml_metadata,
+    initialize_pml_state,
+    update_ghost_cells_for_pml,
+)
 
 
 def _encode_field_bc(bc_name):
@@ -261,6 +266,15 @@ def initialize_simulation(toml_file):
     }
     # set the simulation world parameters
 
+    raw_pml = []
+    if toml_file is not None:
+        raw_pml = toml_file.get("pml", [])
+    pml_active = bool(raw_pml)
+    if pml_active and (solver != "fdtd" or electrostatic):
+        raise ValueError("PML is only supported for the fdtd electrodynamic solver")
+    pml_metadata = build_pml_metadata(raw_pml, world, constants)
+    world["pml"] = pml_metadata
+
     world = convert_to_jax_compatible(world)
     constants = convert_to_jax_compatible(constants)
     simulation_parameters = convert_to_jax_compatible(simulation_parameters)
@@ -350,12 +364,20 @@ def initialize_simulation(toml_file):
     bc_z = world['boundary_conditions']['z']
     # get the boundary condition codes
 
-    E = tuple(update_ghost_cells(comp, bc_x, bc_y, bc_z) for comp in E)
-    B = tuple(update_ghost_cells(comp, bc_x, bc_y, bc_z) for comp in B)
+    if pml_active:
+        E = tuple(update_ghost_cells_for_pml(comp, world) for comp in E)
+        B = tuple(update_ghost_cells_for_pml(comp, world) for comp in B)
+    else:
+        E = tuple(update_ghost_cells(comp, bc_x, bc_y, bc_z) for comp in E)
+        B = tuple(update_ghost_cells(comp, bc_x, bc_y, bc_z) for comp in B)
     # fill ghost cells for the initial E and B fields
     external_E, external_B = external_fields
-    external_E = tuple(update_ghost_cells(comp, bc_x, bc_y, bc_z) for comp in external_E)
-    external_B = tuple(update_ghost_cells(comp, bc_x, bc_y, bc_z) for comp in external_B)
+    if pml_active:
+        external_E = tuple(update_ghost_cells_for_pml(comp, world) for comp in external_E)
+        external_B = tuple(update_ghost_cells_for_pml(comp, world) for comp in external_B)
+    else:
+        external_E = tuple(update_ghost_cells(comp, bc_x, bc_y, bc_z) for comp in external_E)
+        external_B = tuple(update_ghost_cells(comp, bc_x, bc_y, bc_z) for comp in external_B)
     external_fields = (external_E, external_B)
     # fill ghost cells for external fields before they are interpolated to particles
 
@@ -411,6 +433,10 @@ def initialize_simulation(toml_file):
         # initialize the vector potential A based on the current density J
         fields = (E, B, J, rho, phi, external_fields, A2, A1, A0)
         # define the fields tuple for the vector potential solver
+    elif pml_active:
+        pml_state = initialize_pml_state(world)
+        fields = (E, B, J, rho, phi, external_fields, pml_state)
+        # define the fields tuple for electrodynamic FDTD with field PML state
     else:
         fields = (E, B, J, rho, phi, external_fields)
         # define the fields tuple for the electrodynamic and electrostatic solvers
