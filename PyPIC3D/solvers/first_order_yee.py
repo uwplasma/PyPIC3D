@@ -30,7 +30,9 @@ def update_E(E, B, J, world, constants, curl_func, pml_state=None):
         curl_func (function): A function to calculate the curl of the magnetic field.
 
     Returns:
-        tuple: Updated electric field components (Ex, Ey, Ez).
+        tuple: ``((Ex, Ey, Ez), pml_state)``.  When no PML is active,
+        ``pml_state`` is passed through as ``None`` and the update is the
+        ordinary unstretched Yee update.
     """
 
     Ex, Ey, Ez = E
@@ -65,19 +67,14 @@ def update_E(E, B, J, world, constants, curl_func, pml_state=None):
         curl_y = dBx_dz - dBz_dx
         curl_z = dBy_dx - dBx_dy
     else:
+        # In the PML layer, each Yee derivative is interpreted as a
+        # coordinate-stretched derivative before the curl is assembled.
         (curl_x, curl_y, curl_z), pml_state = apply_pml_to_e_curl(
-            {
-                "dBz_dy": dBz_dy,
-                "dBy_dz": dBy_dz,
-                "dBx_dz": dBx_dz,
-                "dBz_dx": dBz_dx,
-                "dBy_dx": dBy_dx,
-                "dBx_dy": dBx_dy,
-            },
+            (dBz_dy, dBy_dz, dBx_dz, dBz_dx, dBy_dx, dBx_dy),
             world,
             pml_state,
         )
-    # calculate the curl of the magnetic field
+    # calculate the curl of the magnetic field, optionally using stretched derivatives
 
     Ex = Ex.at[1:-1, 1:-1, 1:-1].set(
         Ex[1:-1, 1:-1, 1:-1] + (C**2 * curl_x - Jx[1:-1, 1:-1, 1:-1] / eps) * dt
@@ -119,8 +116,6 @@ def update_E(E, B, J, world, constants, curl_func, pml_state=None):
         Ez = update_ghost_cells_for_pml(Ez, world)
     # fill ghost cells with the updated values
 
-    if pml_state is None:
-        return (Ex, Ey, Ez)
     return (Ex, Ey, Ez), pml_state
 
 
@@ -140,7 +135,9 @@ def update_B(E, B, world, constants, curl_func, pml_state=None):
         curl_func (function): Function to calculate the curl of the electric field.
 
     Returns:
-        tuple: Updated magnetic field components (Bx, By, Bz).
+        tuple: ``((Bx, By, Bz), pml_state)``.  When no PML is active,
+        ``pml_state`` is passed through as ``None`` and the update is the
+        ordinary unstretched Yee update.
     """
 
     dt = world['dt']
@@ -170,19 +167,14 @@ def update_B(E, B, world, constants, curl_func, pml_state=None):
         curl_y = dEx_dz - dEz_dx
         curl_z = dEy_dx - dEx_dy
     else:
+        # In the PML layer, the frequency-space coordinate stretch is carried by
+        # ADE memory terms attached to each finite-difference derivative.
         (curl_x, curl_y, curl_z), pml_state = apply_pml_to_b_curl(
-            {
-                "dEz_dy": dEz_dy,
-                "dEy_dz": dEy_dz,
-                "dEx_dz": dEx_dz,
-                "dEz_dx": dEz_dx,
-                "dEy_dx": dEy_dx,
-                "dEx_dy": dEx_dy,
-            },
+            (dEz_dy, dEy_dz, dEx_dz, dEz_dx, dEy_dx, dEx_dy),
             world,
             pml_state,
         )
-    # calculate the curl of the electric field
+    # calculate the curl of the electric field, optionally using stretched derivatives
 
     Bx = Bx.at[1:-1, 1:-1, 1:-1].set(Bx[1:-1, 1:-1, 1:-1] - dt * curl_x)
     By = By.at[1:-1, 1:-1, 1:-1].set(By[1:-1, 1:-1, 1:-1] - dt * curl_y)
@@ -215,6 +207,4 @@ def update_B(E, B, world, constants, curl_func, pml_state=None):
         Bz = update_ghost_cells_for_pml(Bz, world)
     # fill ghost cells with the updated values
 
-    if pml_state is None:
-        return (Bx, By, Bz)
     return (Bx, By, Bz), pml_state

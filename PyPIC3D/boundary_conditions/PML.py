@@ -14,31 +14,34 @@ _SPACING_KEY = {"x": "dx", "y": "dy", "z": "dz"}
 _COUNT_KEY = {"x": "Nx", "y": "Ny", "z": "Nz"}
 
 
-def _normalize_raw_pml(raw_pml):
-    if raw_pml is None:
-        return []
-    if isinstance(raw_pml, dict):
-        return [raw_pml]
-    return list(raw_pml)
-
-
-def parse_pml_config(raw_pml, world, constants):
+def load_pml_from_toml(raw_pml, world, constants):
     """
-    Validate user PML config and return normalized wall layer dictionaries.
+    Read PML wall layers from TOML-style config and build the stretch profiles.
+
+    The returned tuple is
+
+        active, pml_x, pml_y, pml_z, profiles
+
+    where `profiles = (sigma_x, sigma_y, sigma_z)`.  The layer tuples built here
+    are kept local because callers only need the finished coordinate-stretch
+    profiles, not a second configuration object.
     """
-    entries = []
-    seen = set()
-    for raw in _normalize_raw_pml(raw_pml):
+    raw_layers = [] if raw_pml is None else raw_pml
+    raw_layers = [raw_layers] if isinstance(raw_layers, dict) else list(raw_layers)
+
+    pml_layers = []
+    seen_walls = set()
+    for raw in raw_layers:
         wall = raw.get("wall")
         if wall not in PML_WALLS:
             raise ValueError(f"Invalid PML wall: {wall}. Expected one of {PML_WALLS}")
-        if wall in seen:
+        if wall in seen_walls:
             raise ValueError(f"Duplicate PML wall: {wall}")
-        seen.add(wall)
+        seen_walls.add(wall)
 
         axis = _AXIS_FOR_WALL[wall]
-        active_cells = int(world[_COUNT_KEY[axis]])
         thickness = int(raw.get("thickness", 0))
+        active_cells = int(world[_COUNT_KEY[axis]])
         if thickness <= 0:
             raise ValueError(f"PML thickness for {wall} must be positive")
         if thickness > active_cells:
@@ -47,13 +50,7 @@ def parse_pml_config(raw_pml, world, constants):
             )
 
         order = float(raw.get("order", 3.0))
-        if order <= 0.0:
-            raise ValueError(f"PML order for {wall} must be positive")
-
-        target_reflection = float(raw.get("target_reflection", 1e-8))
-        if target_reflection <= 0.0 or target_reflection >= 1.0:
-            raise ValueError(f"PML target_reflection for {wall} must be between 0 and 1")
-
+        target_reflection = float(raw.get("target_reflection", 1.0e-8))
         if "sigma_max" in raw:
             sigma_max = float(raw["sigma_max"])
         else:
@@ -61,158 +58,212 @@ def parse_pml_config(raw_pml, world, constants):
             sigma_max = -((order + 1.0) * float(constants["C"]) * math.log(target_reflection)) / (
                 2.0 * layer_width
             )
-        if sigma_max <= 0.0:
-            raise ValueError(f"PML sigma_max for {wall} must be positive")
 
-        entries.append(
-            {
-                "wall": wall,
-                "axis": axis,
-                "thickness": thickness,
-                "order": order,
-                "target_reflection": target_reflection,
-                "sigma_max": sigma_max,
-            }
-        )
-    return entries
+        pml_layers.append((wall, axis, thickness, order, sigma_max))
+
+    pml_x = any(axis == "x" for _, axis, _, _, _ in pml_layers)
+    pml_y = any(axis == "y" for _, axis, _, _, _ in pml_layers)
+    pml_z = any(axis == "z" for _, axis, _, _, _ in pml_layers)
+
+    return bool(pml_layers), pml_x, pml_y, pml_z, build_pml(world, tuple(pml_layers))
 
 
-def _ghost_shape(world):
-    return (int(world["Nx"]) + 2, int(world["Ny"]) + 2, int(world["Nz"]) + 2)
-
-
-def build_pml_profiles(world, pml_layers):
+def build_pml(world, pml_layers):
     """
-    Build ghost-celled sigma profiles for x, y, and z derivative directions.
-    """
-    shape = _ghost_shape(world)
-    profiles = {
-        "sigma_x": jnp.zeros(shape),
-        "sigma_y": jnp.zeros(shape),
-        "sigma_z": jnp.zeros(shape),
-    }
+    Build ghost-celled damping profiles for the coordinate stretch.
 
-    for layer in pml_layers:
-        wall = layer["wall"]
-        axis = layer["axis"]
+    `sigma_x`, `sigma_y`, and `sigma_z` are the real damping strengths in the
+    frequency-space stretch factors.  The ramp is weak at the interface with the
+    physical domain and grows toward the outer wall, so the outgoing wave sees a
+    gradual coordinate stretch rather than a sharp jump.
+    """
+    shape = (int(world["Nx"]) + 2, int(world["Ny"]) + 2, int(world["Nz"]) + 2)
+
+    sigma_x = jnp.zeros(shape)
+    sigma_y = jnp.zeros(shape)
+    sigma_z = jnp.zeros(shape)
+    profiles = (sigma_x, sigma_y, sigma_z)
+
+    for wall, axis, thickness, order, sigma_max in pml_layers:
         axis_index = _AXIS_INDEX[axis]
-        sigma_name = f"sigma_{axis}"
-        thickness = int(layer["thickness"])
-        order = float(layer["order"])
-        sigma_max = float(layer["sigma_max"])
+        profile_index = _AXIS_INDEX[axis]
+        sigma_profile = profiles[profile_index]
 
-        for i in range(thickness):
-            ramp = sigma_max * ((i + 1) / thickness) ** order
-            index = 1 + i if wall[0] == "-" else shape[axis_index] - 2 - (thickness - 1 - i)
+        for i in range(int(thickness)):
+            sigma = float(sigma_max) * ((i + 1) / int(thickness)) ** float(order)
+            if wall[0] == "-":
+                index = int(thickness) - i
+            else:
+                index = shape[axis_index] - 1 - int(thickness) + i
+
             slices = [slice(None), slice(None), slice(None)]
             slices[axis_index] = index
-            profiles[sigma_name] = profiles[sigma_name].at[tuple(slices)].set(ramp)
+            sigma_profile = sigma_profile.at[tuple(slices)].set(sigma)
+
+        profiles = profiles[:profile_index] + (sigma_profile,) + profiles[profile_index + 1 :]
 
     return profiles
 
 
-def _zero_like_profiles(world):
-    shape = _ghost_shape(world)
-    return {
-        "sigma_x": jnp.zeros(shape),
-        "sigma_y": jnp.zeros(shape),
-        "sigma_z": jnp.zeros(shape),
-    }
-
-
-def build_pml_metadata(raw_pml, world, constants):
-    layers = parse_pml_config(raw_pml, world, constants)
-    pml_axes = {
-        "x": any(layer["axis"] == "x" for layer in layers),
-        "y": any(layer["axis"] == "y" for layer in layers),
-        "z": any(layer["axis"] == "z" for layer in layers),
-    }
-    return {
-        "active": bool(layers),
-        "pml_x": pml_axes["x"],
-        "pml_y": pml_axes["y"],
-        "pml_z": pml_axes["z"],
-        "profiles": build_pml_profiles(world, layers) if layers else _zero_like_profiles(world),
-    }
-
-
-def _zeros_for_terms(world, names):
-    shape = (int(world["Nx"]), int(world["Ny"]), int(world["Nz"]))
-    return {name: jnp.zeros(shape) for name in names}
-
-
 def initialize_pml_state(world):
     """
-    Return zero-valued auxiliary source memory for PML derivative terms.
+    Allocate ADE memory for stretched derivatives.
+
+    `pml_state = (E_memory, B_memory)`.
+
+    E_memory stores B-derivative history in this order:
+        dBz_dy, dBy_dz, dBx_dz, dBz_dx, dBy_dx, dBx_dy
+
+    B_memory stores E-derivative history in this order:
+        dEz_dy, dEy_dz, dEx_dz, dEz_dx, dEy_dx, dEx_dy
+
+    Each memory array has physical-interior shape `(Nx, Ny, Nz)`, matching the
+    finite-difference arrays that enter the Yee curl.
     """
-    e_terms = ("dBz_dy", "dBy_dz", "dBx_dz", "dBz_dx", "dBy_dx", "dBx_dy")
-    b_terms = ("dEz_dy", "dEy_dz", "dEx_dz", "dEz_dx", "dEy_dx", "dEx_dy")
-    return {"E": _zeros_for_terms(world, e_terms), "B": _zeros_for_terms(world, b_terms)}
+    shape = (int(world["Nx"]), int(world["Ny"]), int(world["Nz"]))
+
+    e_memory = tuple(jnp.zeros(shape) for _ in range(6))
+    b_memory = tuple(jnp.zeros(shape) for _ in range(6))
+
+    return e_memory, b_memory
 
 
-def has_pml(world):
-    pml = world.get("pml", None)
-    return bool(pml is not None and pml.get("active", False))
+def stretch_spatial_derivative(derivative, memory, sigma, dt):
+    """
+    Apply one coordinate-stretched PML derivative.
 
+    In frequency space, a PML is a complex coordinate stretch.  For an x
+    derivative,
 
-def _sigma_for_term(world, term):
-    profiles = world["pml"]["profiles"]
-    if term.endswith("_dx"):
-        return profiles["sigma_x"][1:-1, 1:-1, 1:-1]
-    if term.endswith("_dy"):
-        return profiles["sigma_y"][1:-1, 1:-1, 1:-1]
-    if term.endswith("_dz"):
-        return profiles["sigma_z"][1:-1, 1:-1, 1:-1]
-    raise ValueError(f"Unsupported PML derivative term: {term}")
+        d_dx -> (1 / sigma(w)) d_dx
 
-
-def _apply_auxiliary_source(derivative, memory, sigma, dt):
+    where `sigma(w)` is the frequency-domain stretch factor.  Equivalently,
+    one often writes `s_x(w) = 1 + sigma_x / (i w)`, so the derivative becomes
+    `(1 / s_x) d_dx`.  The real array `sigma` below is the local damping profile
+    inside the PML.  The memory term is the time-domain bookkeeping that applies
+    this stretched derivative without storing the whole field history.
+    """
     b = jnp.exp(-sigma * dt)
     memory_new = b * memory + (b - 1.0) * derivative
     return derivative + memory_new, memory_new
 
 
 def apply_pml_to_e_curl(derivatives, world, pml_state):
-    dt = world["dt"]
-    memory = pml_state["E"]
-    corrected = {}
-    memory_new = {}
-    for name, derivative in derivatives.items():
-        corrected[name], memory_new[name] = _apply_auxiliary_source(
-            derivative, memory[name], _sigma_for_term(world, name), dt
-        )
+    """
+    Stretch the B derivatives before assembling the curl used in Ampere's law.
+    """
+    dBz_dy, dBy_dz, dBx_dz, dBz_dx, dBy_dx, dBx_dy = derivatives
+    # The PML state is (E_memory, B_memory), but the E curl only needs the B memory.
+    e_memory, b_memory = pml_state
+    (
+        memory_dBz_dy,
+        memory_dBy_dz,
+        memory_dBx_dz,
+        memory_dBz_dx,
+        memory_dBy_dx,
+        memory_dBx_dy,
+    ) = e_memory
+    # unpack the memory in the same order as the derivatives, so we can apply stretch_spatial_derivative
 
-    curl_x = corrected["dBz_dy"] - corrected["dBy_dz"]
-    curl_y = corrected["dBx_dz"] - corrected["dBz_dx"]
-    curl_z = corrected["dBy_dx"] - corrected["dBx_dy"]
-    return (curl_x, curl_y, curl_z), {"E": memory_new, "B": pml_state["B"]}
+    _, _, _, _, profiles = world["pml"]
+    sigma_x, sigma_y, sigma_z = profiles
+    sigma_x = sigma_x[1:-1, 1:-1, 1:-1]
+    sigma_y = sigma_y[1:-1, 1:-1, 1:-1]
+    sigma_z = sigma_z[1:-1, 1:-1, 1:-1]
+    dt = world["dt"]
+    # unpack the profiles and select only interior cells (no ghost cells)
+
+    dBz_dy, memory_dBz_dy = stretch_spatial_derivative(dBz_dy, memory_dBz_dy, sigma_y, dt)
+    dBy_dz, memory_dBy_dz = stretch_spatial_derivative(dBy_dz, memory_dBy_dz, sigma_z, dt)
+    dBx_dz, memory_dBx_dz = stretch_spatial_derivative(dBx_dz, memory_dBx_dz, sigma_z, dt)
+    dBz_dx, memory_dBz_dx = stretch_spatial_derivative(dBz_dx, memory_dBz_dx, sigma_x, dt)
+    dBy_dx, memory_dBy_dx = stretch_spatial_derivative(dBy_dx, memory_dBy_dx, sigma_x, dt)
+    dBx_dy, memory_dBx_dy = stretch_spatial_derivative(dBx_dy, memory_dBx_dy, sigma_y, dt)
+    # apply the stretch to each derivative and update the memory
+
+    curl_x = dBz_dy - dBy_dz
+    curl_y = dBx_dz - dBz_dx
+    curl_z = dBy_dx - dBx_dy
+    # assemble the curl from the stretched derivatives
+
+    e_memory = (
+        memory_dBz_dy,
+        memory_dBy_dz,
+        memory_dBx_dz,
+        memory_dBz_dx,
+        memory_dBy_dx,
+        memory_dBx_dy,
+    )
+    # pack the updated memory in the same order as the derivatives
+
+    return (curl_x, curl_y, curl_z), (e_memory, b_memory)
+    # return the curl and the updated PML state (with the new E memory and unchanged B memory)
 
 
 def apply_pml_to_b_curl(derivatives, world, pml_state):
-    dt = world["dt"]
-    memory = pml_state["B"]
-    corrected = {}
-    memory_new = {}
-    for name, derivative in derivatives.items():
-        corrected[name], memory_new[name] = _apply_auxiliary_source(
-            derivative, memory[name], _sigma_for_term(world, name), dt
-        )
+    """
+    Stretch the E derivatives before assembling the curl used in Faraday's law.
+    """
+    dEz_dy, dEy_dz, dEx_dz, dEz_dx, dEy_dx, dEx_dy = derivatives
+    e_memory, b_memory = pml_state
+    (
+        memory_dEz_dy,
+        memory_dEy_dz,
+        memory_dEx_dz,
+        memory_dEz_dx,
+        memory_dEy_dx,
+        memory_dEx_dy,
+    ) = b_memory
+    # unpack the memory in the same order as the derivatives, so we can apply stretch_spatial_derivative
 
-    curl_x = corrected["dEz_dy"] - corrected["dEy_dz"]
-    curl_y = corrected["dEx_dz"] - corrected["dEz_dx"]
-    curl_z = corrected["dEy_dx"] - corrected["dEx_dy"]
-    return (curl_x, curl_y, curl_z), {"E": pml_state["E"], "B": memory_new}
+    _, _, _, _, profiles = world["pml"]
+    sigma_x, sigma_y, sigma_z = profiles
+    sigma_x = sigma_x[1:-1, 1:-1, 1:-1]
+    sigma_y = sigma_y[1:-1, 1:-1, 1:-1]
+    sigma_z = sigma_z[1:-1, 1:-1, 1:-1]
+    dt = world["dt"]
+    # unpack the profiles and select only interior cells (no ghost cells)
+
+    dEz_dy, memory_dEz_dy = stretch_spatial_derivative(dEz_dy, memory_dEz_dy, sigma_y, dt)
+    dEy_dz, memory_dEy_dz = stretch_spatial_derivative(dEy_dz, memory_dEy_dz, sigma_z, dt)
+    dEx_dz, memory_dEx_dz = stretch_spatial_derivative(dEx_dz, memory_dEx_dz, sigma_z, dt)
+    dEz_dx, memory_dEz_dx = stretch_spatial_derivative(dEz_dx, memory_dEz_dx, sigma_x, dt)
+    dEy_dx, memory_dEy_dx = stretch_spatial_derivative(dEy_dx, memory_dEy_dx, sigma_x, dt)
+    dEx_dy, memory_dEx_dy = stretch_spatial_derivative(dEx_dy, memory_dEx_dy, sigma_y, dt)
+    # apply the stretch to each derivative and update the memory
+
+    curl_x = dEz_dy - dEy_dz
+    curl_y = dEx_dz - dEz_dx
+    curl_z = dEy_dx - dEx_dy
+    # assemble the curl from the stretched derivatives
+
+    b_memory = (
+        memory_dEz_dy,
+        memory_dEy_dz,
+        memory_dEx_dz,
+        memory_dEz_dx,
+        memory_dEy_dx,
+        memory_dEx_dy,
+    )
+
+    return (curl_x, curl_y, curl_z), (e_memory, b_memory)
 
 
 def update_ghost_cells_for_pml(field, world):
     """
-    Fill ghost cells while suppressing periodic wrap on axes that contain PML.
+    Fill ghost cells without periodically wrapping across a PML wall.
+
+    The PML damping happens in the stretched derivatives above.  This ghost-cell
+    rule only prevents a periodic stencil from feeding a wave back through the
+    opposite side of a PML-active axis.
     """
     bc_x = world["boundary_conditions"]["x"]
     bc_y = world["boundary_conditions"]["y"]
     bc_z = world["boundary_conditions"]["z"]
-    pml = world["pml"]
-    bc_x = jnp.where((pml["pml_x"]) & (bc_x == BC_PERIODIC), BC_CONDUCTING, bc_x)
-    bc_y = jnp.where((pml["pml_y"]) & (bc_y == BC_PERIODIC), BC_CONDUCTING, bc_y)
-    bc_z = jnp.where((pml["pml_z"]) & (bc_z == BC_PERIODIC), BC_CONDUCTING, bc_z)
+    _, pml_x, pml_y, pml_z, _ = world["pml"]
+
+    bc_x = jnp.where((pml_x) & (bc_x == BC_PERIODIC), BC_CONDUCTING, bc_x)
+    bc_y = jnp.where((pml_y) & (bc_y == BC_PERIODIC), BC_CONDUCTING, bc_y)
+    bc_z = jnp.where((pml_z) & (bc_z == BC_PERIODIC), BC_CONDUCTING, bc_z)
+
     return update_ghost_cells(field, bc_x, bc_y, bc_z)

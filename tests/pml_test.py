@@ -6,10 +6,9 @@ import jax.numpy as jnp
 
 from PyPIC3D.boundary_conditions.PML import (
     PML_WALLS,
-    build_pml_metadata,
-    build_pml_profiles,
+    build_pml,
     initialize_pml_state,
-    parse_pml_config,
+    load_pml_from_toml,
 )
 from PyPIC3D.initialization import initialize_fields, initialize_simulation
 from PyPIC3D.solvers.first_order_yee import update_B, update_E
@@ -60,52 +59,87 @@ def _empty_config(tmpdir, solver="fdtd", electrostatic=False, pml=None):
 
 
 class TestPMLConfiguration(unittest.TestCase):
-    def test_parse_pml_config_accepts_all_six_walls(self):
+    def test_load_pml_from_toml_accepts_all_six_walls(self):
         raw = [
             {"wall": wall, "thickness": 2, "order": 3.0, "target_reflection": 1e-8}
             for wall in PML_WALLS
         ]
-        parsed = parse_pml_config(raw, _base_world(nx=8, ny=8, nz=8), {"C": 3.0})
 
-        self.assertEqual([entry["wall"] for entry in parsed], PML_WALLS)
-        self.assertTrue(all(entry["sigma_max"] > 0.0 for entry in parsed))
+        active, pml_x, pml_y, pml_z, profiles = load_pml_from_toml(
+            raw,
+            _base_world(nx=8, ny=8, nz=8),
+            {"C": 3.0},
+        )
+        sigma_x, sigma_y, sigma_z = profiles
 
-    def test_parse_pml_config_rejects_invalid_duplicate_and_oversized_walls(self):
+        self.assertTrue(active)
+        self.assertTrue(pml_x)
+        self.assertTrue(pml_y)
+        self.assertTrue(pml_z)
+        self.assertEqual(sigma_x.shape, (10, 10, 10))
+        self.assertTrue(jnp.any(sigma_x > 0.0))
+        self.assertTrue(jnp.any(sigma_y > 0.0))
+        self.assertTrue(jnp.any(sigma_z > 0.0))
+
+    def test_load_pml_from_toml_rejects_invalid_duplicate_and_oversized_walls(self):
         world = _base_world(nx=8, ny=1, nz=1)
 
         with self.assertRaisesRegex(ValueError, "Invalid PML wall"):
-            parse_pml_config([{"wall": "x+", "thickness": 2}], world, {"C": 3.0})
+            load_pml_from_toml([{"wall": "x+", "thickness": 2}], world, {"C": 3.0})
 
         with self.assertRaisesRegex(ValueError, "Duplicate PML wall"):
-            parse_pml_config(
+            load_pml_from_toml(
                 [{"wall": "+x", "thickness": 2}, {"wall": "+x", "thickness": 2}],
                 world,
                 {"C": 3.0},
             )
 
         with self.assertRaisesRegex(ValueError, "exceeds active cells"):
-            parse_pml_config([{"wall": "+x", "thickness": 9}], world, {"C": 3.0})
+            load_pml_from_toml([{"wall": "+x", "thickness": 9}], world, {"C": 3.0})
 
-    def test_build_pml_profiles_ramp_only_on_requested_side(self):
+    def test_build_pml_ramp_only_on_requested_side(self):
         world = _base_world(nx=8, ny=1, nz=1)
-        pml = parse_pml_config(
-            [{"wall": "+x", "thickness": 3, "order": 2.0, "sigma_max": 9.0}],
-            world,
-            {"C": 3.0},
-        )
+        pml_layers = (("+x", "x", 3, 2.0, 9.0),)
 
-        profiles = build_pml_profiles(world, pml)
-        sigma_x = profiles["sigma_x"]
+        sigma_x, sigma_y, sigma_z = build_pml(world, pml_layers)
 
         self.assertEqual(sigma_x.shape, (10, 3, 3))
         self.assertTrue(jnp.allclose(sigma_x[1:5, :, :], 0.0))
         self.assertTrue(jnp.all(sigma_x[-4:-1, :, :] > 0.0))
         self.assertTrue(float(sigma_x[-2, 1, 1]) > float(sigma_x[-4, 1, 1]))
-        self.assertTrue(jnp.allclose(profiles["sigma_y"], 0.0))
-        self.assertTrue(jnp.allclose(profiles["sigma_z"], 0.0))
+        self.assertTrue(jnp.allclose(sigma_y, 0.0))
+        self.assertTrue(jnp.allclose(sigma_z, 0.0))
+
+    def test_build_pml_ramps_from_interior_interface_to_outer_wall(self):
+        world = _base_world(nx=8, ny=1, nz=1)
+        pml_layers = (
+            ("-x", "x", 3, 2.0, 9.0),
+            ("+x", "x", 3, 2.0, 9.0),
+        )
+
+        sigma_x, _, _ = build_pml(world, pml_layers)
+        sigma_x = sigma_x[:, 1, 1]
+
+        self.assertGreater(float(sigma_x[1]), float(sigma_x[2]))
+        self.assertGreater(float(sigma_x[2]), float(sigma_x[3]))
+        self.assertGreater(float(sigma_x[-2]), float(sigma_x[-3]))
+        self.assertGreater(float(sigma_x[-3]), float(sigma_x[-4]))
 
 
 class TestPMLInitialization(unittest.TestCase):
+    def test_initialize_pml_state_uses_physical_interior_shape(self):
+        world = _base_world(nx=8, ny=4, nz=2)
+
+        pml_state = initialize_pml_state(world)
+        e_memory, b_memory = pml_state
+
+        self.assertEqual(len(e_memory), 6)
+        self.assertEqual(len(b_memory), 6)
+        for memory in e_memory:
+            self.assertEqual(memory.shape, (8, 4, 2))
+        for memory in b_memory:
+            self.assertEqual(memory.shape, (8, 4, 2))
+
     def test_initialize_simulation_rejects_pml_for_non_fdtd_solvers(self):
         pml = [{"wall": "+x", "thickness": 2, "sigma_max": 1.0}]
 
@@ -129,28 +163,48 @@ class TestPMLInitialization(unittest.TestCase):
 
         fields = result[2]
         world = result[3]
+        active, pml_x, pml_y, pml_z, _ = world["pml"]
         self.assertEqual(len(fields), 7)
         self.assertIn("pml", world)
-        self.assertTrue(world["pml"]["active"])
+        self.assertTrue(active)
+        self.assertTrue(pml_x)
+        self.assertFalse(pml_y)
+        self.assertFalse(pml_z)
+
+    def test_initialize_simulation_uses_none_pml_state_without_pml_for_fdtd(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = initialize_simulation(_empty_config(tmpdir))
+
+        fields = result[2]
+        world = result[3]
+        active, pml_x, pml_y, pml_z, _ = world["pml"]
+
+        self.assertEqual(len(fields), 7)
+        self.assertIsNone(fields[-1])
+        self.assertFalse(active)
+        self.assertFalse(pml_x)
+        self.assertFalse(pml_y)
+        self.assertFalse(pml_z)
 
 
 class TestPMLFDTDBehavior(unittest.TestCase):
-    def test_no_pml_state_preserves_fdtd_update_signature_and_result(self):
+    def test_no_pml_state_returns_field_and_none_state(self):
         world = _base_world(nx=4, ny=4, nz=4)
         constants = {"C": 2.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         E, B, J, _, _ = initialize_fields(world["Nx"], world["Ny"], world["Nz"])
         B = (B[0], B[1], B[2].at[1:-1, 1:-1, 1:-1].set(1.0))
 
-        E_after = update_E(E, B, J, world, constants, lambda *args: None)
-        B_after = update_B(E_after, B, world, constants, lambda *args: None)
+        E_after, pml_state = update_E(E, B, J, world, constants, lambda *args: None)
+        B_after, pml_state = update_B(E_after, B, world, constants, lambda *args: None, pml_state)
 
         self.assertEqual(len(E_after), 3)
         self.assertEqual(len(B_after), 3)
+        self.assertIsNone(pml_state)
 
     def test_pml_absorbs_field_energy_in_particle_free_1d_wave(self):
         world = _base_world(nx=80, ny=1, nz=1)
         constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
-        world["pml"] = build_pml_metadata(
+        world["pml"] = load_pml_from_toml(
             [
                 {"wall": "-x", "thickness": 12, "order": 3.0, "sigma_max": 40.0},
                 {"wall": "+x", "thickness": 12, "order": 3.0, "sigma_max": 40.0},

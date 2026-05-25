@@ -67,7 +67,7 @@ class TestEvolveExternalFields(unittest.TestCase):
                 dt=world["dt"],
             )
         ]
-        fields = (E, B, J, rho, phi, external_fields)
+        fields = (E, B, J, rho, phi, external_fields, None)
 
         particles, fields = time_loop_electrodynamic(
             particles,
@@ -81,9 +81,10 @@ class TestEvolveExternalFields(unittest.TestCase):
             particle_pusher="boris",
         )
 
-        E_after, B_after, J_after, rho_after, phi_after, external_after = fields
+        E_after, B_after, J_after, rho_after, phi_after, external_after, pml_state = fields
         vx, vy, vz = particles[0].get_velocity()
 
+        self.assertIsNone(pml_state)
         self.assertGreater(float(vx[0]), 0.0)
         self.assertTrue(jnp.allclose(vy, 0.0))
         self.assertTrue(jnp.allclose(vz, 0.0))

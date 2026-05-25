@@ -95,7 +95,9 @@ def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_f
         with `particle_push(...)`, provide an `update_position()` method, and a
         `boundary_conditions()` method.
     fields : tuple
-        Tuple of field arrays/objects in the form `(E, B, J, rho, phi, external_fields)`.
+        Tuple of field arrays/objects in the form
+        `(E, B, J, rho, phi, external_fields, pml_state)`.
+        `pml_state` is `None` when the ordinary Yee update is used.
     world : dict
         Simulation configuration. Must contain `world['dt']` (time step).
     constants : object or dict
@@ -116,8 +118,9 @@ def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_f
         Updated particle collection after push, position update, and boundary
         conditions.
     fields : tuple
-        Updated fields tuple `(E, B, J, rho, phi, external_fields)` with new E,
-        B, and J. `rho`, `phi`, and `external_fields` are passed through unchanged.
+        Updated fields tuple `(E, B, J, rho, phi, external_fields, pml_state)`
+        with new E, B, and J. `rho`, `phi`, and `external_fields` are passed
+        through unchanged.
     Notes
     -----
     - The update order is: deposit J -> update E -> update B.
@@ -125,7 +128,7 @@ def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_f
     """
 
 
-    E, B, J, rho, phi, external_fields, *rest = fields
+    E, B, J, rho, phi, external_fields, pml_state = fields
     # unpack the fields
     center_grid = world['grids']['center']
     vertex_grid = world['grids']['vertex']
@@ -144,27 +147,16 @@ def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_f
     ################ FIELD UPDATE ################################################################################################
     J = J_func(particles, J, constants, world)
     # calculate the current density based on the selected method
-    if rest:
-        pml_state = rest[0]
-        E, pml_state = update_E(E, B, J, world, constants, curl_func, pml_state)
-    else:
-        pml_state = None
-        E = update_E(E, B, J, world, constants, curl_func)
+    E, pml_state = update_E(E, B, J, world, constants, curl_func, pml_state)
     # update the electric field using the curl of the magnetic field
-    if pml_state is None:
-        B = update_B(E, B, world, constants, curl_func)
-    else:
-        B, pml_state = update_B(E, B, world, constants, curl_func, pml_state)
+    B, pml_state = update_B(E, B, world, constants, curl_func, pml_state)
     # update the magnetic field using the curl of the electric field
 
     for i in range(len(particles)):
         particles[i].boundary_conditions()
         # apply boundary conditions to the particles
 
-    if pml_state is None:
-        fields = (E, B, J, rho, phi, external_fields)
-    else:
-        fields = (E, B, J, rho, phi, external_fields, pml_state)
+    fields = (E, B, J, rho, phi, external_fields, pml_state)
     # pack the fields into a tuple
     
 

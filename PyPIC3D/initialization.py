@@ -57,8 +57,8 @@ from PyPIC3D.solvers.vector_potential import initialize_vector_potential
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 from PyPIC3D.boundary_conditions.PML import (
-    build_pml_metadata,
     initialize_pml_state,
+    load_pml_from_toml,
     update_ghost_cells_for_pml,
 )
 
@@ -272,8 +272,7 @@ def initialize_simulation(toml_file):
     pml_active = bool(raw_pml)
     if pml_active and (solver != "fdtd" or electrostatic):
         raise ValueError("PML is only supported for the fdtd electrodynamic solver")
-    pml_metadata = build_pml_metadata(raw_pml, world, constants)
-    world["pml"] = pml_metadata
+    world["pml"] = load_pml_from_toml(raw_pml, world, constants)
 
     world = convert_to_jax_compatible(world)
     constants = convert_to_jax_compatible(constants)
@@ -433,13 +432,18 @@ def initialize_simulation(toml_file):
         # initialize the vector potential A based on the current density J
         fields = (E, B, J, rho, phi, external_fields, A2, A1, A0)
         # define the fields tuple for the vector potential solver
-    elif pml_active:
-        pml_state = initialize_pml_state(world)
-        fields = (E, B, J, rho, phi, external_fields, pml_state)
-        # define the fields tuple for electrodynamic FDTD with field PML state
-    else:
+    elif electrostatic:
         fields = (E, B, J, rho, phi, external_fields)
-        # define the fields tuple for the electrodynamic and electrostatic solvers
+        # define the fields tuple for the electrostatic solver
+    else:
+        if pml_active:
+            pml_state = initialize_pml_state(world)
+        else:
+            pml_state = None
+        # electrodynamic FDTD always carries the PML state slot; None means
+        # ordinary, unstretched Yee derivatives.
+        fields = (E, B, J, rho, phi, external_fields, pml_state)
+        # define the fields tuple for the electrodynamic FDTD solver
 
     if plotting_parameters['dump_fields']:
         write_openpmd_initial_fields(fields, world, simulation_parameters['output_dir'], filename="initial_fields.h5")
