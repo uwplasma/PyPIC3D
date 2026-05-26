@@ -38,6 +38,7 @@ class flat_particle_species:
         shape,
         dt,
         species_meta,
+        active_mask=None,
     ):
         self.name = name
         self.N_particles = N_particles
@@ -71,6 +72,9 @@ class flat_particle_species:
         self.shape = shape
         self.dt = dt
         self.species_meta = species_meta
+        if active_mask is None:
+            active_mask = jnp.ones_like(x1, dtype=bool)
+        self.active_mask = active_mask
 
     def get_name(self):
         return self.name
@@ -87,8 +91,15 @@ class flat_particle_species:
     def get_velocity(self):
         return self.v1, self.v2, self.v3
 
+    def get_active_velocity(self):
+        active = self.active_mask.astype(self.v1.dtype)
+        return active * self.v1, active * self.v2, active * self.v3
+
     def get_forward_position(self):
         return self.x1, self.x2, self.x3
+
+    def get_active_mask(self):
+        return self.active_mask
 
     def get_position(self):
         x1_back = self.x1 - self.v1 * self.dt / 2
@@ -128,25 +139,27 @@ class flat_particle_species:
 
     def momentum(self):
         vmag = jnp.sqrt(self.v1**2 + self.v2**2 + self.v3**2)
-        return jnp.sum(vmag * self.mass * self.weight)
+        return jnp.sum(self.active_mask.astype(vmag.dtype) * vmag * self.mass * self.weight)
 
     def set_velocity(self, v1, v2, v3):
         if self.update_v:
+            active = self.active_mask
             if self.update_vx:
-                self.v1 = v1
+                self.v1 = jnp.where(active, v1, self.v1)
             if self.update_vy:
-                self.v2 = v2
+                self.v2 = jnp.where(active, v2, self.v2)
             if self.update_vz:
-                self.v3 = v3
+                self.v3 = jnp.where(active, v3, self.v3)
 
     def update_position(self):
         if self.update_pos:
+            active = self.active_mask.astype(self.x1.dtype)
             if self.update_x:
-                self.x1 = self.x1 + self.v1 * self.dt
+                self.x1 = self.x1 + active * self.v1 * self.dt
             if self.update_y:
-                self.x2 = self.x2 + self.v2 * self.dt
+                self.x2 = self.x2 + active * self.v2 * self.dt
             if self.update_z:
-                self.x3 = self.x3 + self.v3 * self.dt
+                self.x3 = self.x3 + active * self.v3 * self.dt
 
     def boundary_conditions(self):
         half_x = self.x_wind / 2
@@ -170,7 +183,7 @@ class flat_particle_species:
         )
 
     def tree_flatten(self):
-        children = (self.x1, self.x2, self.x3, self.v1, self.v2, self.v3)
+        children = (self.x1, self.x2, self.x3, self.v1, self.v2, self.v3, self.active_mask)
         aux_data = (
             self.name,
             self.N_particles,
@@ -203,7 +216,7 @@ class flat_particle_species:
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        x1, x2, x3, v1, v2, v3 = children
+        x1, x2, x3, v1, v2, v3, active_mask = children
         (
             name,
             N_particles,
@@ -265,6 +278,7 @@ class flat_particle_species:
             shape=shape,
             dt=dt,
             species_meta=species_meta,
+            active_mask=active_mask,
         )
 
 
@@ -298,17 +312,20 @@ def to_flat_particles(particles):
     species_meta = []
     x_list, y_list, z_list = [], [], []
     vx_list, vy_list, vz_list = [], [], []
+    active_list = []
     q_list, m_list, w_list, T_list = [], [], [], []
 
     for species in particles:
         x, y, z = species.get_forward_position()
         vx, vy, vz = species.get_velocity()
+        active = species.get_active_mask()
         x_list.append(x)
         y_list.append(y)
         z_list.append(z)
         vx_list.append(vx)
         vy_list.append(vy)
         vz_list.append(vz)
+        active_list.append(active)
         q_list.append(jnp.full_like(x, species.charge))
         m_list.append(jnp.full_like(x, species.mass))
         w_list.append(jnp.full_like(x, species.weight))
@@ -334,6 +351,7 @@ def to_flat_particles(particles):
     vx = jnp.concatenate(vx_list, axis=0)
     vy = jnp.concatenate(vy_list, axis=0)
     vz = jnp.concatenate(vz_list, axis=0)
+    active_mask = jnp.concatenate(active_list, axis=0)
     charge = jnp.concatenate(q_list, axis=0)
     mass = jnp.concatenate(m_list, axis=0)
     weight = jnp.concatenate(w_list, axis=0)
@@ -373,5 +391,6 @@ def to_flat_particles(particles):
         shape=first.shape,
         dt=first.dt,
         species_meta=species_meta,
+        active_mask=active_mask,
     )
     return [flat]

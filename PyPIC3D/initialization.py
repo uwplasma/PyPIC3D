@@ -112,7 +112,7 @@ def default_parameters():
         "output_dir": os.getcwd(),
         "solver": "fdtd",  # solver: spectral, fdtd, vector_potential, curl_curl
         "fast_backend": "flat",  # flat | default (flat when compatible, else fallback)
-        "particle_bc": "periodic",  # particle boundary conditions: periodic, absorb, reflect
+        "particle_bc": "periodic",  # particle boundary conditions: periodic, absorbing, reflecting
         # "bc": "periodic",  # boundary conditions: periodic, dirichlet, neumann
         "x_bc": "periodic",  # x boundary conditions: periodic, conducting
         "y_bc": "periodic",  # y boundary conditions: periodic, conducting

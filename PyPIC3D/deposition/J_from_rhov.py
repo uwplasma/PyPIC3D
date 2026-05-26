@@ -45,6 +45,7 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter="bilinear"):
 
         x, y, z = species.get_forward_position()
         vx, vy, vz = species.get_velocity()
+        active = species.get_active_mask().astype(x.dtype)
         # get the particle velocities and positions at the forward time step (t + dt) for deposition
 
         x = x - vx * world["dt"] / 2
@@ -160,19 +161,19 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter="bilinear"):
             iy = ypts_eff[j, ...]
             iz = zpts_eff[k, ...]
             valx = (
-                (dq * vx)
+                (active * dq * vx)
                 * x_weights_face_eff[i, ...]
                 * y_weights_node_eff[j, ...]
                 * z_weights_node_eff[k, ...]
             )
             valy = (
-                (dq * vy)
+                (active * dq * vy)
                 * x_weights_node_eff[i, ...]
                 * y_weights_face_eff[j, ...]
                 * z_weights_node_eff[k, ...]
             )
             valz = (
-                (dq * vz)
+                (active * dq * vz)
                 * x_weights_node_eff[i, ...]
                 * y_weights_node_eff[j, ...]
                 * z_weights_face_eff[k, ...]

@@ -6,7 +6,8 @@ import os
 
 
 from PyPIC3D.particles.particle_initialization import (
-    initial_particles
+    initial_particles,
+    load_particles_from_toml,
     )
 
 from PyPIC3D.particles.species_class import particle_species
@@ -188,6 +189,117 @@ class TestParticleMethods(unittest.TestCase):
         self.assertTrue(jnp.allclose(y, jnp.array([1.1, 2.2, 3.3])))
         self.assertTrue(jnp.allclose(z, jnp.array([1.1, 2.2, 3.3])))
 
+    def test_absorbing_boundary_updates_active_mask(self):
+        x1 = jnp.array([0.0, self.x_wind / 2 + 0.1, -self.x_wind / 2 - 0.1])
+        x2 = jnp.array([0.0, 0.0, 0.0])
+        x3 = jnp.array([0.0, 0.0, 0.0])
+
+        species = particle_species(
+            name="absorbing",
+            N_particles=self.N_particles,
+            charge=1.0,
+            mass=self.mass,
+            weight=1.0,
+            T=self.T,
+            v1=jnp.array([1.0, 1.0, 1.0]),
+            v2=jnp.array([0.0, 0.0, 0.0]),
+            v3=jnp.array([0.0, 0.0, 0.0]),
+            x1=x1,
+            x2=x2,
+            x3=x3,
+            dx=1.0,
+            dy=1.0,
+            dz=1.0,
+            xwind=self.x_wind,
+            ywind=self.y_wind,
+            zwind=self.z_wind,
+            x_bc="absorbing",
+            dt=self.dt,
+        )
+
+        species.boundary_conditions()
+
+        self.assertTrue(jnp.array_equal(species.get_active_mask(), jnp.array([True, False, False])))
+        self.assertEqual(species.get_forward_position()[0].shape[0], self.N_particles)
+
+    def test_particle_initialization_accepts_absorbing_axis_boundary(self):
+        world = {
+            "Nx": 1,
+            "Ny": 1,
+            "Nz": 1,
+            "dx": 1.0,
+            "dy": 1.0,
+            "dz": 1.0,
+            "dt": self.dt,
+            "x_wind": self.x_wind,
+            "y_wind": self.y_wind,
+            "z_wind": self.z_wind,
+        }
+        constants = {"kb": self.kb, "eps": 1.0}
+        simulation_parameters = {"ds_per_debye": None, "shape_factor": 1}
+        config = {
+            "particle1": {
+                "name": "absorbing",
+                "N_particles": 1,
+                "charge": 1.0,
+                "mass": self.mass,
+                "temperature": self.T,
+                "x_bc": "absorbing",
+                "initial_x": 0.0,
+                "initial_y": 0.0,
+                "initial_z": 0.0,
+                "initial_vx": 0.0,
+                "initial_vy": 0.0,
+                "initial_vz": 0.0,
+            }
+        }
+
+        particles = load_particles_from_toml(config, simulation_parameters, world, constants)
+
+        self.assertEqual(particles[0].x_bc, "absorbing")
+        self.assertTrue(jnp.array_equal(particles[0].get_active_mask(), jnp.array([True])))
+
+    def test_inactive_particles_do_not_advance_or_take_new_velocity(self):
+        species = particle_species(
+            name="absorbing",
+            N_particles=self.N_particles,
+            charge=1.0,
+            mass=self.mass,
+            weight=1.0,
+            T=self.T,
+            v1=jnp.array([1.0, 2.0, 3.0]),
+            v2=jnp.array([0.0, 0.0, 0.0]),
+            v3=jnp.array([0.0, 0.0, 0.0]),
+            x1=jnp.array([0.0, self.x_wind / 2 + 0.1, 0.0]),
+            x2=jnp.array([0.0, 0.0, 0.0]),
+            x3=jnp.array([0.0, 0.0, 0.0]),
+            dx=1.0,
+            dy=1.0,
+            dz=1.0,
+            xwind=self.x_wind,
+            ywind=self.y_wind,
+            zwind=self.z_wind,
+            x_bc="absorbing",
+            dt=self.dt,
+        )
+        species.boundary_conditions()
+
+        species.set_velocity(
+            jnp.array([10.0, 20.0, 30.0]),
+            jnp.array([0.0, 0.0, 0.0]),
+            jnp.array([0.0, 0.0, 0.0]),
+        )
+        species.update_position()
+
+        x, _, _ = species.get_forward_position()
+        vx, _, _ = species.get_velocity()
+
+        self.assertTrue(jnp.array_equal(species.get_active_mask(), jnp.array([True, False, True])))
+        self.assertTrue(jnp.allclose(vx, jnp.array([10.0, 2.0, 30.0])))
+        self.assertTrue(jnp.allclose(x, jnp.array([10.0, self.x_wind / 2 + 0.1, 30.0])))
+        active_vx, _, _ = species.get_active_velocity()
+        self.assertTrue(jnp.allclose(active_vx, jnp.array([10.0, 0.0, 30.0])))
+
     def test_total_KE(self):
         """
         Test the total kinetic energy calculation for a particle species.
@@ -355,6 +467,66 @@ class TestParticleMethods(unittest.TestCase):
         # Jan 12, 2025: Suppressing test for now. I have done benchmarks of the two stream and weibel
         # against WarpX and have validated this method
 
+    def test_inactive_particles_do_not_deposit_rho_or_current(self):
+        Nx, Ny, Nz = 10, 10, 10
+        dx = self.x_wind / Nx
+        dy = self.y_wind / Ny
+        dz = self.z_wind / Nz
+        world = {
+            "dx": dx,
+            "dy": dy,
+            "dz": dz,
+            "Nx": Nx,
+            "Ny": Ny,
+            "Nz": Nz,
+            "x_wind": self.x_wind,
+            "y_wind": self.y_wind,
+            "z_wind": self.z_wind,
+            "dt": 0.0,
+            "boundary_conditions": {"x": 0, "y": 0, "z": 0},
+        }
+        vertex_grid, center_grid = build_yee_grid(world)
+        world["grids"] = {"vertex": vertex_grid, "center": center_grid}
+
+        species = particle_species(
+            name="absorbed",
+            N_particles=1,
+            charge=1.0,
+            mass=self.mass,
+            weight=1.0,
+            T=self.T,
+            v1=jnp.array([0.5]),
+            v2=jnp.array([0.0]),
+            v3=jnp.array([0.0]),
+            x1=jnp.array([self.x_wind / 2 + dx]),
+            x2=jnp.array([0.0]),
+            x3=jnp.array([0.0]),
+            dx=dx,
+            dy=dy,
+            dz=dz,
+            xwind=self.x_wind,
+            ywind=self.y_wind,
+            zwind=self.z_wind,
+            x_bc="absorbing",
+        )
+        species.boundary_conditions()
+
+        constants = {"C": 3e8, "alpha": 1.0}
+        rho = compute_rho([species], jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), world, constants)
+        J = J_from_rhov(
+            [species],
+            (
+                jnp.zeros((Nx + 2, Ny + 2, Nz + 2)),
+                jnp.zeros((Nx + 2, Ny + 2, Nz + 2)),
+                jnp.zeros((Nx + 2, Ny + 2, Nz + 2)),
+            ),
+            constants,
+            world,
+            filter="none",
+        )
+
+        self.assertAlmostEqual(float(jnp.sum(rho[1:-1, 1:-1, 1:-1]) * dx * dy * dz), 0.0)
+        self.assertAlmostEqual(float(jnp.sum(J[0][1:-1, 1:-1, 1:-1]) * dx * dy * dz), 0.0)
 
     def test_rho(self):
         x = jnp.array([0.0])

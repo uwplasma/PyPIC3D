@@ -97,6 +97,15 @@ def _fields_to_interior_map(fields):
     }
     if rest:
         for idx, extra in enumerate(rest, start=1):
+            if extra is None:
+                continue
+            if (
+                isinstance(extra, (list, tuple))
+                and len(extra) == 2
+                and all(isinstance(memory, (list, tuple)) and len(memory) == 3 for memory in extra)
+            ):
+                # PML memory is solver state, not a physical diagnostic field.
+                continue
             if isinstance(extra, (list, tuple)):
                 field_map[f"field_{idx}"] = tuple(comp[interior] for comp in extra)
             else:

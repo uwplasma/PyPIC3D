@@ -83,6 +83,7 @@ def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
         q = species.get_charge()
         x, y, z = species.get_forward_position()
         vx, vy, vz = species.get_velocity()
+        active = species.get_active_mask().astype(x.dtype)
         shape_factor = species.get_shape()
         N_particles = species.get_number_of_particles()
         # get particle information
@@ -205,22 +206,22 @@ def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
 
         dJx = jax.lax.cond(
             x_active,
-            lambda _: -(q / (dy * dz)) / dt * jnp.ones(N_particles),
-            lambda _: q * vx / (dx * dy * dz) * jnp.ones(N_particles),
+            lambda _: active * (-(q / (dy * dz)) / dt) * jnp.ones(N_particles),
+            lambda _: active * q * vx / (dx * dy * dz) * jnp.ones(N_particles),
             operand=None,
         )
 
         dJy = jax.lax.cond(
             y_active,
-            lambda _: -(q / (dx * dz)) / dt * jnp.ones(N_particles),
-            lambda _: q * vy / (dx * dy * dz) * jnp.ones(N_particles),
+            lambda _: active * (-(q / (dx * dz)) / dt) * jnp.ones(N_particles),
+            lambda _: active * q * vy / (dx * dy * dz) * jnp.ones(N_particles),
             operand=None,
         )
 
         dJz = jax.lax.cond(
             z_active,
-            lambda _: -(q / (dx * dy)) / dt * jnp.ones(N_particles),
-            lambda _: q * vz / (dx * dy * dz) * jnp.ones(N_particles),
+            lambda _: active * (-(q / (dx * dy)) / dt) * jnp.ones(N_particles),
+            lambda _: active * q * vz / (dx * dy * dz) * jnp.ones(N_particles),
             operand=None,
         )
         # compute the current contribution prefactors for each active dimension according to Esirkepov's formula

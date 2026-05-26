@@ -10,6 +10,7 @@ from PyPIC3D.utils import (
     particle_sanity_check, load_external_fields_from_toml, add_external_fields,
     compute_energy,
 )
+from PyPIC3D.particles.species_class import particle_species
 
 jax.config.update("jax_enable_x64", True)
 
@@ -174,6 +175,37 @@ class TestUtilsFunctions(unittest.TestCase):
         self.assertTrue(jnp.allclose(e_energy, 4.0))
         self.assertTrue(jnp.allclose(b_energy, 1.125))
         self.assertEqual(kinetic_energy, 0.0)
+
+    def test_compute_energy_ignores_inactive_particles(self):
+        E, B, J, phi, rho = initialize_fields(1, 1, 1)
+        world = {"dx": 1.0, "dy": 1.0, "dz": 1.0, "Nx": 1, "Ny": 1, "Nz": 1}
+        constants = {"eps": 1.0, "mu": 1.0, "C": 10.0}
+        species = particle_species(
+            name="absorbed",
+            N_particles=1,
+            charge=1.0,
+            mass=1.0,
+            weight=1.0,
+            T=0.0,
+            v1=jnp.array([1.0]),
+            v2=jnp.array([0.0]),
+            v3=jnp.array([0.0]),
+            x1=jnp.array([0.6]),
+            x2=jnp.array([0.0]),
+            x3=jnp.array([0.0]),
+            xwind=1.0,
+            ywind=1.0,
+            zwind=1.0,
+            dx=1.0,
+            dy=1.0,
+            dz=1.0,
+            x_bc="absorbing",
+        )
+        species.boundary_conditions()
+
+        _, _, kinetic_energy = compute_energy([species], E, B, world, constants)
+
+        self.assertTrue(jnp.allclose(kinetic_energy, 0.0))
 
 if __name__ == '__main__':
     unittest.main()

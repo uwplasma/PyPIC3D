@@ -228,10 +228,11 @@ def compute_energy(particles, E, B, world, constants):
         mass = species.get_mass()
         vx, vy, vz = species.get_velocity()
         v2 = vx**2 + vy**2 + vz**2
+        active = species.get_active_mask().astype(v2.dtype)
         gamma = 1.0 / jnp.sqrt(1 - v2 / C**2)
         momentum2 = jnp.square(mass * gamma ) * v2
         # compute the squared momentum for each particle
-        KE = jnp.sum( jnp.sqrt( momentum2 * C**2 + mass**2 * C**4) - mass * C**2 )
+        KE = jnp.sum(active * (jnp.sqrt(momentum2 * C**2 + mass**2 * C**4) - mass * C**2))
         # compute the kinetic energy for this species
         kinetic_energy += KE
         # add to total kinetic energy
