@@ -109,7 +109,7 @@ def solve_poisson_with_conjugate_gradient(rho, phi, constants, world, tol=1e-6, 
     def body_fun(state):
         phi, r, p, k = state
 
-        lapl_p = lapl(p)
+        lapl_p = -lapl(p)
         alpha = jnp.sum(r * r) / jnp.sum(p[1:-1, 1:-1, 1:-1] * lapl_p)
         # compute the optimal step size in the direction of the residual
         phi_next = phi.at[1:-1, 1:-1, 1:-1].add(alpha * p[1:-1, 1:-1, 1:-1])
