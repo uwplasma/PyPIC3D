@@ -104,7 +104,7 @@ def _fields_to_interior_map(fields):
             if (
                 isinstance(extra, (list, tuple))
                 and len(extra) == 2
-                and all(isinstance(memory, (list, tuple)) and len(memory) == 3 for memory in extra)
+                and all(isinstance(memory, (list, tuple)) and len(memory) == 6 for memory in extra)
             ):
                 # PML memory is solver state, not a physical diagnostic field.
                 continue
