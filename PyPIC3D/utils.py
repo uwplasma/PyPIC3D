@@ -228,10 +228,11 @@ def compute_energy(particles, E, B, world, constants):
         mass = species.get_mass()
         vx, vy, vz = species.get_velocity()
         v2 = vx**2 + vy**2 + vz**2
+        active = species.get_active_mask().astype(v2.dtype)
         gamma = 1.0 / jnp.sqrt(1 - v2 / C**2)
         momentum2 = jnp.square(mass * gamma ) * v2
         # compute the squared momentum for each particle
-        KE = jnp.sum( jnp.sqrt( momentum2 * C**2 + mass**2 * C**4) - mass * C**2 )
+        KE = jnp.sum(active * (jnp.sqrt(momentum2 * C**2 + mass**2 * C**4) - mass * C**2))
         # compute the kinetic energy for this species
         kinetic_energy += KE
         # add to total kinetic energy
@@ -239,6 +240,20 @@ def compute_energy(particles, E, B, world, constants):
 
     # Kinetic energy of particles
     return e_energy, b_energy, kinetic_energy
+
+
+def add_external_fields(E, B, external_fields):
+    """
+    Add prescribed external fields to the self-consistent fields.
+
+    Maxwell updates should use E and B by themselves. Particle pushes and total
+    energy diagnostics should use the returned totals, because those are the
+    fields particles actually see.
+    """
+    external_E, external_B = external_fields
+    total_E = tuple(e + ext_e for e, ext_e in zip(E, external_E))
+    total_B = tuple(b + ext_b for b, ext_b in zip(B, external_B))
+    return total_E, total_B
 
 def make_dir(path):
     """
@@ -629,38 +644,61 @@ def grab_field_keys(config):
             field_keys.append(key)
     return field_keys
 
-def load_external_fields_from_toml(fields, config):
+def load_external_fields_from_toml(fields, external_fields, config):
     """
     Load external fields from a TOML file.
 
     Args:
-        fields (dict): Dictionary containing the external fields.
+        fields (list): Flattened list of evolved E, B, and J field components.
+        external_fields (tuple): External-only E and B field tuples.
         config (dict): Dictionary containing the configuration values.
 
     Returns:
-        dict: Dictionary containing the external fields.
+        tuple: Updated evolved fields list and external field tuple.
     """
 
     field_keys = grab_field_keys(config)
+    external_E, external_B = external_fields
 
     for toml_key in field_keys:
         field_name = config[toml_key]['name']
         field_type = config[toml_key]['type']
         field_path = config[toml_key]['path']
+        evolve = config[toml_key].get('evolve', True)
         print(f"Loading field: {field_name} from {field_path}")
 
         external_field = jnp.load(field_path)
 
         # External fields are (Nx, Ny, Nz), add them to the interior of the ghost-celled arrays
         interior = (slice(1, -1), slice(1, -1), slice(1, -1))
-        interior_shape = fields[field_type][interior].shape
+        if not evolve and (field_type < 0 or field_type > 5):
+            raise ValueError("External-only fields must be electric or magnetic field components with type 0 through 5")
+
+        destination = fields[field_type] if evolve else (external_E + external_B)[field_type]
+        interior_shape = destination[interior].shape
         if external_field.shape != interior_shape:
             raise ValueError(f"Shape mismatch for field '{field_name}': external field shape {external_field.shape} does not match expected interior shape {interior_shape}")
 
-        fields[field_type] = fields[field_type].at[interior].add(external_field)
+        if evolve:
+            # Evolved fields are part of the self-consistent Maxwell solve.
+            # This is the original behavior and remains the default.
+            fields[field_type] = fields[field_type].at[interior].add(external_field)
+        else:
+            # External-only E/B fields are invisible to Maxwell's equations.
+            # They are added back only for particle pushes and diagnostics.
+            if field_type < 3:
+                external_E = list(external_E)
+                external_E[field_type] = external_E[field_type].at[interior].add(external_field)
+                external_E = tuple(external_E)
+            else:
+                external_B = list(external_B)
+                b_index = field_type - 3
+                external_B[b_index] = external_B[b_index].at[interior].add(external_field)
+                external_B = tuple(external_B)
+
         print(f"Field loaded successfully: {field_name}")
 
-    return fields
+    return fields, (external_E, external_B)
 
 def debugprint(value):
     """

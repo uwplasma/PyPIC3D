@@ -5,8 +5,10 @@ import os
 import numpy as np
 import importlib.metadata
 
-def _ensure_openpmd_array(data, dtype=np.float64):
-    arr = np.squeeze(np.asarray(data, dtype=dtype))
+def _ensure_openpmd_array(data, dtype=np.float64, squeeze=False):
+    arr = np.asarray(data, dtype=dtype)
+    if squeeze:
+        arr = np.squeeze(arr)
     if not arr.flags.c_contiguous or not arr.flags.writeable:
         arr = np.array(arr, dtype=dtype, copy=True, order="C")
     return arr
@@ -83,17 +85,29 @@ def _write_openpmd_vector_mesh(iteration, name, components, world, active_dims=(
 
 def _fields_to_interior_map(fields):
     """Extract physical interior (strip ghost cells) from a fields tuple and return a field_map dict."""
-    E, B, J, rho, *rest = fields
+    E, B, J, rho, phi, external_fields, *rest = fields
     interior = (slice(1, -1), slice(1, -1), slice(1, -1))
+    external_E, external_B = external_fields
     field_map = {
         "E": tuple(comp[interior] for comp in E),
         "B": tuple(comp[interior] for comp in B),
         "J": tuple(comp[interior] for comp in J),
         "rho": rho[interior],
+        "phi": phi[interior],
+        "external_E": tuple(comp[interior] for comp in external_E),
+        "external_B": tuple(comp[interior] for comp in external_B),
     }
     if rest:
-        field_map["phi"] = rest[0][interior]
-        for idx, extra in enumerate(rest[1:], start=1):
+        for idx, extra in enumerate(rest, start=1):
+            if extra is None:
+                continue
+            if (
+                isinstance(extra, (list, tuple))
+                and len(extra) == 2
+                and all(isinstance(memory, (list, tuple)) and len(memory) == 6 for memory in extra)
+            ):
+                # PML memory is solver state, not a physical diagnostic field.
+                continue
             if isinstance(extra, (list, tuple)):
                 field_map[f"field_{idx}"] = tuple(comp[interior] for comp in extra)
             else:
@@ -124,13 +138,13 @@ def write_openpmd_particles_to_iteration(iteration, particles, constants):
         vx, vy, vz = species.get_velocity()
         gamma = 1 / jnp.sqrt(1.0 - (vx**2 + vy**2 + vz**2) / C**2)
 
-        x = _ensure_openpmd_array(x)
-        y = _ensure_openpmd_array(y)
-        z = _ensure_openpmd_array(z)
-        vx = _ensure_openpmd_array(vx)
-        vy = _ensure_openpmd_array(vy)
-        vz = _ensure_openpmd_array(vz)
-        gamma = _ensure_openpmd_array(gamma)
+        x = _ensure_openpmd_array(x, squeeze=True)
+        y = _ensure_openpmd_array(y, squeeze=True)
+        z = _ensure_openpmd_array(z, squeeze=True)
+        vx = _ensure_openpmd_array(vx, squeeze=True)
+        vy = _ensure_openpmd_array(vy, squeeze=True)
+        vz = _ensure_openpmd_array(vz, squeeze=True)
+        gamma = _ensure_openpmd_array(gamma, squeeze=True)
 
         num_particles = x.shape[0]
         # number of particles in this species
@@ -144,17 +158,17 @@ def write_openpmd_particles_to_iteration(iteration, particles, constants):
         if jnp.ndim(weights) == 0:
             weights = np.full(num_particles, float(weights), dtype=np.float64)
         else:
-            weights = _ensure_openpmd_array(weights)
+            weights = _ensure_openpmd_array(weights, squeeze=True)
 
         if jnp.ndim(particle_mass) == 0:
             masses = np.full(num_particles, float(particle_mass), dtype=np.float64)
         else:
-            masses = _ensure_openpmd_array(particle_mass)
+            masses = _ensure_openpmd_array(particle_mass, squeeze=True)
         
         if jnp.ndim(particle_charge) == 0:
             charges = np.full(num_particles, float(particle_charge), dtype=np.float64)
         else:
-            charges = _ensure_openpmd_array(particle_charge)
+            charges = _ensure_openpmd_array(particle_charge, squeeze=True)
         # ensure weights, masses, and charges are 1D arrays of the correct length for openPMD output
 
         position = species_group["position"]
@@ -214,9 +228,8 @@ def write_openpmd_fields(fields, world, output_dir, plot_t, t, filename="fields"
     field_map = _fields_to_interior_map(fields)
     # extract physical interior (strip ghost cells)
 
-    Nx, Ny, Nz = field_map["rho"].shape
-    active_dims = (Nx > 1, Ny > 1, Nz > 1)
-    # determine active dimensions from interior shape
+    active_dims = (1, 1, 1)
+    # keep singleton mesh axes so thin 2D runs stay in physical x-y-z coordinates
 
 
     series = _open_openpmd_series(output_dir, filename, file_extension=file_extension)
@@ -381,9 +394,8 @@ def write_openpmd_initial_fields(fields, world, output_dir, filename="initial_fi
     field_map = _fields_to_interior_map(fields)
     # extract physical interior (strip ghost cells)
 
-    Nx, Ny, Nz = field_map["rho"].shape
-    active_dims = (Nx > 1, Ny > 1, Nz > 1)
-    # determine active dimensions from interior shape
+    active_dims = (1, 1, 1)
+    # keep singleton mesh axes so thin 2D runs stay in physical x-y-z coordinates
 
 
     output_path = os.path.join(output_dir, "data", "initial_fields")

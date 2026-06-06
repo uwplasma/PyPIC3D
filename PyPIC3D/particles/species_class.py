@@ -74,6 +74,7 @@ class particle_species:
         update_v=True,
         shape=1,
         dt=0,
+        active_mask=None,
     ):
         self.name = name
         self.N_particles = N_particles
@@ -102,6 +103,9 @@ class particle_species:
         self.y_reflecting = y_bc == "reflecting"
         self.z_periodic = z_bc == "periodic"
         self.z_reflecting = z_bc == "reflecting"
+        self.x_absorbing = x_bc == "absorbing"
+        self.y_absorbing = y_bc == "absorbing"
+        self.z_absorbing = z_bc == "absorbing"
         self.update_x = update_x
         self.update_y = update_y
         self.update_z = update_z
@@ -116,6 +120,9 @@ class particle_species:
         self.x1 = x1
         self.x2 = x2
         self.x3 = x3
+        if active_mask is None:
+            active_mask = jnp.ones_like(x1, dtype=bool)
+        self.active_mask = active_mask
 
     def get_name(self):
         return self.name
@@ -132,8 +139,15 @@ class particle_species:
     def get_velocity(self):
         return self.v1, self.v2, self.v3
 
+    def get_active_velocity(self):
+        active = self.active_mask.astype(self.v1.dtype)
+        return active * self.v1, active * self.v2, active * self.v3
+
     def get_forward_position(self):
         return self.x1, self.x2, self.x3
+
+    def get_active_mask(self):
+        return self.active_mask
 
     def get_position(self):
         x1_back = self.x1 - self.v1 * self.dt / 2
@@ -184,12 +198,13 @@ class particle_species:
 
     def set_velocity(self, v1, v2, v3):
         if self.update_v:
+            active = self.active_mask
             if self.update_vx:
-                self.v1 = v1
+                self.v1 = jnp.where(active, v1, self.v1)
             if self.update_vy:
-                self.v2 = v2
+                self.v2 = jnp.where(active, v2, self.v2)
             if self.update_vz:
-                self.v3 = v3
+                self.v3 = jnp.where(active, v3, self.v3)
 
     def set_position(self, x1, x2, x3):
         self.x1 = x1
@@ -204,10 +219,11 @@ class particle_species:
 
     def kinetic_energy(self):
         v2 = jnp.square(self.v1) + jnp.square(self.v2) + jnp.square(self.v3)
-        return 0.5 * self.weight * self.mass * jnp.sum(v2)
+        return 0.5 * self.weight * self.mass * jnp.sum(self.active_mask.astype(v2.dtype) * v2)
 
     def momentum(self):
-        return self.mass * self.weight * jnp.sum(jnp.sqrt(self.v1**2 + self.v2**2 + self.v3**2))
+        vmag = jnp.sqrt(self.v1**2 + self.v2**2 + self.v3**2)
+        return self.mass * self.weight * jnp.sum(self.active_mask.astype(vmag.dtype) * vmag)
 
     def boundary_conditions(self):
         x1, x2, x3 = self.x1, self.x2, self.x3
@@ -223,20 +239,30 @@ class particle_species:
             x3, v3, self.z_wind, self.half_z_wind, self.z_periodic, self.z_reflecting
         )
 
+        active_mask = self.active_mask
+        if self.x_absorbing:
+            active_mask = active_mask & (x1 <= self.half_x_wind) & (x1 >= -self.half_x_wind)
+        if self.y_absorbing:
+            active_mask = active_mask & (x2 <= self.half_y_wind) & (x2 >= -self.half_y_wind)
+        if self.z_absorbing:
+            active_mask = active_mask & (x3 <= self.half_z_wind) & (x3 >= -self.half_z_wind)
+
         self.x1, self.x2, self.x3 = x1, x2, x3
         self.v1, self.v2, self.v3 = v1, v2, v3
+        self.active_mask = active_mask
 
     def update_position(self):
         if self.update_pos:
+            active = self.active_mask.astype(self.x1.dtype)
             if self.update_x:
-                self.x1 = self.x1 + self.v1 * self.dt
+                self.x1 = self.x1 + active * self.v1 * self.dt
             if self.update_y:
-                self.x2 = self.x2 + self.v2 * self.dt
+                self.x2 = self.x2 + active * self.v2 * self.dt
             if self.update_z:
-                self.x3 = self.x3 + self.v3 * self.dt
+                self.x3 = self.x3 + active * self.v3 * self.dt
 
     def tree_flatten(self):
-        children = (self.v1, self.v2, self.v3, self.x1, self.x2, self.x3)
+        children = (self.v1, self.v2, self.v3, self.x1, self.x2, self.x3, self.active_mask)
 
         aux_data = (
             self.name,
@@ -269,7 +295,7 @@ class particle_species:
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        v1, v2, v3, x1, x2, x3 = children
+        v1, v2, v3, x1, x2, x3, active_mask = children
 
         (
             name,
@@ -331,6 +357,7 @@ class particle_species:
             update_v=update_v,
             shape=shape,
             dt=dt,
+            active_mask=active_mask,
         )
 
         return obj

@@ -56,6 +56,12 @@ Per-species boundary options:
 
 - ``periodic``
 - ``reflecting``
+- ``absorbing``
+
+Absorbing particle boundaries keep the JAX particle arrays fixed-size and mark
+particles inactive with a species-local mask after they leave the domain.  The
+inactive particles remain allocated for JIT shape stability, but they no longer
+move, push, deposit charge/current, or contribute to particle energy moments.
 
 These are independent from field boundary conditions.
 

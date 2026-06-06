@@ -161,9 +161,11 @@ class TestFieldsMethods(unittest.TestCase):
         B_initial = (Bx_initial, By_initial, Bz_initial)
         J = (Jx, Jy, Jz)
 
-        Ex_computed, Ey_computed, Ez_computed = update_E(E_initial, B_initial, J, self.world, self.constants, curl_func)
+        E_computed, pml_state = update_E(E_initial, B_initial, J, self.world, self.constants, curl_func)
+        Ex_computed, Ey_computed, Ez_computed = E_computed
 
         # Check shapes (including ghost cells)
+        self.assertIsNone(pml_state)
         self.assertEqual(Ex_computed.shape, (102, 102, 102))
         self.assertEqual(Ey_computed.shape, (102, 102, 102))
         self.assertEqual(Ez_computed.shape, (102, 102, 102))
@@ -240,9 +242,11 @@ class TestFieldsMethods(unittest.TestCase):
         E_initial = (Ex_initial, Ey_initial, Ez_initial)
         B_initial = (Bx_initial, By_initial, Bz_initial)
 
-        Bx_computed, By_computed, Bz_computed = update_B(E_initial, B_initial, self.world, self.constants, curl_func)
+        B_computed, pml_state = update_B(E_initial, B_initial, self.world, self.constants, curl_func)
+        Bx_computed, By_computed, Bz_computed = B_computed
 
         # Check shapes
+        self.assertIsNone(pml_state)
         self.assertEqual(Bx_computed.shape, (102, 102, 102))
         self.assertEqual(By_computed.shape, (102, 102, 102))
         self.assertEqual(Bz_computed.shape, (102, 102, 102))

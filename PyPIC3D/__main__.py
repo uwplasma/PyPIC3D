@@ -29,7 +29,7 @@ from PyPIC3D.diagnostics.vtk import (
 
 from PyPIC3D.utils import (
     dump_parameters_to_toml, load_config_file, compute_energy,
-    setup_pmd_files
+    setup_pmd_files, add_external_fields
 )
 
 from PyPIC3D.initialization import (
@@ -63,9 +63,11 @@ def run_PyPIC3D(config_file):
     scalar_field_names = ["rho", "mass_density"]
     vector_field_names = ["E", "B", "J"]
 
-    E, B, J, rho, *rest = fields
+    E, B, J, rho, phi, external_fields, *rest = fields
     # unpack the fields
-    e_energy, b_energy, kinetic_energy = compute_energy(particles, E, B, world, constants)
+    total_E, total_B = add_external_fields(E, B, external_fields)
+    # energy diagnostics use the fields seen by the particle pusher
+    e_energy, b_energy, kinetic_energy = compute_energy(particles, total_E, total_B, world, constants)
     # Compute the energy of the system
     initial_energy = e_energy + b_energy + kinetic_energy
 
@@ -85,10 +87,12 @@ def run_PyPIC3D(config_file):
             plot_num = t // plotting_parameters['plotting_interval']
             # determine the plot number
 
-            E, B, J, rho, *rest = fields
+            E, B, J, rho, phi, external_fields, *rest = fields
             # unpack the fields
 
-            e_energy, b_energy, kinetic_energy = compute_energy(particles, E, B, world, constants)
+            total_E, total_B = add_external_fields(E, B, external_fields)
+            # energy diagnostics use the fields seen by the particle pusher
+            e_energy, b_energy, kinetic_energy = compute_energy(particles, total_E, total_B, world, constants)
             # Compute the energy of the system
             write_data(f"{output_dir}/data/total_energy.txt", t * dt, e_energy + b_energy + kinetic_energy)
             write_data(f"{output_dir}/data/energy_error.txt", t * dt, abs( initial_energy - (e_energy + b_energy + kinetic_energy)) / max(initial_energy, 1e-10))
@@ -144,7 +148,7 @@ def run_PyPIC3D(config_file):
                 write_openpmd_fields(fields, world, os.path.join(output_dir, "data"), plot_num, t,  "fields", ".h5")
             # Write the fields in openPMD format
 
-            fields = (E, B, J, rho, *rest)
+            fields = (E, B, J, rho, phi, external_fields, *rest)
             # repack the fields
 
         particles, fields = jit_loop(
@@ -186,10 +190,12 @@ def main():
     end = time.time()
     # end the timer
 
-    E, B, J, *rest = fields
+    E, B, J, rho, phi, external_fields, *rest = fields
     # unpack the fields
 
-    e_energy, b_energy, kinetic_energy = compute_energy(particles, E, B, world, constants)
+    total_E, total_B = add_external_fields(E, B, external_fields)
+    # energy diagnostics use the fields seen by the particle pusher
+    e_energy, b_energy, kinetic_energy = compute_energy(particles, total_E, total_B, world, constants)
     # compute the energy of the system
     print(f"Final Electric Field Energy: {e_energy}")
     print(f"Final Magnetic Field Energy: {b_energy}")

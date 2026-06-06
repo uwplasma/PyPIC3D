@@ -31,6 +31,7 @@ def compute_rho(particles, rho, world, constants):
         dq = q / dx / dy / dz
         x, y, z = species.get_forward_position()
         vx, vy, vz = species.get_velocity()
+        active = species.get_active_mask().astype(x.dtype)
         dt = species.dt
         # Deposit from the unwrapped half-step-back position so periodic seam
         # contributions land in the ghost cells instead of being pre-wrapped.
@@ -88,7 +89,7 @@ def compute_rho(particles, rho, world, constants):
             for j in range(ypts.shape[0]):
                 for k in range(zpts.shape[0]):
                     rho = rho.at[xpts[i], ypts[j], zpts[k]].add(
-                        dq * x_weights[i] * y_weights[j] * z_weights[k], mode="drop"
+                        active * dq * x_weights[i] * y_weights[j] * z_weights[k], mode="drop"
                     )
 
     rho = fold_ghost_cells(rho, bc_x, bc_y, bc_z)

@@ -109,15 +109,15 @@ def solve_poisson_with_conjugate_gradient(rho, phi, constants, world, tol=1e-6, 
     def body_fun(state):
         phi, r, p, k = state
 
-        lapl_p = lapl(p)
-        alpha = -1*jnp.sum(r * r) / jnp.sum(p[1:-1, 1:-1, 1:-1] * lapl_p)
+        lapl_p = -lapl(p)
+        alpha = jnp.sum(r * r) / jnp.sum(p[1:-1, 1:-1, 1:-1] * lapl_p)
         # compute the optimal step size in the direction of the residual
         phi_next = phi.at[1:-1, 1:-1, 1:-1].add(alpha * p[1:-1, 1:-1, 1:-1])
         # update the potential guess
         phi_next = apply_bc(phi_next)
         # apply boundary conditions to the new potential guess
 
-        r_next = r + alpha * lapl_p
+        r_next = r - alpha * lapl_p
         # compute the new residual after stepping in the direction of p
         beta = jnp.sum(r_next * r_next) / jnp.sum(r * r)
         # compute the optimal scaling for the new search direction

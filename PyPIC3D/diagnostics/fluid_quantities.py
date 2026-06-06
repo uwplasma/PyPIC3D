@@ -49,6 +49,7 @@ def compute_mass_density(particles, rho, world):
         # calculate the mass per unit volume
         x, y, z = species.get_position()
         # get the position of the particles in the species
+        active = species.get_active_mask().astype(x.dtype)
 
         _, _, deltax, xpts = prepare_particle_axis_stencil(
             x, grid[0], Nx, shape_factor, bc_x, wind=world['x_wind'], ghost_cells=True
@@ -82,7 +83,7 @@ def compute_mass_density(particles, rho, world):
         for i in range(3):
             for j in range(3):
                 for k in range(3):
-                    rho = rho.at[xpts[i], ypts[j], zpts[k]].add( dm * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
+                    rho = rho.at[xpts[i], ypts[j], zpts[k]].add(active * dm * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
         # distribute the mass of the particles to the grid points using the weighting factors
 
     rho = fold_ghost_cells(rho, bc_x, bc_y, bc_z)
@@ -130,8 +131,9 @@ def compute_velocity_field(particles, field, direction, world):
         # get the position of the particles in the species
         vx, vy, vz = species.get_velocity()
         # get the velocity of the particles in the species
+        active = species.get_active_mask().astype(x.dtype)
 
-        dv = jnp.array([vx, vy, vz])[direction] / N_particles
+        dv = active * jnp.array([vx, vy, vz])[direction] / N_particles
         # select the velocity component based on the direction
 
         _, _, deltax, xpts = prepare_particle_axis_stencil(
@@ -198,9 +200,10 @@ def compute_pressure_field(particles, field, velocity_field, direction, world):
         # get the position of the particles in the species
         vx, vy, vz = species.get_velocity()
         # get the velocity of the particles in the species
+        active = species.get_active_mask().astype(x.dtype)
 
 
-        v = jnp.array([vx, vy, vz])[direction]
+        v = active * jnp.array([vx, vy, vz])[direction]
         # select the velocity component based on the direction
 
         _, _, deltax, xpts = prepare_particle_axis_stencil(
@@ -236,7 +239,7 @@ def compute_pressure_field(particles, field, velocity_field, direction, world):
                 for k in range(3):
                     vbar = v - velocity_field.at[xpts[i], ypts[j], zpts[k]].get()
 
-                    field = field.at[xpts[i], ypts[j], zpts[k]].add( vbar**2 * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
+                    field = field.at[xpts[i], ypts[j], zpts[k]].add(active * vbar**2 * x_weights[i] * y_weights[j] * z_weights[k], mode='drop')
         # distribute the pressure moment of the particles to the grid points using the weighting factors
 
     field = fold_ghost_cells(field, bc_x, bc_y, bc_z)
