@@ -85,7 +85,8 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
         J = _zero_field(shape_with_ghosts)
         rho = jnp.zeros(shape_with_ghosts)
         phi = jnp.zeros(shape_with_ghosts)
-        fields = (E, B, J, rho, phi)
+        external_fields = _zero_field(shape_with_ghosts), _zero_field(shape_with_ghosts)
+        fields = (E, B, J, rho, phi, external_fields)
         world = {
             "dt": 1.0,
             "dx": 0.25,
