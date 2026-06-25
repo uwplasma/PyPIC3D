@@ -38,8 +38,8 @@ Main runtime objects:
 - ``particles``: list of particle species objects.
 - ``fields``:
 
-  - electrodynamic/electrostatic: ``(E, B, J, rho, phi)``
-  - vector potential path: ``(E, B, J, rho, phi, A2, A1, A0)``
+  - electrostatic: ``(E, B, J, rho, phi, external_fields)``
+  - electrodynamic: ``(E, B, J, rho, phi, external_fields, pml_state)``
 
 - ``world``: spatial/temporal metadata, grid spacing, grid arrays, encoded field
   boundary conditions.

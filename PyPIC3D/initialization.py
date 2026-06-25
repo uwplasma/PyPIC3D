@@ -19,7 +19,7 @@ from PyPIC3D.utils import (
     update_parameters_from_toml,
     build_yee_grid, convert_to_jax_compatible, load_external_fields_from_toml,
     print_stats, particle_sanity_check, build_plasma_parameters_dict,
-    make_dir, compute_energy, build_collocated_grid, add_external_fields
+    make_dir, compute_energy, add_external_fields
 )
 
 from PyPIC3D.solvers.pstd import (
@@ -45,14 +45,13 @@ from PyPIC3D.particles.flat_particles import (
 
 
 from PyPIC3D.evolve import (
-    time_loop_electrodynamic, time_loop_electrostatic, time_loop_vector_potential
+    time_loop_electrodynamic, time_loop_electrostatic
 )
 
 from PyPIC3D.pusher.particle_push import validate_particle_pusher
 
 from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
-from PyPIC3D.solvers.vector_potential import initialize_vector_potential
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
@@ -74,6 +73,16 @@ def _encode_field_bc(bc_name):
     if bc_name not in bc_codes:
         raise ValueError(f"Unsupported field boundary condition: {bc_name}")
     return bc_codes[bc_name]
+
+
+def validate_field_solver(solver):
+    """
+    Keep the active field-solver names explicit so stale configs do not silently
+    fall through to a different numerical update.
+    """
+    supported_solvers = ("fdtd", "spectral")
+    if solver not in supported_solvers:
+        raise ValueError(f"Unsupported solver: {solver}. Use 'fdtd' or 'spectral'.")
 
 
 def default_parameters():
@@ -110,7 +119,7 @@ def default_parameters():
     simulation_parameters = {
         "name": "Default Simulation",
         "output_dir": os.getcwd(),
-        "solver": "fdtd",  # solver: spectral, fdtd, vector_potential, curl_curl
+        "solver": "fdtd",  # solver: spectral, fdtd
         "fast_backend": "flat",  # flat | default (flat when compatible, else fallback)
         "particle_bc": "periodic",  # particle boundary conditions: periodic, absorbing, reflecting
         # "bc": "periodic",  # boundary conditions: periodic, dirichlet, neumann
@@ -209,6 +218,7 @@ def initialize_simulation(toml_file):
     t_wind = simulation_parameters['t_wind']
     electrostatic = simulation_parameters['electrostatic']
     solver = simulation_parameters['solver']
+    validate_field_solver(solver)
     relativistic = simulation_parameters['relativistic']
     particle_pusher = simulation_parameters['particle_pusher']
     validate_particle_pusher(particle_pusher)
@@ -280,10 +290,6 @@ def initialize_simulation(toml_file):
     plotting_parameters = convert_to_jax_compatible(plotting_parameters)
     # convert the world parameters to jax compatible format
 
-    # if solver == "vector_potential":
-    #     B_grid, E_grid = build_collocated_grid(world)
-    #     # build the grid for the fields
-    # else:
     B_grid, E_grid = build_yee_grid(world)
     # build the Yee grid for the fields
 
@@ -328,8 +334,8 @@ def initialize_simulation(toml_file):
 
     fast_backend = simulation_parameters.get("fast_backend", "flat")
     if fast_backend == "flat":
-        if electrostatic or solver == "vector_potential":
-            print("fast_backend='flat' not supported for electrostatic/vector_potential; falling back to default")
+        if electrostatic:
+            print("fast_backend='flat' not supported for electrostatic; falling back to default")
             simulation_parameters["fast_backend"] = "default"
         elif not check_flat_compat(particles):
             print("fast_backend='flat' incompatible with species layout; falling back to default")
@@ -408,11 +414,6 @@ def initialize_simulation(toml_file):
         print("Using electrostatic solver")
         evolve_loop = time_loop_electrostatic
 
-    elif solver == "vector_potential":
-        raise NotImplementedError("Vector potential solver is not fully functional yet.")
-        print("Using vector potential solver")
-        evolve_loop = time_loop_vector_potential
-
     else:
         print(f"Using electrodynamic solver with: {solver}")
         evolve_loop = time_loop_electrodynamic
@@ -427,12 +428,7 @@ def initialize_simulation(toml_file):
         J_func = functools.partial(J_from_rhov, filter=simulation_parameters['filter_j'])
 
 
-    if solver == "vector_potential":
-        A2, A1, A0 = initialize_vector_potential(J, world, constants)
-        # initialize the vector potential A based on the current density J
-        fields = (E, B, J, rho, phi, external_fields, A2, A1, A0)
-        # define the fields tuple for the vector potential solver
-    elif electrostatic:
+    if electrostatic:
         fields = (E, B, J, rho, phi, external_fields)
         # define the fields tuple for the electrostatic solver
     else:

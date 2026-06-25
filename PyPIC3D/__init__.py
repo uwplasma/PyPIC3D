@@ -13,7 +13,6 @@ from . import boris
 from . import pusher
 from . import evolve
 
-from .solvers import vector_potential
 from .solvers import pstd
 from .solvers import fdtd
 from .solvers import first_order_yee

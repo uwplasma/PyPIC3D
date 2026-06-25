@@ -18,10 +18,6 @@ from PyPIC3D.solvers.electrostatic_yee import (
     calculate_electrostatic_fields
 )
 
-from PyPIC3D.solvers.vector_potential import (
-    E_from_A, B_from_A, update_vector_potential
-)
-
 from PyPIC3D.utils import add_external_fields
 
 @partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic", "particle_pusher"))
@@ -159,101 +155,5 @@ def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_f
     fields = (E, B, J, rho, phi, external_fields, pml_state)
     # pack the fields into a tuple
     
-
-    return particles, fields
-
-
-@partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic", "particle_pusher"))
-def time_loop_vector_potential(particles, fields, world, constants, curl_func, J_func, solver, relativistic=True, particle_pusher="boris"):
-    """
-    Advance a PIC (Particle-In-Cell) simulation by one time step using a
-    vector-potential formulation for the electromagnetic fields.
-
-    This routine:
-    1) Pushes particle velocities/positions using the current E and B fields.
-    2) Updates the vector potential A via the current density J.
-    3) Recomputes E and B from the updated vector potential.
-    4) Recomputes J from particle motion and applies particle boundary conditions.
-
-    Parameters
-    ----------
-    particles : Sequence
-        Iterable of particle objects. Each particle is expected to be compatible
-        with `particle_push(...)`, provide `update_position()`, and
-        `boundary_conditions()` methods.
-    fields : tuple
-        Field tuple in the order `(E, B, J, rho, phi, external_fields, A2, A1, A0)`,
-        where `external_fields` is added only for particle pushes, `A2` denotes
-        the newest vector potential, `A1` the previous, and `A0` the older one.
-    world : dict
-        Simulation parameters. Must at least contain `'dt'` (time step).
-    constants : Any
-        Physical/constants container passed through to lower-level routines.
-    curl_func : Callable
-        Reserved/unused in the current implementation (kept for API compatibility).
-    J_func : Callable
-        Function to compute/update current density, called as:
-        `J_func(particles, J, constants, world)`.
-    solver : Any
-        Reserved/unused in the current implementation (kept for API compatibility).
-    relativistic : bool, optional
-        If True, the particle pusher is invoked in relativistic mode.
-
-    Returns
-    -------
-    particles : Sequence
-        Updated particle collection after push, position update, and boundary
-        conditions.
-    fields : tuple
-        Updated field tuple `(E, B, J, rho, phi, external_fields, A2, A1, A0)`
-        after advancing A and recomputing E, B, and J.
-
-    Notes
-    -----
-    - The vector potential history is shifted each step (`A0 <- A1`, `A1 <- A2`),
-      then `A2` is computed from the current density via `update_vector_potential`.
-    - Electric and magnetic fields are recomputed using `E_from_A` and `B_from_A`
-      with `interpolation_order=2`.
-    - Several parameters (`curl_func`, `solver`) are
-      currently not used inside this function but may be part of a broader API.
-    """
-
-    E, B, J, rho, phi, external_fields, A2, A1, A0 = fields
-    # unpack the fields
-    center_grid = world['grids']['center']
-    vertex_grid = world['grids']['vertex']
-    push_E, push_B = add_external_fields(E, B, external_fields)
-    # particles see evolved fields plus external-only fields
-
-    ################ PARTICLE PUSH ########################################################################################
-    for i in range(len(particles)):
-
-        particles[i] = particle_push(particles[i], push_E, push_B, center_grid, vertex_grid, world['dt'], constants, relativistic=relativistic, particle_pusher=particle_pusher)
-        # use the selected particle pusher for particle velocities
-
-        particles[i].update_position()
-        # update the particle positions
-
-    ################ FIELD UPDATE ################################################################################################
-    A0 = A1
-    A1 = A2
-    # update the vector potential for the next iteration
-    A2 = update_vector_potential(J, world, constants, A1, A0)
-    # update the vector potential based on the current density J
-
-    E = E_from_A(A2, A1, A0, world, center_grid, vertex_grid, interpolation_order=2)
-    # calculate the electric field from the vector potential using centered finite difference
-    B = B_from_A(A1, world, center_grid, vertex_grid, interpolation_order=2)
-    # calculate the magnetic field from the vector potential using centered finite difference
-    J = J_func(particles, J, constants, world)
-    # calculate the current density using the selected method
-
-    for i in range(len(particles)):
-        particles[i].boundary_conditions()
-        # apply boundary conditions to the particles
-
-    fields = (E, B, J, rho, phi, external_fields, A2, A1, A0)
-    # pack the fields into a tuple
-
 
     return particles, fields

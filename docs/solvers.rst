@@ -26,7 +26,7 @@ Per step, PyPIC3D:
 The ``solver`` key controls both the Poisson solve and gradient operator:
 
 - ``solver = "spectral"``: FFT Poisson + spectral gradient
-- ``solver = "fdtd"`` (or any non-``"spectral"`` value): conjugate-gradient Poisson + centered finite-difference gradient
+- ``solver = "fdtd"``: conjugate-gradient Poisson + centered finite-difference gradient
 
 Electrodynamic mode
 ^^^^^^^^^^^^^^^^^^^
@@ -46,12 +46,6 @@ Per step, PyPIC3D:
 
 The electrodynamic update uses first-order Yee-style kernels in
 ``PyPIC3D.solvers.first_order_yee``.
-
-Vector potential mode
-^^^^^^^^^^^^^^^^^^^^^
-
-``solver = "vector_potential"`` currently raises ``NotImplementedError`` during
-initialization.
 
 Electrodynamic Update Equations
 -------------------------------
