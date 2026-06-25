@@ -30,6 +30,7 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter="bilinear"):
     bc_x = world["boundary_conditions"]["x"]
     bc_y = world["boundary_conditions"]["y"]
     bc_z = world["boundary_conditions"]["z"]
+    shape_factor = world["shape_factor"]
     # determine the boundary conditions for each axis to handle ghost cells correctly
 
     Jx = Jx.at[:, :, :].set(0)
@@ -38,10 +39,9 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter="bilinear"):
     # initialize current density arrays to zero before deposition
 
     for species in particles:
-        shape_factor = species.get_shape()
         charge = species.get_charge()
         dq = charge / (dx * dy * dz)
-        # get the particle information needed for deposition, including charge and shape factor
+        # get the particle information needed for deposition
 
         x, y, z = species.get_forward_position()
         vx, vy, vz = species.get_velocity()

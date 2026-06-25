@@ -34,14 +34,13 @@ def compute_mass_density(particles, rho, world):
     bc_x = world['boundary_conditions']['x']
     bc_y = world['boundary_conditions']['y']
     bc_z = world['boundary_conditions']['z']
+    shape_factor = world['shape_factor']
     # get the shape of the charge density array
 
     rho = jnp.zeros_like(rho)
     # reset rho to zero
 
     for species in particles:
-        shape_factor = species.get_shape()
-        # get the shape factor of the species, which determines the weighting function
         N_particles = species.get_number_of_particles()
         mass = species.get_mass()
         # get the number of particles and their mass
@@ -117,14 +116,13 @@ def compute_velocity_field(particles, field, direction, world):
     bc_x = world['boundary_conditions']['x']
     bc_y = world['boundary_conditions']['y']
     bc_z = world['boundary_conditions']['z']
+    shape_factor = world['shape_factor']
     # get the shape of the velocity field array
 
     field = jnp.zeros_like(field)
     # reset field to zero
 
     for species in particles:
-        shape_factor = species.get_shape()
-        # get the shape factor of the species, which determines the weighting function
         N_particles = species.get_number_of_particles()
         # get the number of particles
         x, y, z = species.get_position()
@@ -188,14 +186,13 @@ def compute_pressure_field(particles, field, velocity_field, direction, world):
     bc_x = world['boundary_conditions']['x']
     bc_y = world['boundary_conditions']['y']
     bc_z = world['boundary_conditions']['z']
+    shape_factor = world['shape_factor']
     # get the shape of the velocity field array
 
     field = jnp.zeros_like(field)
     # reset field to zero
 
     for species in particles:
-        shape_factor = species.get_shape()
-        # get the shape factor of the species, which determines the weighting function
         x, y, z = species.get_position()
         # get the position of the particles in the species
         vx, vy, vz = species.get_velocity()

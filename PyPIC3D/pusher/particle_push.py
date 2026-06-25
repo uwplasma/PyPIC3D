@@ -23,7 +23,7 @@ def validate_particle_pusher(particle_pusher):
 
 
 @partial(jit, static_argnames=("periodic", "relativistic", "particle_pusher"))
-def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic=True, relativistic=True, particle_pusher="boris"):
+def particle_push(particles, E, B, grid, staggered_grid, world, constants, periodic=True, relativistic=True, particle_pusher="boris"):
     """
     Updates particle velocities using the selected particle pusher.
 
@@ -33,7 +33,7 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic
         B (tuple): Magnetic field components (Bx, By, Bz).
         grid (Grid): The grid on which the fields are defined.
         staggered_grid (Grid): The staggered grid for field interpolation.
-        dt (float): The time step for the update.
+        world (dict): Simulation parameters, including ``dt`` and ``shape_factor``.
         constants (dict): Dictionary containing physical constants.
         periodic (bool): Kept for compatibility with the existing call signature.
         relativistic (bool): Selects relativistic or non-relativistic Boris.
@@ -48,8 +48,9 @@ def particle_push(particles, E, B, grid, staggered_grid, dt, constants, periodic
     vx, vy, vz = particles.get_velocity()
     # get the charge, mass, position, and velocity of the particles
 
-    shape_factor = particles.get_shape()
-    # get the shape factor of the particles
+    dt = world["dt"]
+    shape_factor = world["shape_factor"]
+    # interpolation order is a global simulation property
 
     ################## INTERPOLATION GRIDS ###################################
     Ex_grid = staggered_grid[0], grid[1], grid[2]

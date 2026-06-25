@@ -234,9 +234,10 @@ class TestParticleMethods(unittest.TestCase):
             "x_wind": self.x_wind,
             "y_wind": self.y_wind,
             "z_wind": self.z_wind,
+            "shape_factor": 2,
         }
         constants = {"kb": self.kb, "eps": 1.0}
-        simulation_parameters = {"ds_per_debye": None, "shape_factor": 1}
+        simulation_parameters = {"ds_per_debye": None, "shape_factor": 2}
         config = {
             "particle1": {
                 "name": "absorbing",
@@ -258,6 +259,9 @@ class TestParticleMethods(unittest.TestCase):
 
         self.assertEqual(particles[0].x_bc, "absorbing")
         self.assertTrue(jnp.array_equal(particles[0].get_active_mask(), jnp.array([True])))
+        self.assertEqual(world["shape_factor"], 2)
+        self.assertFalse(hasattr(particles[0], "shape"))
+        self.assertFalse(hasattr(particles[0], "get_shape"))
 
     def test_inactive_particles_do_not_advance_or_take_new_velocity(self):
         species = particle_species(
@@ -430,6 +434,7 @@ class TestParticleMethods(unittest.TestCase):
             'Nx': Nx, 'Ny': Ny, 'Nz': Nz,
             'x_wind': self.x_wind, 'y_wind': self.y_wind, 'z_wind': self.z_wind,
             'dt': 0.0001,
+            'shape_factor': 1,
             'boundary_conditions': {'x': 0, 'y': 0, 'z': 0},
         }
         vertex_grid, center_grid = build_yee_grid(world)
@@ -483,6 +488,7 @@ class TestParticleMethods(unittest.TestCase):
             "y_wind": self.y_wind,
             "z_wind": self.z_wind,
             "dt": 0.0,
+            "shape_factor": 1,
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
         vertex_grid, center_grid = build_yee_grid(world)
@@ -547,6 +553,7 @@ class TestParticleMethods(unittest.TestCase):
             'dx': dx, 'dy': dy, 'dz': dz,
             'Nx': Nx, 'Ny': Ny, 'Nz': Nz,
             'x_wind': self.x_wind, 'y_wind': self.y_wind, 'z_wind': self.z_wind,
+            'shape_factor': 1,
             'boundary_conditions': {'x': 0, 'y': 0, 'z': 0},
         }
         vertex_grid, center_grid = build_yee_grid(world)
@@ -607,6 +614,7 @@ class TestParticleMethods(unittest.TestCase):
             "x_wind": self.x_wind,
             "y_wind": self.y_wind,
             "z_wind": self.z_wind,
+            "shape_factor": 1,
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
         vertex_grid, center_grid = build_yee_grid(world)
@@ -657,6 +665,7 @@ class TestParticleMethods(unittest.TestCase):
             "x_wind": self.x_wind,
             "y_wind": self.y_wind,
             "z_wind": self.z_wind,
+            "shape_factor": 1,
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
         vertex_grid, center_grid = build_yee_grid(world)
@@ -708,6 +717,7 @@ class TestParticleMethods(unittest.TestCase):
             "y_wind": self.y_wind,
             "z_wind": self.z_wind,
             "dt": 0.0,
+            "shape_factor": 1,
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
         vertex_grid, center_grid = build_yee_grid(world)
@@ -765,6 +775,7 @@ class TestParticleMethods(unittest.TestCase):
             "x_wind": x_wind,
             "y_wind": y_wind,
             "z_wind": z_wind,
+            "shape_factor": 1,
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
         vertex_grid, center_grid = build_yee_grid(world)
@@ -812,6 +823,7 @@ class TestParticleMethods(unittest.TestCase):
             "x_wind": self.x_wind,
             "y_wind": self.y_wind,
             "z_wind": self.z_wind,
+            "shape_factor": 1,
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
         vertex_grid, center_grid = build_yee_grid(world)
@@ -869,6 +881,7 @@ class TestParticleMethods(unittest.TestCase):
             "Nx": Nx, "Ny": Ny, "Nz": Nz,
             "x_wind": x_wind, "y_wind": y_wind, "z_wind": z_wind,
             "dt": dt,
+            "shape_factor": 1,
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
         vertex_grid, center_grid = build_yee_grid(world)
@@ -902,7 +915,6 @@ class TestParticleMethods(unittest.TestCase):
             dx=dx, dy=dy, dz=dz,
             dt=dt,
             xwind=x_wind, ywind=y_wind, zwind=z_wind,
-            shape=1,
         )
 
         # ghost-celled arrays: (Nx+2, Ny+2, Nz+2)

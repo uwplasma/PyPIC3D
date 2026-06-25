@@ -54,7 +54,7 @@ def time_loop_electrostatic(particles, fields, world, constants, curl_func, J_fu
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
 
-        particles[i] = particle_push(particles[i], push_E, push_B, vertex_grid, center_grid, world['dt'], constants, relativistic=relativistic, particle_pusher=particle_pusher)
+        particles[i] = particle_push(particles[i], push_E, push_B, vertex_grid, center_grid, world, constants, relativistic=relativistic, particle_pusher=particle_pusher)
         # use the selected particle pusher for particle velocities
 
         particles[i].update_position()
@@ -134,7 +134,7 @@ def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_f
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
 
-        particles[i] = particle_push(particles[i], push_E, push_B, center_grid, vertex_grid, world['dt'], constants, relativistic=relativistic, particle_pusher=particle_pusher)
+        particles[i] = particle_push(particles[i], push_E, push_B, center_grid, vertex_grid, world, constants, relativistic=relativistic, particle_pusher=particle_pusher)
         # use the selected particle pusher for particle velocities
 
         particles[i].update_position()

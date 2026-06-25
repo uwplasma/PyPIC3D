@@ -144,6 +144,9 @@ def default_parameters():
         "cfl"  : 1.0, # CFL condition number
         "ds_per_debye" : None, # number of grid spacings per debye length
         "shape_factor" : 1, # shape factor for the simulation (1 for 1st order, 2 for 2nd order)
+        "particle_tile_nx": 1, # number of x cells per particle tile
+        "particle_tile_ny": 1, # number of y cells per particle tile
+        "particle_tile_nz": 1, # number of z cells per particle tile
         "current_calculation": "j_from_rhov",  # current calculation method: esirkepov, villasenor_buneman, j_from_rhov
         "filter_j": "bilinear",  # filter for the current density: bilinear, digital, none
     }
@@ -268,6 +271,7 @@ def initialize_simulation(toml_file):
         'x_wind': x_wind,
         'y_wind': y_wind,
         'z_wind': z_wind,
+        'shape_factor': simulation_parameters['shape_factor'],
         'boundary_conditions': {
             'x': _encode_field_bc(simulation_parameters['x_bc']),
             'y': _encode_field_bc(simulation_parameters['y_bc']),

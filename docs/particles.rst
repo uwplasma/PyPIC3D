@@ -19,13 +19,15 @@ Example
 
 .. code-block:: toml
 
+    [simulation_parameters]
+    shape_factor = 1
+
     [particle1]
     name = "electrons"
     N_particles = 30000
     charge = -1.602e-19
     mass = 9.1093837e-31
     temperature = 293000
-    shape_factor = 1
 
 Common Optional Fields
 ----------------------

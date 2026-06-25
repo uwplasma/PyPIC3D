@@ -177,6 +177,7 @@ def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
     bc_x = world["boundary_conditions"]["x"]
     bc_y = world["boundary_conditions"]["y"]
     bc_z = world["boundary_conditions"]["z"]
+    shape_factor = world["shape_factor"]
 
     Jx = Jx.at[:, :, :].set(0)
     Jy = Jy.at[:, :, :].set(0)
@@ -211,7 +212,6 @@ def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
         x, y, z = species.get_forward_position()
         vx, vy, vz = species.get_velocity()
         active = species.get_active_mask().astype(x.dtype)
-        shape_factor = species.get_shape()
         N_particles = species.get_number_of_particles()
         # get particle information
 

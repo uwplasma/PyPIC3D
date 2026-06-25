@@ -35,7 +35,6 @@ class flat_particle_species:
         update_vx,
         update_vy,
         update_vz,
-        shape,
         dt,
         species_meta,
         active_mask=None,
@@ -69,7 +68,6 @@ class flat_particle_species:
         self.update_vx = update_vx
         self.update_vy = update_vy
         self.update_vz = update_vz
-        self.shape = shape
         self.dt = dt
         self.species_meta = species_meta
         if active_mask is None:
@@ -133,9 +131,6 @@ class flat_particle_species:
 
     def get_weight(self):
         return self.weight
-
-    def get_shape(self):
-        return self.shape
 
     def momentum(self):
         vmag = jnp.sqrt(self.v1**2 + self.v2**2 + self.v3**2)
@@ -208,7 +203,6 @@ class flat_particle_species:
             self.update_vx,
             self.update_vy,
             self.update_vz,
-            self.shape,
             self.dt,
             self.species_meta,
         )
@@ -241,7 +235,6 @@ class flat_particle_species:
             update_vx,
             update_vy,
             update_vz,
-            shape,
             dt,
             species_meta,
         ) = aux_data
@@ -275,7 +268,6 @@ class flat_particle_species:
             update_vx=update_vx,
             update_vy=update_vy,
             update_vz=update_vz,
-            shape=shape,
             dt=dt,
             species_meta=species_meta,
             active_mask=active_mask,
@@ -296,8 +288,6 @@ def _same(attr_list):
 
 def check_flat_compat(particles):
     if not particles:
-        return False
-    if not _same([p.get_shape() for p in particles]):
         return False
     if not _same([p.x_bc for p in particles]) or not _same([p.y_bc for p in particles]) or not _same([p.z_bc for p in particles]):
         return False
@@ -388,7 +378,6 @@ def to_flat_particles(particles):
         update_vx=first.update_vx,
         update_vy=first.update_vy,
         update_vz=first.update_vz,
-        shape=first.shape,
         dt=first.dt,
         species_meta=species_meta,
         active_mask=active_mask,

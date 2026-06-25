@@ -56,6 +56,7 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
             "x_wind": self.x_wind,
             "y_wind": self.y_wind,
             "z_wind": self.z_wind,
+            "shape_factor": 1,
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
         vertex_grid, center_grid = build_yee_grid(self.world)
@@ -91,7 +92,6 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
                 x_bc="periodic",
                 y_bc="periodic",
                 z_bc="periodic",
-                shape=1,
                 dt=0.0,
             )
         ]

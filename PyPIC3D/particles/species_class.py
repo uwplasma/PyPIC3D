@@ -72,7 +72,6 @@ class particle_species:
         update_vz=True,
         update_pos=True,
         update_v=True,
-        shape=1,
         dt=0,
         active_mask=None,
     ):
@@ -114,7 +113,6 @@ class particle_species:
         self.update_vz = update_vz
         self.update_pos = update_pos
         self.update_v = update_v
-        self.shape = shape
         self.dt = dt
 
         self.x1 = x1
@@ -185,9 +183,6 @@ class particle_species:
 
     def get_resolution(self):
         return self.dx, self.dy, self.dz
-
-    def get_shape(self):
-        return self.shape
 
     def get_index(self):
         return (
@@ -288,7 +283,6 @@ class particle_species:
             self.update_vx,
             self.update_vy,
             self.update_vz,
-            self.shape,
             self.dt,
         )
         return children, aux_data
@@ -321,7 +315,6 @@ class particle_species:
             update_vx,
             update_vy,
             update_vz,
-            shape,
             dt,
         ) = aux_data
 
@@ -355,7 +348,6 @@ class particle_species:
             update_vz=update_vz,
             update_pos=update_pos,
             update_v=update_v,
-            shape=shape,
             dt=dt,
             active_mask=active_mask,
         )

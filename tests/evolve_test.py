@@ -32,6 +32,7 @@ class TestEvolveExternalFields(unittest.TestCase):
             "x_wind": 1.0,
             "y_wind": 1.0,
             "z_wind": 1.0,
+            "shape_factor": 1,
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
         center_grid, vertex_grid = build_yee_grid(world)
@@ -63,7 +64,6 @@ class TestEvolveExternalFields(unittest.TestCase):
                 dx=world["dx"],
                 dy=world["dy"],
                 dz=world["dz"],
-                shape=1,
                 dt=world["dt"],
             )
         ]
@@ -104,6 +104,7 @@ class TestEvolveExternalFields(unittest.TestCase):
             "x_wind": 1.0,
             "y_wind": 1.0,
             "z_wind": 1.0,
+            "shape_factor": 1,
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
         center_grid, vertex_grid = build_yee_grid(world)
@@ -136,7 +137,6 @@ class TestEvolveExternalFields(unittest.TestCase):
                 dy=world["dy"],
                 dz=world["dz"],
                 x_bc="absorbing",
-                shape=1,
                 dt=world["dt"],
             )
         ]

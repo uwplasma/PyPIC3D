@@ -290,7 +290,6 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
             update_z=update_z,
             update_pos=update_pos,
             update_v=update_v,
-            shape=simulation_parameters["shape_factor"],
             dt=dt,
         )
         particles.append(particle)

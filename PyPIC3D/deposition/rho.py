@@ -22,11 +22,11 @@ def compute_rho(particles, rho, world, constants):
     bc_x = world["boundary_conditions"]["x"]
     bc_y = world["boundary_conditions"]["y"]
     bc_z = world["boundary_conditions"]["z"]
+    shape_factor = world["shape_factor"]
 
     rho = jnp.zeros_like(rho)
 
     for species in particles:
-        shape_factor = species.get_shape()
         q = species.get_charge()
         dq = q / dx / dy / dz
         x, y, z = species.get_forward_position()
