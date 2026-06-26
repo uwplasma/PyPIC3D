@@ -263,39 +263,80 @@ def apply_tiled_conducting_bc(E_tiles, world):
     return Ex, Ey, Ez
 
 
-def fold_tiled_ghost_cells_periodic(field_tiles):
+def fold_tiled_ghost_cells(field_tiles, world):
     """
-    Add tile-ghost deposits into neighboring tile interiors, then clear ghosts.
+    Add tile-ghost deposits into owning interiors, then clear ghosts.
 
     This is the current-deposition analogue of ``fold_ghost_cells`` for a
-    periodic tiled layout.  Unlike field halo refresh, this operation is
-    additive: deposits in ghost cells belong to the adjacent tile's physical
-    interior.
+    tiled layout.  Internal tile ghosts always belong to the neighboring
+    physical tile interior.  At global conducting walls, exterior ghost
+    deposits reflect into the adjacent boundary cell with the sign convention
+    used by the global ghost-cell fold.
     """
 
+    bc_x = world["boundary_conditions"]["x"]
+    bc_y = world["boundary_conditions"]["y"]
+    bc_z = world["boundary_conditions"]["z"]
+
+    x_lower_ghost = field_tiles[:, :, :, 0, :, :]
+    x_upper_ghost = field_tiles[:, :, :, -1, :, :]
     field_tiles = field_tiles.at[:, :, :, -2, :, :].add(
-        jnp.roll(field_tiles[:, :, :, 0, :, :], shift=-1, axis=0)
+        jnp.roll(x_lower_ghost, shift=-1, axis=0)
     )
     field_tiles = field_tiles.at[:, :, :, 1, :, :].add(
-        jnp.roll(field_tiles[:, :, :, -1, :, :], shift=1, axis=0)
+        jnp.roll(x_upper_ghost, shift=1, axis=0)
+    )
+    field_tiles = jax.lax.cond(
+        bc_x == BC_CONDUCTING,
+        lambda tiles: tiles
+        .at[-1, :, :, -2, :, :].add(-x_lower_ghost[0, :, :, :, :])
+        .at[0, :, :, 1, :, :].add(-x_upper_ghost[-1, :, :, :, :])
+        .at[0, :, :, 1, :, :].add(-x_lower_ghost[0, :, :, :, :])
+        .at[-1, :, :, -2, :, :].add(-x_upper_ghost[-1, :, :, :, :]),
+        lambda tiles: tiles,
+        operand=field_tiles,
     )
     field_tiles = field_tiles.at[:, :, :, 0, :, :].set(0.0)
     field_tiles = field_tiles.at[:, :, :, -1, :, :].set(0.0)
 
+    y_lower_ghost = field_tiles[:, :, :, :, 0, :]
+    y_upper_ghost = field_tiles[:, :, :, :, -1, :]
     field_tiles = field_tiles.at[:, :, :, :, -2, :].add(
-        jnp.roll(field_tiles[:, :, :, :, 0, :], shift=-1, axis=1)
+        jnp.roll(y_lower_ghost, shift=-1, axis=1)
     )
     field_tiles = field_tiles.at[:, :, :, :, 1, :].add(
-        jnp.roll(field_tiles[:, :, :, :, -1, :], shift=1, axis=1)
+        jnp.roll(y_upper_ghost, shift=1, axis=1)
+    )
+    field_tiles = jax.lax.cond(
+        bc_y == BC_CONDUCTING,
+        lambda tiles: tiles
+        .at[:, -1, :, :, -2, :].add(-y_lower_ghost[:, 0, :, :, :])
+        .at[:, 0, :, :, 1, :].add(-y_upper_ghost[:, -1, :, :, :])
+        .at[:, 0, :, :, 1, :].add(-y_lower_ghost[:, 0, :, :, :])
+        .at[:, -1, :, :, -2, :].add(-y_upper_ghost[:, -1, :, :, :]),
+        lambda tiles: tiles,
+        operand=field_tiles,
     )
     field_tiles = field_tiles.at[:, :, :, :, 0, :].set(0.0)
     field_tiles = field_tiles.at[:, :, :, :, -1, :].set(0.0)
 
+    z_lower_ghost = field_tiles[:, :, :, :, :, 0]
+    z_upper_ghost = field_tiles[:, :, :, :, :, -1]
     field_tiles = field_tiles.at[:, :, :, :, :, -2].add(
-        jnp.roll(field_tiles[:, :, :, :, :, 0], shift=-1, axis=2)
+        jnp.roll(z_lower_ghost, shift=-1, axis=2)
     )
     field_tiles = field_tiles.at[:, :, :, :, :, 1].add(
-        jnp.roll(field_tiles[:, :, :, :, :, -1], shift=1, axis=2)
+        jnp.roll(z_upper_ghost, shift=1, axis=2)
+    )
+    field_tiles = jax.lax.cond(
+        bc_z == BC_CONDUCTING,
+        lambda tiles: tiles
+        .at[:, :, -1, :, :, -2].add(-z_lower_ghost[:, :, 0, :, :])
+        .at[:, :, 0, :, :, 1].add(-z_upper_ghost[:, :, -1, :, :])
+        .at[:, :, 0, :, :, 1].add(-z_lower_ghost[:, :, 0, :, :])
+        .at[:, :, -1, :, :, -2].add(-z_upper_ghost[:, :, -1, :, :]),
+        lambda tiles: tiles,
+        operand=field_tiles,
     )
     field_tiles = field_tiles.at[:, :, :, :, :, 0].set(0.0)
     field_tiles = field_tiles.at[:, :, :, :, :, -1].set(0.0)
@@ -303,9 +344,26 @@ def fold_tiled_ghost_cells_periodic(field_tiles):
     return field_tiles
 
 
+def fold_tiled_ghost_cells_periodic(field_tiles):
+    """
+    Fold all-periodic tile-ghost deposits for one scalar component.
+    """
+
+    world = {"boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC}}
+    return fold_tiled_ghost_cells(field_tiles, world)
+
+
+def fold_tiled_vector_ghost_cells(field_tiles, world):
+    """
+    Fold tile-ghost deposits for each vector component.
+    """
+
+    return tuple(fold_tiled_ghost_cells(component, world) for component in field_tiles)
+
+
 def fold_tiled_vector_ghost_cells_periodic(field_tiles):
     """
-    Fold periodic tile-ghost deposits for each vector component.
+    Fold all-periodic tile-ghost deposits for each vector component.
     """
 
     return tuple(fold_tiled_ghost_cells_periodic(component) for component in field_tiles)

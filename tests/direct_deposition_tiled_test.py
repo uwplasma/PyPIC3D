@@ -3,7 +3,8 @@ import unittest
 import jax
 import jax.numpy as jnp
 
-from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
+from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, update_ghost_cells
+from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
 from PyPIC3D.deposition.direct_deposition_tiled import (
     digital_filter_tiled_current_density,
@@ -13,6 +14,7 @@ from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
+    fold_tiled_ghost_cells,
     fold_tiled_ghost_cells_periodic,
     tile_vector_field,
 )
@@ -23,8 +25,10 @@ jax.config.update("jax_enable_x64", True)
 
 
 class TestDirectDepositionTiled(unittest.TestCase):
-    def _build_world(self, Nx=8, Ny=6, Nz=4, dt=0.05):
+    def _build_world(self, Nx=8, Ny=6, Nz=4, dt=0.05, boundary_conditions=None):
         x_wind, y_wind, z_wind = 4.0, 3.0, 2.0
+        if boundary_conditions is None:
+            boundary_conditions = {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC}
         world = {
             "dx": x_wind / Nx,
             "dy": y_wind / Ny,
@@ -37,7 +41,7 @@ class TestDirectDepositionTiled(unittest.TestCase):
             "z_wind": z_wind,
             "dt": dt,
             "shape_factor": 1,
-            "boundary_conditions": {"x": 0, "y": 0, "z": 0},
+            "boundary_conditions": boundary_conditions,
         }
         vertex_grid, center_grid = build_yee_grid(world)
         world["grids"] = {"vertex": vertex_grid, "center": center_grid}
@@ -107,7 +111,7 @@ class TestDirectDepositionTiled(unittest.TestCase):
         J = tuple(update_ghost_cells(component, bc_x, bc_y, bc_z) for component in J)
 
         J_tiles = tile_vector_field(J, world, tile_shape)
-        filtered_tiles = digital_filter_tiled_current_density(J_tiles, alpha)
+        filtered_tiles = digital_filter_tiled_current_density(J_tiles, alpha, world)
         filtered_from_tiles = assemble_tiled_vector_field(filtered_tiles, world, tile_shape)
         filtered_reference = tuple(
             update_ghost_cells(digital_filter(component, alpha), bc_x, bc_y, bc_z)
@@ -118,16 +122,87 @@ class TestDirectDepositionTiled(unittest.TestCase):
             self.assertTrue(jnp.allclose(tiled_component, reference_component, rtol=1.0e-12, atol=1.0e-12))
 
     def test_fold_tiled_ghost_cells_periodic_adds_current_deposits_to_neighbors(self):
+        world = self._build_world(Nx=4, Ny=1, Nz=1)
         tiles = jnp.zeros((2, 1, 1, 4, 3, 3))
         tiles = tiles.at[0, 0, 0, -1, 1, 1].set(2.0)
         tiles = tiles.at[1, 0, 0, 0, 1, 1].set(3.0)
 
-        folded = fold_tiled_ghost_cells_periodic(tiles)
+        folded = fold_tiled_ghost_cells(tiles, world)
 
         self.assertEqual(float(folded[1, 0, 0, 1, 1, 1]), 2.0)
         self.assertEqual(float(folded[0, 0, 0, -2, 1, 1]), 3.0)
         self.assertTrue(jnp.allclose(folded[:, :, :, 0, :, :], 0.0))
         self.assertTrue(jnp.allclose(folded[:, :, :, -1, :, :], 0.0))
+
+        legacy_folded = fold_tiled_ghost_cells_periodic(tiles)
+        self.assertTrue(jnp.allclose(folded, legacy_folded, rtol=1.0e-12, atol=1.0e-12))
+
+    def test_fold_tiled_ghost_cells_conducting_reflects_exterior_deposits(self):
+        world = self._build_world(
+            Nx=4,
+            Ny=1,
+            Nz=1,
+            boundary_conditions={"x": BC_CONDUCTING, "y": BC_PERIODIC, "z": BC_PERIODIC},
+        )
+        tiles = jnp.zeros((2, 1, 1, 4, 3, 3))
+        tiles = tiles.at[0, 0, 0, 0, 1, 1].set(4.0)
+        tiles = tiles.at[-1, 0, 0, -1, 1, 1].set(7.0)
+        tiles = tiles.at[0, 0, 0, -1, 1, 1].set(2.0)
+        tiles = tiles.at[1, 0, 0, 0, 1, 1].set(3.0)
+
+        folded = fold_tiled_ghost_cells(tiles, world)
+
+        self.assertEqual(float(folded[0, 0, 0, 1, 1, 1]), -4.0)
+        self.assertEqual(float(folded[-1, 0, 0, -2, 1, 1]), -7.0)
+        self.assertEqual(float(folded[1, 0, 0, 1, 1, 1]), 2.0)
+        self.assertEqual(float(folded[0, 0, 0, -2, 1, 1]), 3.0)
+        self.assertTrue(jnp.allclose(folded[:, :, :, 0, :, :], 0.0))
+        self.assertTrue(jnp.allclose(folded[:, :, :, -1, :, :], 0.0))
+
+    def test_fold_tiled_ghost_cells_matches_global_fold_for_mixed_boundaries(self):
+        world = self._build_world(
+            Nx=4,
+            Ny=4,
+            Nz=2,
+            boundary_conditions={"x": BC_PERIODIC, "y": BC_CONDUCTING, "z": BC_PERIODIC},
+        )
+        tile_shape = (2, 2, 1)
+        field = jnp.zeros((world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2))
+        tiles = jnp.zeros((2, 2, 2, 4, 4, 3))
+
+        field = field.at[0, 2, 1].set(1.5)
+        tiles = tiles.at[0, 0, 0, 0, 2, 1].set(1.5)
+
+        field = field.at[-1, 3, 2].set(-0.5)
+        tiles = tiles.at[-1, 1, 1, -1, 1, 1].set(-0.5)
+
+        field = field.at[2, 0, 1].set(3.0)
+        tiles = tiles.at[0, 0, 0, 2, 0, 1].set(3.0)
+
+        field = field.at[3, -1, 2].set(-4.0)
+        tiles = tiles.at[1, -1, 1, 1, -1, 1].set(-4.0)
+
+        field = field.at[2, 2, 0].set(2.0)
+        tiles = tiles.at[0, 0, 0, 2, 2, 0].set(2.0)
+
+        field = field.at[3, 3, -1].set(5.0)
+        tiles = tiles.at[1, 1, -1, 1, 1, -1].set(5.0)
+
+        folded_tiles = fold_tiled_ghost_cells(tiles, world)
+        folded_from_tiles = assemble_tiled_vector_field((folded_tiles, folded_tiles, folded_tiles), world, tile_shape)[0]
+        folded_reference = update_ghost_cells(
+            fold_ghost_cells(
+                field,
+                world["boundary_conditions"]["x"],
+                world["boundary_conditions"]["y"],
+                world["boundary_conditions"]["z"],
+            ),
+            world["boundary_conditions"]["x"],
+            world["boundary_conditions"]["y"],
+            world["boundary_conditions"]["z"],
+        )
+
+        self.assertTrue(jnp.allclose(folded_from_tiles, folded_reference, rtol=1.0e-12, atol=1.0e-12))
 
     def test_tiled_direct_deposition_returns_only_local_current_tiles(self):
         world = self._build_world()
@@ -332,6 +407,107 @@ class TestDirectDepositionTiled(unittest.TestCase):
             v1=jnp.array([0.5, -0.25]),
             v2=jnp.array([0.1, -0.2]),
             v3=jnp.array([0.0, 0.15]),
+            xwind=world["x_wind"],
+            ywind=world["y_wind"],
+            zwind=world["z_wind"],
+            dx=world["dx"],
+            dy=world["dy"],
+            dz=world["dz"],
+            dt=world["dt"],
+        )
+
+        self._compare_tiled_to_standard([species], world, simulation_parameters)
+
+    def test_tiled_direct_deposition_matches_J_from_rhov_for_conducting_boundaries(self):
+        world = self._build_world(
+            Nx=8,
+            Ny=6,
+            Nz=4,
+            dt=0.0,
+            boundary_conditions={"x": BC_CONDUCTING, "y": BC_CONDUCTING, "z": BC_CONDUCTING},
+        )
+        simulation_parameters = {
+            "particle_tile_nx": 2,
+            "particle_tile_ny": 2,
+            "particle_tile_nz": 2,
+        }
+        species = particle_species(
+            name="conducting wall deposits",
+            N_particles=3,
+            charge=1.0,
+            mass=1.0,
+            weight=1.0,
+            T=1.0,
+            x1=jnp.array([
+                -world["x_wind"] / 2 + 0.1 * world["dx"],
+                world["x_wind"] / 2 - 0.1 * world["dx"],
+                0.0,
+            ]),
+            x2=jnp.array([
+                -world["y_wind"] / 2 + 0.1 * world["dy"],
+                0.0,
+                world["y_wind"] / 2 - 0.1 * world["dy"],
+            ]),
+            x3=jnp.array([
+                0.0,
+                -world["z_wind"] / 2 + 0.1 * world["dz"],
+                world["z_wind"] / 2 - 0.1 * world["dz"],
+            ]),
+            v1=jnp.array([0.5, -0.25, 0.15]),
+            v2=jnp.array([0.1, -0.2, 0.3]),
+            v3=jnp.array([-0.15, 0.35, -0.1]),
+            xwind=world["x_wind"],
+            ywind=world["y_wind"],
+            zwind=world["z_wind"],
+            dx=world["dx"],
+            dy=world["dy"],
+            dz=world["dz"],
+            dt=world["dt"],
+        )
+
+        self._compare_tiled_to_standard([species], world, simulation_parameters)
+
+    def test_tiled_direct_deposition_matches_J_from_rhov_for_mixed_boundaries(self):
+        world = self._build_world(
+            Nx=8,
+            Ny=6,
+            Nz=4,
+            dt=0.0,
+            boundary_conditions={"x": BC_PERIODIC, "y": BC_CONDUCTING, "z": BC_PERIODIC},
+        )
+        simulation_parameters = {
+            "particle_tile_nx": 2,
+            "particle_tile_ny": 2,
+            "particle_tile_nz": 2,
+        }
+        species = particle_species(
+            name="mixed wall deposits",
+            N_particles=4,
+            charge=-1.0,
+            mass=1.0,
+            weight=0.5,
+            T=1.0,
+            x1=jnp.array([
+                -world["x_wind"] / 2 - 0.1 * world["dx"],
+                world["x_wind"] / 2 + 0.2 * world["dx"],
+                -0.5,
+                0.5,
+            ]),
+            x2=jnp.array([
+                -world["y_wind"] / 2 + 0.1 * world["dy"],
+                world["y_wind"] / 2 - 0.2 * world["dy"],
+                -0.25,
+                0.25,
+            ]),
+            x3=jnp.array([
+                0.0,
+                0.25,
+                -world["z_wind"] / 2 - 0.1 * world["dz"],
+                world["z_wind"] / 2 + 0.2 * world["dz"],
+            ]),
+            v1=jnp.array([0.2, -0.1, 0.05, 0.3]),
+            v2=jnp.array([0.0, 0.15, -0.2, 0.1]),
+            v3=jnp.array([-0.05, 0.25, 0.1, -0.15]),
             xwind=world["x_wind"],
             ywind=world["y_wind"],
             zwind=world["z_wind"],

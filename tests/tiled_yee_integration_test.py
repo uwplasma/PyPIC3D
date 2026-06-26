@@ -18,6 +18,7 @@ from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
 from PyPIC3D.particles.tiled_particles import TiledParticles
 from PyPIC3D.solvers.yee_tiled import assemble_tiled_vector_field, tile_vector_field
 from PyPIC3D.utils import build_yee_grid, compute_energy
+from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 
 
 jax.config.update("jax_enable_x64", True)
@@ -28,7 +29,9 @@ def unused_curl(Ex, Ey, Ez):
 
 
 class TestTiledYeeIntegration(unittest.TestCase):
-    def _build_world(self):
+    def _build_world(self, boundary_conditions=None):
+        if boundary_conditions is None:
+            boundary_conditions = {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC}
         world = {
             "Nx": 8,
             "Ny": 1,
@@ -41,7 +44,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
             "y_wind": 1.0,
             "z_wind": 1.0,
             "shape_factor": 1,
-            "boundary_conditions": {"x": 0, "y": 0, "z": 0},
+            "boundary_conditions": boundary_conditions,
         }
         vertex_grid, center_grid = build_yee_grid(world)
         world["grids"] = {"vertex": vertex_grid, "center": center_grid}
@@ -342,6 +345,69 @@ class TestTiledYeeIntegration(unittest.TestCase):
         reference_energy = compute_energy(reference_particles, reference_E, reference_B, world, constants)
         tiled_energy = compute_energy(tiled_particles, E_tiles, B_tiles, world, constants)
         for reference, tiled in zip(reference_energy, tiled_energy):
+            self.assertTrue(jnp.allclose(tiled, reference, rtol=1.0e-12, atol=1.0e-12))
+
+    def test_tiled_yee_step_matches_standard_conducting_yee_step(self):
+        world = self._build_world(
+            boundary_conditions={"x": BC_CONDUCTING, "y": BC_CONDUCTING, "z": BC_CONDUCTING}
+        )
+        constants = {"C": 10.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
+        tile_shape = (2, 1, 1)
+        simulation_parameters = {
+            "particle_tile_nx": tile_shape[0],
+            "particle_tile_ny": tile_shape[1],
+            "particle_tile_nz": tile_shape[2],
+        }
+
+        species = self._species(world)
+        reference_species = self._species(world)
+        E, B, J, rho, phi, external_fields, pml_state = self._empty_fields(world)
+
+        _, reference_fields = time_loop_electrodynamic(
+            [reference_species],
+            (E, B, J, rho, phi, external_fields, pml_state),
+            world,
+            constants,
+            unused_curl,
+            J_func=lambda particles, J, constants, world: J_from_rhov(particles, J, constants, world, filter="none"),
+            solver="fdtd",
+            relativistic=False,
+            particle_pusher="boris",
+        )
+
+        tiled_particles = to_tiled_particles([species], world, simulation_parameters)
+        tiled_fields = (
+            tile_vector_field(E, world, tile_shape),
+            tile_vector_field(B, world, tile_shape),
+            tile_vector_field(J, world, tile_shape),
+            rho,
+            phi,
+            (
+                tile_vector_field(external_fields[0], world, tile_shape),
+                tile_vector_field(external_fields[1], world, tile_shape),
+            ),
+            None,
+        )
+        _, tiled_fields = time_loop_electrodynamic_tiled(
+            tiled_particles,
+            tiled_fields,
+            world,
+            constants,
+            unused_curl,
+            J_func=None,
+            solver="tiled_yee",
+            relativistic=False,
+            particle_pusher="boris",
+        )
+
+        E_tiles, B_tiles, J_tiles, *_ = tiled_fields
+        reference_E, reference_B, reference_J, *_ = reference_fields
+
+        for reference, tiled in zip(reference_E, assemble_tiled_vector_field(E_tiles, world, tile_shape)):
+            self.assertTrue(jnp.allclose(tiled, reference, rtol=1.0e-12, atol=1.0e-12))
+        for reference, tiled in zip(reference_B, assemble_tiled_vector_field(B_tiles, world, tile_shape)):
+            self.assertTrue(jnp.allclose(tiled, reference, rtol=1.0e-12, atol=1.0e-12))
+        for reference, tiled in zip(reference_J, assemble_tiled_vector_field(J_tiles, world, tile_shape)):
             self.assertTrue(jnp.allclose(tiled, reference, rtol=1.0e-12, atol=1.0e-12))
 
     def test_tiled_yee_step_uses_digital_filtered_current(self):

@@ -9,15 +9,15 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
 )
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.solvers.yee_tiled import (
-    fold_tiled_vector_ghost_cells_periodic,
-    update_tiled_vector_ghost_cells_periodic,
+    fold_tiled_vector_ghost_cells,
+    update_tiled_vector_ghost_cells,
 )
 from PyPIC3D.utils import bilinear_filter, digital_filter
 
 
-def digital_filter_tiled_current_density(J_tiles, alpha):
+def digital_filter_tiled_current_density(J_tiles, alpha, world):
     """
-    Apply the global digital current filter to compact periodic current tiles.
+    Apply the global digital current filter to compact current tiles.
 
     Tile halos are refreshed before the stencil so every tile sees the same
     neighbor values that the assembled ghost-celled current would see.  The
@@ -25,14 +25,14 @@ def digital_filter_tiled_current_density(J_tiles, alpha):
     filtered guard-cell values.
     """
 
-    J_tiles = update_tiled_vector_ghost_cells_periodic(J_tiles)
+    J_tiles = update_tiled_vector_ghost_cells(J_tiles, world)
 
     def filter_component(component_tiles):
         filter_tiles = jax.vmap(jax.vmap(jax.vmap(lambda tile: digital_filter(tile, alpha))))
         return filter_tiles(component_tiles)
 
     J_tiles = tuple(filter_component(component) for component in J_tiles)
-    J_tiles = update_tiled_vector_ghost_cells_periodic(J_tiles)
+    J_tiles = update_tiled_vector_ghost_cells(J_tiles, world)
 
     return J_tiles
 
@@ -203,14 +203,14 @@ def direct_J_from_tiled_particles(tiled_particles, J_tiles, constants, world, gr
         tz,
     )
 
-    J_tiles = fold_tiled_vector_ghost_cells_periodic((Jx_tiles, Jy_tiles, Jz_tiles))
-    J_tiles = update_tiled_vector_ghost_cells_periodic(J_tiles)
+    J_tiles = fold_tiled_vector_ghost_cells((Jx_tiles, Jy_tiles, Jz_tiles), world)
+    J_tiles = update_tiled_vector_ghost_cells(J_tiles, world)
 
     if filter == "bilinear":
         apply_filter = jax.vmap(jax.vmap(jax.vmap(bilinear_filter)))
         J_tiles = tuple(apply_filter(component) for component in J_tiles)
-        J_tiles = update_tiled_vector_ghost_cells_periodic(J_tiles)
+        J_tiles = update_tiled_vector_ghost_cells(J_tiles, world)
     elif filter == "digital":
-        J_tiles = digital_filter_tiled_current_density(J_tiles, constants["alpha"])
+        J_tiles = digital_filter_tiled_current_density(J_tiles, constants["alpha"], world)
 
     return J_tiles
