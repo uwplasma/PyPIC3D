@@ -40,8 +40,16 @@ def time_loop_electrodynamic_tiled(
         tile_shape = tuple(int(width) - 2 for width in E_tiles[0].shape[3:])
 
     if not hasattr(particles, "active"):
-        E_tiles = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape)
-        B_tiles = update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape)
+        if pml_state is None:
+            E_tiles = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape)
+            B_tiles = update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape)
+        else:
+            E_tiles, pml_state = update_tiled_E(
+                E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape, pml_state
+            )
+            B_tiles, pml_state = update_tiled_B(
+                E_tiles, B_tiles, world, constants, curl_func, tile_shape, pml_state
+            )
         fields = (E_tiles, B_tiles, J_tiles, rho, phi, external_fields, pml_state)
         return particles, fields
     # keep the original field-only helper behavior for tests and standalone
@@ -82,10 +90,18 @@ def time_loop_electrodynamic_tiled(
         J_tiles = J_func(particles, J_tiles, constants, world)
     # deposit current directly into tile-local Yee current arrays
 
-    E_tiles = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape)
+    if pml_state is None:
+        E_tiles = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape)
+    else:
+        E_tiles, pml_state = update_tiled_E(
+            E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape, pml_state
+        )
     # update electric field from B and the supplied tiled current
 
-    B_tiles = update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape)
+    if pml_state is None:
+        B_tiles = update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape)
+    else:
+        B_tiles, pml_state = update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape, pml_state)
     # update magnetic field from the newly updated electric field
 
     fields = (E_tiles, B_tiles, J_tiles, rho, phi, external_fields, pml_state, overflow)

@@ -8,10 +8,19 @@ from PyPIC3D.boundary_conditions.PML import (
     PML_WALLS,
     build_pml,
     initialize_pml_state,
+    initialize_tiled_pml_state,
     load_pml_from_toml,
+    tile_pml_profiles,
+    update_ghost_cells_for_pml,
 )
 from PyPIC3D.initialization import initialize_fields, initialize_simulation
 from PyPIC3D.solvers.first_order_yee import update_B, update_E
+from PyPIC3D.solvers.yee_tiled import (
+    assemble_tiled_vector_field,
+    tile_vector_field,
+    update_tiled_B,
+    update_tiled_E,
+)
 from PyPIC3D.utils import build_yee_grid, compute_energy
 
 jax.config.update("jax_enable_x64", True)
@@ -140,6 +149,53 @@ class TestPMLInitialization(unittest.TestCase):
         for memory in b_memory:
             self.assertEqual(memory.shape, (8, 4, 2))
 
+    def test_initialize_tiled_pml_state_uses_tile_local_interior_shape(self):
+        world = _base_world(nx=8, ny=4, nz=2)
+        world["pml"] = load_pml_from_toml(
+            [{"wall": "+x", "thickness": 2, "sigma_max": 3.0}],
+            world,
+            {"C": 1.0},
+        )
+        tile_shape = (2, 2, 1)
+
+        pml_state = initialize_tiled_pml_state(world, tile_shape)
+        e_memory, b_memory, tiled_profiles = pml_state
+
+        self.assertEqual(len(e_memory), 6)
+        self.assertEqual(len(b_memory), 6)
+        for memory in e_memory:
+            self.assertEqual(memory.shape, (4, 2, 2, 2, 2, 1))
+        for memory in b_memory:
+            self.assertEqual(memory.shape, (4, 2, 2, 2, 2, 1))
+        for profile in tiled_profiles:
+            self.assertEqual(profile.shape, (4, 2, 2, 4, 4, 3))
+
+    def test_tile_pml_profiles_matches_global_profiles_on_tile_interiors(self):
+        world = _base_world(nx=8, ny=4, nz=2)
+        world["pml"] = load_pml_from_toml(
+            [
+                {"wall": "-x", "thickness": 2, "sigma_max": 3.0},
+                {"wall": "+x", "thickness": 2, "sigma_max": 3.0},
+            ],
+            world,
+            {"C": 1.0},
+        )
+        tile_shape = (2, 2, 1)
+
+        tiled_profiles = tile_pml_profiles(world, tile_shape)
+        global_profiles = world["pml"][-1]
+        assembled_profiles = assemble_tiled_vector_field(tiled_profiles, world, tile_shape)
+
+        for assembled, reference in zip(assembled_profiles, global_profiles):
+            self.assertTrue(
+                jnp.allclose(
+                    assembled[1:-1, 1:-1, 1:-1],
+                    reference[1:-1, 1:-1, 1:-1],
+                    rtol=1.0e-12,
+                    atol=1.0e-12,
+                )
+            )
+
     def test_initialize_simulation_rejects_pml_for_non_fdtd_solvers(self):
         pml = [{"wall": "+x", "thickness": 2, "sigma_max": 1.0}]
 
@@ -166,6 +222,32 @@ class TestPMLInitialization(unittest.TestCase):
         self.assertTrue(pml_x)
         self.assertFalse(pml_y)
         self.assertFalse(pml_z)
+
+    def test_initialize_simulation_uses_tiled_pml_state_for_tiled_yee(self):
+        pml = [{"wall": "+x", "thickness": 2, "sigma_max": 1.0}]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = _empty_config(tmpdir, solver="tiled_yee", pml=pml)
+            config["simulation_parameters"].update(
+                {
+                    "particle_tile_nx": 2,
+                    "particle_tile_ny": 1,
+                    "particle_tile_nz": 1,
+                    "filter_j": "none",
+                }
+            )
+            result = initialize_simulation(config)
+
+        fields = result[2]
+        world = result[3]
+        pml_state = fields[-1]
+        e_memory, b_memory, tiled_profiles = pml_state
+
+        self.assertEqual(len(fields), 7)
+        self.assertEqual(tuple(world["tile_shape"]), (2, 1, 1))
+        self.assertEqual(e_memory[0].shape, (4, 1, 1, 2, 1, 1))
+        self.assertEqual(b_memory[0].shape, (4, 1, 1, 2, 1, 1))
+        self.assertEqual(tiled_profiles[0].shape, (4, 1, 1, 4, 3, 3))
 
     def test_initialize_simulation_uses_none_pml_state_without_pml_for_fdtd(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -228,6 +310,117 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         final_energy = sum(compute_energy([], E, B, world, constants)[:2])
         self.assertTrue(jnp.isfinite(final_energy))
         self.assertLess(float(final_energy), 0.35 * float(initial_energy))
+
+    def test_tiled_pml_matches_global_pml_for_one_yee_step(self):
+        world = _base_world(nx=8, ny=4, nz=2)
+        constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
+        world["pml"] = load_pml_from_toml(
+            [
+                {"wall": "-x", "thickness": 2, "sigma_max": 4.0},
+                {"wall": "+x", "thickness": 2, "sigma_max": 4.0},
+            ],
+            world,
+            constants,
+        )
+        tile_shape = (2, 2, 1)
+        E, B, J, _, _ = initialize_fields(world["Nx"], world["Ny"], world["Nz"])
+
+        x = world["grids"]["vertex"][0][1:-1]
+        y = world["grids"]["vertex"][1][1:-1]
+        z = world["grids"]["vertex"][2][1:-1]
+        X, Y, Z = jnp.meshgrid(x, y, z, indexing="ij")
+        Ex, Ey, Ez = E
+        Bx, By, Bz = B
+        Jx, Jy, Jz = J
+        Ey = Ey.at[1:-1, 1:-1, 1:-1].set(jnp.sin(2.0 * jnp.pi * X) + 0.1 * Y)
+        Ez = Ez.at[1:-1, 1:-1, 1:-1].set(0.2 * X - 0.3 * Z)
+        By = By.at[1:-1, 1:-1, 1:-1].set(0.4 * X + 0.2 * Z)
+        Bz = Bz.at[1:-1, 1:-1, 1:-1].set(jnp.cos(2.0 * jnp.pi * X) - 0.1 * Y)
+        Jx = Jx.at[1:-1, 1:-1, 1:-1].set(0.05 * X)
+        Jy = Jy.at[1:-1, 1:-1, 1:-1].set(-0.02 * Y)
+        Jz = Jz.at[1:-1, 1:-1, 1:-1].set(0.03 * Z)
+        E = (Ex, Ey, Ez)
+        B = (Bx, By, Bz)
+        J = (Jx, Jy, Jz)
+        E = tuple(update_ghost_cells_for_pml(component, world) for component in E)
+        B = tuple(update_ghost_cells_for_pml(component, world) for component in B)
+
+        pml_state = initialize_pml_state(world)
+        E_reference, pml_state = update_E(E, B, J, world, constants, lambda *args: None, pml_state)
+        B_reference, pml_state = update_B(E_reference, B, world, constants, lambda *args: None, pml_state)
+
+        tiled_pml_state = initialize_tiled_pml_state(world, tile_shape)
+        E_tiles, tiled_pml_state = update_tiled_E(
+            tile_vector_field(E, world, tile_shape),
+            tile_vector_field(B, world, tile_shape),
+            tile_vector_field(J, world, tile_shape),
+            world,
+            constants,
+            lambda *args: None,
+            tile_shape,
+            tiled_pml_state,
+        )
+        B_tiles, tiled_pml_state = update_tiled_B(
+            E_tiles,
+            tile_vector_field(B, world, tile_shape),
+            world,
+            constants,
+            lambda *args: None,
+            tile_shape,
+            tiled_pml_state,
+        )
+
+        E_tiled = assemble_tiled_vector_field(E_tiles, world, tile_shape)
+        B_tiled = assemble_tiled_vector_field(B_tiles, world, tile_shape)
+
+        interior = (slice(1, -1), slice(1, -1), slice(1, -1))
+        for reference, tiled in zip(E_reference, E_tiled):
+            self.assertTrue(jnp.allclose(tiled[interior], reference[interior], rtol=1.0e-12, atol=1.0e-12))
+        for reference, tiled in zip(B_reference, B_tiled):
+            self.assertTrue(jnp.allclose(tiled[interior], reference[interior], rtol=1.0e-12, atol=1.0e-12))
+
+    def test_tiled_pml_absorbs_field_energy_in_particle_free_1d_wave(self):
+        world = _base_world(nx=40, ny=1, nz=1)
+        constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
+        world["pml"] = load_pml_from_toml(
+            [
+                {"wall": "-x", "thickness": 8, "order": 3.0, "sigma_max": 60.0},
+                {"wall": "+x", "thickness": 8, "order": 3.0, "sigma_max": 60.0},
+            ],
+            world,
+            constants,
+        )
+        tile_shape = (4, 1, 1)
+        tiled_pml_state = initialize_tiled_pml_state(world, tile_shape)
+        E, B, J, _, _ = initialize_fields(world["Nx"], world["Ny"], world["Nz"])
+
+        x = world["grids"]["vertex"][0][1:-1]
+        pulse = jnp.exp(-((x + 0.30) / 0.04) ** 2)
+        Ex, Ey, Ez = E
+        Bx, By, Bz = B
+        Ey = Ey.at[1:-1, 1, 1].set(pulse)
+        Bz = Bz.at[1:-1, 1, 1].set(pulse)
+        E_tiles = tile_vector_field((Ex, Ey, Ez), world, tile_shape)
+        B_tiles = tile_vector_field((Bx, By, Bz), world, tile_shape)
+        J_tiles = tile_vector_field(J, world, tile_shape)
+
+        initial_energy = sum(compute_energy([], E_tiles, B_tiles, world, constants)[:2])
+        def step(E_tiles, B_tiles, tiled_pml_state):
+            E_tiles, tiled_pml_state = update_tiled_E(
+                E_tiles, B_tiles, J_tiles, world, constants, lambda *args: None, tile_shape, tiled_pml_state
+            )
+            B_tiles, tiled_pml_state = update_tiled_B(
+                E_tiles, B_tiles, world, constants, lambda *args: None, tile_shape, tiled_pml_state
+            )
+            return E_tiles, B_tiles, tiled_pml_state
+
+        step = jax.jit(step)
+        for _ in range(60):
+            E_tiles, B_tiles, tiled_pml_state = step(E_tiles, B_tiles, tiled_pml_state)
+
+        final_energy = sum(compute_energy([], E_tiles, B_tiles, world, constants)[:2])
+        self.assertTrue(jnp.isfinite(final_energy))
+        self.assertLess(float(final_energy), 0.65 * float(initial_energy))
 
 
 if __name__ == "__main__":

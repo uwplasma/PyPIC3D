@@ -70,6 +70,7 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIO
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 from PyPIC3D.boundary_conditions.PML import (
     initialize_pml_state,
+    initialize_tiled_pml_state,
     load_pml_from_toml,
     update_ghost_cells_for_pml,
 )
@@ -113,8 +114,6 @@ def _validate_tiled_yee_configuration(simulation_parameters, electrostatic, pml_
 
     if electrostatic:
         raise ValueError("tiled_yee is only supported for electrodynamic simulations")
-    if pml_active:
-        raise ValueError("tiled_yee is periodic-only and does not support PML")
     if simulation_parameters["current_calculation"] != "j_from_rhov":
         raise ValueError("tiled_yee currently supports only current_calculation='j_from_rhov'")
     if simulation_parameters["particle_pusher"] != "boris":
@@ -331,8 +330,8 @@ def initialize_simulation(toml_file):
     if toml_file is not None:
         raw_pml = toml_file.get("pml", [])
     pml_active = bool(raw_pml)
-    if pml_active and (solver != "fdtd" or electrostatic):
-        raise ValueError("PML is only supported for the fdtd electrodynamic solver")
+    if pml_active and (solver not in ("fdtd", "tiled_yee") or electrostatic):
+        raise ValueError("PML is only supported for the fdtd or tiled_yee electrodynamic solvers")
     if solver == "tiled_yee":
         _validate_tiled_yee_configuration(simulation_parameters, electrostatic, pml_active)
     world["pml"] = load_pml_from_toml(raw_pml, world, constants)
@@ -494,15 +493,14 @@ def initialize_simulation(toml_file):
         fields = (E, B, J, rho, phi, external_fields)
         # define the fields tuple for the electrostatic solver
     else:
-        if pml_active:
-            pml_state = initialize_pml_state(world)
-        else:
-            pml_state = None
+        pml_state = None
         # electrodynamic FDTD always carries the PML state slot; None means
         # ordinary, unstretched Yee derivatives.
         if solver == "tiled_yee":
             tile_shape = _tile_shape_from_parameters(simulation_parameters)
             world["tile_shape"] = tile_shape
+            if pml_active:
+                pml_state = initialize_tiled_pml_state(world, tile_shape)
             particles = to_tiled_particles(particles, world, simulation_parameters)
             E = tile_vector_field(E, world, tile_shape)
             B = tile_vector_field(B, world, tile_shape)
@@ -515,6 +513,8 @@ def initialize_simulation(toml_file):
             simulation_parameters["fast_backend"] = "tiled"
             simulation_parameters["tile_shape"] = tile_shape
             print(f"Using tiled Yee storage with tile shape: {tile_shape}")
+        elif pml_active:
+            pml_state = initialize_pml_state(world)
         fields = (E, B, J, rho, phi, external_fields, pml_state)
         # define the fields tuple for the electrodynamic FDTD solver
 

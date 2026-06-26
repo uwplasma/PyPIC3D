@@ -1,6 +1,10 @@
 import jax
 import jax.numpy as jnp
 
+from PyPIC3D.boundary_conditions.PML import (
+    apply_tiled_pml_to_b_curl,
+    apply_tiled_pml_to_e_curl,
+)
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 
@@ -180,6 +184,32 @@ def update_tiled_vector_ghost_cells_periodic(field_tiles):
     return tuple(update_tiled_ghost_cells_periodic(component) for component in field_tiles)
 
 
+def update_tiled_ghost_cells_for_pml(field_tiles, world):
+    """
+    Refresh tile halos without wrapping across PML-active global walls.
+    """
+
+    bc_x = world["boundary_conditions"]["x"]
+    bc_y = world["boundary_conditions"]["y"]
+    bc_z = world["boundary_conditions"]["z"]
+    _, pml_x, pml_y, pml_z, _ = world["pml"]
+
+    bc_x = jnp.where((pml_x) & (bc_x == BC_PERIODIC), BC_CONDUCTING, bc_x)
+    bc_y = jnp.where((pml_y) & (bc_y == BC_PERIODIC), BC_CONDUCTING, bc_y)
+    bc_z = jnp.where((pml_z) & (bc_z == BC_PERIODIC), BC_CONDUCTING, bc_z)
+
+    pml_world = {"boundary_conditions": {"x": bc_x, "y": bc_y, "z": bc_z}}
+    return update_tiled_ghost_cells(field_tiles, pml_world)
+
+
+def update_tiled_vector_ghost_cells_for_pml(field_tiles, world):
+    """
+    Refresh tile halos for a vector field with PML-active exterior walls.
+    """
+
+    return tuple(update_tiled_ghost_cells_for_pml(component, world) for component in field_tiles)
+
+
 def apply_tiled_conducting_bc(E_tiles, world):
     """
     Zero tangential electric-field components on global conducting faces.
@@ -281,7 +311,7 @@ def fold_tiled_vector_ghost_cells_periodic(field_tiles):
     return tuple(fold_tiled_ghost_cells_periodic(component) for component in field_tiles)
 
 
-def update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape):
+def update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape, pml_state=None):
     """
     Update compact tiled electric fields without assembling a global field.
 
@@ -292,7 +322,10 @@ def update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_
     del curl_func, tile_shape
 
     Ex, Ey, Ez = E_tiles
-    Bx, By, Bz = update_tiled_vector_ghost_cells(B_tiles, world)
+    if pml_state is None:
+        Bx, By, Bz = update_tiled_vector_ghost_cells(B_tiles, world)
+    else:
+        Bx, By, Bz = update_tiled_vector_ghost_cells_for_pml(B_tiles, world)
     Jx, Jy, Jz = J_tiles
 
     dt = world["dt"]
@@ -310,9 +343,16 @@ def update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_
     dBz_dx = (Bz[:, :, :, 2:, 1:-1, 1:-1] - Bz[:, :, :, 1:-1, 1:-1, 1:-1]) / dx
     dBy_dx = (By[:, :, :, 2:, 1:-1, 1:-1] - By[:, :, :, 1:-1, 1:-1, 1:-1]) / dx
 
-    curl_x = dBz_dy - dBy_dz
-    curl_y = dBx_dz - dBz_dx
-    curl_z = dBy_dx - dBx_dy
+    if pml_state is None:
+        curl_x = dBz_dy - dBy_dz
+        curl_y = dBx_dz - dBz_dx
+        curl_z = dBy_dx - dBx_dy
+    else:
+        (curl_x, curl_y, curl_z), pml_state = apply_tiled_pml_to_e_curl(
+            (dBz_dy, dBy_dz, dBx_dz, dBz_dx, dBy_dx, dBx_dy),
+            world,
+            pml_state,
+        )
 
     Ex = Ex.at[:, :, :, 1:-1, 1:-1, 1:-1].set(
         Ex[:, :, :, 1:-1, 1:-1, 1:-1]
@@ -329,10 +369,13 @@ def update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_
 
     Ex, Ey, Ez = apply_tiled_conducting_bc((Ex, Ey, Ez), world)
 
-    return update_tiled_vector_ghost_cells((Ex, Ey, Ez), world)
+    if pml_state is None:
+        return update_tiled_vector_ghost_cells((Ex, Ey, Ez), world)
+
+    return update_tiled_vector_ghost_cells_for_pml((Ex, Ey, Ez), world), pml_state
 
 
-def update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape):
+def update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape, pml_state=None):
     """
     Update compact tiled magnetic fields without assembling a global field.
 
@@ -342,7 +385,10 @@ def update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape):
 
     del constants, curl_func, tile_shape
 
-    Ex, Ey, Ez = update_tiled_vector_ghost_cells(E_tiles, world)
+    if pml_state is None:
+        Ex, Ey, Ez = update_tiled_vector_ghost_cells(E_tiles, world)
+    else:
+        Ex, Ey, Ez = update_tiled_vector_ghost_cells_for_pml(E_tiles, world)
     Bx, By, Bz = B_tiles
 
     dt = world["dt"]
@@ -358,12 +404,22 @@ def update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape):
     dEz_dx = (Ez[:, :, :, 1:-1, 1:-1, 1:-1] - Ez[:, :, :, :-2, 1:-1, 1:-1]) / dx
     dEy_dx = (Ey[:, :, :, 1:-1, 1:-1, 1:-1] - Ey[:, :, :, :-2, 1:-1, 1:-1]) / dx
 
-    curl_x = dEz_dy - dEy_dz
-    curl_y = dEx_dz - dEz_dx
-    curl_z = dEy_dx - dEx_dy
+    if pml_state is None:
+        curl_x = dEz_dy - dEy_dz
+        curl_y = dEx_dz - dEz_dx
+        curl_z = dEy_dx - dEx_dy
+    else:
+        (curl_x, curl_y, curl_z), pml_state = apply_tiled_pml_to_b_curl(
+            (dEz_dy, dEy_dz, dEx_dz, dEz_dx, dEy_dx, dEx_dy),
+            world,
+            pml_state,
+        )
 
     Bx = Bx.at[:, :, :, 1:-1, 1:-1, 1:-1].set(Bx[:, :, :, 1:-1, 1:-1, 1:-1] - dt * curl_x)
     By = By.at[:, :, :, 1:-1, 1:-1, 1:-1].set(By[:, :, :, 1:-1, 1:-1, 1:-1] - dt * curl_y)
     Bz = Bz.at[:, :, :, 1:-1, 1:-1, 1:-1].set(Bz[:, :, :, 1:-1, 1:-1, 1:-1] - dt * curl_z)
 
-    return update_tiled_vector_ghost_cells((Bx, By, Bz), world)
+    if pml_state is None:
+        return update_tiled_vector_ghost_cells((Bx, By, Bz), world)
+
+    return update_tiled_vector_ghost_cells_for_pml((Bx, By, Bz), world), pml_state
