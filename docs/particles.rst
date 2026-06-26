@@ -2,7 +2,8 @@ Particle Species
 ================
 
 Each ``[particleX]`` TOML section defines one particle species. PyPIC3D supports
-multi-species plasmas and per-species boundary behavior.
+multi-species plasmas. Particle boundary behavior is a global simulation
+setting stored on ``world``.
 
 Required Fields
 ---------------
@@ -35,7 +36,6 @@ Common Optional Fields
 - Thermal setup: ``temperature`` or ``vth`` (optionally ``Tx``, ``Ty``, ``Tz``)
 - Weighting: ``weight`` or ``ds_per_debye``
 - Spatial bounds: ``xmin/xmax``, ``ymin/ymax``, ``zmin/zmax``
-- Boundary conditions: ``x_bc``, ``y_bc``, ``z_bc``
 - External initial state: ``initial_x/y/z``, ``initial_vx/vy/vz`` (``.npy``)
 - Update controls: ``update_pos``, ``update_v``, component-level flags
 
@@ -54,14 +54,17 @@ location with sub-cell variation when applicable.
 Particle Boundary Conditions
 ----------------------------
 
-Per-species boundary options:
+Global boundary options are set with
+``simulation_parameters.particle_x_bc``,
+``simulation_parameters.particle_y_bc``, and
+``simulation_parameters.particle_z_bc``:
 
 - ``periodic``
 - ``reflecting``
 - ``absorbing``
 
 Absorbing particle boundaries keep the JAX particle arrays fixed-size and mark
-particles inactive with a species-local mask after they leave the domain.  The
+particles inactive with the particle active mask after they leave the domain.  The
 inactive particles remain allocated for JIT shape stability, but they no longer
 move, push, deposit charge/current, or contribute to particle energy moments.
 

@@ -1,6 +1,5 @@
 import jax
 from jax import jit
-from functools import partial
 import jax.numpy as jnp
 from jax.tree_util import register_pytree_node_class
 
@@ -12,29 +11,25 @@ def compute_index(x, dx, window):
     return jnp.floor(scaled_x / dx).astype(int)
 
 
-@partial(jit, static_argnames=("periodic", "reflecting"))
-def apply_axis_boundary_condition(x, v, wind, half_wind, periodic, reflecting):
+@jit
+def apply_axis_boundary_condition(x, v, wind, half_wind, bc):
     """Apply boundary conditions to particle positions/velocities along one axis."""
 
-    def periodic_bc(state):
-        x_in, v_in = state
-        x_out = x_in + wind * (x_in < -half_wind) - wind * (x_in > half_wind)
-        return x_out, v_in
+    periodic = bc == 0
+    reflecting = bc == 1
 
-    def reflecting_bc(state):
-        x_in, v_in = state
-        v_out = jnp.where((x_in >= half_wind) | (x_in <= -half_wind), -v_in, v_in)
-        return x_in, v_out
-
-    def identity_bc(state):
-        return state
-
-    return jax.lax.cond(
-        periodic,
-        periodic_bc,
-        lambda state: jax.lax.cond(reflecting, reflecting_bc, identity_bc, state),
-        (x, v),
+    periodic_x = x + wind * (x < -half_wind) - wind * (x > half_wind)
+    reflected_x = jnp.where(
+        x > half_wind,
+        2.0 * half_wind - x,
+        jnp.where(x < -half_wind, -2.0 * half_wind - x, x),
     )
+    reflected_v = jnp.where((x >= half_wind) | (x <= -half_wind), -v, v)
+
+    x_out = jnp.where(periodic, periodic_x, jnp.where(reflecting, reflected_x, x))
+    v_out = jnp.where(reflecting, reflected_v, v)
+
+    return x_out, v_out
 
 
 @register_pytree_node_class
@@ -220,27 +215,31 @@ class particle_species:
         vmag = jnp.sqrt(self.v1**2 + self.v2**2 + self.v3**2)
         return self.mass * self.weight * jnp.sum(self.active_mask.astype(vmag.dtype) * vmag)
 
-    def boundary_conditions(self):
+    def boundary_conditions(self, world=None):
         x1, x2, x3 = self.x1, self.x2, self.x3
         v1, v2, v3 = self.v1, self.v2, self.v3
+        if world is None or "particle_boundary_conditions" not in world:
+            particle_bc = {"x": 0, "y": 0, "z": 0}
+        else:
+            particle_bc = world["particle_boundary_conditions"]
 
         x1, v1 = apply_axis_boundary_condition(
-            x1, v1, self.x_wind, self.half_x_wind, self.x_periodic, self.x_reflecting
+            x1, v1, self.x_wind, self.half_x_wind, particle_bc["x"]
         )
         x2, v2 = apply_axis_boundary_condition(
-            x2, v2, self.y_wind, self.half_y_wind, self.y_periodic, self.y_reflecting
+            x2, v2, self.y_wind, self.half_y_wind, particle_bc["y"]
         )
         x3, v3 = apply_axis_boundary_condition(
-            x3, v3, self.z_wind, self.half_z_wind, self.z_periodic, self.z_reflecting
+            x3, v3, self.z_wind, self.half_z_wind, particle_bc["z"]
         )
 
         active_mask = self.active_mask
-        if self.x_absorbing:
-            active_mask = active_mask & (x1 <= self.half_x_wind) & (x1 >= -self.half_x_wind)
-        if self.y_absorbing:
-            active_mask = active_mask & (x2 <= self.half_y_wind) & (x2 >= -self.half_y_wind)
-        if self.z_absorbing:
-            active_mask = active_mask & (x3 <= self.half_z_wind) & (x3 >= -self.half_z_wind)
+        x_inside = (x1 <= self.half_x_wind) & (x1 >= -self.half_x_wind)
+        y_inside = (x2 <= self.half_y_wind) & (x2 >= -self.half_y_wind)
+        z_inside = (x3 <= self.half_z_wind) & (x3 >= -self.half_z_wind)
+        active_mask = jnp.where(particle_bc["x"] == 2, active_mask & x_inside, active_mask)
+        active_mask = jnp.where(particle_bc["y"] == 2, active_mask & y_inside, active_mask)
+        active_mask = jnp.where(particle_bc["z"] == 2, active_mask & z_inside, active_mask)
 
         self.x1, self.x2, self.x3 = x1, x2, x3
         self.v1, self.v2, self.v3 = v1, v2, v3

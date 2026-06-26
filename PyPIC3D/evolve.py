@@ -68,7 +68,7 @@ def time_loop_electrostatic(particles, fields, world, constants, curl_func, J_fu
     # pack the fields into a tuple
 
     for i in range(len(particles)):
-        particles[i].boundary_conditions()
+        particles[i].boundary_conditions(world)
         # apply boundary conditions to the particles
 
     return particles, fields
@@ -149,7 +149,7 @@ def time_loop_electrodynamic(particles, fields, world, constants, curl_func, J_f
     # update the magnetic field using the curl of the electric field
 
     for i in range(len(particles)):
-        particles[i].boundary_conditions()
+        particles[i].boundary_conditions(world)
         # apply boundary conditions to the particles
 
     fields = (E, B, J, rho, phi, external_fields, pml_state)

@@ -34,6 +34,7 @@ class TestEvolveExternalFields(unittest.TestCase):
             "z_wind": 1.0,
             "shape_factor": 1,
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
+            "particle_boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
         center_grid, vertex_grid = build_yee_grid(world)
         world["grids"] = {"center": center_grid, "vertex": vertex_grid}
@@ -106,6 +107,7 @@ class TestEvolveExternalFields(unittest.TestCase):
             "z_wind": 1.0,
             "shape_factor": 1,
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
+            "particle_boundary_conditions": {"x": 2, "y": 0, "z": 0},
         }
         center_grid, vertex_grid = build_yee_grid(world)
         world["grids"] = {"center": center_grid, "vertex": vertex_grid}
@@ -136,7 +138,7 @@ class TestEvolveExternalFields(unittest.TestCase):
                 dx=world["dx"],
                 dy=world["dy"],
                 dz=world["dz"],
-                x_bc="absorbing",
+                x_bc="periodic",
                 dt=world["dt"],
             )
         ]

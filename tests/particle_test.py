@@ -189,7 +189,48 @@ class TestParticleMethods(unittest.TestCase):
         self.assertTrue(jnp.allclose(y, jnp.array([1.1, 2.2, 3.3])))
         self.assertTrue(jnp.allclose(z, jnp.array([1.1, 2.2, 3.3])))
 
+    def test_reflecting_boundary_mirrors_position_from_global_world_bc(self):
+        world = {
+            "particle_boundary_conditions": {"x": 1, "y": 0, "z": 0},
+        }
+        x1 = jnp.array([self.x_wind / 2 + 0.1, -self.x_wind / 2 - 0.2, 0.0])
+        x2 = jnp.array([0.0, 0.0, 0.0])
+        x3 = jnp.array([0.0, 0.0, 0.0])
+
+        species = particle_species(
+            name="reflecting",
+            N_particles=self.N_particles,
+            charge=1.0,
+            mass=self.mass,
+            weight=1.0,
+            T=self.T,
+            v1=jnp.array([1.0, -2.0, 3.0]),
+            v2=jnp.array([0.0, 0.0, 0.0]),
+            v3=jnp.array([0.0, 0.0, 0.0]),
+            x1=x1,
+            x2=x2,
+            x3=x3,
+            dx=1.0,
+            dy=1.0,
+            dz=1.0,
+            xwind=self.x_wind,
+            ywind=self.y_wind,
+            zwind=self.z_wind,
+            x_bc="periodic",
+            dt=self.dt,
+        )
+
+        species.boundary_conditions(world)
+
+        x, _, _ = species.get_forward_position()
+        vx, _, _ = species.get_velocity()
+        self.assertTrue(jnp.allclose(x, jnp.array([self.x_wind / 2 - 0.1, -self.x_wind / 2 + 0.2, 0.0])))
+        self.assertTrue(jnp.allclose(vx, jnp.array([-1.0, 2.0, 3.0])))
+
     def test_absorbing_boundary_updates_active_mask(self):
+        world = {
+            "particle_boundary_conditions": {"x": 2, "y": 0, "z": 0},
+        }
         x1 = jnp.array([0.0, self.x_wind / 2 + 0.1, -self.x_wind / 2 - 0.1])
         x2 = jnp.array([0.0, 0.0, 0.0])
         x3 = jnp.array([0.0, 0.0, 0.0])
@@ -213,11 +254,11 @@ class TestParticleMethods(unittest.TestCase):
             xwind=self.x_wind,
             ywind=self.y_wind,
             zwind=self.z_wind,
-            x_bc="absorbing",
+            x_bc="periodic",
             dt=self.dt,
         )
 
-        species.boundary_conditions()
+        species.boundary_conditions(world)
 
         self.assertTrue(jnp.array_equal(species.get_active_mask(), jnp.array([True, False, False])))
         self.assertEqual(species.get_forward_position()[0].shape[0], self.N_particles)
@@ -286,7 +327,7 @@ class TestParticleMethods(unittest.TestCase):
             x_bc="absorbing",
             dt=self.dt,
         )
-        species.boundary_conditions()
+        species.boundary_conditions({"particle_boundary_conditions": {"x": 2, "y": 0, "z": 0}})
 
         species.set_velocity(
             jnp.array([10.0, 20.0, 30.0]),
@@ -515,7 +556,7 @@ class TestParticleMethods(unittest.TestCase):
             zwind=self.z_wind,
             x_bc="absorbing",
         )
-        species.boundary_conditions()
+        species.boundary_conditions({"particle_boundary_conditions": {"x": 2, "y": 0, "z": 0}})
 
         constants = {"C": 3e8, "alpha": 1.0}
         rho = compute_rho([species], jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), world, constants)

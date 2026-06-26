@@ -4,6 +4,33 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import wrap_periodic_position
 from PyPIC3D.particles.tiled_particles import TiledParticles
 
 
+def _particle_boundary_conditions(world):
+    if "particle_boundary_conditions" in world:
+        return world["particle_boundary_conditions"]
+    return {"x": 0, "y": 0, "z": 0}
+
+
+def _apply_tiled_axis_boundary(x, u, active, wind, bc):
+    half_wind = 0.5 * wind
+    periodic = bc == 0
+    reflecting = bc == 1
+    absorbing = bc == 2
+
+    periodic_x = wrap_periodic_position(x, wind)
+    reflected_x = jnp.where(
+        x > half_wind,
+        2.0 * half_wind - x,
+        jnp.where(x < -half_wind, -2.0 * half_wind - x, x),
+    )
+    reflected_u = jnp.where((x >= half_wind) | (x <= -half_wind), -u, u)
+
+    x_out = jnp.where(periodic, periodic_x, jnp.where(reflecting, reflected_x, x))
+    u_out = jnp.where(reflecting, reflected_u, u)
+    active_out = jnp.where(absorbing, active & (x <= half_wind) & (x >= -half_wind), active)
+
+    return x_out, u_out, active_out
+
+
 def _particle_tile_indices(x, y, z, world, tile_shape, tile_counts):
     tile_nx, tile_ny, tile_nz = tile_shape
     ntx, nty, ntz = tile_counts
@@ -67,15 +94,44 @@ def refresh_tiled_particle_tiles(tiled_particles, world, tile_shape):
     ntx, nty, ntz, n_species, n_slots = tiled_particles.active.shape
     tile_counts = (ntx, nty, ntz)
 
-    wrapped_x = tiled_particles.x
-    wrapped_x = wrapped_x.at[..., 0].set(wrap_periodic_position(wrapped_x[..., 0], world["x_wind"]))
-    wrapped_x = wrapped_x.at[..., 1].set(wrap_periodic_position(wrapped_x[..., 1], world["y_wind"]))
-    wrapped_x = wrapped_x.at[..., 2].set(wrap_periodic_position(wrapped_x[..., 2], world["z_wind"]))
+    particle_bc = _particle_boundary_conditions(world)
+    bounded_x = tiled_particles.x
+    bounded_u = tiled_particles.u
+    bounded_active = tiled_particles.active
+
+    x1, u1, bounded_active = _apply_tiled_axis_boundary(
+        bounded_x[..., 0],
+        bounded_u[..., 0],
+        bounded_active,
+        world["x_wind"],
+        particle_bc["x"],
+    )
+    x2, u2, bounded_active = _apply_tiled_axis_boundary(
+        bounded_x[..., 1],
+        bounded_u[..., 1],
+        bounded_active,
+        world["y_wind"],
+        particle_bc["y"],
+    )
+    x3, u3, bounded_active = _apply_tiled_axis_boundary(
+        bounded_x[..., 2],
+        bounded_u[..., 2],
+        bounded_active,
+        world["z_wind"],
+        particle_bc["z"],
+    )
+
+    bounded_x = bounded_x.at[..., 0].set(x1)
+    bounded_x = bounded_x.at[..., 1].set(x2)
+    bounded_x = bounded_x.at[..., 2].set(x3)
+    bounded_u = bounded_u.at[..., 0].set(u1)
+    bounded_u = bounded_u.at[..., 1].set(u2)
+    bounded_u = bounded_u.at[..., 2].set(u3)
 
     dest_tx, dest_ty, dest_tz = _particle_tile_indices(
-        wrapped_x[..., 0],
-        wrapped_x[..., 1],
-        wrapped_x[..., 2],
+        bounded_x[..., 0],
+        bounded_x[..., 1],
+        bounded_x[..., 2],
         world,
         tile_shape,
         tile_counts,
@@ -126,12 +182,12 @@ def refresh_tiled_particle_tiles(tiled_particles, world, tile_shape):
                             for oz in z_offsets:
                                 sz = (tz + oz) % ntz
                                 index = (sx, sy, sz, species)
-                                candidate_x.append(wrapped_x[index])
-                                candidate_u.append(tiled_particles.u[index])
+                                candidate_x.append(bounded_x[index])
+                                candidate_u.append(bounded_u[index])
                                 candidate_charge.append(tiled_particles.charge[index])
                                 candidate_mass.append(tiled_particles.mass[index])
                                 candidate_weight.append(tiled_particles.weight[index])
-                                candidate_active.append(tiled_particles.active[index])
+                                candidate_active.append(bounded_active[index])
                                 candidate_update_x1.append(tiled_particles.update_x1[index])
                                 candidate_update_x2.append(tiled_particles.update_x2[index])
                                 candidate_update_x3.append(tiled_particles.update_x3[index])

@@ -126,6 +126,46 @@ def enforce_bc_along_axis(field, axis, bc, component_axis):
 
     return field
 
+
+def enforce_particle_bc_code_along_axis(field, axis, bc, component_axis):
+    """
+    Fold two Esirkepov ghost layers using global particle boundary-condition codes.
+    """
+
+    field_axis = jnp.moveaxis(field, axis, 0)
+    sign = -1.0 if axis == component_axis else 1.0
+
+    def periodic_bc(field_axis):
+        field_axis = field_axis.at[-4, :, :].add(field_axis[0, :, :])
+        field_axis = field_axis.at[-3, :, :].add(field_axis[1, :, :])
+        field_axis = field_axis.at[2, :, :].add(field_axis[-2, :, :])
+        field_axis = field_axis.at[3, :, :].add(field_axis[-1, :, :])
+        return field_axis
+
+    def reflecting_bc(field_axis):
+        field_axis = field_axis.at[2, :, :].add(sign * field_axis[0, :, :])
+        field_axis = field_axis.at[3, :, :].add(sign * field_axis[1, :, :])
+        field_axis = field_axis.at[-4, :, :].add(sign * field_axis[-2, :, :])
+        field_axis = field_axis.at[-3, :, :].add(sign * field_axis[-1, :, :])
+        return field_axis
+
+    def absorbing_bc(field_axis):
+        return field_axis
+
+    field_axis = lax.switch(bc, (periodic_bc, reflecting_bc, absorbing_bc), field_axis)
+    field = jnp.moveaxis(field_axis, 0, axis)
+    field = clear_ghost_cells(field, axis)
+
+    return field
+
+
+def ghost_cell_particle_bc_codes_esirkepov(field, bc_x, bc_y, bc_z, component_axis):
+    field = enforce_particle_bc_code_along_axis(field, axis=0, bc=bc_x, component_axis=component_axis)
+    field = enforce_particle_bc_code_along_axis(field, axis=1, bc=bc_y, component_axis=component_axis)
+    field = enforce_particle_bc_code_along_axis(field, axis=2, bc=bc_z, component_axis=component_axis)
+    return field
+
+
 def ghost_cell_bc_esirkepov(field, bc_x, bc_y, bc_z, component_axis):
     """
     Apply boundary conditions to ghost cells using Esirkepov method.
@@ -385,14 +425,18 @@ def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
                         Jz_ext = Jz_ext.at[xpts[i, :], ypts[j, :], zpts[k, :]].add(Fz[i, j, k, :], mode="drop")
         # deposit the current contributions onto the grid.
 
-        esirkepov_x_bc = species.x_bc
-        esirkepov_y_bc = species.y_bc
-        esirkepov_z_bc = species.z_bc
-        # determine the boundary condition type from the particle species classes
+        particle_bc = world.get("particle_boundary_conditions", {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC})
+        # determine the particle boundary condition type from the global world state
 
-        Jx_ext = ghost_cell_bc_esirkepov(Jx_ext, esirkepov_x_bc, esirkepov_y_bc, esirkepov_z_bc, component_axis=0)
-        Jy_ext = ghost_cell_bc_esirkepov(Jy_ext, esirkepov_x_bc, esirkepov_y_bc, esirkepov_z_bc, component_axis=1)
-        Jz_ext = ghost_cell_bc_esirkepov(Jz_ext, esirkepov_x_bc, esirkepov_y_bc, esirkepov_z_bc, component_axis=2)
+        Jx_ext = ghost_cell_particle_bc_codes_esirkepov(
+            Jx_ext, particle_bc["x"], particle_bc["y"], particle_bc["z"], component_axis=0
+        )
+        Jy_ext = ghost_cell_particle_bc_codes_esirkepov(
+            Jy_ext, particle_bc["x"], particle_bc["y"], particle_bc["z"], component_axis=1
+        )
+        Jz_ext = ghost_cell_particle_bc_codes_esirkepov(
+            Jz_ext, particle_bc["x"], particle_bc["y"], particle_bc["z"], component_axis=2
+        )
         # Fold the two Esirkepov ghost layers before returning to the solver's
         # ordinary one-ghost current arrays.
 

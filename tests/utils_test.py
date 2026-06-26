@@ -199,9 +199,9 @@ class TestUtilsFunctions(unittest.TestCase):
             dx=1.0,
             dy=1.0,
             dz=1.0,
-            x_bc="absorbing",
+            x_bc="periodic",
         )
-        species.boundary_conditions()
+        species.boundary_conditions({"particle_boundary_conditions": {"x": 2, "y": 0, "z": 0}})
 
         _, _, kinetic_energy = compute_energy([species], E, B, world, constants)
 

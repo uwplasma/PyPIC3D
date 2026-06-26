@@ -89,6 +89,20 @@ def _encode_field_bc(bc_name):
     return bc_codes[bc_name]
 
 
+def _encode_particle_bc(bc_name):
+    """
+    Encode global particle boundary condition labels into integer codes.
+    """
+    bc_codes = {
+        "periodic": 0,
+        "reflecting": 1,
+        "absorbing": 2,
+    }
+    if bc_name not in bc_codes:
+        raise ValueError(f"Unsupported particle boundary condition: {bc_name}")
+    return bc_codes[bc_name]
+
+
 def validate_field_solver(solver):
     """
     Keep the active field-solver names explicit so stale configs do not silently
@@ -167,7 +181,9 @@ def default_parameters():
         "output_dir": os.getcwd(),
         "solver": "fdtd",  # solver: spectral, fdtd
         "fast_backend": "flat",  # flat | default (flat when compatible, else fallback)
-        "particle_bc": "periodic",  # particle boundary conditions: periodic, absorbing, reflecting
+        "particle_x_bc": "periodic",  # particle x boundary conditions: periodic, absorbing, reflecting
+        "particle_y_bc": "periodic",  # particle y boundary conditions: periodic, absorbing, reflecting
+        "particle_z_bc": "periodic",  # particle z boundary conditions: periodic, absorbing, reflecting
         # "bc": "periodic",  # boundary conditions: periodic, dirichlet, neumann
         "x_bc": "periodic",  # x boundary conditions: periodic, conducting
         "y_bc": "periodic",  # y boundary conditions: periodic, conducting
@@ -322,6 +338,11 @@ def initialize_simulation(toml_file):
             'x': _encode_field_bc(simulation_parameters['x_bc']),
             'y': _encode_field_bc(simulation_parameters['y_bc']),
             'z': _encode_field_bc(simulation_parameters['z_bc']),
+        },
+        'particle_boundary_conditions': {
+            'x': _encode_particle_bc(simulation_parameters['particle_x_bc']),
+            'y': _encode_particle_bc(simulation_parameters['particle_y_bc']),
+            'z': _encode_particle_bc(simulation_parameters['particle_z_bc']),
         },
     }
     # set the simulation world parameters

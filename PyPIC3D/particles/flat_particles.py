@@ -2,6 +2,25 @@ import jax
 import jax.numpy as jnp
 
 
+@jax.jit
+def _apply_axis_boundary_condition(x, v, wind, half_wind, bc):
+    periodic = bc == 0
+    reflecting = bc == 1
+
+    periodic_x = x + wind * (x < -half_wind) - wind * (x > half_wind)
+    reflected_x = jnp.where(
+        x > half_wind,
+        2.0 * half_wind - x,
+        jnp.where(x < -half_wind, -2.0 * half_wind - x, x),
+    )
+    reflected_v = jnp.where((x >= half_wind) | (x <= -half_wind), -v, v)
+
+    x_out = jnp.where(periodic, periodic_x, jnp.where(reflecting, reflected_x, x))
+    v_out = jnp.where(reflecting, reflected_v, v)
+
+    return x_out, v_out
+
+
 @jax.tree_util.register_pytree_node_class
 class flat_particle_species:
     def __init__(
@@ -156,26 +175,33 @@ class flat_particle_species:
             if self.update_z:
                 self.x3 = self.x3 + active * self.v3 * self.dt
 
-    def boundary_conditions(self):
+    def boundary_conditions(self, world=None):
         half_x = self.x_wind / 2
         half_y = self.y_wind / 2
         half_z = self.z_wind / 2
+        if world is None or "particle_boundary_conditions" not in world:
+            particle_bc = {"x": 0, "y": 0, "z": 0}
+        else:
+            particle_bc = world["particle_boundary_conditions"]
 
-        self.x1 = jnp.where(
-            self.x1 > half_x,
-            self.x1 - self.x_wind,
-            jnp.where(self.x1 < -half_x, self.x1 + self.x_wind, self.x1),
+        self.x1, self.v1 = _apply_axis_boundary_condition(
+            self.x1, self.v1, self.x_wind, half_x, particle_bc["x"]
         )
-        self.x2 = jnp.where(
-            self.x2 > half_y,
-            self.x2 - self.y_wind,
-            jnp.where(self.x2 < -half_y, self.x2 + self.y_wind, self.x2),
+        self.x2, self.v2 = _apply_axis_boundary_condition(
+            self.x2, self.v2, self.y_wind, half_y, particle_bc["y"]
         )
-        self.x3 = jnp.where(
-            self.x3 > half_z,
-            self.x3 - self.z_wind,
-            jnp.where(self.x3 < -half_z, self.x3 + self.z_wind, self.x3),
+        self.x3, self.v3 = _apply_axis_boundary_condition(
+            self.x3, self.v3, self.z_wind, half_z, particle_bc["z"]
         )
+
+        active_mask = self.active_mask
+        x_inside = (self.x1 <= half_x) & (self.x1 >= -half_x)
+        y_inside = (self.x2 <= half_y) & (self.x2 >= -half_y)
+        z_inside = (self.x3 <= half_z) & (self.x3 >= -half_z)
+        active_mask = jnp.where(particle_bc["x"] == 2, active_mask & x_inside, active_mask)
+        active_mask = jnp.where(particle_bc["y"] == 2, active_mask & y_inside, active_mask)
+        active_mask = jnp.where(particle_bc["z"] == 2, active_mask & z_inside, active_mask)
+        self.active_mask = active_mask
 
     def tree_flatten(self):
         children = (self.x1, self.x2, self.x3, self.v1, self.v2, self.v3, self.active_mask)
@@ -288,10 +314,6 @@ def _same(attr_list):
 
 def check_flat_compat(particles):
     if not particles:
-        return False
-    if not _same([p.x_bc for p in particles]) or not _same([p.y_bc for p in particles]) or not _same([p.z_bc for p in particles]):
-        return False
-    if particles[0].x_bc != "periodic" or particles[0].y_bc != "periodic" or particles[0].z_bc != "periodic":
         return False
     if not _same([p.update_pos for p in particles]) or not _same([p.update_v for p in particles]):
         return False

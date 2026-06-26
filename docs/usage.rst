@@ -50,6 +50,9 @@ Minimal Working Example
     x_bc = "periodic"                     # periodic or conducting
     y_bc = "periodic"
     z_bc = "periodic"
+    particle_x_bc = "periodic"            # periodic, reflecting, or absorbing
+    particle_y_bc = "periodic"
+    particle_z_bc = "periodic"
     output_dir = "./outputs"
 
     [plotting]
@@ -76,7 +79,6 @@ Minimal Working Example
     charge = -1.602e-19
     mass = 9.1093837e-31
     temperature = 1.0
-    x_bc = "periodic"                     # periodic or reflecting
 
 Key Notes
 ---------
@@ -90,8 +92,9 @@ Key Notes
 
 - Field boundary conditions use ``simulation_parameters.x_bc/y_bc/z_bc`` with
   values ``periodic`` or ``conducting``.
-- Particle boundary conditions are per species (``x_bc/y_bc/z_bc``) with values
-  ``periodic`` or ``reflecting``.
+- Particle boundary conditions are global simulation parameters:
+  ``particle_x_bc/particle_y_bc/particle_z_bc`` with values ``periodic``,
+  ``reflecting``, or ``absorbing``.
 - The smoothing coefficient is ``constants.alpha`` (not
   ``simulation_parameters.alpha``).
 

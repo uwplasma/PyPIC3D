@@ -28,9 +28,10 @@ class TestTiledParticleRefresh(unittest.TestCase):
             "y_wind": 1.0,
             "z_wind": 1.0,
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
+            "particle_boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
 
-    def _species(self, world, x1, v1, active_mask=None, update_x=True):
+    def _species(self, world, x1, v1, active_mask=None, update_x=True, x_bc="periodic"):
         if active_mask is None:
             active_mask = jnp.ones_like(jnp.asarray(x1), dtype=bool)
         n_particles = len(x1)
@@ -56,6 +57,7 @@ class TestTiledParticleRefresh(unittest.TestCase):
             dt=world["dt"],
             active_mask=active_mask,
             update_x=update_x,
+            x_bc=x_bc,
         )
 
     def _simulation_parameters(self):
@@ -127,6 +129,39 @@ class TestTiledParticleRefresh(unittest.TestCase):
         self.assertFalse(bool(overflow))
         self.assertTrue(bool(refreshed.active[0, 0, 0, 0, 0]))
         self.assertTrue(jnp.allclose(refreshed.x[0, 0, 0, 0, 0, 0], -1.75))
+
+    def test_refresh_reflects_particle_from_global_boundary_condition(self):
+        world = self._build_world()
+        world["particle_boundary_conditions"] = {"x": 1, "y": 0, "z": 0}
+        species = self._species(world, x1=[1.75, -1.75], v1=[0.5, -0.25], x_bc="periodic")
+        tiled_particles = to_tiled_particles([species], world, self._simulation_parameters())
+        moved = tiled_particles._replace(
+            x=tiled_particles.x
+            .at[1, 0, 0, 0, 0, 0].set(2.25)
+            .at[0, 0, 0, 0, 0, 0].set(-2.10)
+        )
+
+        refreshed, overflow = refresh_tiled_particle_tiles(moved, world, tile_shape=(2, 1, 1))
+
+        self.assertFalse(bool(overflow))
+        x, u, _, _, _ = self._active_rows(refreshed)
+        self.assertTrue(jnp.allclose(x[:, 0], jnp.array([-1.90, 1.75])))
+        self.assertTrue(jnp.allclose(u[:, 0], jnp.array([0.25, -0.5])))
+
+    def test_refresh_absorbs_particle_from_global_boundary_condition(self):
+        world = self._build_world()
+        world["particle_boundary_conditions"] = {"x": 2, "y": 0, "z": 0}
+        species = self._species(world, x1=[1.75, -0.25], v1=[0.5, 0.0], x_bc="periodic")
+        tiled_particles = to_tiled_particles([species], world, self._simulation_parameters())
+        moved = tiled_particles._replace(x=tiled_particles.x.at[1, 0, 0, 0, 0, 0].set(2.25))
+
+        refreshed, overflow = refresh_tiled_particle_tiles(moved, world, tile_shape=(2, 1, 1))
+
+        self.assertFalse(bool(overflow))
+        self.assertEqual(int(jnp.sum(refreshed.active)), 1)
+        x, u, _, _, _ = self._active_rows(refreshed)
+        self.assertTrue(jnp.allclose(x[:, 0], jnp.array([-0.25])))
+        self.assertTrue(jnp.allclose(u[:, 0], jnp.array([0.0])))
 
     def test_refresh_reports_overflow_without_changing_shape(self):
         world = self._build_world()
