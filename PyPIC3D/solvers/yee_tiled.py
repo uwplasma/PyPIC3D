@@ -11,13 +11,13 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIO
 
 def _tile_axis_count(n_cells, cells_per_tile):
     if int(n_cells) % int(cells_per_tile) != 0:
-        raise ValueError("Field tile sizes must divide the physical grid dimensions exactly.")
+        raise ValueError("Shared tile sizes must divide the physical grid dimensions exactly.")
     return int(n_cells) // int(cells_per_tile)
 
 
 def _tile_scalar_field(field, tile_shape):
     """
-    Split a ghost-celled field into compact field tiles with one-cell halos.
+    Split a ghost-celled field into compact tiles using the shared tile shape.
     """
 
     tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]

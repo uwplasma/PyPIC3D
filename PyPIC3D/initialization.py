@@ -142,7 +142,7 @@ def _validate_tiled_yee_configuration(simulation_parameters, electrostatic, pml_
     )
     for cells, tile_width in zip(grid_shape, tile_shape):
         if cells % tile_width != 0:
-            raise ValueError("tiled_yee requires particle_tile_nx/ny/nz to divide Nx/Ny/Nz exactly")
+            raise ValueError("tiled_yee requires the shared tile shape to divide Nx/Ny/Nz exactly")
 
 
 def default_parameters():
@@ -206,9 +206,9 @@ def default_parameters():
         "cfl"  : 1.0, # CFL condition number
         "ds_per_debye" : None, # number of grid spacings per debye length
         "shape_factor" : 1, # shape factor for the simulation (1 for 1st order, 2 for 2nd order)
-        "particle_tile_nx": 1, # number of x cells per particle tile
-        "particle_tile_ny": 1, # number of y cells per particle tile
-        "particle_tile_nz": 1, # number of z cells per particle tile
+        "particle_tile_nx": 1, # number of x cells per shared field/particle tile
+        "particle_tile_ny": 1, # number of y cells per shared field/particle tile
+        "particle_tile_nz": 1, # number of z cells per shared field/particle tile
         "current_calculation": "j_from_rhov",  # current calculation method: esirkepov, villasenor_buneman, j_from_rhov
         "filter_j": "bilinear",  # filter for the current density: bilinear, digital, none
     }
@@ -379,6 +379,8 @@ def initialize_simulation(toml_file):
 
     particles = load_particles_from_toml(toml_file, simulation_parameters, world, constants)
     # load the particles from the configuration file
+    simulation_parameters["particle_species_names"] = tuple(species.get_name() for species in particles)
+    # keep species names available after tiled storage drops per-species objects
 
     for species in particles:
         name = species.get_name()

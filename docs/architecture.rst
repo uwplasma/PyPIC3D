@@ -45,6 +45,38 @@ Main runtime objects:
   boundary conditions.
 - ``constants``: physical constants and filter coefficients.
 
+Tiled State Contract
+--------------------
+
+The ``tiled_yee`` path uses one shared tile shape for fields and particles.
+The existing tile-size configuration is interpreted as this common
+``tile_shape = (tile_nx, tile_ny, tile_nz)``; there are not separate field-tile
+and particle-tile dimensions in the current contract.  Each tile width must
+divide the corresponding physical grid size exactly, so the leading tile axes
+are ``(ntx, nty, ntz)`` with ``ntx * tile_nx = Nx`` and similarly for ``y`` and
+``z``.
+
+Tiled fields store each vector component as compact per-tile arrays with
+leading tile axes followed by a one-cell halo around the tile-local physical
+interior:
+``(ntx, nty, ntz, tile_nx + 2, tile_ny + 2, tile_nz + 2)``.  The halo cells
+carry neighbor-tile values or exterior field boundary conditions so tiled Yee
+curls can be evaluated on the physical interior without assembling a global
+field.
+
+Tiled particles use the same leading tile axes, followed by species and fixed
+slot axes.  Positions and velocities have shape
+``(ntx, nty, ntz, species, max_particles_per_tile, 3)``; scalar particle data
+such as charge, mass, weight, active flags, and update masks have shape
+``(ntx, nty, ntz, species, max_particles_per_tile)``.  The slot capacity is set
+when tiled particles are initialized.  Empty slots remain inactive so the array
+shape stays static during JAX updates.
+
+Retiling preserves this fixed-capacity layout.  If later particle motion would
+place more active particles in a tile/species block than its slot capacity can
+hold, the tiled refresh reports overflow and the Python driver treats that as a
+hard error.  This avoids silently dropping active particles.
+
 Data and Output Flow
 --------------------
 

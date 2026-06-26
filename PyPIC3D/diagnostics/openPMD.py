@@ -5,6 +5,8 @@ import os
 import numpy as np
 import importlib.metadata
 
+from PyPIC3D.particles.tiled_particle_diagnostics import flatten_tiled_particles_by_species
+
 def _ensure_openpmd_array(data, dtype=np.float64, squeeze=False):
     arr = np.asarray(data, dtype=dtype)
     if squeeze:
@@ -124,7 +126,11 @@ def write_openpmd_fields_to_iteration(iteration, field_map, world, active_dims=(
             _write_openpmd_scalar_mesh(iteration, name, data, world, active_dims)
 
 
-def write_openpmd_particles_to_iteration(iteration, particles, constants):
+def write_openpmd_particles_to_iteration(iteration, particles, constants, species_names=None, world=None):
+    particles = flatten_tiled_particles_by_species(particles, species_names=species_names, world=world)
+    # Tiled particles carry inactive capacity slots; openPMD should see the
+    # active physical particles by species, matching the ordinary output path.
+
     if not particles:
         return
 
@@ -249,7 +255,7 @@ def write_openpmd_fields(fields, world, output_dir, plot_t, t, filename="fields"
     # flush and close the series
 
 
-def write_openpmd_particles(particles, world, constants, output_dir, plot_t, t, filename="particles", file_extension=".bp"):
+def write_openpmd_particles(particles, world, constants, output_dir, plot_t, t, filename="particles", file_extension=".bp", species_names=None):
     """
     Write all particle data to an openPMD file for visualization in ParaView/VisIt.
 
@@ -271,7 +277,7 @@ def write_openpmd_particles(particles, world, constants, output_dir, plot_t, t, 
     # set the time step
     iteration.time_unit_SI = 1.0
     # set the time unit
-    write_openpmd_particles_to_iteration(iteration, particles, constants)
+    write_openpmd_particles_to_iteration(iteration, particles, constants, species_names=species_names, world=world)
     # write the particle data to the iteration
     series.flush()
     series.close()

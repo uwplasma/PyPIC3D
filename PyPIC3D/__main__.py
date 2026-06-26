@@ -93,11 +93,7 @@ def run_PyPIC3D(config_file):
     scalar_field_names = ["rho", "mass_density"]
     vector_field_names = ["E", "B", "J"]
     tiled_run = simulation_parameters["solver"] == "tiled_yee"
-
-    if tiled_run and plotting_parameters["plot_openpmd_particles"]:
-        raise ValueError("plot_openpmd_particles is not supported for tiled_yee particle storage")
-    if tiled_run and (plotting_parameters["plot_phasespace"] or plotting_parameters["plot_vtk_particles"]):
-        raise ValueError("particle phase-space and VTK particle output are not supported for tiled_yee particle storage")
+    particle_species_names = simulation_parameters.get("particle_species_names")
 
     E, B, J, rho, phi, external_fields, *rest = fields
     # unpack the fields
@@ -146,7 +142,7 @@ def run_PyPIC3D(config_file):
 
 
             if plotting_parameters['plot_phasespace']:
-                write_particles_phase_space(particles, t, output_dir)
+                write_particles_phase_space(particles, t, output_dir, species_names=particle_species_names, world=world)
 
 
 
@@ -178,11 +174,11 @@ def run_PyPIC3D(config_file):
                 # Plot the vector fields in VTK format
 
             if plotting_parameters['plot_vtk_particles']:
-                plot_vtk_particles(particles, plot_num, output_dir)
+                plot_vtk_particles(particles, plot_num, output_dir, species_names=particle_species_names, world=world)
             # Plot the particles in VTK format
 
             if plotting_parameters['plot_openpmd_particles']:
-                write_openpmd_particles(particles, world, constants, os.path.join(output_dir, "data"), plot_num, t, "particles", ".h5")
+                write_openpmd_particles(particles, world, constants, os.path.join(output_dir, "data"), plot_num, t, "particles", ".h5", species_names=particle_species_names)
             # Write the particles in openPMD format
 
             if plotting_parameters['plot_openpmd_fields']:

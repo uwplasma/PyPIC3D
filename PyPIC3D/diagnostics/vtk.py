@@ -5,6 +5,8 @@ import os
 from pyevtk.hl import gridToVTK, pointsToVTK
 import jax.numpy as jnp
 
+from PyPIC3D.particles.tiled_particle_diagnostics import flatten_tiled_particles_by_species
+
 def plot_fields(fieldx, fieldy, fieldz, t, name, dx, dy, dz):
     """
     Plot the fields in a 3D grid.
@@ -40,7 +42,7 @@ def plot_fields(fieldx, fieldy, fieldz, t, name, dx, dy, dz):
 # plot the electric fields in the vtk file format
 
 
-def plot_vtk_particles(particles, t, path):
+def plot_vtk_particles(particles, t, path, species_names=None, world=None):
     """
     Plot the particles in VTK format.
 
@@ -54,6 +56,10 @@ def plot_vtk_particles(particles, t, path):
     """
     if not os.path.exists(f"{path}/data/particles"):
         os.makedirs(f"{path}/data/particles")
+
+    particles = flatten_tiled_particles_by_species(particles, species_names=species_names, world=world)
+    # Tiled particle arrays are fixed-capacity by tile; VTK particle output only
+    # receives the active diagnostic particles.
 
     particle_names = [species.get_name().replace(" ", "") for species in particles]
     for species in particles:

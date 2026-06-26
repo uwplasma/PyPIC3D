@@ -7,6 +7,8 @@ import plotly.graph_objects as go
 import jax
 from functools import partial
 
+from PyPIC3D.particles.tiled_particle_diagnostics import flatten_tiled_particles_by_species
+
 def plot_positions(particles, t, x_wind, y_wind, z_wind, path):
     """
     Makes an interactive 3D plot of the positions of the particles using Plotly.
@@ -49,7 +51,7 @@ def plot_positions(particles, t, x_wind, y_wind, z_wind, path):
 
     fig.write_html(f"{path}/data/positions/particles.{t:09}.html")
 
-def write_particles_phase_space(particles, t, path):
+def write_particles_phase_space(particles, t, path, species_names=None, world=None):
     """
     Write the phase space of the particles to a file.
 
@@ -68,6 +70,10 @@ def write_particles_phase_space(particles, t, path):
     if not os.path.exists(f"{path}/data/phase_space/z"):
         os.makedirs(f"{path}/data/phase_space/z")
     # Create directory if it doesn't exist
+
+    particles = flatten_tiled_particles_by_species(particles, species_names=species_names, world=world)
+    # Tiled storage contains fixed-capacity inactive slots; phase-space output
+    # writes only active particles and otherwise keeps the old species-list path.
 
     for species in particles:
         x, y, z = species.get_position()
@@ -243,4 +249,3 @@ def write_data(filename, time, data):
             f.write(f"{time}, {data}\n")
 
     return jax.debug.callback(write_to_file, filename, time, data, ordered=True)
-
