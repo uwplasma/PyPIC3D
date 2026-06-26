@@ -19,7 +19,7 @@ from PyPIC3D.solvers.yee_tiled import (
 
 
 @partial(jit, static_argnames=("tol", "max_iter"))
-def solve_poisson_with_conjugate_gradient(rho, phi, constants, world, tol=1e-6, max_iter=5000):
+def solve_poisson_with_conjugate_gradient(rho, phi, constants, world, tol=1e-12, max_iter=5000):
     """
     Solve Poisson's equation using matrix-free conjugate gradient.
 

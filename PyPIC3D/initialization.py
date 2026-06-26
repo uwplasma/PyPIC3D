@@ -16,7 +16,7 @@ from PyPIC3D.particles.particle_initialization import (
 
 from PyPIC3D.utils import (
     courant_condition,
-    update_parameters_from_toml,
+    update_parameters_from_toml, build_collocated_grid,
     build_yee_grid, convert_to_jax_compatible, load_external_fields_from_toml,
     print_stats, particle_sanity_check, build_plasma_parameters_dict,
     make_dir, compute_energy, add_external_fields
@@ -362,8 +362,12 @@ def initialize_simulation(toml_file):
     plotting_parameters = convert_to_jax_compatible(plotting_parameters)
     # convert the world parameters to jax compatible format
 
-    B_grid, E_grid = build_yee_grid(world)
-    # build the Yee grid for the fields
+    if electrostatic:
+        B_grid, E_grid = build_collocated_grid(world)
+        # electrostatic E comes from a symmetric gradient and is colocated at cell centers
+    else:
+        B_grid, E_grid = build_yee_grid(world)
+        # build the Yee grid for the electrodynamic fields
 
     world['grids'] = {
         'vertex': E_grid,

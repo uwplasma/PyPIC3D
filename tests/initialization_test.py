@@ -6,6 +6,7 @@ import toml
 import jax
 import jax.numpy as jnp
 from PyPIC3D.initialization import setup_write_dir, default_parameters, initialize_simulation, validate_field_solver
+from PyPIC3D.evolve import time_loop_electrostatic
 
 jax.config.update("jax_enable_x64", True)
 
@@ -80,6 +81,48 @@ class TestInitializationFunctions(unittest.TestCase):
 
             self.assertEqual(world["particle_boundary_conditions"], {"x": 1, "y": 2, "z": 0})
             self.assertEqual(particles[0].x_bc, "absorbing")
+
+    def test_initialize_simulation_uses_collocated_grid_for_electrostatic(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            zeros_path = os.path.join(tmpdir, "zeros.npy")
+            np.save(zeros_path, np.zeros(1))
+            config = {
+                "simulation_parameters": {
+                    "name": "electrostatic collocated grid test",
+                    "output_dir": tmpdir,
+                    "solver": "fdtd",
+                    "electrostatic": True,
+                    "Nx": 4,
+                    "Ny": 2,
+                    "Nz": 1,
+                    "x_wind": 1.0,
+                    "y_wind": 1.0,
+                    "z_wind": 1.0,
+                    "Nt": 1,
+                    "dt": 1.0e-10,
+                    "fast_backend": "default",
+                },
+                "plotting": {"plotting": False},
+                "particle1": {
+                    "name": "electrons",
+                    "N_particles": 1,
+                    "charge": -1.0,
+                    "mass": 1.0,
+                    "temperature": 1.0,
+                    "initial_x": zeros_path,
+                    "initial_y": zeros_path,
+                    "initial_z": zeros_path,
+                    "initial_vx": zeros_path,
+                    "initial_vy": zeros_path,
+                    "initial_vz": zeros_path,
+                },
+            }
+
+            loop, _, _, world, *_ = initialize_simulation(config)
+
+            self.assertIs(loop, time_loop_electrostatic)
+            for vertex_axis, center_axis in zip(world["grids"]["vertex"], world["grids"]["center"]):
+                self.assertTrue(jnp.allclose(vertex_axis, center_axis))
 
     def test_initialize_simulation_rejects_unknown_solver(self):
         with tempfile.TemporaryDirectory() as tmpdir:

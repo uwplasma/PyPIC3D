@@ -87,7 +87,7 @@ class TestTiledParticleRefresh(unittest.TestCase):
         )
         tiled_particles = to_tiled_particles([species], world, self._simulation_parameters())
 
-        moved = update_tiled_particle_positions(tiled_particles, world)
+        moved = update_tiled_particle_positions(tiled_particles, world["dt"])
 
         x, _, _, _, _ = self._active_rows(moved)
         self.assertTrue(jnp.allclose(x[:, 0], jnp.array([-1.25, 1.25])))
@@ -95,7 +95,7 @@ class TestTiledParticleRefresh(unittest.TestCase):
 
         fixed_species = self._species(world, x1=[-1.5], v1=[0.25], update_x=False)
         fixed = to_tiled_particles([fixed_species], world, self._simulation_parameters())
-        fixed_moved = update_tiled_particle_positions(fixed, world)
+        fixed_moved = update_tiled_particle_positions(fixed, world["dt"])
         self.assertTrue(jnp.allclose(fixed_moved.x, fixed.x))
 
     def test_refresh_moves_particles_to_neighbor_tiles_with_static_shape(self):

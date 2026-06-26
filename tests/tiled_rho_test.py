@@ -5,9 +5,10 @@ import jax.numpy as jnp
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
 from PyPIC3D.deposition.rho import compute_rho
-from PyPIC3D.deposition.rho_tiled import compute_rho_from_tiled_particles
+from PyPIC3D.deposition.rho_tiled import compute_rho_from_tiled_particles, compute_tiled_rho_from_tiled_particles
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
+from PyPIC3D.solvers.yee_tiled import assemble_tiled_scalar_field, tile_scalar_field
 from PyPIC3D.utils import build_yee_grid
 
 
@@ -104,6 +105,16 @@ class TestTiledRho(unittest.TestCase):
 
         return tiled_particles._replace(x=x, u=u, charge=charge, weight=weight)
 
+    def _zero_species_velocities(self, particles):
+        for species in particles:
+            species.v1 = jnp.zeros_like(species.v1)
+            species.v2 = jnp.zeros_like(species.v2)
+            species.v3 = jnp.zeros_like(species.v3)
+        return particles
+
+    def _zero_tiled_velocities(self, tiled_particles):
+        return tiled_particles._replace(u=jnp.zeros_like(tiled_particles.u))
+
     def _compare_tiled_to_standard(self, shape_factor, alpha):
         world = self._build_world(shape_factor)
         constants = {"alpha": alpha}
@@ -135,6 +146,90 @@ class TestTiledRho(unittest.TestCase):
 
     def test_tiled_rho_matches_compute_rho_after_digital_filter(self):
         self._compare_tiled_to_standard(shape_factor=2, alpha=0.55)
+
+    def test_compute_rho_uses_current_positions_not_half_step_back_positions(self):
+        world = self._build_world(shape_factor=2)
+        constants = {"alpha": 1.0}
+        particles = self._particles(world)
+        zero_velocity_particles = self._zero_species_velocities(self._particles(world))
+
+        rho_with_velocity = compute_rho(particles, self._empty_scalar(world), world, constants)
+        rho_with_zero_velocity = compute_rho(zero_velocity_particles, self._empty_scalar(world), world, constants)
+
+        self.assertTrue(
+            jnp.allclose(
+                rho_with_velocity[1:-1, 1:-1, 1:-1],
+                rho_with_zero_velocity[1:-1, 1:-1, 1:-1],
+                rtol=1.0e-12,
+                atol=1.0e-12,
+            )
+        )
+
+    def test_tiled_global_rho_uses_current_positions_not_half_step_back_positions(self):
+        world = self._build_world(shape_factor=2)
+        constants = {"alpha": 1.0}
+        particles = self._particles(world)
+        tiled_particles = self._tiled_with_noisy_inactive_slots(particles, world)
+        zero_velocity_tiled_particles = self._zero_tiled_velocities(tiled_particles)
+
+        rho_with_velocity = compute_rho_from_tiled_particles(
+            tiled_particles,
+            self._empty_scalar(world),
+            world,
+            constants,
+        )
+        rho_with_zero_velocity = compute_rho_from_tiled_particles(
+            zero_velocity_tiled_particles,
+            self._empty_scalar(world),
+            world,
+            constants,
+        )
+
+        self.assertTrue(
+            jnp.allclose(
+                rho_with_velocity[1:-1, 1:-1, 1:-1],
+                rho_with_zero_velocity[1:-1, 1:-1, 1:-1],
+                rtol=1.0e-12,
+                atol=1.0e-12,
+            )
+        )
+
+    def test_tile_major_rho_uses_current_positions_not_half_step_back_positions(self):
+        world = self._build_world(shape_factor=2)
+        world["tile_shape"] = (
+            self._simulation_parameters()["particle_tile_nx"],
+            self._simulation_parameters()["particle_tile_ny"],
+            self._simulation_parameters()["particle_tile_nz"],
+        )
+        constants = {"alpha": 1.0}
+        particles = self._particles(world)
+        tiled_particles = self._tiled_with_noisy_inactive_slots(particles, world)
+        zero_velocity_tiled_particles = self._zero_tiled_velocities(tiled_particles)
+        rho_tiles = tile_scalar_field(self._empty_scalar(world), world, world["tile_shape"])
+
+        rho_tiles_with_velocity = compute_tiled_rho_from_tiled_particles(
+            tiled_particles,
+            rho_tiles,
+            world,
+            constants,
+        )
+        rho_tiles_with_zero_velocity = compute_tiled_rho_from_tiled_particles(
+            zero_velocity_tiled_particles,
+            rho_tiles,
+            world,
+            constants,
+        )
+        rho_with_velocity = assemble_tiled_scalar_field(rho_tiles_with_velocity, world, world["tile_shape"])
+        rho_with_zero_velocity = assemble_tiled_scalar_field(rho_tiles_with_zero_velocity, world, world["tile_shape"])
+
+        self.assertTrue(
+            jnp.allclose(
+                rho_with_velocity[1:-1, 1:-1, 1:-1],
+                rho_with_zero_velocity[1:-1, 1:-1, 1:-1],
+                rtol=1.0e-12,
+                atol=1.0e-12,
+            )
+        )
 
 
 if __name__ == "__main__":

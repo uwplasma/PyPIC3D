@@ -54,11 +54,14 @@ def time_loop_electrostatic(particles, fields, world, constants, curl_func, J_fu
     ################ PARTICLE PUSH ########################################################################################
     for i in range(len(particles)):
 
-        particles[i] = particle_push(particles[i], push_E, push_B, vertex_grid, center_grid, world, constants, relativistic=relativistic, particle_pusher=particle_pusher)
+        particles[i] = particle_push(particles[i], push_E, push_B, center_grid, vertex_grid, world, constants, relativistic=relativistic, particle_pusher=particle_pusher)
         # use the selected particle pusher for particle velocities
 
         particles[i].update_position()
         # update the particle positions
+
+        particles[i].boundary_conditions(world)
+        # electrostatic rho is deposited from the current in-domain particle positions
 
     ############### SOLVE E FIELD ############################################################################################
     E, phi, rho = calculate_electrostatic_fields(world, particles, constants, rho, phi, solver, 'periodic')
@@ -66,10 +69,6 @@ def time_loop_electrostatic(particles, fields, world, constants, curl_func, J_fu
 
     fields = (E, B, J, rho, phi, external_fields)
     # pack the fields into a tuple
-
-    for i in range(len(particles)):
-        particles[i].boundary_conditions(world)
-        # apply boundary conditions to the particles
 
     return particles, fields
 
