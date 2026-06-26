@@ -23,6 +23,9 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIO
 
 jax.config.update("jax_enable_x64", True)
 
+ROUND_OFF_RTOL = 1.0e-11
+ROUND_OFF_ATOL = 1.0e-11
+
 
 def unused_curl(Ex, Ey, Ez):
     return None
@@ -88,6 +91,210 @@ class TestTiledYeeIntegration(unittest.TestCase):
         u = tiled_particles.u.reshape(-1, 3)[active]
         order = jnp.lexsort((x[:, 2], x[:, 1], x[:, 0]))
         return x[order], u[order]
+
+    def _long_two_stream_state(self):
+        world = {
+            "Nx": 16,
+            "Ny": 1,
+            "Nz": 1,
+            "dx": 0.25,
+            "dy": 1.0,
+            "dz": 1.0,
+            "dt": 0.002,
+            "x_wind": 4.0,
+            "y_wind": 1.0,
+            "z_wind": 1.0,
+            "shape_factor": 1,
+            "boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},
+            "particle_boundary_conditions": {"x": 0, "y": 0, "z": 0},
+        }
+        vertex_grid, center_grid = build_yee_grid(world)
+        world["grids"] = {"vertex": vertex_grid, "center": center_grid}
+
+        constants = {"C": 10.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
+        tile_shape = (4, 1, 1)
+        Nt = 1500
+
+        x0 = jnp.linspace(
+            -0.5 * world["x_wind"],
+            0.5 * world["x_wind"],
+            world["Nx"],
+            endpoint=False,
+        ) + 0.5 * world["dx"]
+        x0 = x0 + 0.02 * world["dx"] * jnp.sin(2.0 * jnp.pi * (x0 / world["x_wind"] + 0.5))
+        zeros = jnp.zeros_like(x0)
+        beam_speed = 0.08
+
+        species_kwargs = {
+            "N_particles": world["Nx"],
+            "mass": 1.0,
+            "weight": 1.0,
+            "T": 0.0,
+            "x1": x0,
+            "x2": zeros,
+            "x3": zeros,
+            "v2": zeros,
+            "v3": zeros,
+            "xwind": world["x_wind"],
+            "ywind": world["y_wind"],
+            "zwind": world["z_wind"],
+            "dx": world["dx"],
+            "dy": world["dy"],
+            "dz": world["dz"],
+            "dt": world["dt"],
+        }
+        particles = [
+            particle_species(name="electron_left", charge=-1.0, v1=-beam_speed * jnp.ones_like(x0), **species_kwargs),
+            particle_species(name="electron_right", charge=-1.0, v1=beam_speed * jnp.ones_like(x0), **species_kwargs),
+            particle_species(name="ion_background", charge=2.0, v1=zeros, **species_kwargs),
+        ]
+        reference_particles = [
+            particle_species(name="electron_left", charge=-1.0, v1=-beam_speed * jnp.ones_like(x0), **species_kwargs),
+            particle_species(name="electron_right", charge=-1.0, v1=beam_speed * jnp.ones_like(x0), **species_kwargs),
+            particle_species(name="ion_background", charge=2.0, v1=zeros, **species_kwargs),
+        ]
+
+        E, B, J, rho, phi, external_fields, pml_state = self._empty_fields(world)
+        reference_fields = (E, B, J, rho, phi, external_fields, pml_state)
+
+        simulation_parameters = {
+            "particle_tile_nx": tile_shape[0],
+            "particle_tile_ny": tile_shape[1],
+            "particle_tile_nz": tile_shape[2],
+        }
+        tiled_particles = to_tiled_particles(particles, world, simulation_parameters)
+        tiled_particles = self._pad_tiled_particle_capacity(tiled_particles, min_slots=12)
+        tiled_fields = (
+            tile_vector_field(E, world, tile_shape),
+            tile_vector_field(B, world, tile_shape),
+            tile_vector_field(J, world, tile_shape),
+            rho,
+            phi,
+            (
+                tile_vector_field(external_fields[0], world, tile_shape),
+                tile_vector_field(external_fields[1], world, tile_shape),
+            ),
+            None,
+        )
+
+        self._assert_tiled_state_matches_standard(
+            reference_particles,
+            reference_fields,
+            tiled_particles,
+            tiled_fields,
+            world,
+            tile_shape,
+            step=0,
+        )
+
+        return reference_particles, reference_fields, tiled_particles, tiled_fields, world, constants, tile_shape, Nt
+
+    def _pad_tiled_particle_capacity(self, tiled_particles, min_slots):
+        current_slots = tiled_particles.active.shape[-1]
+        if current_slots >= min_slots:
+            return tiled_particles
+
+        pad_width = [(0, 0)] * tiled_particles.x.ndim
+        pad_width[-2] = (0, min_slots - current_slots)
+        x = jnp.pad(tiled_particles.x, pad_width)
+        u = jnp.pad(tiled_particles.u, pad_width)
+
+        scalar_pad_width = [(0, 0)] * tiled_particles.active.ndim
+        scalar_pad_width[-1] = (0, min_slots - current_slots)
+        charge = jnp.pad(tiled_particles.charge, scalar_pad_width)
+        mass = jnp.pad(tiled_particles.mass, scalar_pad_width)
+        weight = jnp.pad(tiled_particles.weight, scalar_pad_width)
+        active = jnp.pad(tiled_particles.active, scalar_pad_width)
+        update_x1 = jnp.pad(tiled_particles.update_x1, scalar_pad_width)
+        update_x2 = jnp.pad(tiled_particles.update_x2, scalar_pad_width)
+        update_x3 = jnp.pad(tiled_particles.update_x3, scalar_pad_width)
+        update_u1 = jnp.pad(tiled_particles.update_u1, scalar_pad_width)
+        update_u2 = jnp.pad(tiled_particles.update_u2, scalar_pad_width)
+        update_u3 = jnp.pad(tiled_particles.update_u3, scalar_pad_width)
+
+        return TiledParticles(
+            x=x,
+            u=u,
+            charge=charge,
+            mass=mass,
+            weight=weight,
+            active=active,
+            update_x1=update_x1,
+            update_x2=update_x2,
+            update_x3=update_x3,
+            update_u1=update_u1,
+            update_u2=update_u2,
+            update_u3=update_u3,
+        )
+
+    def _standard_species_rows(self, particles, species_index):
+        species = particles[species_index]
+        active = species.get_active_mask()
+        x = jnp.stack(species.get_forward_position(), axis=1)[active]
+        u = jnp.stack(species.get_velocity(), axis=1)[active]
+        order = jnp.lexsort((u[:, 0], x[:, 2], x[:, 1], x[:, 0]))
+        return x[order], u[order]
+
+    def _tiled_species_rows(self, tiled_particles, species_index):
+        active = tiled_particles.active[:, :, :, species_index, :]
+        x = tiled_particles.x[:, :, :, species_index, :, :].reshape(-1, 3)[active.reshape(-1)]
+        u = tiled_particles.u[:, :, :, species_index, :, :].reshape(-1, 3)[active.reshape(-1)]
+        order = jnp.lexsort((u[:, 0], x[:, 2], x[:, 1], x[:, 0]))
+        return x[order], u[order]
+
+    def _assert_vector_fields_close(self, reference_field, tiled_field, step, name):
+        for component_name, reference_component, tiled_component in zip(("x", "y", "z"), reference_field, tiled_field):
+            diff = jnp.max(jnp.abs(reference_component - tiled_component))
+            self.assertTrue(
+                jnp.allclose(tiled_component, reference_component, rtol=ROUND_OFF_RTOL, atol=ROUND_OFF_ATOL),
+                f"step {step}: {name}{component_name} max abs diff {diff}",
+            )
+
+    def _assert_tiled_state_matches_standard(
+        self,
+        reference_particles,
+        reference_fields,
+        tiled_particles,
+        tiled_fields,
+        world,
+        tile_shape,
+        step,
+    ):
+        if len(tiled_fields) > 7:
+            self.assertFalse(bool(tiled_fields[-1]), f"step {step}: tiled particle capacity overflowed")
+
+        for species_index in range(len(reference_particles)):
+            reference_x, reference_u = self._standard_species_rows(reference_particles, species_index)
+            tiled_x, tiled_u = self._tiled_species_rows(tiled_particles, species_index)
+            self.assertTrue(
+                jnp.allclose(tiled_x, reference_x, rtol=ROUND_OFF_RTOL, atol=ROUND_OFF_ATOL),
+                f"step {step}: species {species_index} position mismatch",
+            )
+            self.assertTrue(
+                jnp.allclose(tiled_u, reference_u, rtol=ROUND_OFF_RTOL, atol=ROUND_OFF_ATOL),
+                f"step {step}: species {species_index} velocity mismatch",
+            )
+
+        reference_E, reference_B, reference_J, *_ = reference_fields
+        E_tiles, B_tiles, J_tiles, *_ = tiled_fields
+        self._assert_vector_fields_close(
+            reference_E,
+            assemble_tiled_vector_field(E_tiles, world, tile_shape),
+            step,
+            "E",
+        )
+        self._assert_vector_fields_close(
+            reference_B,
+            assemble_tiled_vector_field(B_tiles, world, tile_shape),
+            step,
+            "B",
+        )
+        self._assert_vector_fields_close(
+            reference_J,
+            assemble_tiled_vector_field(J_tiles, world, tile_shape),
+            step,
+            "J",
+        )
 
     def test_validate_field_solver_accepts_tiled_yee(self):
         validate_field_solver("tiled_yee")
@@ -643,6 +850,62 @@ class TestTiledYeeIntegration(unittest.TestCase):
 
         for reference, tiled in zip(reference_J, J_from_tiles):
             self.assertTrue(jnp.allclose(tiled, reference, rtol=1.0e-12, atol=1.0e-12))
+
+    @unittest.skipUnless(
+        os.environ.get("RUN_SLOW_TILED_YEE") == "1",
+        "Set RUN_SLOW_TILED_YEE=1 to run the 1500-step tiled Yee two-stream comparison.",
+    )
+    def test_long_two_stream_tiled_yee_matches_standard_every_step(self):
+        (
+            reference_particles,
+            reference_fields,
+            tiled_particles,
+            tiled_fields,
+            world,
+            constants,
+            tile_shape,
+            Nt,
+        ) = self._long_two_stream_state()
+
+        standard_J = functools.partial(J_from_rhov, filter="none")
+        tiled_loop = jax.jit(
+            time_loop_electrodynamic_tiled,
+            static_argnames=("curl_func", "J_func", "solver", "relativistic", "particle_pusher"),
+        )
+
+        for t in range(Nt):
+            reference_particles, reference_fields = time_loop_electrodynamic(
+                reference_particles,
+                reference_fields,
+                world,
+                constants,
+                unused_curl,
+                J_func=standard_J,
+                solver="fdtd",
+                relativistic=False,
+                particle_pusher="boris",
+            )
+            tiled_particles, tiled_fields = tiled_loop(
+                tiled_particles,
+                tiled_fields,
+                world,
+                constants,
+                unused_curl,
+                J_func=None,
+                solver="tiled_yee",
+                relativistic=False,
+                particle_pusher="boris",
+            )
+
+            self._assert_tiled_state_matches_standard(
+                reference_particles,
+                reference_fields,
+                tiled_particles,
+                tiled_fields,
+                world,
+                tile_shape,
+                t + 1,
+            )
 
 
 if __name__ == "__main__":
