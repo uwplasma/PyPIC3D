@@ -50,12 +50,11 @@ def _particle_tile_indices(x, y, z, world, tile_shape, tile_counts):
     )
 
 
-def update_tiled_particle_positions(tiled_particles, world):
+def update_tiled_particle_positions(tiled_particles, dt):
     """
     Advance tile-major particle positions without changing tile ownership.
     """
 
-    dt = world["dt"]
     active = tiled_particles.active.astype(tiled_particles.x.dtype)
 
     dx = active * tiled_particles.u[..., 0] * dt

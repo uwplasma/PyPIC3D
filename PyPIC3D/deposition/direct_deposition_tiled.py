@@ -37,14 +37,36 @@ def digital_filter_tiled_current_density(J_tiles, alpha, world):
     return J_tiles
 
 
-@partial(jit, static_argnames=("filter",))
-def direct_J_from_tiled_particles(tiled_particles, J_tiles, constants, world, grid=None, filter="bilinear"):
+def _tile_axis_grid(global_axis_grid, tile_index, tile_n, local_n, d):
     """
-    Compute direct current deposition from tile-major particle storage.
+    Build the ghost-celled coordinate line for one compact tile.
 
-    This follows the same time centering and Yee-component stencil as the
-    global ``J_from_rhov`` path, but current stays in compact tile-local
-    ghost-celled arrays throughout the deposition.
+    The first local grid point is the global ghost-cell origin shifted by the
+    tile's active-cell offset.  With this convention, local active indices are
+    1..tile_n and local ghost indices are 0 and tile_n + 1.
+    """
+
+    offsets = jnp.arange(local_n, dtype=global_axis_grid.dtype)
+    return global_axis_grid[0] + (offsets + tile_index * tile_n) * d
+
+
+@partial(jit, static_argnames=("filter",))
+def direct_J_from_tiled_particles(
+    tiled_particles,
+    J_tiles,
+    constants,
+    world,
+    grid=None,
+    filter="bilinear",
+):
+    """
+    Compute direct current deposition using tile-local stencils only.
+
+    ``tiled_particles.x`` is assumed to already be centered at the current
+    deposition time and refreshed into the tiles that own those centered
+    positions.  In other words, callers that store particles at the forward
+    position should pass a temporary, refreshed deposition view with
+    ``x_dep = x_forward - 0.5 * u * dt``.
     """
 
     if grid is None:
@@ -53,24 +75,24 @@ def direct_J_from_tiled_particles(tiled_particles, J_tiles, constants, world, gr
     dx = world["dx"]
     dy = world["dy"]
     dz = world["dz"]
-    dt = world["dt"]
 
     Jx_tiles, Jy_tiles, Jz_tiles = J_tiles
     ntx, nty, ntz = Jx_tiles.shape[:3]
     tile_nx = Jx_tiles.shape[3] - 2
     tile_ny = Jx_tiles.shape[4] - 2
     tile_nz = Jx_tiles.shape[5] - 2
-    Nx = ntx * tile_nx + 2
-    Ny = nty * tile_ny + 2
-    Nz = ntz * tile_nz + 2
-    bc_x = world["boundary_conditions"]["x"]
-    bc_y = world["boundary_conditions"]["y"]
-    bc_z = world["boundary_conditions"]["z"]
+    local_Nx = tile_nx + 2
+    local_Ny = tile_ny + 2
+    local_Nz = tile_nz + 2
     shape_factor = world["shape_factor"]
 
     Jx_template = jnp.zeros_like(Jx_tiles[0, 0, 0])
     Jy_template = jnp.zeros_like(Jy_tiles[0, 0, 0])
     Jz_template = jnp.zeros_like(Jz_tiles[0, 0, 0])
+
+    # Tile boundaries are not physical boundaries.  Deposits that cross a tile
+    # edge should land in tile ghost cells and be exchanged by the tiled fold.
+    local_bc = 2
 
     def deposit_one_tile(x_tile, u_tile, charge_tile, weight_tile, active_tile, tx, ty, tz):
         x = x_tile[..., 0].reshape(-1)
@@ -82,43 +104,41 @@ def direct_J_from_tiled_particles(tiled_particles, J_tiles, constants, world, gr
         active = active_tile.reshape(-1).astype(x.dtype)
         dq = (charge_tile * weight_tile).reshape(-1) / (dx * dy * dz)
 
-        # Match J_from_rhov: the current is deposited from the half-step-back
-        # particle position, while the velocity is the time-centered velocity.
-        x = x - vx * dt / 2
-        y = y - vy * dt / 2
-        z = z - vz * dt / 2
+        x_grid = _tile_axis_grid(grid[0], tx, tile_nx, local_Nx, dx)
+        y_grid = _tile_axis_grid(grid[1], ty, tile_ny, local_Ny, dy)
+        z_grid = _tile_axis_grid(grid[2], tz, tile_nz, local_Nz, dz)
 
         x, x0, deltax_node, xpts = prepare_particle_axis_stencil(
             x,
-            grid[0],
-            Nx,
+            x_grid,
+            local_Nx,
             shape_factor,
-            bc_x,
-            wind=world["x_wind"],
+            local_bc,
+            wind=tile_nx * dx,
             ghost_cells=True,
         )
         y, y0, deltay_node, ypts = prepare_particle_axis_stencil(
             y,
-            grid[1],
-            Ny,
+            y_grid,
+            local_Ny,
             shape_factor,
-            bc_y,
-            wind=world["y_wind"],
+            local_bc,
+            wind=tile_ny * dy,
             ghost_cells=True,
         )
         z, z0, deltaz_node, zpts = prepare_particle_axis_stencil(
             z,
-            grid[2],
-            Nz,
+            z_grid,
+            local_Nz,
             shape_factor,
-            bc_z,
-            wind=world["z_wind"],
+            local_bc,
+            wind=tile_nz * dz,
             ghost_cells=True,
         )
 
-        deltax_face = (x - grid[0][0]) - (x0 + 0.5) * dx
-        deltay_face = (y - grid[1][0]) - (y0 + 0.5) * dy
-        deltaz_face = (z - grid[2][0]) - (z0 + 0.5) * dz
+        deltax_face = (x - x_grid[0]) - (x0 + 0.5) * dx
+        deltay_face = (y - y_grid[0]) - (y0 + 0.5) * dy
+        deltaz_face = (z - z_grid[0]) - (z0 + 0.5) * dz
 
         x_weights_node, y_weights_node, z_weights_node = jax.lax.cond(
             shape_factor == 1,
@@ -143,17 +163,12 @@ def direct_J_from_tiled_particles(tiled_particles, J_tiles, constants, world, gr
         y_weights_face = jnp.asarray(y_weights_face)
         z_weights_face = jnp.asarray(z_weights_face)
 
-        xpts, x_weights_node = collapse_axis_stencil(xpts, x_weights_node, Nx, ghost_cells=True)
-        _, x_weights_face = collapse_axis_stencil(xpts, x_weights_face, Nx, ghost_cells=True)
-        ypts, y_weights_node = collapse_axis_stencil(ypts, y_weights_node, Ny, ghost_cells=True)
-        _, y_weights_face = collapse_axis_stencil(ypts, y_weights_face, Ny, ghost_cells=True)
-        zpts, z_weights_node = collapse_axis_stencil(zpts, z_weights_node, Nz, ghost_cells=True)
-        _, z_weights_face = collapse_axis_stencil(zpts, z_weights_face, Nz, ghost_cells=True)
-
-        xpts = xpts - tx * tile_nx
-        ypts = ypts - ty * tile_ny
-        zpts = zpts - tz * tile_nz
-        # Convert global ghost-celled indices to tile-local ghost-celled indices.
+        xpts, x_weights_node = collapse_axis_stencil(xpts, x_weights_node, local_Nx, ghost_cells=True)
+        _, x_weights_face = collapse_axis_stencil(xpts, x_weights_face, local_Nx, ghost_cells=True)
+        ypts, y_weights_node = collapse_axis_stencil(ypts, y_weights_node, local_Ny, ghost_cells=True)
+        _, y_weights_face = collapse_axis_stencil(ypts, y_weights_face, local_Ny, ghost_cells=True)
+        zpts, z_weights_node = collapse_axis_stencil(zpts, z_weights_node, local_Nz, ghost_cells=True)
+        _, z_weights_face = collapse_axis_stencil(zpts, z_weights_face, local_Nz, ghost_cells=True)
 
         tile_Jx = Jx_template
         tile_Jy = Jy_template

@@ -70,9 +70,8 @@ def time_loop_electrodynamic_tiled(
     )
     # use the selected tiled pusher for particle velocities
 
-    particles = update_tiled_particle_positions(particles, world)
-    # update particle forward positions before current deposition
-
+    particles = update_tiled_particle_positions(particles, world["dt"]/2)
+    # update particle forward positions before current deposition half a time step
     particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)
     overflow = overflow_previous | overflow
     # wrap periodic particles and move them into their owning tiles.  Overflow
@@ -90,6 +89,17 @@ def time_loop_electrodynamic_tiled(
     else:
         J_tiles = J_func(particles, J_tiles, constants, world)
     # deposit current directly into tile-local Yee current arrays
+
+
+    particles = update_tiled_particle_positions(particles, world["dt"]/2)
+    # update particle forward positions before current deposition half a time step
+    particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)
+    overflow = overflow_previous | overflow
+    # wrap periodic particles and move them into their owning tiles.  Overflow
+    # means the fixed tile capacity was exceeded and the Python driver must
+    # reject the step rather than silently dropping particles.
+
+
 
     if pml_state is None:
         E_tiles = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape)
