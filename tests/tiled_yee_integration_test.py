@@ -210,6 +210,65 @@ class TestTiledYeeIntegration(unittest.TestCase):
             self.assertEqual(fields[0][0].ndim, 6)
             self.assertEqual(simulation_parameters["filter_j"], "digital")
 
+    def test_initialize_simulation_accepts_tiled_yee_bilinear_current_filter(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            x_path = os.path.join(tmpdir, "x.npy")
+            zeros_path = os.path.join(tmpdir, "zeros.npy")
+            vx_path = os.path.join(tmpdir, "vx.npy")
+            np.save(x_path, np.array([-1.5, -0.5, 0.5, 1.5]))
+            np.save(zeros_path, np.zeros(4))
+            np.save(vx_path, np.array([0.10, -0.05, 0.07, -0.02]))
+
+            config = {
+                "simulation_parameters": {
+                    "name": "tiled yee bilinear filter init smoke",
+                    "output_dir": tmpdir,
+                    "solver": "tiled_yee",
+                    "Nx": 8,
+                    "Ny": 1,
+                    "Nz": 1,
+                    "x_wind": 4.0,
+                    "y_wind": 1.0,
+                    "z_wind": 1.0,
+                    "dt": 0.01,
+                    "Nt": 1,
+                    "shape_factor": 1,
+                    "particle_tile_nx": 2,
+                    "particle_tile_ny": 1,
+                    "particle_tile_nz": 1,
+                    "current_calculation": "j_from_rhov",
+                    "filter_j": "bilinear",
+                    "fast_backend": "default",
+                    "particle_pusher": "boris",
+                    "relativistic": False,
+                },
+                "plotting": {"plotting_interval": 1},
+                "particle1": {
+                    "name": "electrons",
+                    "N_particles": 4,
+                    "charge": -1.0,
+                    "mass": 2.0,
+                    "weight": 0.5,
+                    "temperature": 1.0,
+                    "initial_x": x_path,
+                    "initial_y": zeros_path,
+                    "initial_z": zeros_path,
+                    "initial_vx": vx_path,
+                    "initial_vy": zeros_path,
+                    "initial_vz": zeros_path,
+                },
+            }
+            config_path = os.path.join(tmpdir, "tiled_yee_bilinear.toml")
+            with open(config_path, "w") as f:
+                toml.dump(config, f)
+
+            loop, particles, fields, world, simulation_parameters, *_rest = initialize_simulation(toml.load(config_path))
+
+            self.assertIs(loop.func if hasattr(loop, "func") else loop, time_loop_electrodynamic_tiled)
+            self.assertIsInstance(particles, TiledParticles)
+            self.assertEqual(fields[0][0].ndim, 6)
+            self.assertEqual(simulation_parameters["filter_j"], "bilinear")
+
     def test_initialize_simulation_accepts_tiled_yee_conducting_field_boundaries(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             x_path = os.path.join(tmpdir, "x.npy")
@@ -456,6 +515,64 @@ class TestTiledYeeIntegration(unittest.TestCase):
             constants,
             unused_curl,
             J_func=functools.partial(direct_J_from_tiled_particles, filter="digital"),
+            solver="tiled_yee",
+            relativistic=False,
+            particle_pusher="boris",
+        )
+
+        _, _, reference_J, *_ = reference_fields
+        _, _, J_tiles, *_ = tiled_fields
+        J_from_tiles = assemble_tiled_vector_field(J_tiles, world, tile_shape)
+
+        for reference, tiled in zip(reference_J, J_from_tiles):
+            self.assertTrue(jnp.allclose(tiled, reference, rtol=1.0e-12, atol=1.0e-12))
+
+    def test_tiled_yee_step_uses_bilinear_filtered_current(self):
+        world = self._build_world()
+        constants = {"C": 10.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
+        tile_shape = (2, 1, 1)
+        simulation_parameters = {
+            "particle_tile_nx": tile_shape[0],
+            "particle_tile_ny": tile_shape[1],
+            "particle_tile_nz": tile_shape[2],
+        }
+
+        species = self._species(world)
+        reference_species = self._species(world)
+        E, B, J, rho, phi, external_fields, pml_state = self._empty_fields(world)
+
+        _, reference_fields = time_loop_electrodynamic(
+            [reference_species],
+            (E, B, J, rho, phi, external_fields, pml_state),
+            world,
+            constants,
+            unused_curl,
+            J_func=lambda particles, J, constants, world: J_from_rhov(particles, J, constants, world, filter="bilinear"),
+            solver="fdtd",
+            relativistic=False,
+            particle_pusher="boris",
+        )
+
+        tiled_particles = to_tiled_particles([species], world, simulation_parameters)
+        tiled_fields = (
+            tile_vector_field(E, world, tile_shape),
+            tile_vector_field(B, world, tile_shape),
+            tile_vector_field(J, world, tile_shape),
+            rho,
+            phi,
+            (
+                tile_vector_field(external_fields[0], world, tile_shape),
+                tile_vector_field(external_fields[1], world, tile_shape),
+            ),
+            None,
+        )
+        _, tiled_fields = time_loop_electrodynamic_tiled(
+            tiled_particles,
+            tiled_fields,
+            world,
+            constants,
+            unused_curl,
+            J_func=functools.partial(direct_J_from_tiled_particles, filter="bilinear"),
             solver="tiled_yee",
             relativistic=False,
             particle_pusher="boris",

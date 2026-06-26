@@ -132,8 +132,8 @@ def _validate_tiled_yee_configuration(simulation_parameters, electrostatic, pml_
         raise ValueError("tiled_yee currently supports only current_calculation='j_from_rhov'")
     if simulation_parameters["particle_pusher"] != "boris":
         raise ValueError("tiled_yee currently supports only particle_pusher='boris'")
-    if simulation_parameters["filter_j"] not in ("none", "digital"):
-        raise ValueError("tiled_yee currently supports only filter_j='none' or filter_j='digital'")
+    if simulation_parameters["filter_j"] not in ("none", "digital", "bilinear"):
+        raise ValueError("tiled_yee currently supports only filter_j='none', filter_j='digital', or filter_j='bilinear'")
     tile_shape = _tile_shape_from_parameters(simulation_parameters)
     grid_shape = (
         int(simulation_parameters["Nx"]),

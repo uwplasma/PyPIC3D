@@ -1,0 +1,127 @@
+import inspect
+import unittest
+
+import jax
+import jax.numpy as jnp
+
+from PyPIC3D import __main__ as pypic_main
+from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
+from PyPIC3D.diagnostics.fluid_quantities import compute_mass_density
+from PyPIC3D.particles.species_class import particle_species
+from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
+from PyPIC3D.utils import build_yee_grid
+
+
+jax.config.update("jax_enable_x64", True)
+
+
+class TestTiledFluidQuantities(unittest.TestCase):
+    def _build_world(self, shape_factor=2):
+        x_wind, y_wind, z_wind = 4.0, 3.0, 2.0
+        world = {
+            "dx": x_wind / 8,
+            "dy": y_wind / 6,
+            "dz": z_wind / 4,
+            "Nx": 8,
+            "Ny": 6,
+            "Nz": 4,
+            "x_wind": x_wind,
+            "y_wind": y_wind,
+            "z_wind": z_wind,
+            "dt": 0.08,
+            "shape_factor": shape_factor,
+            "boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},
+        }
+        vertex_grid, center_grid = build_yee_grid(world)
+        world["grids"] = {"vertex": vertex_grid, "center": center_grid}
+        return world
+
+    def _empty_scalar(self, world):
+        return jnp.zeros((world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2))
+
+    def _simulation_parameters(self):
+        return {
+            "particle_tile_nx": 2,
+            "particle_tile_ny": 2,
+            "particle_tile_nz": 2,
+        }
+
+    def _particles(self, world):
+        electrons = particle_species(
+            name="electrons",
+            N_particles=5,
+            charge=-1.0,
+            mass=2.0,
+            weight=0.5,
+            T=1.0,
+            x1=jnp.array([-1.75, -0.65, 0.15, 1.75, world["x_wind"] / 2 - 0.03]),
+            x2=jnp.array([-1.15, -0.45, 0.35, 1.05, 0.0]),
+            x3=jnp.array([-0.75, -0.20, 0.25, 0.80, 0.0]),
+            v1=jnp.array([0.2, -0.1, 0.05, 0.3, -1.4]),
+            v2=jnp.array([0.0, 0.15, -0.2, 0.1, 0.0]),
+            v3=jnp.array([-0.05, 0.25, 0.1, -0.15, 0.0]),
+            xwind=world["x_wind"],
+            ywind=world["y_wind"],
+            zwind=world["z_wind"],
+            dx=world["dx"],
+            dy=world["dy"],
+            dz=world["dz"],
+            dt=world["dt"],
+        )
+        ions = particle_species(
+            name="ions",
+            N_particles=3,
+            charge=2.0,
+            mass=5.0,
+            weight=0.25,
+            T=1.0,
+            x1=jnp.array([-1.25, -0.20, 0.75]),
+            x2=jnp.array([1.15, -0.75, 0.45]),
+            x3=jnp.array([0.35, -0.45, 0.85]),
+            v1=jnp.array([-0.1, 0.2, -0.25]),
+            v2=jnp.array([0.3, -0.05, 0.15]),
+            v3=jnp.array([0.1, 0.05, -0.2]),
+            xwind=world["x_wind"],
+            ywind=world["y_wind"],
+            zwind=world["z_wind"],
+            dx=world["dx"],
+            dy=world["dy"],
+            dz=world["dz"],
+            dt=world["dt"],
+            active_mask=jnp.array([True, False, True]),
+        )
+        return [electrons, ions]
+
+    def test_tiled_mass_density_matches_compute_mass_density_on_interior(self):
+        world = self._build_world(shape_factor=2)
+        particles = self._particles(world)
+        tiled_particles = to_tiled_particles(particles, world, self._simulation_parameters())
+
+        inactive = ~tiled_particles.active
+        x = tiled_particles.x.at[inactive, 0].set(0.10)
+        x = x.at[inactive, 1].set(0.20)
+        x = x.at[inactive, 2].set(-0.30)
+        mass = tiled_particles.mass.at[inactive].set(1000.0)
+        weight = tiled_particles.weight.at[inactive].set(1000.0)
+        tiled_particles = tiled_particles._replace(x=x, mass=mass, weight=weight)
+
+        mass_reference = compute_mass_density(particles, self._empty_scalar(world), world)
+        mass_tiled = compute_mass_density(tiled_particles, self._empty_scalar(world), world)
+
+        self.assertTrue(
+            jnp.allclose(
+                mass_tiled[1:-1, 1:-1, 1:-1],
+                mass_reference[1:-1, 1:-1, 1:-1],
+                rtol=1.0e-12,
+                atol=1.0e-12,
+            )
+        )
+
+    def test_tiled_scalar_vtk_path_no_longer_rejects_tiled_yee(self):
+        run_source = inspect.getsource(pypic_main.run_PyPIC3D)
+
+        self.assertNotIn("plot_vtk_scalars is not supported for tiled_yee", run_source)
+
+
+if __name__ == "__main__":
+    unittest.main()

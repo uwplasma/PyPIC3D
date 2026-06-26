@@ -2,6 +2,8 @@
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.boundary_conditions.grid_and_stencil import collapse_axis_stencil, prepare_particle_axis_stencil
 from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, update_ghost_cells
+from PyPIC3D.deposition.rho_tiled import compute_mass_density_from_tiled_particles
+from PyPIC3D.particles.tiled_particles import TiledParticles
 
 import jax
 import jax.numpy as jnp
@@ -26,6 +28,9 @@ def compute_mass_density(particles, rho, world):
     Returns:
     ndarray: The updated charge density array.
     """
+    if isinstance(particles, TiledParticles):
+        return compute_mass_density_from_tiled_particles(particles, rho, world)
+
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
@@ -47,7 +52,7 @@ def compute_mass_density(particles, rho, world):
         dm = mass / dx / dy / dz
         # calculate the mass per unit volume
         x, y, z = species.get_position()
-        # get the position of the particles in the species
+        # get the particle position used by the existing scalar diagnostic
         active = species.get_active_mask().astype(x.dtype)
 
         _, _, deltax, xpts = prepare_particle_axis_stencil(

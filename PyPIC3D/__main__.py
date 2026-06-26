@@ -41,6 +41,7 @@ from PyPIC3D.diagnostics.fluid_quantities import (
 )
 
 from PyPIC3D.deposition.rho import compute_rho
+from PyPIC3D.deposition.rho_tiled import compute_rho_from_tiled_particles
 
 from PyPIC3D.solvers.yee_tiled import assemble_tiled_vector_field
 
@@ -148,8 +149,9 @@ def run_PyPIC3D(config_file):
 
             if plotting_parameters['plot_vtk_scalars']:
                 if tiled_run:
-                    raise ValueError("plot_vtk_scalars is not supported for tiled_yee particle storage")
-                rho = compute_rho(particles, rho, world, constants)
+                    rho = compute_rho_from_tiled_particles(particles, rho, world, constants)
+                else:
+                    rho = compute_rho(particles, rho, world, constants)
                 # calculate the charge density based on the particle positions
                 mass_density = compute_mass_density(particles, rho, world)
                 # calculate the mass density based on the particle positions

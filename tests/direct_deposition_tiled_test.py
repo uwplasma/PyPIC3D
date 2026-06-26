@@ -355,6 +355,55 @@ class TestDirectDepositionTiled(unittest.TestCase):
         for reference_component, tiled_component in zip(J_reference, J_from_tiles):
             self.assertTrue(jnp.allclose(tiled_component, reference_component, rtol=1.0e-12, atol=1.0e-12))
 
+    def test_tiled_direct_deposition_bilinear_filter_matches_J_from_rhov(self):
+        world = self._build_world(Nx=8, Ny=6, Nz=4)
+        simulation_parameters = {
+            "particle_tile_nx": 2,
+            "particle_tile_ny": 3,
+            "particle_tile_nz": 2,
+        }
+        constants = {"C": 3.0e8, "alpha": 1.0}
+        species = particle_species(
+            name="bilinear filtered current",
+            N_particles=6,
+            charge=-1.0,
+            mass=1.0,
+            weight=0.5,
+            T=1.0,
+            x1=jnp.array([-1.55, -0.52, -0.03, 0.49, 0.55, 1.45]),
+            x2=jnp.array([-1.10, -0.55, -0.03, 0.02, 0.52, 1.05]),
+            x3=jnp.array([-0.70, -0.04, 0.03, 0.31, 0.49, 0.72]),
+            v1=jnp.array([0.18, -0.11, 0.07, -0.04, 0.21, -0.16]),
+            v2=jnp.array([0.03, 0.17, -0.22, 0.19, -0.08, 0.12]),
+            v3=jnp.array([-0.06, 0.24, 0.11, -0.14, 0.05, -0.19]),
+            xwind=world["x_wind"],
+            ywind=world["y_wind"],
+            zwind=world["z_wind"],
+            dx=world["dx"],
+            dy=world["dy"],
+            dz=world["dz"],
+            dt=world["dt"],
+        )
+        tiled_particles = to_tiled_particles([species], world, simulation_parameters)
+        tile_shape = (
+            simulation_parameters["particle_tile_nx"],
+            simulation_parameters["particle_tile_ny"],
+            simulation_parameters["particle_tile_nz"],
+        )
+
+        J_reference = J_from_rhov([species], self._empty_J(world), constants, world, filter="bilinear")
+        J_tiles = direct_J_from_tiled_particles(
+            tiled_particles,
+            self._empty_J_tiles(world, simulation_parameters),
+            constants,
+            world,
+            filter="bilinear",
+        )
+        J_from_tiles = assemble_tiled_vector_field(J_tiles, world, tile_shape)
+
+        for reference_component, tiled_component in zip(J_reference, J_from_tiles):
+            self.assertTrue(jnp.allclose(tiled_component, reference_component, rtol=1.0e-12, atol=1.0e-12))
+
     def test_tiled_direct_deposition_respects_active_mask(self):
         world = self._build_world()
         simulation_parameters = {
