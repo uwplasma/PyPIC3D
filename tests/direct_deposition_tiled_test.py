@@ -3,12 +3,20 @@ import unittest
 import jax
 import jax.numpy as jnp
 
+from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
-from PyPIC3D.deposition.direct_deposition_tiled import direct_J_from_tiled_particles
+from PyPIC3D.deposition.direct_deposition_tiled import (
+    digital_filter_tiled_current_density,
+    direct_J_from_tiled_particles,
+)
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
-from PyPIC3D.solvers.yee_tiled import assemble_tiled_vector_field, fold_tiled_ghost_cells_periodic
-from PyPIC3D.utils import build_yee_grid
+from PyPIC3D.solvers.yee_tiled import (
+    assemble_tiled_vector_field,
+    fold_tiled_ghost_cells_periodic,
+    tile_vector_field,
+)
+from PyPIC3D.utils import build_yee_grid, digital_filter
 
 
 jax.config.update("jax_enable_x64", True)
@@ -78,6 +86,35 @@ class TestDirectDepositionTiled(unittest.TestCase):
         for tile_component in J_tiles:
             self.assertEqual(tile_component.ndim, 6)
         for reference_component, tiled_component in zip(J_reference, J_from_tiles):
+            self.assertTrue(jnp.allclose(tiled_component, reference_component, rtol=1.0e-12, atol=1.0e-12))
+
+    def test_tiled_digital_filter_matches_global_digital_filter(self):
+        world = self._build_world(Nx=8, Ny=6, Nz=4)
+        tile_shape = (2, 3, 2)
+        alpha = 0.6
+        shape = (world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2)
+        bc_x = world["boundary_conditions"]["x"]
+        bc_y = world["boundary_conditions"]["y"]
+        bc_z = world["boundary_conditions"]["z"]
+
+        base = jnp.arange(jnp.prod(jnp.asarray(shape)), dtype=jnp.float64).reshape(shape)
+        base = update_ghost_cells(base, bc_x, bc_y, bc_z)
+        J = (
+            base / 17.0,
+            -0.5 * base + 0.25,
+            jnp.sin(base / 11.0),
+        )
+        J = tuple(update_ghost_cells(component, bc_x, bc_y, bc_z) for component in J)
+
+        J_tiles = tile_vector_field(J, world, tile_shape)
+        filtered_tiles = digital_filter_tiled_current_density(J_tiles, alpha)
+        filtered_from_tiles = assemble_tiled_vector_field(filtered_tiles, world, tile_shape)
+        filtered_reference = tuple(
+            update_ghost_cells(digital_filter(component, alpha), bc_x, bc_y, bc_z)
+            for component in J
+        )
+
+        for reference_component, tiled_component in zip(filtered_reference, filtered_from_tiles):
             self.assertTrue(jnp.allclose(tiled_component, reference_component, rtol=1.0e-12, atol=1.0e-12))
 
     def test_fold_tiled_ghost_cells_periodic_adds_current_deposits_to_neighbors(self):
@@ -193,6 +230,55 @@ class TestDirectDepositionTiled(unittest.TestCase):
         )
 
         self._compare_tiled_to_standard([electrons, ions], world, simulation_parameters)
+
+    def test_tiled_direct_deposition_digital_filter_matches_J_from_rhov(self):
+        world = self._build_world()
+        simulation_parameters = {
+            "particle_tile_nx": 2,
+            "particle_tile_ny": 2,
+            "particle_tile_nz": 2,
+        }
+        constants = {"C": 3.0e8, "alpha": 0.6}
+        species = particle_species(
+            name="digital filtered current",
+            N_particles=4,
+            charge=-1.0,
+            mass=1.0,
+            weight=0.5,
+            T=1.0,
+            x1=jnp.array([-1.25, -0.25, 0.65, 1.45]),
+            x2=jnp.array([-1.0, -0.25, 0.35, 1.05]),
+            x3=jnp.array([-0.65, -0.15, 0.25, 0.75]),
+            v1=jnp.array([0.2, -0.1, 0.05, 0.3]),
+            v2=jnp.array([0.0, 0.15, -0.2, 0.1]),
+            v3=jnp.array([-0.05, 0.25, 0.1, -0.15]),
+            xwind=world["x_wind"],
+            ywind=world["y_wind"],
+            zwind=world["z_wind"],
+            dx=world["dx"],
+            dy=world["dy"],
+            dz=world["dz"],
+            dt=world["dt"],
+        )
+        tiled_particles = to_tiled_particles([species], world, simulation_parameters)
+        tile_shape = (
+            simulation_parameters["particle_tile_nx"],
+            simulation_parameters["particle_tile_ny"],
+            simulation_parameters["particle_tile_nz"],
+        )
+
+        J_reference = J_from_rhov([species], self._empty_J(world), constants, world, filter="digital")
+        J_tiles = direct_J_from_tiled_particles(
+            tiled_particles,
+            self._empty_J_tiles(world, simulation_parameters),
+            constants,
+            world,
+            filter="digital",
+        )
+        J_from_tiles = assemble_tiled_vector_field(J_tiles, world, tile_shape)
+
+        for reference_component, tiled_component in zip(J_reference, J_from_tiles):
+            self.assertTrue(jnp.allclose(tiled_component, reference_component, rtol=1.0e-12, atol=1.0e-12))
 
     def test_tiled_direct_deposition_respects_active_mask(self):
         world = self._build_world()

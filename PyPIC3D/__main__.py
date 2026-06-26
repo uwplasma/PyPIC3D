@@ -29,7 +29,7 @@ from PyPIC3D.diagnostics.vtk import (
 
 from PyPIC3D.utils import (
     dump_parameters_to_toml, load_config_file, compute_energy,
-    setup_pmd_files, add_external_fields
+    setup_pmd_files, add_external_fields, compute_total_momentum
 )
 
 from PyPIC3D.initialization import (
@@ -42,9 +42,39 @@ from PyPIC3D.diagnostics.fluid_quantities import (
 
 from PyPIC3D.deposition.rho import compute_rho
 
+from PyPIC3D.solvers.yee_tiled import assemble_tiled_vector_field
+
 
 # Importing functions from the PyPIC3D package
 ############################################################################################################
+
+
+def _fields_for_output(fields, world, simulation_parameters):
+    if simulation_parameters["solver"] != "tiled_yee":
+        return fields
+
+    E_tiles, B_tiles, J_tiles, rho, phi, external_fields, pml_state, *rest = fields
+    tile_shape = tuple(int(width) for width in world["tile_shape"])
+    external_E, external_B = external_fields
+
+    E = assemble_tiled_vector_field(E_tiles, world, tile_shape)
+    B = assemble_tiled_vector_field(B_tiles, world, tile_shape)
+    J = assemble_tiled_vector_field(J_tiles, world, tile_shape)
+    external_fields = (
+        assemble_tiled_vector_field(external_E, world, tile_shape),
+        assemble_tiled_vector_field(external_B, world, tile_shape),
+    )
+
+    return (E, B, J, rho, phi, external_fields, pml_state)
+
+
+def _raise_if_tiled_particles_overflowed(fields, simulation_parameters):
+    if simulation_parameters["solver"] != "tiled_yee" or len(fields) < 8:
+        return
+
+    overflow = fields[-1]
+    if bool(jax.device_get(overflow)):
+        raise RuntimeError("tiled_yee particle tile capacity overflowed during periodic retile")
 
 
 def run_PyPIC3D(config_file):
@@ -62,6 +92,12 @@ def run_PyPIC3D(config_file):
 
     scalar_field_names = ["rho", "mass_density"]
     vector_field_names = ["E", "B", "J"]
+    tiled_run = simulation_parameters["solver"] == "tiled_yee"
+
+    if tiled_run and plotting_parameters["plot_openpmd_particles"]:
+        raise ValueError("plot_openpmd_particles is not supported for tiled_yee particle storage")
+    if tiled_run and (plotting_parameters["plot_phasespace"] or plotting_parameters["plot_vtk_particles"]):
+        raise ValueError("particle phase-space and VTK particle output are not supported for tiled_yee particle storage")
 
     E, B, J, rho, phi, external_fields, *rest = fields
     # unpack the fields
@@ -100,7 +136,7 @@ def run_PyPIC3D(config_file):
             write_data(f"{output_dir}/data/magnetic_field_energy.txt", t * dt, b_energy)
             write_data(f"{output_dir}/data/kinetic_energy.txt", t * dt, kinetic_energy)
             # Write the total energy to a file
-            total_momentum = sum(particle_species.momentum() for particle_species in particles)
+            total_momentum = compute_total_momentum(particles)
             # Total momentum of the particles
             write_data(f"{output_dir}/data/total_momentum.txt", t * dt, total_momentum)
             # Write the total momentum to a file
@@ -115,6 +151,8 @@ def run_PyPIC3D(config_file):
 
 
             if plotting_parameters['plot_vtk_scalars']:
+                if tiled_run:
+                    raise ValueError("plot_vtk_scalars is not supported for tiled_yee particle storage")
                 rho = compute_rho(particles, rho, world, constants)
                 # calculate the charge density based on the particle positions
                 mass_density = compute_mass_density(particles, rho, world)
@@ -128,6 +166,9 @@ def run_PyPIC3D(config_file):
 
 
             if plotting_parameters['plot_vtk_vectors']:
+                output_fields = _fields_for_output(fields, world, simulation_parameters)
+                E, B, J, rho, phi, external_fields, *rest = output_fields
+                # assemble tiled fields before VTK output
                 y_mid = world['Ny']//2 + 1
                 # midplane index shifted by 1 for ghost cells
                 vector_field_slices = [ [E[0][1:-1, y_mid, 1:-1], E[1][1:-1, y_mid, 1:-1], E[2][1:-1, y_mid, 1:-1]],
@@ -145,11 +186,12 @@ def run_PyPIC3D(config_file):
             # Write the particles in openPMD format
 
             if plotting_parameters['plot_openpmd_fields']:
-                write_openpmd_fields(fields, world, os.path.join(output_dir, "data"), plot_num, t,  "fields", ".h5")
+                write_openpmd_fields(_fields_for_output(fields, world, simulation_parameters), world, os.path.join(output_dir, "data"), plot_num, t,  "fields", ".h5")
             # Write the fields in openPMD format
 
-            fields = (E, B, J, rho, phi, external_fields, *rest)
-            # repack the fields
+            if not tiled_run:
+                fields = (E, B, J, rho, phi, external_fields, *rest)
+                # repack the fields for non-tiled diagnostics that updated rho
 
         particles, fields = jit_loop(
             particles,
@@ -163,6 +205,9 @@ def run_PyPIC3D(config_file):
             particle_pusher=particle_pusher,
         )
         # time loop to update the particles and fields
+        _raise_if_tiled_particles_overflowed(fields, simulation_parameters)
+        # fixed tile capacity overflow would silently drop particles; stop as
+        # soon as it is detected.
 
 
     return Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles, fields, world

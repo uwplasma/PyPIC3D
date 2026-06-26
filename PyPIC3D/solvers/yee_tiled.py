@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
+from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 
 
 def _tile_axis_count(n_cells, cells_per_tile):
@@ -92,24 +93,34 @@ def assemble_tiled_vector_field(field_tiles, world, tile_shape):
     return tuple(_assemble_scalar_tiles(component, world, tile_shape) for component in field_tiles)
 
 
-def update_tiled_ghost_cells_periodic(field_tiles):
+def update_tiled_ghost_cells(field_tiles, world):
     """
-    Refresh one-cell tile halos by periodic exchange with neighbor tiles.
+    Refresh one-cell tile halos using the field boundary conditions.
 
     ``field_tiles`` has shape
     ``(ntx, nty, ntz, tile_nx + 2, tile_ny + 2, tile_nz + 2)``.  The last
     three axes are the tile-local ghost-celled field.  The first three axes
-    identify the tile in the global tiling.  Periodic global boundaries are
-    handled by wrapping along the corresponding tile axis.
+    identify the tile in the global tiling.
     """
 
-    # x-halos: previous tile right interior -> left ghost, next tile left
-    # interior -> right ghost.
+    bc_x = world["boundary_conditions"]["x"]
+    bc_y = world["boundary_conditions"]["y"]
+    bc_z = world["boundary_conditions"]["z"]
+
+    # x-halos: internal tile boundaries exchange neighboring interiors.  At a
+    # conducting global wall, the exterior ghost face is zero, matching
+    # update_ghost_cells on the assembled field.
     field_tiles = field_tiles.at[:, :, :, 0, :, :].set(
         jnp.roll(field_tiles[:, :, :, -2, :, :], shift=1, axis=0)
     )
     field_tiles = field_tiles.at[:, :, :, -1, :, :].set(
         jnp.roll(field_tiles[:, :, :, 1, :, :], shift=-1, axis=0)
+    )
+    field_tiles = jax.lax.cond(
+        bc_x == BC_CONDUCTING,
+        lambda tiles: tiles.at[0, :, :, 0, :, :].set(0.0).at[-1, :, :, -1, :, :].set(0.0),
+        lambda tiles: tiles,
+        operand=field_tiles,
     )
 
     # y-halos use the x-refreshed field so tile-edge/corner guard cells match
@@ -120,6 +131,12 @@ def update_tiled_ghost_cells_periodic(field_tiles):
     field_tiles = field_tiles.at[:, :, :, :, -1, :].set(
         jnp.roll(field_tiles[:, :, :, :, 1, :], shift=-1, axis=1)
     )
+    field_tiles = jax.lax.cond(
+        bc_y == BC_CONDUCTING,
+        lambda tiles: tiles.at[:, 0, :, :, 0, :].set(0.0).at[:, -1, :, :, -1, :].set(0.0),
+        lambda tiles: tiles,
+        operand=field_tiles,
+    )
 
     # z-halos complete the edge and corner values after x/y have been refreshed.
     field_tiles = field_tiles.at[:, :, :, :, :, 0].set(
@@ -128,8 +145,31 @@ def update_tiled_ghost_cells_periodic(field_tiles):
     field_tiles = field_tiles.at[:, :, :, :, :, -1].set(
         jnp.roll(field_tiles[:, :, :, :, :, 1], shift=-1, axis=2)
     )
+    field_tiles = jax.lax.cond(
+        bc_z == BC_CONDUCTING,
+        lambda tiles: tiles.at[:, :, 0, :, :, 0].set(0.0).at[:, :, -1, :, :, -1].set(0.0),
+        lambda tiles: tiles,
+        operand=field_tiles,
+    )
 
     return field_tiles
+
+
+def update_tiled_ghost_cells_periodic(field_tiles):
+    """
+    Refresh one-cell tile halos with all-periodic boundary conditions.
+    """
+
+    world = {"boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC}}
+    return update_tiled_ghost_cells(field_tiles, world)
+
+
+def update_tiled_vector_ghost_cells(field_tiles, world):
+    """
+    Refresh tile halos for each component of a vector field.
+    """
+
+    return tuple(update_tiled_ghost_cells(component, world) for component in field_tiles)
 
 
 def update_tiled_vector_ghost_cells_periodic(field_tiles):
@@ -138,6 +178,59 @@ def update_tiled_vector_ghost_cells_periodic(field_tiles):
     """
 
     return tuple(update_tiled_ghost_cells_periodic(component) for component in field_tiles)
+
+
+def apply_tiled_conducting_bc(E_tiles, world):
+    """
+    Zero tangential electric-field components on global conducting faces.
+    """
+
+    bc_x = world["boundary_conditions"]["x"]
+    bc_y = world["boundary_conditions"]["y"]
+    bc_z = world["boundary_conditions"]["z"]
+
+    Ex, Ey, Ez = E_tiles
+
+    Ey = jax.lax.cond(
+        bc_x == BC_CONDUCTING,
+        lambda f: f.at[0, :, :, 1, :, :].set(0.0).at[-1, :, :, -2, :, :].set(0.0),
+        lambda f: f,
+        operand=Ey,
+    )
+    Ez = jax.lax.cond(
+        bc_x == BC_CONDUCTING,
+        lambda f: f.at[0, :, :, 1, :, :].set(0.0).at[-1, :, :, -2, :, :].set(0.0),
+        lambda f: f,
+        operand=Ez,
+    )
+
+    Ex = jax.lax.cond(
+        bc_y == BC_CONDUCTING,
+        lambda f: f.at[:, 0, :, :, 1, :].set(0.0).at[:, -1, :, :, -2, :].set(0.0),
+        lambda f: f,
+        operand=Ex,
+    )
+    Ez = jax.lax.cond(
+        bc_y == BC_CONDUCTING,
+        lambda f: f.at[:, 0, :, :, 1, :].set(0.0).at[:, -1, :, :, -2, :].set(0.0),
+        lambda f: f,
+        operand=Ez,
+    )
+
+    Ex = jax.lax.cond(
+        bc_z == BC_CONDUCTING,
+        lambda f: f.at[:, :, 0, :, :, 1].set(0.0).at[:, :, -1, :, :, -2].set(0.0),
+        lambda f: f,
+        operand=Ex,
+    )
+    Ey = jax.lax.cond(
+        bc_z == BC_CONDUCTING,
+        lambda f: f.at[:, :, 0, :, :, 1].set(0.0).at[:, :, -1, :, :, -2].set(0.0),
+        lambda f: f,
+        operand=Ey,
+    )
+
+    return Ex, Ey, Ez
 
 
 def fold_tiled_ghost_cells_periodic(field_tiles):
@@ -192,16 +285,14 @@ def update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_
     """
     Update compact tiled electric fields without assembling a global field.
 
-    This tile-native path is periodic-only and intentionally skips the digital
-    filter used by the global Yee update.  The Yee curl is evaluated on each
-    tile's physical interior after B halos have been refreshed from neighbor
-    tiles.
+    The Yee curl is evaluated on each tile's physical interior after B halos
+    have been refreshed from neighbor tiles or field boundary conditions.
     """
 
     del curl_func, tile_shape
 
     Ex, Ey, Ez = E_tiles
-    Bx, By, Bz = update_tiled_vector_ghost_cells_periodic(B_tiles)
+    Bx, By, Bz = update_tiled_vector_ghost_cells(B_tiles, world)
     Jx, Jy, Jz = J_tiles
 
     dt = world["dt"]
@@ -236,22 +327,22 @@ def update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_
         + (C**2 * curl_z - Jz[:, :, :, 1:-1, 1:-1, 1:-1] / eps) * dt
     )
 
-    return update_tiled_vector_ghost_cells_periodic((Ex, Ey, Ez))
+    Ex, Ey, Ez = apply_tiled_conducting_bc((Ex, Ey, Ez), world)
+
+    return update_tiled_vector_ghost_cells((Ex, Ey, Ez), world)
 
 
 def update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape):
     """
     Update compact tiled magnetic fields without assembling a global field.
 
-    This tile-native path is periodic-only and intentionally skips the digital
-    filter used by the global Yee update.  The Yee curl is evaluated on each
-    tile's physical interior after E halos have been refreshed from neighbor
-    tiles.
+    The Yee curl is evaluated on each tile's physical interior after E halos
+    have been refreshed from neighbor tiles or field boundary conditions.
     """
 
     del constants, curl_func, tile_shape
 
-    Ex, Ey, Ez = update_tiled_vector_ghost_cells_periodic(E_tiles)
+    Ex, Ey, Ez = update_tiled_vector_ghost_cells(E_tiles, world)
     Bx, By, Bz = B_tiles
 
     dt = world["dt"]
@@ -275,4 +366,4 @@ def update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape):
     By = By.at[:, :, :, 1:-1, 1:-1, 1:-1].set(By[:, :, :, 1:-1, 1:-1, 1:-1] - dt * curl_y)
     Bz = Bz.at[:, :, :, 1:-1, 1:-1, 1:-1].set(Bz[:, :, :, 1:-1, 1:-1, 1:-1] - dt * curl_z)
 
-    return update_tiled_vector_ghost_cells_periodic((Bx, By, Bz))
+    return update_tiled_vector_ghost_cells((Bx, By, Bz), world)

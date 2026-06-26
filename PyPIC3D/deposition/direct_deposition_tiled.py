@@ -12,7 +12,29 @@ from PyPIC3D.solvers.yee_tiled import (
     fold_tiled_vector_ghost_cells_periodic,
     update_tiled_vector_ghost_cells_periodic,
 )
-from PyPIC3D.utils import bilinear_filter
+from PyPIC3D.utils import bilinear_filter, digital_filter
+
+
+def digital_filter_tiled_current_density(J_tiles, alpha):
+    """
+    Apply the global digital current filter to compact periodic current tiles.
+
+    Tile halos are refreshed before the stencil so every tile sees the same
+    neighbor values that the assembled ghost-celled current would see.  The
+    halos are refreshed again after filtering so downstream Yee updates read
+    filtered guard-cell values.
+    """
+
+    J_tiles = update_tiled_vector_ghost_cells_periodic(J_tiles)
+
+    def filter_component(component_tiles):
+        filter_tiles = jax.vmap(jax.vmap(jax.vmap(lambda tile: digital_filter(tile, alpha))))
+        return filter_tiles(component_tiles)
+
+    J_tiles = tuple(filter_component(component) for component in J_tiles)
+    J_tiles = update_tiled_vector_ghost_cells_periodic(J_tiles)
+
+    return J_tiles
 
 
 @partial(jit, static_argnames=("filter",))
@@ -24,8 +46,6 @@ def direct_J_from_tiled_particles(tiled_particles, J_tiles, constants, world, gr
     global ``J_from_rhov`` path, but current stays in compact tile-local
     ghost-celled arrays throughout the deposition.
     """
-
-    del constants
 
     if grid is None:
         grid = world["grids"]["center"]
@@ -186,16 +206,11 @@ def direct_J_from_tiled_particles(tiled_particles, J_tiles, constants, world, gr
     J_tiles = fold_tiled_vector_ghost_cells_periodic((Jx_tiles, Jy_tiles, Jz_tiles))
     J_tiles = update_tiled_vector_ghost_cells_periodic(J_tiles)
 
-    def filter_tile(tile):
+    if filter == "bilinear":
         apply_filter = jax.vmap(jax.vmap(jax.vmap(bilinear_filter)))
-        return jax.lax.cond(
-            filter == "bilinear",
-            apply_filter,
-            lambda tile: tile,
-            operand=tile,
-        )
-
-    J_tiles = tuple(filter_tile(component) for component in J_tiles)
-    J_tiles = update_tiled_vector_ghost_cells_periodic(J_tiles)
+        J_tiles = tuple(apply_filter(component) for component in J_tiles)
+        J_tiles = update_tiled_vector_ghost_cells_periodic(J_tiles)
+    elif filter == "digital":
+        J_tiles = digital_filter_tiled_current_density(J_tiles, constants["alpha"])
 
     return J_tiles

@@ -209,8 +209,20 @@ def compute_energy(particles, E, B, world, constants):
 
     Ex, Ey, Ez = E
     Bx, By, Bz = B
-    # use interior slices to exclude ghost cells from the energy integral
-    interior = (slice(1, -1), slice(1, -1), slice(1, -1))
+    # use physical interior slices to exclude ghost cells from the energy
+    # integral.  Tiled fields have leading tile axes followed by local
+    # ghost-celled Yee arrays.
+    if Ex.ndim == 6:
+        interior = (
+            slice(None),
+            slice(None),
+            slice(None),
+            slice(1, -1),
+            slice(1, -1),
+            slice(1, -1),
+        )
+    else:
+        interior = (slice(1, -1), slice(1, -1), slice(1, -1))
     dV = dx * dy * dz
     # calculate the volume element
     E2_integral = jnp.sum(Ex[interior]**2 + Ey[interior]**2 + Ez[interior]**2) * dV
@@ -224,22 +236,46 @@ def compute_energy(particles, E, B, world, constants):
     C = constants['C']
     # speed of light
     kinetic_energy = 0.0
-    for species in particles:
-        mass = species.get_mass()
-        vx, vy, vz = species.get_velocity()
+    if hasattr(particles, "active") and hasattr(particles, "u"):
+        vx = particles.u[..., 0]
+        vy = particles.u[..., 1]
+        vz = particles.u[..., 2]
         v2 = vx**2 + vy**2 + vz**2
-        active = species.get_active_mask().astype(v2.dtype)
+        active = particles.active.astype(v2.dtype)
+        mass = particles.mass * particles.weight
         gamma = 1.0 / jnp.sqrt(1 - v2 / C**2)
-        momentum2 = jnp.square(mass * gamma ) * v2
-        # compute the squared momentum for each particle
-        KE = jnp.sum(active * (jnp.sqrt(momentum2 * C**2 + mass**2 * C**4) - mass * C**2))
-        # compute the kinetic energy for this species
-        kinetic_energy += KE
-        # add to total kinetic energy
+        momentum2 = jnp.square(mass * gamma) * v2
+        kinetic_energy = jnp.sum(active * (jnp.sqrt(momentum2 * C**2 + mass**2 * C**4) - mass * C**2))
+    else:
+        for species in particles:
+            mass = species.get_mass()
+            vx, vy, vz = species.get_velocity()
+            v2 = vx**2 + vy**2 + vz**2
+            active = species.get_active_mask().astype(v2.dtype)
+            gamma = 1.0 / jnp.sqrt(1 - v2 / C**2)
+            momentum2 = jnp.square(mass * gamma ) * v2
+            # compute the squared momentum for each particle
+            KE = jnp.sum(active * (jnp.sqrt(momentum2 * C**2 + mass**2 * C**4) - mass * C**2))
+            # compute the kinetic energy for this species
+            kinetic_energy += KE
+            # add to total kinetic energy
 
 
     # Kinetic energy of particles
     return e_energy, b_energy, kinetic_energy
+
+
+def compute_total_momentum(particles):
+    """
+    Compute the scalar momentum diagnostic for either species-list or tiled particles.
+    """
+
+    if hasattr(particles, "active") and hasattr(particles, "u"):
+        vmag = jnp.sqrt(particles.u[..., 0]**2 + particles.u[..., 1]**2 + particles.u[..., 2]**2)
+        active = particles.active.astype(vmag.dtype)
+        return jnp.sum(active * vmag * particles.mass * particles.weight)
+
+    return sum(particle_species.momentum() for particle_species in particles)
 
 
 def add_external_fields(E, B, external_fields):
@@ -765,23 +801,35 @@ def dump_parameters_to_toml(simulation_stats, simulation_parameters, plasma_para
         "particles": []
     }
 
-    for particle in particles:
-        if hasattr(particle, "species_meta") and particle.species_meta:
-            config["particles"].extend(particle.species_meta)
-            continue
-        particle_dict = {
-            "name": particle.name,
-            "N_particles": float(particle.N_particles),
-            "weight": float(particle.weight),
-            "charge": float(particle.charge),
-            "mass": float(particle.mass),
-            "temperature": float(particle.T),
-            "scaled mass": float(particle.get_mass()),
-            "scaled charge": float(particle.get_charge()),
-            "update_pos": particle.update_pos,
-            "update_v": particle.update_v
-        }
-        config["particles"].append(particle_dict)
+    if hasattr(particles, "active") and hasattr(particles, "u"):
+        config["particles"].append(
+            {
+                "storage": "tiled",
+                "active_particles": int(jnp.sum(particles.active)),
+                "tile_shape": jax.tree_util.tree_map(
+                    lambda x: x.tolist() if isinstance(x, jnp.ndarray) else x,
+                    simulation_parameters.get("tile_shape", ()),
+                ),
+            }
+        )
+    else:
+        for particle in particles:
+            if hasattr(particle, "species_meta") and particle.species_meta:
+                config["particles"].extend(particle.species_meta)
+                continue
+            particle_dict = {
+                "name": particle.name,
+                "N_particles": float(particle.N_particles),
+                "weight": float(particle.weight),
+                "charge": float(particle.charge),
+                "mass": float(particle.mass),
+                "temperature": float(particle.T),
+                "scaled mass": float(particle.get_mass()),
+                "scaled charge": float(particle.get_charge()),
+                "update_pos": particle.update_pos,
+                "update_v": particle.update_v
+            }
+            config["particles"].append(particle_dict)
 
     config["version"] = {
         "PyPIC3D_version": importlib.metadata.version('PyPIC3D'),

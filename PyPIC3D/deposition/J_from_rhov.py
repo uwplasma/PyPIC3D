@@ -10,7 +10,7 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
 )
 from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, update_ghost_cells
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
-from PyPIC3D.utils import bilinear_filter
+from PyPIC3D.utils import bilinear_filter, digital_filter
 
 
 @partial(jit, static_argnames=("filter",))
@@ -198,12 +198,10 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter="bilinear"):
     # refresh ghost cells before any stencil-based post-processing
 
     def filter_func(J_, filter):
-        J_ = jax.lax.cond(
-            filter == "bilinear",
-            lambda J_: bilinear_filter(J_),
-            lambda J_: J_,
-            operand=J_,
-        )
+        if filter == "bilinear":
+            J_ = bilinear_filter(J_)
+        elif filter == "digital":
+            J_ = digital_filter(J_, constants["alpha"])
         return J_
 
     Jx = filter_func(Jx, filter)

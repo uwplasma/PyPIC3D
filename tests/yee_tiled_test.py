@@ -9,13 +9,16 @@ from PyPIC3D.solvers.first_order_yee import update_B, update_E
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
     tile_vector_field,
+    update_tiled_ghost_cells,
     update_tiled_ghost_cells_periodic,
+    update_tiled_vector_ghost_cells,
     update_tiled_vector_ghost_cells_periodic,
     update_tiled_B,
     update_tiled_E,
 )
 from PyPIC3D.utils import build_yee_grid
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
+from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 
 
 jax.config.update("jax_enable_x64", True)
@@ -43,6 +46,16 @@ class TestYeeTiled(unittest.TestCase):
         }
         vertex_grid, center_grid = build_yee_grid(world)
         world["grids"] = {"vertex": vertex_grid, "center": center_grid}
+        return world
+
+    def _conducting_world(self):
+        world = self._build_world()
+        world["boundary_conditions"] = {"x": BC_CONDUCTING, "y": BC_CONDUCTING, "z": BC_CONDUCTING}
+        return world
+
+    def _mixed_bc_world(self):
+        world = self._build_world()
+        world["boundary_conditions"] = {"x": BC_PERIODIC, "y": BC_CONDUCTING, "z": BC_CONDUCTING}
         return world
 
     def _fill_ghosts(self, field, world):
@@ -107,8 +120,98 @@ class TestYeeTiled(unittest.TestCase):
         for original_tiles, refreshed_component in zip(E_tiles, refreshed):
             self.assertTrue(jnp.allclose(refreshed_component, original_tiles, rtol=1.0e-12, atol=1.0e-12))
 
+    def test_update_tiled_ghost_cells_conducting_matches_global_ghost_cells(self):
+        world = self._conducting_world()
+        tile_shape = (2, 3, 2)
+        field = self._deterministic_vector_field(world, scale=1.0)[0]
+        tiles = tile_vector_field((field,), world, tile_shape)[0]
+
+        stale_tiles = tiles.at[:, :, :, 0, :, :].set(-100.0)
+        stale_tiles = stale_tiles.at[:, :, :, -1, :, :].set(-200.0)
+        stale_tiles = stale_tiles.at[:, :, :, :, 0, :].set(-300.0)
+        stale_tiles = stale_tiles.at[:, :, :, :, -1, :].set(-400.0)
+        stale_tiles = stale_tiles.at[:, :, :, :, :, 0].set(-500.0)
+        stale_tiles = stale_tiles.at[:, :, :, :, :, -1].set(-600.0)
+
+        refreshed = update_tiled_ghost_cells(stale_tiles, world)
+        reference = update_ghost_cells(
+            field,
+            world["boundary_conditions"]["x"],
+            world["boundary_conditions"]["y"],
+            world["boundary_conditions"]["z"],
+        )
+        reference_tiles = tile_vector_field((reference,), world, tile_shape)[0]
+
+        self.assertTrue(jnp.allclose(refreshed, reference_tiles, rtol=1.0e-12, atol=1.0e-12))
+
+    def test_update_tiled_ghost_cells_mixed_matches_global_ghost_cells(self):
+        world = self._mixed_bc_world()
+        tile_shape = (2, 3, 2)
+        field = self._deterministic_vector_field(world, scale=1.0)[0]
+        tiles = tile_vector_field((field,), world, tile_shape)[0]
+
+        stale_tiles = tiles.at[:, :, :, 0, :, :].set(-100.0)
+        stale_tiles = stale_tiles.at[:, :, :, -1, :, :].set(-200.0)
+        stale_tiles = stale_tiles.at[:, :, :, :, 0, :].set(-300.0)
+        stale_tiles = stale_tiles.at[:, :, :, :, -1, :].set(-400.0)
+        stale_tiles = stale_tiles.at[:, :, :, :, :, 0].set(-500.0)
+        stale_tiles = stale_tiles.at[:, :, :, :, :, -1].set(-600.0)
+
+        refreshed = update_tiled_ghost_cells(stale_tiles, world)
+        reference = update_ghost_cells(
+            field,
+            world["boundary_conditions"]["x"],
+            world["boundary_conditions"]["y"],
+            world["boundary_conditions"]["z"],
+        )
+        reference_tiles = tile_vector_field((reference,), world, tile_shape)[0]
+
+        self.assertTrue(jnp.allclose(refreshed, reference_tiles, rtol=1.0e-12, atol=1.0e-12))
+
+    def test_update_tiled_vector_ghost_cells_conducting_refreshes_each_component(self):
+        world = self._conducting_world()
+        tile_shape = (2, 3, 2)
+        E = self._deterministic_vector_field(world, scale=1.0)
+        E_tiles = tile_vector_field(E, world, tile_shape)
+
+        stale_tiles = tuple(component.at[:, :, :, 0, :, :].set(-10.0 * (i + 1)) for i, component in enumerate(E_tiles))
+        refreshed = update_tiled_vector_ghost_cells(stale_tiles, world)
+
+        for original, refreshed_component in zip(E, refreshed):
+            reference = update_ghost_cells(
+                original,
+                world["boundary_conditions"]["x"],
+                world["boundary_conditions"]["y"],
+                world["boundary_conditions"]["z"],
+            )
+            reference_tiles = tile_vector_field((reference,), world, tile_shape)[0]
+            self.assertTrue(jnp.allclose(refreshed_component, reference_tiles, rtol=1.0e-12, atol=1.0e-12))
+
     def test_update_tiled_E_matches_standard_yee_update(self):
         world = self._build_world()
+        constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
+        tile_shape = (2, 3, 2)
+        E = self._deterministic_vector_field(world, scale=1.0)
+        B = self._deterministic_vector_field(world, scale=0.2)
+        J = self._deterministic_vector_field(world, scale=0.05)
+
+        E_reference, _ = update_E(E, B, J, world, constants, unused_curl)
+        E_tiled = update_tiled_E(
+            tile_vector_field(E, world, tile_shape),
+            tile_vector_field(B, world, tile_shape),
+            tile_vector_field(J, world, tile_shape),
+            world,
+            constants,
+            unused_curl,
+            tile_shape,
+        )
+        E_from_tiles = assemble_tiled_vector_field(E_tiled, world, tile_shape)
+
+        for reference, tiled in zip(E_reference, E_from_tiles):
+            self.assertTrue(jnp.allclose(tiled, reference, rtol=1.0e-12, atol=1.0e-12))
+
+    def test_update_tiled_E_matches_standard_yee_update_with_conducting_boundaries(self):
+        world = self._conducting_world()
         constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         tile_shape = (2, 3, 2)
         E = self._deterministic_vector_field(world, scale=1.0)
@@ -151,8 +254,54 @@ class TestYeeTiled(unittest.TestCase):
         for reference, tiled in zip(B_reference, B_from_tiles):
             self.assertTrue(jnp.allclose(tiled, reference, rtol=1.0e-12, atol=1.0e-12))
 
+    def test_update_tiled_B_matches_standard_yee_update_with_conducting_boundaries(self):
+        world = self._conducting_world()
+        constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
+        tile_shape = (2, 3, 2)
+        E = self._deterministic_vector_field(world, scale=1.0)
+        B = self._deterministic_vector_field(world, scale=0.2)
+
+        B_reference, _ = update_B(E, B, world, constants, unused_curl)
+        B_tiled = update_tiled_B(
+            tile_vector_field(E, world, tile_shape),
+            tile_vector_field(B, world, tile_shape),
+            world,
+            constants,
+            unused_curl,
+            tile_shape,
+        )
+        B_from_tiles = assemble_tiled_vector_field(B_tiled, world, tile_shape)
+
+        for reference, tiled in zip(B_reference, B_from_tiles):
+            self.assertTrue(jnp.allclose(tiled, reference, rtol=1.0e-12, atol=1.0e-12))
+
     def test_tiled_electrodynamic_step_matches_standard_yee_sequence(self):
         world = self._build_world()
+        constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
+        tile_shape = (2, 3, 2)
+        E = self._deterministic_vector_field(world, scale=1.0)
+        B = self._deterministic_vector_field(world, scale=0.2)
+        J = self._deterministic_vector_field(world, scale=0.05)
+
+        E_reference, _ = update_E(E, B, J, world, constants, unused_curl)
+        B_reference, _ = update_B(E_reference, B, world, constants, unused_curl)
+
+        E_tiles = tile_vector_field(E, world, tile_shape)
+        B_tiles = tile_vector_field(B, world, tile_shape)
+        J_tiles = tile_vector_field(J, world, tile_shape)
+        E_tiles = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, unused_curl, tile_shape)
+        B_tiles = update_tiled_B(E_tiles, B_tiles, world, constants, unused_curl, tile_shape)
+
+        E_from_tiles = assemble_tiled_vector_field(E_tiles, world, tile_shape)
+        B_from_tiles = assemble_tiled_vector_field(B_tiles, world, tile_shape)
+
+        for reference, tiled in zip(E_reference, E_from_tiles):
+            self.assertTrue(jnp.allclose(tiled, reference, rtol=1.0e-12, atol=1.0e-12))
+        for reference, tiled in zip(B_reference, B_from_tiles):
+            self.assertTrue(jnp.allclose(tiled, reference, rtol=1.0e-12, atol=1.0e-12))
+
+    def test_tiled_electrodynamic_step_matches_standard_yee_sequence_with_conducting_boundaries(self):
+        world = self._conducting_world()
         constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         tile_shape = (2, 3, 2)
         E = self._deterministic_vector_field(world, scale=1.0)
