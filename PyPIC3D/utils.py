@@ -802,16 +802,28 @@ def dump_parameters_to_toml(simulation_stats, simulation_parameters, plasma_para
     }
 
     if hasattr(particles, "active") and hasattr(particles, "u"):
-        config["particles"].append(
-            {
-                "storage": "tiled",
-                "active_particles": int(jnp.sum(particles.active)),
-                "tile_shape": jax.tree_util.tree_map(
-                    lambda x: x.tolist() if isinstance(x, jnp.ndarray) else x,
-                    simulation_parameters.get("tile_shape", ()),
-                ),
-            }
+        n_species = particles.active.shape[3]
+        species_names = simulation_parameters.get("particle_species_names")
+        tile_shape = jax.tree_util.tree_map(
+            lambda x: x.tolist() if isinstance(x, jnp.ndarray) else x,
+            simulation_parameters.get("tile_shape", ()),
         )
+
+        for species_index in range(n_species):
+            if species_names is None:
+                name = f"species_{species_index}"
+            else:
+                name = species_names[species_index]
+
+            active_particles = int(jnp.sum(particles.active[:, :, :, species_index, :]))
+            config["particles"].append(
+                {
+                    "name": name,
+                    "storage": "tiled",
+                    "active_particles": active_particles,
+                    "tile_shape": tile_shape,
+                }
+            )
     else:
         for particle in particles:
             if hasattr(particle, "species_meta") and particle.species_meta:

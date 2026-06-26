@@ -4,11 +4,13 @@ import tempfile
 import jax
 import jax.numpy as jnp
 import numpy as np
+import toml
 from PyPIC3D.initialization import initialize_fields
+from PyPIC3D.particles.tiled_particles import TiledParticles
 from PyPIC3D.utils import (
     print_stats, build_yee_grid, build_collocated_grid, check_stability,
     particle_sanity_check, load_external_fields_from_toml, add_external_fields,
-    compute_energy,
+    compute_energy, dump_parameters_to_toml,
 )
 from PyPIC3D.particles.species_class import particle_species
 
@@ -206,6 +208,52 @@ class TestUtilsFunctions(unittest.TestCase):
         _, _, kinetic_energy = compute_energy([species], E, B, world, constants)
 
         self.assertTrue(jnp.allclose(kinetic_energy, 0.0))
+
+    def test_dump_parameters_to_toml_writes_tiled_species_summaries(self):
+        active = jnp.array([[[[[True, False, True], [False, True, False]]]]])
+        zeros3 = jnp.zeros(active.shape + (3,))
+        ones = jnp.ones(active.shape)
+        particles = TiledParticles(
+            x=zeros3,
+            u=zeros3,
+            charge=ones,
+            mass=ones,
+            weight=ones,
+            active=active,
+            update_x1=active,
+            update_x2=active,
+            update_x3=active,
+            update_u1=active,
+            update_u2=active,
+            update_u3=active,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.makedirs(os.path.join(tmpdir, "data"))
+            simulation_parameters = {
+                "output_dir": tmpdir,
+                "particle_species_names": ("electrons", "ions"),
+                "tile_shape": (2, 1, 1),
+            }
+
+            dump_parameters_to_toml(
+                {"total_time": 1.0},
+                simulation_parameters,
+                {},
+                {},
+                {},
+                particles,
+            )
+
+            config = toml.load(os.path.join(tmpdir, "data/output.toml"))
+
+        self.assertEqual(config["particles"][0]["name"], "electrons")
+        self.assertEqual(config["particles"][0]["storage"], "tiled")
+        self.assertEqual(config["particles"][0]["active_particles"], 2)
+        self.assertEqual(config["particles"][1]["name"], "ions")
+        self.assertEqual(config["particles"][1]["storage"], "tiled")
+        self.assertEqual(config["particles"][1]["active_particles"], 1)
+        self.assertEqual(config["particles"][0]["tile_shape"], [2, 1, 1])
 
 if __name__ == '__main__':
     unittest.main()

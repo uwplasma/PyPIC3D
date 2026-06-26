@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 import jax
 from functools import partial
 
-from PyPIC3D.particles.tiled_particle_diagnostics import flatten_tiled_particles_by_species
+from PyPIC3D.diagnostics.output_adapters import particles_for_output
 
 def plot_positions(particles, t, x_wind, y_wind, z_wind, path):
     """
@@ -71,7 +71,7 @@ def write_particles_phase_space(particles, t, path, species_names=None, world=No
         os.makedirs(f"{path}/data/phase_space/z")
     # Create directory if it doesn't exist
 
-    particles = flatten_tiled_particles_by_species(particles, species_names=species_names, world=world)
+    particles = particles_for_output(particles, species_names=species_names, world=world)
     # Tiled storage contains fixed-capacity inactive slots; phase-space output
     # writes only active particles and otherwise keeps the old species-list path.
 

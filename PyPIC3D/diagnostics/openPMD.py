@@ -5,7 +5,7 @@ import os
 import numpy as np
 import importlib.metadata
 
-from PyPIC3D.particles.tiled_particle_diagnostics import flatten_tiled_particles_by_species
+from PyPIC3D.diagnostics.output_adapters import fields_for_output, particles_for_output
 
 def _ensure_openpmd_array(data, dtype=np.float64, squeeze=False):
     arr = np.asarray(data, dtype=dtype)
@@ -127,7 +127,7 @@ def write_openpmd_fields_to_iteration(iteration, field_map, world, active_dims=(
 
 
 def write_openpmd_particles_to_iteration(iteration, particles, constants, species_names=None, world=None):
-    particles = flatten_tiled_particles_by_species(particles, species_names=species_names, world=world)
+    particles = particles_for_output(particles, species_names=species_names, world=world)
     # Tiled particles carry inactive capacity slots; openPMD should see the
     # active physical particles by species, matching the ordinary output path.
 
@@ -231,6 +231,7 @@ def write_openpmd_fields(fields, world, output_dir, plot_t, t, filename="fields"
         filename (str): Base name for the openPMD file.
         file_extension (str): File extension for the openPMD series (for example, ".bp").
     """
+    fields = fields_for_output(fields, world)
     field_map = _fields_to_interior_map(fields)
     # extract physical interior (strip ghost cells)
 
@@ -397,6 +398,7 @@ def write_openpmd_initial_fields(fields, world, output_dir, filename="initial_fi
         output_dir (str): Base output directory for the simulation.
         filename (str): openPMD file name.
     """
+    fields = fields_for_output(fields, world)
     field_map = _fields_to_interior_map(fields)
     # extract physical interior (strip ghost cells)
 

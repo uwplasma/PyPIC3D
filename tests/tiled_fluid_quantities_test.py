@@ -7,8 +7,10 @@ import jax.numpy as jnp
 from PyPIC3D import __main__ as pypic_main
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
 from PyPIC3D.diagnostics.fluid_quantities import compute_mass_density
+from PyPIC3D.deposition.rho_tiled import compute_tiled_mass_density_from_tiled_particles
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
+from PyPIC3D.solvers.yee_tiled import assemble_tiled_scalar_field, tile_scalar_field
 from PyPIC3D.utils import build_yee_grid
 
 
@@ -111,6 +113,30 @@ class TestTiledFluidQuantities(unittest.TestCase):
         self.assertTrue(
             jnp.allclose(
                 mass_tiled[1:-1, 1:-1, 1:-1],
+                mass_reference[1:-1, 1:-1, 1:-1],
+                rtol=1.0e-12,
+                atol=1.0e-12,
+            )
+        )
+
+    def test_tile_major_mass_density_assembles_to_global_mass_density(self):
+        world = self._build_world(shape_factor=2)
+        world["tile_shape"] = (
+            self._simulation_parameters()["particle_tile_nx"],
+            self._simulation_parameters()["particle_tile_ny"],
+            self._simulation_parameters()["particle_tile_nz"],
+        )
+        particles = self._particles(world)
+        tiled_particles = to_tiled_particles(particles, world, self._simulation_parameters())
+        rho_tiles = tile_scalar_field(self._empty_scalar(world), world, world["tile_shape"])
+
+        mass_reference = compute_mass_density(particles, self._empty_scalar(world), world)
+        mass_tiles = compute_tiled_mass_density_from_tiled_particles(tiled_particles, rho_tiles, world)
+        mass_from_tiles = assemble_tiled_scalar_field(mass_tiles, world, world["tile_shape"])
+
+        self.assertTrue(
+            jnp.allclose(
+                mass_from_tiles[1:-1, 1:-1, 1:-1],
                 mass_reference[1:-1, 1:-1, 1:-1],
                 rtol=1.0e-12,
                 atol=1.0e-12,

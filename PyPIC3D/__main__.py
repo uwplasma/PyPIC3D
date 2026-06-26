@@ -41,40 +41,16 @@ from PyPIC3D.diagnostics.fluid_quantities import (
 )
 
 from PyPIC3D.deposition.rho import compute_rho
-from PyPIC3D.deposition.rho_tiled import compute_rho_from_tiled_particles
-
-from PyPIC3D.solvers.yee_tiled import assemble_tiled_scalar_field, assemble_tiled_vector_field
+from PyPIC3D.deposition.rho_tiled import (
+    compute_rho_from_tiled_particles,
+    compute_tiled_mass_density_from_tiled_particles,
+    compute_tiled_rho_from_tiled_particles,
+)
+from PyPIC3D.diagnostics.output_adapters import fields_for_output, scalar_field_for_output
 
 
 # Importing functions from the PyPIC3D package
 ############################################################################################################
-
-
-def _fields_for_output(fields, world, simulation_parameters):
-    if simulation_parameters["solver"] != "tiled_yee":
-        return fields
-
-    if len(fields) == 6:
-        E_tiles, B_tiles, J_tiles, rho, phi, external_fields = fields
-        pml_state = None
-    else:
-        E_tiles, B_tiles, J_tiles, rho, phi, external_fields, pml_state, *rest = fields
-    tile_shape = tuple(int(width) for width in world["tile_shape"])
-    external_E, external_B = external_fields
-
-    E = assemble_tiled_vector_field(E_tiles, world, tile_shape)
-    B = assemble_tiled_vector_field(B_tiles, world, tile_shape)
-    J = assemble_tiled_vector_field(J_tiles, world, tile_shape)
-    if getattr(rho, "ndim", 0) == 6:
-        rho = assemble_tiled_scalar_field(rho, world, tile_shape)
-    if getattr(phi, "ndim", 0) == 6:
-        phi = assemble_tiled_scalar_field(phi, world, tile_shape)
-    external_fields = (
-        assemble_tiled_vector_field(external_E, world, tile_shape),
-        assemble_tiled_vector_field(external_B, world, tile_shape),
-    )
-
-    return (E, B, J, rho, phi, external_fields, pml_state)
 
 
 def _raise_if_tiled_particles_overflowed(fields, simulation_parameters):
@@ -156,23 +132,31 @@ def run_PyPIC3D(config_file):
 
 
             if plotting_parameters['plot_vtk_scalars']:
-                if tiled_run:
-                    rho = compute_rho_from_tiled_particles(particles, rho, world, constants)
+                if getattr(rho, "ndim", 0) == 6:
+                    rho = compute_tiled_rho_from_tiled_particles(particles, rho, world, constants)
+                    mass_density = compute_tiled_mass_density_from_tiled_particles(particles, rho, world)
+                    rho_output = scalar_field_for_output(rho, world)
+                    mass_density_output = scalar_field_for_output(mass_density, world)
                 else:
-                    rho = compute_rho(particles, rho, world, constants)
-                # calculate the charge density based on the particle positions
-                mass_density = compute_mass_density(particles, rho, world)
-                # calculate the mass density based on the particle positions
+                    if tiled_run:
+                        rho = compute_rho_from_tiled_particles(particles, rho, world, constants)
+                    else:
+                        rho = compute_rho(particles, rho, world, constants)
+                    # calculate the charge density based on the particle positions
+                    mass_density = compute_mass_density(particles, rho, world)
+                    # calculate the mass density based on the particle positions
+                    rho_output = rho
+                    mass_density_output = mass_density
 
                 y_mid = world['Ny']//2 + 1
                 # midplane index shifted by 1 for ghost cells
-                fields_mag = [rho[1:-1, y_mid, 1:-1], mass_density[1:-1, y_mid, 1:-1]]
+                fields_mag = [rho_output[1:-1, y_mid, 1:-1], mass_density_output[1:-1, y_mid, 1:-1]]
                 plot_field_slice_vtk(fields_mag, scalar_field_names, 1, vertex_grid, t, "scalar_field", output_dir, world)
                 # Plot the scalar fields in VTK format
 
 
             if plotting_parameters['plot_vtk_vectors']:
-                output_fields = _fields_for_output(fields, world, simulation_parameters)
+                output_fields = fields_for_output(fields, world)
                 E, B, J, rho, phi, external_fields, *rest = output_fields
                 # assemble tiled fields before VTK output
                 y_mid = world['Ny']//2 + 1
@@ -192,7 +176,7 @@ def run_PyPIC3D(config_file):
             # Write the particles in openPMD format
 
             if plotting_parameters['plot_openpmd_fields']:
-                write_openpmd_fields(_fields_for_output(fields, world, simulation_parameters), world, os.path.join(output_dir, "data"), plot_num, t,  "fields", ".h5")
+                write_openpmd_fields(fields, world, os.path.join(output_dir, "data"), plot_num, t,  "fields", ".h5")
             # Write the fields in openPMD format
 
             if not tiled_run:

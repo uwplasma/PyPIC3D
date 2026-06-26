@@ -5,7 +5,7 @@ import os
 from pyevtk.hl import gridToVTK, pointsToVTK
 import jax.numpy as jnp
 
-from PyPIC3D.particles.tiled_particle_diagnostics import flatten_tiled_particles_by_species
+from PyPIC3D.diagnostics.output_adapters import particles_for_output
 
 def plot_fields(fieldx, fieldy, fieldz, t, name, dx, dy, dz):
     """
@@ -57,7 +57,7 @@ def plot_vtk_particles(particles, t, path, species_names=None, world=None):
     if not os.path.exists(f"{path}/data/particles"):
         os.makedirs(f"{path}/data/particles")
 
-    particles = flatten_tiled_particles_by_species(particles, species_names=species_names, world=world)
+    particles = particles_for_output(particles, species_names=species_names, world=world)
     # Tiled particle arrays are fixed-capacity by tile; VTK particle output only
     # receives the active diagnostic particles.
 

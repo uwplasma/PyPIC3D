@@ -11,6 +11,7 @@ from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, upd
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.solvers.yee_tiled import (
     fold_tiled_ghost_cells,
+    tile_scalar_field,
     update_tiled_ghost_cells,
 )
 from PyPIC3D.utils import digital_filter
@@ -354,3 +355,35 @@ def compute_mass_density_from_tiled_particles(tiled_particles, rho, world, grid=
         half_step_back=True,
         wrap_periodic_position=True,
     )
+
+
+@jit
+def compute_tiled_mass_density_from_tiled_particles(tiled_particles, rho_tiles, world, grid=None):
+    """Compute mass density into tile-major vertex-grid scalar arrays."""
+    if grid is None:
+        grid = world["grids"]["vertex"]
+
+    scalar_weight = tiled_particles.mass * tiled_particles.weight
+    tile_shape = tuple(int(width) - 2 for width in rho_tiles.shape[3:])
+    Nx = int(rho_tiles.shape[0]) * tile_shape[0]
+    Ny = int(rho_tiles.shape[1]) * tile_shape[1]
+    Nz = int(rho_tiles.shape[2]) * tile_shape[2]
+    rho = jnp.zeros(
+        (
+            Nx + 2,
+            Ny + 2,
+            Nz + 2,
+        ),
+        dtype=rho_tiles.dtype,
+    )
+    rho = _deposit_tiled_scalar_moment(
+        tiled_particles,
+        rho,
+        world,
+        grid,
+        scalar_weight,
+        half_step_back=True,
+        wrap_periodic_position=True,
+    )
+
+    return tile_scalar_field(rho, world, tile_shape)
