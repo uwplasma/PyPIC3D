@@ -60,7 +60,7 @@ def time_loop_electrostatic_tiled(
     )
     # push velocities using the selected tiled particle pusher
 
-    particles = update_tiled_particle_positions(particles, world)
+    particles = update_tiled_particle_positions(particles, world["dt"])
     # update particle forward positions before depositing rho
 
     particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)

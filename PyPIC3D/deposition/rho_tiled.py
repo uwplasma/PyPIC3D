@@ -23,66 +23,28 @@ def _deposit_tiled_scalar_moment(
     world,
     grid,
     scalar_weight,
-    half_step_back,
-    wrap_periodic_position=False,
+    position=None,
 ):
     dx = world["dx"]
     dy = world["dy"]
     dz = world["dz"]
-    dt = world["dt"]
     Nx, Ny, Nz = rho.shape
     bc_x = world["boundary_conditions"]["x"]
     bc_y = world["boundary_conditions"]["y"]
     bc_z = world["boundary_conditions"]["z"]
     shape_factor = world["shape_factor"]
 
-    x = tiled_particles.x[..., 0].reshape(-1)
-    y = tiled_particles.x[..., 1].reshape(-1)
-    z = tiled_particles.x[..., 2].reshape(-1)
-    vx = tiled_particles.u[..., 0].reshape(-1)
-    vy = tiled_particles.u[..., 1].reshape(-1)
-    vz = tiled_particles.u[..., 2].reshape(-1)
+    if position is None:
+        x = tiled_particles.x[..., 0].reshape(-1)
+        y = tiled_particles.x[..., 1].reshape(-1)
+        z = tiled_particles.x[..., 2].reshape(-1)
+    else:
+        x, y, z = position
+        x = x.reshape(-1)
+        y = y.reshape(-1)
+        z = z.reshape(-1)
     active = tiled_particles.active.reshape(-1).astype(x.dtype)
     scalar_density = scalar_weight.reshape(-1) / (dx * dy * dz)
-
-    if half_step_back:
-        x = x - vx * dt / 2
-        y = y - vy * dt / 2
-        z = z - vz * dt / 2
-        # Rho deposits stay unwrapped so seam-crossing charge lands in ghost
-        # cells before folding.  Scalar diagnostics that mirror
-        # species.get_position() wrap periodic half-step positions first.
-        if wrap_periodic_position:
-            x = jax.lax.cond(
-                bc_x == BC_PERIODIC,
-                lambda x_value: jnp.where(
-                    x_value > world["x_wind"] / 2,
-                    x_value - world["x_wind"],
-                    jnp.where(x_value < -world["x_wind"] / 2, x_value + world["x_wind"], x_value),
-                ),
-                lambda x_value: x_value,
-                x,
-            )
-            y = jax.lax.cond(
-                bc_y == BC_PERIODIC,
-                lambda y_value: jnp.where(
-                    y_value > world["y_wind"] / 2,
-                    y_value - world["y_wind"],
-                    jnp.where(y_value < -world["y_wind"] / 2, y_value + world["y_wind"], y_value),
-                ),
-                lambda y_value: y_value,
-                y,
-            )
-            z = jax.lax.cond(
-                bc_z == BC_PERIODIC,
-                lambda z_value: jnp.where(
-                    z_value > world["z_wind"] / 2,
-                    z_value - world["z_wind"],
-                    jnp.where(z_value < -world["z_wind"] / 2, z_value + world["z_wind"], z_value),
-                ),
-                lambda z_value: z_value,
-                z,
-            )
 
     x, _, deltax, xpts = prepare_particle_axis_stencil(
         x,
@@ -146,6 +108,49 @@ def _deposit_tiled_scalar_moment(
     return rho
 
 
+def _diagnostic_mass_position(tiled_particles, world):
+    """
+    Mirror the ordinary scalar-diagnostic particle position for tiled particles.
+    """
+
+    x = tiled_particles.x[..., 0] - tiled_particles.u[..., 0] * world["dt"] / 2
+    y = tiled_particles.x[..., 1] - tiled_particles.u[..., 1] * world["dt"] / 2
+    z = tiled_particles.x[..., 2] - tiled_particles.u[..., 2] * world["dt"] / 2
+
+    x = jax.lax.cond(
+        world["boundary_conditions"]["x"] == BC_PERIODIC,
+        lambda value: jnp.where(
+            value > world["x_wind"] / 2,
+            value - world["x_wind"],
+            jnp.where(value < -world["x_wind"] / 2, value + world["x_wind"], value),
+        ),
+        lambda value: value,
+        x,
+    )
+    y = jax.lax.cond(
+        world["boundary_conditions"]["y"] == BC_PERIODIC,
+        lambda value: jnp.where(
+            value > world["y_wind"] / 2,
+            value - world["y_wind"],
+            jnp.where(value < -world["y_wind"] / 2, value + world["y_wind"], value),
+        ),
+        lambda value: value,
+        y,
+    )
+    z = jax.lax.cond(
+        world["boundary_conditions"]["z"] == BC_PERIODIC,
+        lambda value: jnp.where(
+            value > world["z_wind"] / 2,
+            value - world["z_wind"],
+            jnp.where(value < -world["z_wind"] / 2, value + world["z_wind"], value),
+        ),
+        lambda value: value,
+        z,
+    )
+
+    return x, y, z
+
+
 def _tile_axis(axis, tile_index, cells_per_tile):
     start = tile_index * cells_per_tile
     return jax.lax.dynamic_slice(axis, (start,), (cells_per_tile + 2,))
@@ -157,12 +162,10 @@ def _deposit_tiled_scalar_moment_to_tiles(
     world,
     grid,
     scalar_weight,
-    half_step_back,
 ):
     dx = world["dx"]
     dy = world["dy"]
     dz = world["dz"]
-    dt = world["dt"]
     bc_x = world["boundary_conditions"]["x"]
     bc_y = world["boundary_conditions"]["y"]
     bc_z = world["boundary_conditions"]["z"]
@@ -183,16 +186,8 @@ def _deposit_tiled_scalar_moment_to_tiles(
         x = x_tile[..., 0].reshape(-1)
         y = x_tile[..., 1].reshape(-1)
         z = x_tile[..., 2].reshape(-1)
-        vx = u_tile[..., 0].reshape(-1)
-        vy = u_tile[..., 1].reshape(-1)
-        vz = u_tile[..., 2].reshape(-1)
         active = active_tile.reshape(-1).astype(x.dtype)
         scalar_density = scalar_weight_tile.reshape(-1) / (dx * dy * dz)
-
-        if half_step_back:
-            x = x - vx * dt / 2
-            y = y - vy * dt / 2
-            z = z - vz * dt / 2
 
         x, _, deltax, xpts = prepare_particle_axis_stencil(
             x,
@@ -300,8 +295,6 @@ def compute_rho_from_tiled_particles(tiled_particles, rho, world, constants, gri
         world,
         grid,
         scalar_weight,
-        half_step_back=True,
-        wrap_periodic_position=False,
     )
 
     alpha = constants["alpha"]
@@ -329,7 +322,6 @@ def compute_tiled_rho_from_tiled_particles(tiled_particles, rho_tiles, world, co
         world,
         grid,
         scalar_weight,
-        half_step_back=True,
     )
 
     alpha = constants["alpha"]
@@ -346,14 +338,14 @@ def compute_mass_density_from_tiled_particles(tiled_particles, rho, world, grid=
         grid = world["grids"]["vertex"]
 
     scalar_weight = tiled_particles.mass * tiled_particles.weight
+    position = _diagnostic_mass_position(tiled_particles, world)
     return _deposit_tiled_scalar_moment(
         tiled_particles,
         rho,
         world,
         grid,
         scalar_weight,
-        half_step_back=True,
-        wrap_periodic_position=True,
+        position=position,
     )
 
 
@@ -364,6 +356,7 @@ def compute_tiled_mass_density_from_tiled_particles(tiled_particles, rho_tiles, 
         grid = world["grids"]["vertex"]
 
     scalar_weight = tiled_particles.mass * tiled_particles.weight
+    position = _diagnostic_mass_position(tiled_particles, world)
     tile_shape = tuple(int(width) - 2 for width in rho_tiles.shape[3:])
     Nx = int(rho_tiles.shape[0]) * tile_shape[0]
     Ny = int(rho_tiles.shape[1]) * tile_shape[1]
@@ -382,8 +375,7 @@ def compute_tiled_mass_density_from_tiled_particles(tiled_particles, rho_tiles, 
         world,
         grid,
         scalar_weight,
-        half_step_back=True,
-        wrap_periodic_position=True,
+        position=position,
     )
 
     return tile_scalar_field(rho, world, tile_shape)

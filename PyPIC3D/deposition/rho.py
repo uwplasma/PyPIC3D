@@ -30,14 +30,7 @@ def compute_rho(particles, rho, world, constants):
         q = species.get_charge()
         dq = q / dx / dy / dz
         x, y, z = species.get_forward_position()
-        vx, vy, vz = species.get_velocity()
         active = species.get_active_mask().astype(x.dtype)
-        dt = species.dt
-        # Deposit from the unwrapped half-step-back position so periodic seam
-        # contributions land in the ghost cells instead of being pre-wrapped.
-        x = x - vx * dt / 2
-        y = y - vy * dt / 2
-        z = z - vz * dt / 2
 
         x, _, deltax, xpts = prepare_particle_axis_stencil(
             x,
