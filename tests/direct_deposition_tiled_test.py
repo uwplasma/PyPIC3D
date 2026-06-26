@@ -12,6 +12,7 @@ from PyPIC3D.deposition.direct_deposition_tiled import (
 )
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
+from PyPIC3D.particles.tiled_particle_refresh import refresh_tiled_particle_tiles
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
     fold_tiled_ghost_cells,
@@ -68,14 +69,41 @@ class TestDirectDepositionTiled(unittest.TestCase):
         )
         return (jnp.zeros(shape), jnp.zeros(shape), jnp.zeros(shape))
 
-    def _compare_tiled_to_standard(self, particles, world, simulation_parameters):
-        constants = {"C": 3.0e8, "alpha": 1.0}
-        tiled_particles = to_tiled_particles(particles, world, simulation_parameters)
-        tile_shape = (
+    def _tile_shape(self, simulation_parameters):
+        return (
             simulation_parameters["particle_tile_nx"],
             simulation_parameters["particle_tile_ny"],
             simulation_parameters["particle_tile_nz"],
         )
+
+    def _centered_tiled_particles(self, particles, world, simulation_parameters):
+        """
+        Build the tiled particle view expected by direct tiled deposition.
+
+        ``J_from_rhov`` stores particles at the forward position and steps them
+        back by ``0.5*u*dt`` internally.  The tiled deposition kernel is already
+        centered, so the test view applies that half-step before deposition and
+        refreshes tile ownership at the centered position.
+        """
+
+        tiled_particles = to_tiled_particles(particles, world, simulation_parameters)
+        tiled_particles = tiled_particles._replace(
+            x=tiled_particles.x - 0.5 * tiled_particles.u * world["dt"]
+        )
+
+        centered_particles, overflow = refresh_tiled_particle_tiles(
+            tiled_particles,
+            world,
+            self._tile_shape(simulation_parameters),
+        )
+        self.assertFalse(bool(overflow))
+
+        return centered_particles
+
+    def _compare_tiled_to_standard(self, particles, world, simulation_parameters):
+        constants = {"C": 3.0e8, "alpha": 1.0}
+        tiled_particles = self._centered_tiled_particles(particles, world, simulation_parameters)
+        tile_shape = self._tile_shape(simulation_parameters)
 
         J_reference = J_from_rhov(particles, self._empty_J(world), constants, world, filter="none")
         J_tiles = direct_J_from_tiled_particles(
@@ -233,7 +261,7 @@ class TestDirectDepositionTiled(unittest.TestCase):
             dz=world["dz"],
             dt=world["dt"],
         )
-        tiled_particles = to_tiled_particles([species], world, simulation_parameters)
+        tiled_particles = self._centered_tiled_particles([species], world, simulation_parameters)
 
         J_tiles = direct_J_from_tiled_particles(
             tiled_particles,
@@ -242,11 +270,7 @@ class TestDirectDepositionTiled(unittest.TestCase):
             world,
             filter="none",
         )
-        tile_shape = (
-            simulation_parameters["particle_tile_nx"],
-            simulation_parameters["particle_tile_ny"],
-            simulation_parameters["particle_tile_nz"],
-        )
+        tile_shape = self._tile_shape(simulation_parameters)
         J_reference = J_from_rhov([species], self._empty_J(world), constants, world, filter="none")
         J_from_tiles = assemble_tiled_vector_field(J_tiles, world, tile_shape)
 
@@ -335,12 +359,8 @@ class TestDirectDepositionTiled(unittest.TestCase):
             dz=world["dz"],
             dt=world["dt"],
         )
-        tiled_particles = to_tiled_particles([species], world, simulation_parameters)
-        tile_shape = (
-            simulation_parameters["particle_tile_nx"],
-            simulation_parameters["particle_tile_ny"],
-            simulation_parameters["particle_tile_nz"],
-        )
+        tiled_particles = self._centered_tiled_particles([species], world, simulation_parameters)
+        tile_shape = self._tile_shape(simulation_parameters)
 
         J_reference = J_from_rhov([species], self._empty_J(world), constants, world, filter="digital")
         J_tiles = direct_J_from_tiled_particles(
@@ -384,12 +404,8 @@ class TestDirectDepositionTiled(unittest.TestCase):
             dz=world["dz"],
             dt=world["dt"],
         )
-        tiled_particles = to_tiled_particles([species], world, simulation_parameters)
-        tile_shape = (
-            simulation_parameters["particle_tile_nx"],
-            simulation_parameters["particle_tile_ny"],
-            simulation_parameters["particle_tile_nz"],
-        )
+        tiled_particles = self._centered_tiled_particles([species], world, simulation_parameters)
+        tile_shape = self._tile_shape(simulation_parameters)
 
         J_reference = J_from_rhov([species], self._empty_J(world), constants, world, filter="bilinear")
         J_tiles = direct_J_from_tiled_particles(
