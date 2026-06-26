@@ -5,7 +5,7 @@ import numpy as np
 import toml
 import jax
 import jax.numpy as jnp
-from PyPIC3D.initialization import setup_write_dir, default_parameters, initialize_simulation
+from PyPIC3D.initialization import setup_write_dir, default_parameters, initialize_simulation, validate_field_solver
 
 jax.config.update("jax_enable_x64", True)
 
@@ -103,6 +103,10 @@ class TestInitializationFunctions(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "Unsupported solver"):
                 initialize_simulation(config)
+
+    def test_validate_field_solver_rejects_spectral(self):
+        with self.assertRaisesRegex(ValueError, "Unsupported solver"):
+            validate_field_solver("spectral")
 
 if __name__ == '__main__':
     unittest.main()

@@ -201,10 +201,6 @@ class TestPMLInitialization(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             with self.assertRaisesRegex(ValueError, "PML is only supported"):
-                initialize_simulation(_empty_config(tmpdir, solver="spectral", pml=pml))
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with self.assertRaisesRegex(ValueError, "PML is only supported"):
                 initialize_simulation(_empty_config(tmpdir, electrostatic=True, pml=pml))
 
     def test_initialize_simulation_appends_pml_state_for_fdtd(self):

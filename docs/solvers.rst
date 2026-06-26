@@ -23,10 +23,10 @@ Per step, PyPIC3D:
 3. Solves Poisson's equation for ``phi``.
 4. Computes ``E = -grad(phi)``.
 
-The ``solver`` key controls both the Poisson solve and gradient operator:
+The electrostatic path uses the finite-difference Yee method:
 
-- ``solver = "spectral"``: FFT Poisson + spectral gradient
-- ``solver = "fdtd"``: conjugate-gradient Poisson + centered finite-difference gradient
+- conjugate-gradient Poisson solve for ``phi``
+- centered finite-difference gradient for ``E = -grad(phi)``
 
 Electrodynamic mode
 ^^^^^^^^^^^^^^^^^^^

@@ -32,10 +32,8 @@ class TestErrors(unittest.TestCase):
 
         laplacian = -6 * jnp.ones_like(phi)
 
-        result_spectral = compute_pe(phi, rho, self.constants, self.world, solver='spectral')
         result_fdtd = compute_pe(phi, rho, self.constants, self.world, solver='fdtd')
 
-        self.assertIsInstance(result_spectral, jnp.ndarray)
         self.assertIsInstance(result_fdtd, jnp.ndarray)
 
         
@@ -49,10 +47,8 @@ class TestErrors(unittest.TestCase):
         dx, dy, dz = 1.0, 1.0, 1.0
 
 
-        result_spectral = compute_magnetic_divergence_error(Bx, By, Bz, self.world, solver='spectral')
         result_fdtd = compute_magnetic_divergence_error(Bx, By, Bz, self.world, solver='fdtd')
 
-        self.assertIsInstance(result_spectral, jnp.ndarray)
         self.assertIsInstance(result_fdtd, jnp.ndarray)
 
     def test_compute_electric_divergence_error(self):
@@ -67,10 +63,8 @@ class TestErrors(unittest.TestCase):
         dx, dy, dz = 1.0, 1.0, 1.0
 
 
-        result_spectral = compute_electric_divergence_error(Ex, Ey, Ez, rho, self.constants, self.world, solver='spectral')
         result_fdtd = compute_electric_divergence_error(Ex, Ey, Ez, rho, self.constants, self.world, solver='fdtd')
 
-        self.assertIsInstance(result_spectral, jnp.ndarray)
         self.assertIsInstance(result_fdtd, jnp.ndarray)
 if __name__ == '__main__':
     unittest.main()

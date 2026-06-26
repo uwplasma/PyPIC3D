@@ -5,12 +5,10 @@ import jax.numpy as jnp
 
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.solvers.electrostatic_yee import (
-    solve_poisson_with_fft,
     solve_poisson_with_conjugate_gradient,
     calculate_electrostatic_fields,
 )
 from PyPIC3D.solvers.fdtd import centered_finite_difference_gradient
-from PyPIC3D.solvers.pstd import spectral_gradient
 from PyPIC3D.utils import build_yee_grid
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 
@@ -96,25 +94,6 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
             )
         ]
 
-    def test_solve_poisson_with_fft_single_mode(self):
-        phi_true_interior = jnp.sin(self.X + self.Y + self.Z)
-        rho_interior = 3.0 * self.constants["eps"] * phi_true_interior
-
-        # Place rho into ghost-celled array
-        rho = jnp.zeros((self.Nx + 2, self.Ny + 2, self.Nz + 2))
-        rho = rho.at[1:-1, 1:-1, 1:-1].set(rho_interior)
-        rho = update_ghost_cells(rho, 0, 0, 0)
-
-        phi = solve_poisson_with_fft(rho, self.constants, self.world)
-
-        # Compare on interior
-        phi_num = phi[1:-1, 1:-1, 1:-1]
-        phi_num = phi_num - jnp.mean(phi_num)
-        phi_true = phi_true_interior - jnp.mean(phi_true_interior)
-
-        self.assertEqual(phi_num.shape, phi_true.shape)
-        self.assertTrue(jnp.allclose(phi_num, phi_true, atol=1e-10, rtol=1e-8))
-
     def test_solve_poisson_with_conjugate_gradient_single_mode(self):
         phi_true_interior = jnp.sin(self.X + self.Y + self.Z)
         rhs = apply_negative_laplacian(phi_true_interior, self.dx, self.dy, self.dz)
@@ -146,30 +125,6 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
         self.assertLess(jnp.max(jnp.abs(residual)), 1e-6)
 
     def test_solver_mode_mapping(self):
-        E_spectral, phi_spectral, rho_spectral = calculate_electrostatic_fields(
-            self.world,
-            self.particles,
-            self.constants,
-            self.initial_rho,
-            self.initial_phi,
-            "spectral",
-            "periodic",
-        )
-
-        # The spectral solver returns ghost-celled arrays
-        # Verify shapes
-        self.assertEqual(phi_spectral.shape, (self.Nx + 2, self.Ny + 2, self.Nz + 2))
-        self.assertEqual(E_spectral[0].shape, (self.Nx + 2, self.Ny + 2, self.Nz + 2))
-
-        # Verify spectral path: solve Poisson on interior, then gradient on interior
-        expected_phi = solve_poisson_with_fft(rho_spectral, self.constants, self.world)
-        expected_Ex, expected_Ey, expected_Ez = spectral_gradient(-1.0 * expected_phi[1:-1, 1:-1, 1:-1], self.world)
-
-        self.assertTrue(jnp.allclose(phi_spectral[1:-1, 1:-1, 1:-1], expected_phi[1:-1, 1:-1, 1:-1], atol=1e-8, rtol=1e-8))
-        self.assertTrue(jnp.allclose(E_spectral[0][1:-1, 1:-1, 1:-1], expected_Ex, atol=1e-8, rtol=1e-8))
-        self.assertTrue(jnp.allclose(E_spectral[1][1:-1, 1:-1, 1:-1], expected_Ey, atol=1e-8, rtol=1e-8))
-        self.assertTrue(jnp.allclose(E_spectral[2][1:-1, 1:-1, 1:-1], expected_Ez, atol=1e-8, rtol=1e-8))
-
         E_fdtd, phi_fdtd, rho_fdtd = calculate_electrostatic_fields(
             self.world,
             self.particles,
@@ -194,7 +149,6 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
             "periodic",
         )
 
-        self.assertTrue(jnp.allclose(rho_fdtd[1:-1, 1:-1, 1:-1], rho_spectral[1:-1, 1:-1, 1:-1], atol=1e-12, rtol=1e-12))
         self.assertTrue(jnp.allclose(phi_fdtd[1:-1, 1:-1, 1:-1], expected_phi_fdtd[1:-1, 1:-1, 1:-1], atol=1e-6, rtol=1e-6))
         self.assertTrue(jnp.allclose(E_fdtd[0][1:-1, 1:-1, 1:-1], expected_Ex_fdtd, atol=1e-6, rtol=1e-6))
         self.assertTrue(jnp.allclose(E_fdtd[1][1:-1, 1:-1, 1:-1], expected_Ey_fdtd, atol=1e-6, rtol=1e-6))

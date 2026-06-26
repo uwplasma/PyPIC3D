@@ -3,7 +3,6 @@ import jax.numpy as jnp
 from functools import partial
 # import external libraries
 
-from PyPIC3D.solvers.pstd import spectral_laplacian, spectral_divergence
 from PyPIC3D.solvers.fdtd import centered_finite_difference_laplacian, centered_finite_difference_divergence
 # import functions from the PyPIC3D package
 
@@ -28,12 +27,9 @@ def compute_pe(phi, rho, constants, world, solver, bc='periodic'):
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
-    if solver == 'spectral':
-        x = spectral_laplacian(phi, world)
-    elif solver == 'fdtd':
-        x = centered_finite_difference_laplacian(phi, dx, dy, dz, bc)
-    elif solver == 'autodiff':
+    if solver == 'autodiff':
         return 0
+    x = centered_finite_difference_laplacian(phi, dx, dy, dz, bc)
     poisson_error = x + rho/eps
     magnitude = jnp.mean(jnp.abs(rho/eps)) + 1e-16
     return jnp.mean(jnp.abs(poisson_error)) / magnitude
@@ -59,12 +55,9 @@ def compute_magnetic_divergence_error(Bx, By, Bz, world, solver, bc='periodic'):
     dy = world['dy']
     dz = world['dz']
 
-    if solver == 'spectral':
-        divB = spectral_divergence(Bx, By, Bz, world)
-    elif solver == 'fdtd':
-        divB = centered_finite_difference_divergence(Bx, By, Bz, dx, dy, dz, bc)
-    elif solver == 'autodiff':
+    if solver == 'autodiff':
         return 0
+    divB = centered_finite_difference_divergence(Bx, By, Bz, dx, dy, dz, bc)
     divergence_error = jnp.mean(jnp.abs(divB))
     return divergence_error
 
@@ -92,12 +85,9 @@ def compute_electric_divergence_error(Ex, Ey, Ez, rho, constants, world, solver,
     dy = world['dy']
     dz = world['dz']
 
-    if solver == 'spectral':
-        divE = spectral_divergence(Ex, Ey, Ez, world)
-    elif solver == 'fdtd':
-        divE = centered_finite_difference_divergence(Ex, Ey, Ez, dx, dy, dz, bc)
-    elif solver == 'autodiff':
+    if solver == 'autodiff':
         return 0
+    divE = centered_finite_difference_divergence(Ex, Ey, Ez, dx, dy, dz, bc)
 
     divergence_error = jnp.mean(jnp.abs(divE - rho / eps))
     return divergence_error

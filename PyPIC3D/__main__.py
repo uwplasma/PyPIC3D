@@ -43,7 +43,7 @@ from PyPIC3D.diagnostics.fluid_quantities import (
 from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.deposition.rho_tiled import compute_rho_from_tiled_particles
 
-from PyPIC3D.solvers.yee_tiled import assemble_tiled_vector_field
+from PyPIC3D.solvers.yee_tiled import assemble_tiled_scalar_field, assemble_tiled_vector_field
 
 
 # Importing functions from the PyPIC3D package
@@ -54,13 +54,21 @@ def _fields_for_output(fields, world, simulation_parameters):
     if simulation_parameters["solver"] != "tiled_yee":
         return fields
 
-    E_tiles, B_tiles, J_tiles, rho, phi, external_fields, pml_state, *rest = fields
+    if len(fields) == 6:
+        E_tiles, B_tiles, J_tiles, rho, phi, external_fields = fields
+        pml_state = None
+    else:
+        E_tiles, B_tiles, J_tiles, rho, phi, external_fields, pml_state, *rest = fields
     tile_shape = tuple(int(width) for width in world["tile_shape"])
     external_E, external_B = external_fields
 
     E = assemble_tiled_vector_field(E_tiles, world, tile_shape)
     B = assemble_tiled_vector_field(B_tiles, world, tile_shape)
     J = assemble_tiled_vector_field(J_tiles, world, tile_shape)
+    if getattr(rho, "ndim", 0) == 6:
+        rho = assemble_tiled_scalar_field(rho, world, tile_shape)
+    if getattr(phi, "ndim", 0) == 6:
+        phi = assemble_tiled_scalar_field(phi, world, tile_shape)
     external_fields = (
         assemble_tiled_vector_field(external_E, world, tile_shape),
         assemble_tiled_vector_field(external_B, world, tile_shape),

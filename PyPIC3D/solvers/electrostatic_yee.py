@@ -4,64 +4,18 @@ from jax import lax
 from functools import partial
 
 from PyPIC3D.deposition.rho import compute_rho
+from PyPIC3D.deposition.rho_tiled import compute_tiled_rho_from_tiled_particles
 from PyPIC3D.solvers.fdtd import centered_finite_difference_gradient
-from PyPIC3D.solvers.pstd import spectral_gradient
 from PyPIC3D.utils import digital_filter
 from PyPIC3D.boundary_conditions.boundaryconditions import (
     update_ghost_cells, apply_scalar_conducting_bc
 )
-
-
-@jit
-def solve_poisson_with_fft(rho, constants, world):
-    """
-    Solve Poisson's equation in a periodic domain using FFTs.
-
-    Operates on the interior of the ghost-celled rho array and writes the
-    result back into the interior of phi.
-
-    Args:
-        rho (ndarray): Charge density field with shape (Nx+2, Ny+2, Nz+2).
-        constants (dict): Physical constants with key ``eps``.
-        world (dict): Simulation metadata with ``dx``, ``dy``, and ``dz``.
-
-    Returns:
-        ndarray: Electrostatic potential field with shape (Nx+2, Ny+2, Nz+2).
-    """
-    dx = world['dx']
-    dy = world['dy']
-    dz = world['dz']
-    eps = constants['eps']
-
-    rho_interior = rho[1:-1, 1:-1, 1:-1]
-    # extract the physical interior for the FFT solve
-
-    rho_hat = jnp.fft.fftn(rho_interior)
-    nx, ny, nz = rho_hat.shape
-
-    kx = jnp.fft.fftfreq(nx, d=dx) * 2 * jnp.pi
-    ky = jnp.fft.fftfreq(ny, d=dy) * 2 * jnp.pi
-    kz = jnp.fft.fftfreq(nz, d=dz) * 2 * jnp.pi
-    kx, ky, kz = jnp.meshgrid(kx, ky, kz, indexing='ij')
-
-    k_squared = kx**2 + ky**2 + kz**2
-    k_squared = k_squared.at[0, 0, 0].set(1.0)
-
-    phi_hat = rho_hat / (eps * k_squared)
-    phi_hat = phi_hat.at[0, 0, 0].set(0.0)
-    phi_interior = jnp.fft.ifftn(phi_hat).real
-
-    phi = jnp.zeros_like(rho)
-    phi = phi.at[1:-1, 1:-1, 1:-1].set(phi_interior)
-    # write the solution back into the interior of the ghost-celled array
-
-    bc_x = world['boundary_conditions']['x']
-    bc_y = world['boundary_conditions']['y']
-    bc_z = world['boundary_conditions']['z']
-    phi = update_ghost_cells(phi, bc_x, bc_y, bc_z)
-    # fill ghost cells for the potential
-
-    return phi
+from PyPIC3D.solvers.yee_tiled import (
+    assemble_tiled_scalar_field,
+    tile_scalar_field,
+    update_tiled_ghost_cells,
+    update_tiled_vector_ghost_cells,
+)
 
 
 @partial(jit, static_argnames=("tol", "max_iter"))
@@ -183,12 +137,7 @@ def calculate_electrostatic_fields(world, particles, constants, rho, phi, solver
 
     rho = compute_rho(particles, rho, world, constants)
 
-    phi = lax.cond(
-        solver == "spectral",
-        lambda _: solve_poisson_with_fft(rho, constants, world),
-        lambda _: solve_poisson_with_conjugate_gradient(rho, phi, constants, world),
-        operand=None,
-    )
+    phi = solve_poisson_with_conjugate_gradient(rho, phi, constants, world)
 
     phi = update_ghost_cells(phi, bc_x, bc_y, bc_z)
     # refresh ghost cells before any stencil-based post-processing
@@ -199,12 +148,7 @@ def calculate_electrostatic_fields(world, particles, constants, rho, phi, solver
     phi = update_ghost_cells(phi, bc_x, bc_y, bc_z)
     # update ghost cells after filtering
 
-    Ex, Ey, Ez = lax.cond(
-        solver == "spectral",
-        lambda _: spectral_gradient(-1 * phi[1:-1, 1:-1, 1:-1], world),
-        lambda _: centered_finite_difference_gradient(-1 * phi[1:-1, 1:-1, 1:-1], dx, dy, dz, bc),
-        operand=None,
-    )
+    Ex, Ey, Ez = centered_finite_difference_gradient(-1 * phi[1:-1, 1:-1, 1:-1], dx, dy, dz, bc)
     # compute gradient on the interior
 
     # Place the gradient results into ghost-celled arrays
@@ -219,3 +163,72 @@ def calculate_electrostatic_fields(world, particles, constants, rho, phi, solver
     Ez_full = update_ghost_cells(Ez_full, bc_x, bc_y, bc_z)
 
     return (Ex_full, Ey_full, Ez_full), phi, rho
+
+
+def _centered_tiled_electrostatic_gradient(phi_tiles, world):
+    """
+    Compute ``E = -grad(phi)`` on compact scalar tiles.
+
+    The potential halos must already contain neighboring tile/global boundary
+    values.  This mirrors ``centered_finite_difference_gradient`` on the
+    assembled physical interior, then refreshes vector halos for particle
+    interpolation.
+    """
+
+    dx = world["dx"]
+    dy = world["dy"]
+    dz = world["dz"]
+
+    phi_tiles = update_tiled_ghost_cells(phi_tiles, world)
+
+    Ex = jnp.zeros_like(phi_tiles)
+    Ey = jnp.zeros_like(phi_tiles)
+    Ez = jnp.zeros_like(phi_tiles)
+
+    Ex = Ex.at[:, :, :, 1:-1, 1:-1, 1:-1].set(
+        -1.0 * (phi_tiles[:, :, :, 2:, 1:-1, 1:-1] - phi_tiles[:, :, :, :-2, 1:-1, 1:-1]) / (2.0 * dx)
+    )
+    Ey = Ey.at[:, :, :, 1:-1, 1:-1, 1:-1].set(
+        -1.0 * (phi_tiles[:, :, :, 1:-1, 2:, 1:-1] - phi_tiles[:, :, :, 1:-1, :-2, 1:-1]) / (2.0 * dy)
+    )
+    Ez = Ez.at[:, :, :, 1:-1, 1:-1, 1:-1].set(
+        -1.0 * (phi_tiles[:, :, :, 1:-1, 1:-1, 2:] - phi_tiles[:, :, :, 1:-1, 1:-1, :-2]) / (2.0 * dz)
+    )
+
+    return update_tiled_vector_ghost_cells((Ex, Ey, Ez), world)
+
+
+def calculate_tiled_electrostatic_fields(world, particles, constants, rho_tiles, phi_tiles, solver, bc, tile_shape):
+    """
+    Compute electrostatic fields from tiled rho deposition and a global Poisson solve.
+
+    Rho is deposited into tile-major scalar storage, assembled for the existing
+    Poisson solver, and the solved global potential is tiled again before the
+    electric field is differentiated on tile-local halos.
+    """
+
+    del bc
+
+    bc_x = world["boundary_conditions"]["x"]
+    bc_y = world["boundary_conditions"]["y"]
+    bc_z = world["boundary_conditions"]["z"]
+
+    rho_tiles = compute_tiled_rho_from_tiled_particles(particles, rho_tiles, world, constants)
+    rho = assemble_tiled_scalar_field(rho_tiles, world, tile_shape)
+    phi = assemble_tiled_scalar_field(phi_tiles, world, tile_shape)
+
+    phi = solve_poisson_with_conjugate_gradient(rho, phi, constants, world)
+
+    phi = update_ghost_cells(phi, bc_x, bc_y, bc_z)
+    # refresh ghost cells before filtering and tiled differentiation
+
+    alpha = constants["alpha"]
+    phi = digital_filter(phi, alpha)
+    phi = apply_scalar_conducting_bc(phi, bc_x, bc_y, bc_z)
+    phi = update_ghost_cells(phi, bc_x, bc_y, bc_z)
+    # keep the same global phi post-processing order as the untiled solver
+
+    phi_tiles = tile_scalar_field(phi, world, tile_shape)
+    E_tiles = _centered_tiled_electrostatic_gradient(phi_tiles, world)
+
+    return E_tiles, phi_tiles, rho_tiles

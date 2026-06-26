@@ -15,10 +15,12 @@ def _tile_axis_count(n_cells, cells_per_tile):
     return int(n_cells) // int(cells_per_tile)
 
 
-def _tile_scalar_field(field, tile_shape):
+def tile_scalar_field(field, world, tile_shape):
     """
     Split a ghost-celled field into compact tiles using the shared tile shape.
     """
+
+    del world
 
     tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
     Nx = int(field.shape[0]) - 2
@@ -48,6 +50,10 @@ def _tile_scalar_field(field, tile_shape):
     )
 
 
+def _tile_scalar_field(field, tile_shape):
+    return tile_scalar_field(field, None, tile_shape)
+
+
 def tile_vector_field(field, world, tile_shape):
     """
     Split ``(Fx, Fy, Fz)`` into compact ghost-celled tiles.
@@ -57,20 +63,19 @@ def tile_vector_field(field, world, tile_shape):
     ``(tile_nx + 2, tile_ny + 2, tile_nz + 2)``.
     """
 
-    del world
-    return tuple(_tile_scalar_field(component, tile_shape) for component in field)
+    return tuple(tile_scalar_field(component, world, tile_shape) for component in field)
 
 
-def _assemble_scalar_tiles(field_tiles, world, tile_shape):
+def assemble_tiled_scalar_field(field_tiles, world, tile_shape):
     """
     Assemble compact field tiles back into one global ghost-celled field.
     """
 
     tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
     ntx, nty, ntz = field_tiles.shape[:3]
-    Nx = int(world["Nx"])
-    Ny = int(world["Ny"])
-    Nz = int(world["Nz"])
+    Nx = int(ntx) * tile_nx
+    Ny = int(nty) * tile_ny
+    Nz = int(ntz) * tile_nz
 
     field = jnp.zeros((Nx + 2, Ny + 2, Nz + 2), dtype=field_tiles.dtype)
 
@@ -94,7 +99,11 @@ def assemble_tiled_vector_field(field_tiles, world, tile_shape):
     Assemble tiled vector-field components into ordinary ghost-celled arrays.
     """
 
-    return tuple(_assemble_scalar_tiles(component, world, tile_shape) for component in field_tiles)
+    return tuple(assemble_tiled_scalar_field(component, world, tile_shape) for component in field_tiles)
+
+
+def _assemble_scalar_tiles(field_tiles, world, tile_shape):
+    return assemble_tiled_scalar_field(field_tiles, world, tile_shape)
 
 
 def update_tiled_ghost_cells(field_tiles, world):
