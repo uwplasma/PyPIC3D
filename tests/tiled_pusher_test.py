@@ -130,6 +130,72 @@ class TestTiledParticlePusher(unittest.TestCase):
 
         self.assertTrue(jnp.allclose(tiled_u, flat_u[order], rtol=1.0e-12, atol=1.0e-12))
 
+    def test_tiled_particle_push_matches_flat_higuera_cary(self):
+        world = self._build_world()
+        constants = {"C": 10.0}
+        tile_shape = (2, 3, 2)
+        simulation_parameters = {
+            "particle_tile_nx": tile_shape[0],
+            "particle_tile_ny": tile_shape[1],
+            "particle_tile_nz": tile_shape[2],
+        }
+        E = self._deterministic_vector_field(world, scale=0.25)
+        B = self._deterministic_vector_field(world, scale=0.05)
+
+        def make_species():
+            return particle_species(
+                name="higuera cary particles",
+                N_particles=4,
+                charge=-1.0,
+                mass=2.0,
+                weight=0.5,
+                T=1.0,
+                x1=jnp.array([-1.95, -1.01, 0.99, 1.95]),
+                x2=jnp.array([-1.35, -0.01, 0.49, 1.35]),
+                x3=jnp.array([-0.95, -0.01, 0.49, 0.95]),
+                v1=jnp.array([0.02, -0.01, 0.03, -0.015]),
+                v2=jnp.array([0.01, 0.02, -0.015, 0.005]),
+                v3=jnp.array([-0.005, 0.015, 0.01, -0.02]),
+                xwind=world["x_wind"],
+                ywind=world["y_wind"],
+                zwind=world["z_wind"],
+                dx=world["dx"],
+                dy=world["dy"],
+                dz=world["dz"],
+                dt=world["dt"],
+            )
+
+        species = make_species()
+        reference = make_species()
+        reference = particle_push(
+            reference,
+            E,
+            B,
+            world["grids"]["center"],
+            world["grids"]["vertex"],
+            world,
+            constants,
+            particle_pusher="higuera_cary",
+        )
+
+        tiled_particles = to_tiled_particles([species], world, simulation_parameters)
+        pushed = tiled_particle_push(
+            tiled_particles,
+            tile_vector_field(E, world, tile_shape),
+            tile_vector_field(B, world, tile_shape),
+            world,
+            constants,
+            tile_shape,
+            particle_pusher="higuera_cary",
+        )
+
+        _, tiled_u = self._flatten_active_by_position(pushed)
+        flat_u = jnp.stack(reference.get_velocity(), axis=1)
+        flat_x = jnp.stack(reference.get_forward_position(), axis=1)
+        order = jnp.lexsort((flat_x[:, 2], flat_x[:, 1], flat_x[:, 0]))
+
+        self.assertTrue(jnp.allclose(tiled_u, flat_u[order], rtol=1.0e-12, atol=1.0e-12))
+
     def test_tiled_particle_push_respects_active_and_update_flags(self):
         world = self._build_world()
         constants = {"C": 10.0}

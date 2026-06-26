@@ -26,7 +26,7 @@ def time_loop_electrodynamic_tiled(
     Advance a periodic tiled electrodynamic PIC system by one time step.
     """
 
-    del solver, particle_pusher
+    del solver
 
     if len(fields) == 7:
         E_tiles, B_tiles, J_tiles, rho, phi, external_fields, pml_state = fields
@@ -66,8 +66,9 @@ def time_loop_electrodynamic_tiled(
         constants,
         tile_shape,
         relativistic=relativistic,
+        particle_pusher=particle_pusher,
     )
-    # use the tiled Boris pusher for particle velocities
+    # use the selected tiled pusher for particle velocities
 
     particles = update_tiled_particle_positions(particles, world)
     # update particle forward positions before current deposition

@@ -9,6 +9,7 @@ from PyPIC3D.pusher.boris import (
     interpolate_field_to_particles,
     relativistic_boris_single_particle,
 )
+from PyPIC3D.pusher.higuera_cary import higuera_cary_single_particle
 
 
 def _tile_axis(axis, tile_index, cells_per_tile):
@@ -16,10 +17,10 @@ def _tile_axis(axis, tile_index, cells_per_tile):
     return jax.lax.dynamic_slice(axis, (start,), (cells_per_tile + 2,))
 
 
-@partial(jit, static_argnames=("tile_shape", "relativistic"))
-def tiled_particle_push(tiled_particles, E_tiles, B_tiles, world, constants, tile_shape, relativistic=True):
+@partial(jit, static_argnames=("tile_shape", "relativistic", "particle_pusher"))
+def tiled_particle_push(tiled_particles, E_tiles, B_tiles, world, constants, tile_shape, relativistic=True, particle_pusher="boris"):
     """
-    Push tile-major particles with Boris using compact tiled Yee fields.
+    Push tile-major particles with the selected pusher using compact tiled Yee fields.
 
     Particles are assumed to live in the tile that owns their current forward
     position.  The one-cell field halos on each compact tile provide the
@@ -79,23 +80,37 @@ def tiled_particle_push(tiled_particles, E_tiles, B_tiles, world, constants, til
             relativistic_boris_single_particle,
             in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, None, None),
         )
-
-        new_vx, new_vy, new_vz = jax.lax.cond(
-            relativistic,
-            lambda _: relativistic_boris_vmap(
-                vx, vy, vz,
-                efield_atx, efield_aty, efield_atz,
-                bfield_atx, bfield_aty, bfield_atz,
-                q, m, dt, constants,
-            ),
-            lambda _: boris_vmap(
-                vx, vy, vz,
-                efield_atx, efield_aty, efield_atz,
-                bfield_atx, bfield_aty, bfield_atz,
-                q, m, dt, constants,
-            ),
-            operand=None,
+        higuera_cary_vmap = jax.vmap(
+            higuera_cary_single_particle,
+            in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, None, None),
         )
+
+        if particle_pusher == "boris":
+            new_vx, new_vy, new_vz = jax.lax.cond(
+                relativistic,
+                lambda _: relativistic_boris_vmap(
+                    vx, vy, vz,
+                    efield_atx, efield_aty, efield_atz,
+                    bfield_atx, bfield_aty, bfield_atz,
+                    q, m, dt, constants,
+                ),
+                lambda _: boris_vmap(
+                    vx, vy, vz,
+                    efield_atx, efield_aty, efield_atz,
+                    bfield_atx, bfield_aty, bfield_atz,
+                    q, m, dt, constants,
+                ),
+                operand=None,
+            )
+        elif particle_pusher == "higuera_cary":
+            new_vx, new_vy, new_vz = higuera_cary_vmap(
+                vx, vy, vz,
+                efield_atx, efield_aty, efield_atz,
+                bfield_atx, bfield_aty, bfield_atz,
+                q, m, dt, constants,
+            )
+        else:
+            raise ValueError(f"Unknown particle_pusher: {particle_pusher}")
 
         active = active_tile.reshape(-1)
         update_u1 = update_u1.reshape(-1)

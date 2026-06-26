@@ -151,6 +151,65 @@ class TestTiledYeeIntegration(unittest.TestCase):
             self.assertEqual(fields[0][0].ndim, 6)
             self.assertEqual(tuple(world["tile_shape"]), (2, 1, 1))
 
+    def test_initialize_simulation_accepts_tiled_yee_higuera_cary_pusher(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            x_path = os.path.join(tmpdir, "x.npy")
+            zeros_path = os.path.join(tmpdir, "zeros.npy")
+            vx_path = os.path.join(tmpdir, "vx.npy")
+            np.save(x_path, np.array([-1.5, -0.5, 0.5, 1.5]))
+            np.save(zeros_path, np.zeros(4))
+            np.save(vx_path, np.array([0.10, -0.05, 0.07, -0.02]))
+
+            config = {
+                "simulation_parameters": {
+                    "name": "tiled yee higuera cary init smoke",
+                    "output_dir": tmpdir,
+                    "solver": "tiled_yee",
+                    "Nx": 8,
+                    "Ny": 1,
+                    "Nz": 1,
+                    "x_wind": 4.0,
+                    "y_wind": 1.0,
+                    "z_wind": 1.0,
+                    "dt": 0.01,
+                    "Nt": 1,
+                    "shape_factor": 1,
+                    "particle_tile_nx": 2,
+                    "particle_tile_ny": 1,
+                    "particle_tile_nz": 1,
+                    "current_calculation": "j_from_rhov",
+                    "filter_j": "none",
+                    "fast_backend": "default",
+                    "particle_pusher": "higuera_cary",
+                    "relativistic": True,
+                },
+                "plotting": {"plotting_interval": 1},
+                "particle1": {
+                    "name": "electrons",
+                    "N_particles": 4,
+                    "charge": -1.0,
+                    "mass": 2.0,
+                    "weight": 0.5,
+                    "temperature": 1.0,
+                    "initial_x": x_path,
+                    "initial_y": zeros_path,
+                    "initial_z": zeros_path,
+                    "initial_vx": vx_path,
+                    "initial_vy": zeros_path,
+                    "initial_vz": zeros_path,
+                },
+            }
+            config_path = os.path.join(tmpdir, "tiled_yee_higuera_cary.toml")
+            with open(config_path, "w") as f:
+                toml.dump(config, f)
+
+            loop, particles, fields, world, simulation_parameters, *_rest = initialize_simulation(toml.load(config_path))
+
+            self.assertIs(loop.func if hasattr(loop, "func") else loop, time_loop_electrodynamic_tiled)
+            self.assertIsInstance(particles, TiledParticles)
+            self.assertEqual(fields[0][0].ndim, 6)
+            self.assertEqual(simulation_parameters["particle_pusher"], "higuera_cary")
+
     def test_initialize_simulation_accepts_tiled_yee_digital_current_filter(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             x_path = os.path.join(tmpdir, "x.npy")
