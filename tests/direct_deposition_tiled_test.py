@@ -165,6 +165,25 @@ class TestDirectDepositionTiled(unittest.TestCase):
         legacy_folded = fold_tiled_ghost_cells_periodic(tiles)
         self.assertTrue(jnp.allclose(folded, legacy_folded, rtol=1.0e-12, atol=1.0e-12))
 
+    def test_fold_tiled_ghost_cells_two_guard_layers_adds_deposits_to_neighbors(self):
+        world = self._build_world(Nx=8, Ny=4, Nz=4)
+        num_guard_cells = 2
+        tiles = jnp.zeros((2, 1, 1, 8, 8, 8))
+
+        tiles = tiles.at[1, 0, 0, 0, 2, 2].set(2.0)
+        tiles = tiles.at[1, 0, 0, 1, 2, 2].set(3.0)
+        tiles = tiles.at[0, 0, 0, -2, 2, 2].set(5.0)
+        tiles = tiles.at[0, 0, 0, -1, 2, 2].set(7.0)
+
+        folded = fold_tiled_ghost_cells(tiles, world, num_guard_cells)
+
+        self.assertEqual(float(folded[0, 0, 0, 4, 2, 2]), 2.0)
+        self.assertEqual(float(folded[0, 0, 0, 5, 2, 2]), 3.0)
+        self.assertEqual(float(folded[1, 0, 0, 2, 2, 2]), 5.0)
+        self.assertEqual(float(folded[1, 0, 0, 3, 2, 2]), 7.0)
+        self.assertTrue(jnp.allclose(folded[:, :, :, :num_guard_cells, :, :], 0.0))
+        self.assertTrue(jnp.allclose(folded[:, :, :, -num_guard_cells:, :, :], 0.0))
+
     def test_fold_tiled_ghost_cells_conducting_reflects_exterior_deposits(self):
         world = self._build_world(
             Nx=4,

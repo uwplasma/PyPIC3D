@@ -80,6 +80,66 @@ class TestYeeTiled(unittest.TestCase):
 
         return tuple(self._fill_ghosts(component, world) for component in (Fx, Fy, Fz))
 
+    def _fill_guard_cells(self, field, world, num_guard_cells):
+        g = num_guard_cells
+        bc_x = world["boundary_conditions"]["x"]
+        bc_y = world["boundary_conditions"]["y"]
+        bc_z = world["boundary_conditions"]["z"]
+
+        if bc_x == BC_PERIODIC:
+            field = field.at[:g, :, :].set(field[-2 * g:-g, :, :])
+            field = field.at[-g:, :, :].set(field[g:2 * g, :, :])
+        else:
+            field = field.at[:g, :, :].set(0.0)
+            field = field.at[-g:, :, :].set(0.0)
+
+        if bc_y == BC_PERIODIC:
+            field = field.at[:, :g, :].set(field[:, -2 * g:-g, :])
+            field = field.at[:, -g:, :].set(field[:, g:2 * g, :])
+        else:
+            field = field.at[:, :g, :].set(0.0)
+            field = field.at[:, -g:, :].set(0.0)
+
+        if bc_z == BC_PERIODIC:
+            field = field.at[:, :, :g].set(field[:, :, -2 * g:-g])
+            field = field.at[:, :, -g:].set(field[:, :, g:2 * g])
+        else:
+            field = field.at[:, :, :g].set(0.0)
+            field = field.at[:, :, -g:].set(0.0)
+
+        return field
+
+    def _tile_scalar_field_with_guard(self, field, tile_shape, num_guard_cells):
+        g = num_guard_cells
+        tile_nx, tile_ny, tile_nz = tile_shape
+        Nx = int(field.shape[0]) - 2 * g
+        Ny = int(field.shape[1]) - 2 * g
+        Nz = int(field.shape[2]) - 2 * g
+        ntx = Nx // tile_nx
+        nty = Ny // tile_ny
+        ntz = Nz // tile_nz
+
+        tiles = []
+        for tx in range(ntx):
+            y_tiles = []
+            for ty in range(nty):
+                z_tiles = []
+                for tz in range(ntz):
+                    ix = tx * tile_nx
+                    iy = ty * tile_ny
+                    iz = tz * tile_nz
+                    z_tiles.append(
+                        field[
+                            ix:ix + tile_nx + 2 * g,
+                            iy:iy + tile_ny + 2 * g,
+                            iz:iz + tile_nz + 2 * g,
+                        ]
+                    )
+                y_tiles.append(jnp.stack(z_tiles, axis=0))
+            tiles.append(jnp.stack(y_tiles, axis=0))
+
+        return jnp.stack(tiles, axis=0)
+
     def test_tile_vector_field_assembles_to_original_ghost_celled_field(self):
         world = self._build_world()
         tile_shape = (2, 3, 2)
@@ -167,6 +227,32 @@ class TestYeeTiled(unittest.TestCase):
         reference_tiles = tile_vector_field((reference,), world, tile_shape)[0]
 
         self.assertTrue(jnp.allclose(refreshed, reference_tiles, rtol=1.0e-12, atol=1.0e-12))
+
+    def test_update_tiled_ghost_cells_two_guard_layers_matches_global_refresh(self):
+        world = self._mixed_bc_world()
+        tile_shape = (2, 3, 2)
+        num_guard_cells = 2
+        Nx, Ny, Nz = world["Nx"], world["Ny"], world["Nz"]
+        shape = (
+            Nx + 2 * num_guard_cells,
+            Ny + 2 * num_guard_cells,
+            Nz + 2 * num_guard_cells,
+        )
+
+        field = jnp.arange(jnp.prod(jnp.asarray(shape)), dtype=jnp.float64).reshape(shape)
+        field = self._fill_guard_cells(field, world, num_guard_cells)
+        tiles = self._tile_scalar_field_with_guard(field, tile_shape, num_guard_cells)
+
+        stale_tiles = tiles.at[:, :, :, :num_guard_cells, :, :].set(-100.0)
+        stale_tiles = stale_tiles.at[:, :, :, -num_guard_cells:, :, :].set(-200.0)
+        stale_tiles = stale_tiles.at[:, :, :, :, :num_guard_cells, :].set(-300.0)
+        stale_tiles = stale_tiles.at[:, :, :, :, -num_guard_cells:, :].set(-400.0)
+        stale_tiles = stale_tiles.at[:, :, :, :, :, :num_guard_cells].set(-500.0)
+        stale_tiles = stale_tiles.at[:, :, :, :, :, -num_guard_cells:].set(-600.0)
+
+        refreshed = update_tiled_ghost_cells(stale_tiles, world, num_guard_cells)
+
+        self.assertTrue(jnp.allclose(refreshed, tiles, rtol=1.0e-12, atol=1.0e-12))
 
     def test_update_tiled_vector_ghost_cells_conducting_refreshes_each_component(self):
         world = self._conducting_world()

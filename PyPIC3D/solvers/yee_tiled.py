@@ -106,16 +106,18 @@ def _assemble_scalar_tiles(field_tiles, world, tile_shape):
     return assemble_tiled_scalar_field(field_tiles, world, tile_shape)
 
 
-def update_tiled_ghost_cells(field_tiles, world):
+def update_tiled_ghost_cells(field_tiles, world, num_guard_cells=1):
     """
-    Refresh one-cell tile halos using the field boundary conditions.
+    Refresh tile halos using the field boundary conditions.
 
     ``field_tiles`` has shape
-    ``(ntx, nty, ntz, tile_nx + 2, tile_ny + 2, tile_nz + 2)``.  The last
-    three axes are the tile-local ghost-celled field.  The first three axes
+    ``(ntx, nty, ntz, tile_nx + 2*g, tile_ny + 2*g, tile_nz + 2*g)``.
+    The last three axes are the tile-local ghost-celled field with
+    ``g = num_guard_cells`` guard cells on each side.  The first three axes
     identify the tile in the global tiling.
     """
 
+    g = int(num_guard_cells)
     bc_x = world["boundary_conditions"]["x"]
     bc_y = world["boundary_conditions"]["y"]
     bc_z = world["boundary_conditions"]["z"]
@@ -123,44 +125,44 @@ def update_tiled_ghost_cells(field_tiles, world):
     # x-halos: internal tile boundaries exchange neighboring interiors.  At a
     # conducting global wall, the exterior ghost face is zero, matching
     # update_ghost_cells on the assembled field.
-    field_tiles = field_tiles.at[:, :, :, 0, :, :].set(
-        jnp.roll(field_tiles[:, :, :, -2, :, :], shift=1, axis=0)
+    field_tiles = field_tiles.at[:, :, :, :g, :, :].set(
+        jnp.roll(field_tiles[:, :, :, -2 * g:-g, :, :], shift=1, axis=0)
     )
-    field_tiles = field_tiles.at[:, :, :, -1, :, :].set(
-        jnp.roll(field_tiles[:, :, :, 1, :, :], shift=-1, axis=0)
+    field_tiles = field_tiles.at[:, :, :, -g:, :, :].set(
+        jnp.roll(field_tiles[:, :, :, g:2 * g, :, :], shift=-1, axis=0)
     )
     field_tiles = jax.lax.cond(
         bc_x == BC_CONDUCTING,
-        lambda tiles: tiles.at[0, :, :, 0, :, :].set(0.0).at[-1, :, :, -1, :, :].set(0.0),
+        lambda tiles: tiles.at[0, :, :, :g, :, :].set(0.0).at[-1, :, :, -g:, :, :].set(0.0),
         lambda tiles: tiles,
         operand=field_tiles,
     )
 
     # y-halos use the x-refreshed field so tile-edge/corner guard cells match
     # the sequential ghost-cell convention used by the global arrays.
-    field_tiles = field_tiles.at[:, :, :, :, 0, :].set(
-        jnp.roll(field_tiles[:, :, :, :, -2, :], shift=1, axis=1)
+    field_tiles = field_tiles.at[:, :, :, :, :g, :].set(
+        jnp.roll(field_tiles[:, :, :, :, -2 * g:-g, :], shift=1, axis=1)
     )
-    field_tiles = field_tiles.at[:, :, :, :, -1, :].set(
-        jnp.roll(field_tiles[:, :, :, :, 1, :], shift=-1, axis=1)
+    field_tiles = field_tiles.at[:, :, :, :, -g:, :].set(
+        jnp.roll(field_tiles[:, :, :, :, g:2 * g, :], shift=-1, axis=1)
     )
     field_tiles = jax.lax.cond(
         bc_y == BC_CONDUCTING,
-        lambda tiles: tiles.at[:, 0, :, :, 0, :].set(0.0).at[:, -1, :, :, -1, :].set(0.0),
+        lambda tiles: tiles.at[:, 0, :, :, :g, :].set(0.0).at[:, -1, :, :, -g:, :].set(0.0),
         lambda tiles: tiles,
         operand=field_tiles,
     )
 
     # z-halos complete the edge and corner values after x/y have been refreshed.
-    field_tiles = field_tiles.at[:, :, :, :, :, 0].set(
-        jnp.roll(field_tiles[:, :, :, :, :, -2], shift=1, axis=2)
+    field_tiles = field_tiles.at[:, :, :, :, :, :g].set(
+        jnp.roll(field_tiles[:, :, :, :, :, -2 * g:-g], shift=1, axis=2)
     )
-    field_tiles = field_tiles.at[:, :, :, :, :, -1].set(
-        jnp.roll(field_tiles[:, :, :, :, :, 1], shift=-1, axis=2)
+    field_tiles = field_tiles.at[:, :, :, :, :, -g:].set(
+        jnp.roll(field_tiles[:, :, :, :, :, g:2 * g], shift=-1, axis=2)
     )
     field_tiles = jax.lax.cond(
         bc_z == BC_CONDUCTING,
-        lambda tiles: tiles.at[:, :, 0, :, :, 0].set(0.0).at[:, :, -1, :, :, -1].set(0.0),
+        lambda tiles: tiles.at[:, :, 0, :, :, :g].set(0.0).at[:, :, -1, :, :, -g:].set(0.0),
         lambda tiles: tiles,
         operand=field_tiles,
     )
@@ -168,32 +170,32 @@ def update_tiled_ghost_cells(field_tiles, world):
     return field_tiles
 
 
-def update_tiled_ghost_cells_periodic(field_tiles):
+def update_tiled_ghost_cells_periodic(field_tiles, num_guard_cells=1):
     """
-    Refresh one-cell tile halos with all-periodic boundary conditions.
+    Refresh tile halos with all-periodic boundary conditions.
     """
 
     world = {"boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC}}
-    return update_tiled_ghost_cells(field_tiles, world)
+    return update_tiled_ghost_cells(field_tiles, world, num_guard_cells)
 
 
-def update_tiled_vector_ghost_cells(field_tiles, world):
+def update_tiled_vector_ghost_cells(field_tiles, world, num_guard_cells=1):
     """
     Refresh tile halos for each component of a vector field.
     """
 
-    return tuple(update_tiled_ghost_cells(component, world) for component in field_tiles)
+    return tuple(update_tiled_ghost_cells(component, world, num_guard_cells) for component in field_tiles)
 
 
-def update_tiled_vector_ghost_cells_periodic(field_tiles):
+def update_tiled_vector_ghost_cells_periodic(field_tiles, num_guard_cells=1):
     """
     Refresh periodic tile halos for each component of a vector field.
     """
 
-    return tuple(update_tiled_ghost_cells_periodic(component) for component in field_tiles)
+    return tuple(update_tiled_ghost_cells_periodic(component, num_guard_cells) for component in field_tiles)
 
 
-def update_tiled_ghost_cells_for_pml(field_tiles, world):
+def update_tiled_ghost_cells_for_pml(field_tiles, world, num_guard_cells=1):
     """
     Refresh tile halos without wrapping across PML-active global walls.
     """
@@ -208,15 +210,15 @@ def update_tiled_ghost_cells_for_pml(field_tiles, world):
     bc_z = jnp.where((pml_z) & (bc_z == BC_PERIODIC), BC_CONDUCTING, bc_z)
 
     pml_world = {"boundary_conditions": {"x": bc_x, "y": bc_y, "z": bc_z}}
-    return update_tiled_ghost_cells(field_tiles, pml_world)
+    return update_tiled_ghost_cells(field_tiles, pml_world, num_guard_cells)
 
 
-def update_tiled_vector_ghost_cells_for_pml(field_tiles, world):
+def update_tiled_vector_ghost_cells_for_pml(field_tiles, world, num_guard_cells=1):
     """
     Refresh tile halos for a vector field with PML-active exterior walls.
     """
 
-    return tuple(update_tiled_ghost_cells_for_pml(component, world) for component in field_tiles)
+    return tuple(update_tiled_ghost_cells_for_pml(component, world, num_guard_cells) for component in field_tiles)
 
 
 def apply_tiled_conducting_bc(E_tiles, world):
@@ -272,7 +274,7 @@ def apply_tiled_conducting_bc(E_tiles, world):
     return Ex, Ey, Ez
 
 
-def fold_tiled_ghost_cells(field_tiles, world):
+def fold_tiled_ghost_cells(field_tiles, world, num_guard_cells=1):
     """
     Add tile-ghost deposits into owning interiors, then clear ghosts.
 
@@ -283,99 +285,100 @@ def fold_tiled_ghost_cells(field_tiles, world):
     used by the global ghost-cell fold.
     """
 
+    g = int(num_guard_cells)
     bc_x = world["boundary_conditions"]["x"]
     bc_y = world["boundary_conditions"]["y"]
     bc_z = world["boundary_conditions"]["z"]
 
-    x_lower_ghost = field_tiles[:, :, :, 0, :, :]
-    x_upper_ghost = field_tiles[:, :, :, -1, :, :]
-    field_tiles = field_tiles.at[:, :, :, -2, :, :].add(
+    x_lower_ghost = field_tiles[:, :, :, :g, :, :]
+    x_upper_ghost = field_tiles[:, :, :, -g:, :, :]
+    field_tiles = field_tiles.at[:, :, :, -2 * g:-g, :, :].add(
         jnp.roll(x_lower_ghost, shift=-1, axis=0)
     )
-    field_tiles = field_tiles.at[:, :, :, 1, :, :].add(
+    field_tiles = field_tiles.at[:, :, :, g:2 * g, :, :].add(
         jnp.roll(x_upper_ghost, shift=1, axis=0)
     )
     field_tiles = jax.lax.cond(
         bc_x == BC_CONDUCTING,
         lambda tiles: tiles
-        .at[-1, :, :, -2, :, :].add(-x_lower_ghost[0, :, :, :, :])
-        .at[0, :, :, 1, :, :].add(-x_upper_ghost[-1, :, :, :, :])
-        .at[0, :, :, 1, :, :].add(-x_lower_ghost[0, :, :, :, :])
-        .at[-1, :, :, -2, :, :].add(-x_upper_ghost[-1, :, :, :, :]),
+        .at[-1, :, :, -2 * g:-g, :, :].add(-x_lower_ghost[0, :, :, :, :])
+        .at[0, :, :, g:2 * g, :, :].add(-x_upper_ghost[-1, :, :, :, :])
+        .at[0, :, :, g:2 * g, :, :].add(-x_lower_ghost[0, :, :, :, :])
+        .at[-1, :, :, -2 * g:-g, :, :].add(-x_upper_ghost[-1, :, :, :, :]),
         lambda tiles: tiles,
         operand=field_tiles,
     )
-    field_tiles = field_tiles.at[:, :, :, 0, :, :].set(0.0)
-    field_tiles = field_tiles.at[:, :, :, -1, :, :].set(0.0)
+    field_tiles = field_tiles.at[:, :, :, :g, :, :].set(0.0)
+    field_tiles = field_tiles.at[:, :, :, -g:, :, :].set(0.0)
 
-    y_lower_ghost = field_tiles[:, :, :, :, 0, :]
-    y_upper_ghost = field_tiles[:, :, :, :, -1, :]
-    field_tiles = field_tiles.at[:, :, :, :, -2, :].add(
+    y_lower_ghost = field_tiles[:, :, :, :, :g, :]
+    y_upper_ghost = field_tiles[:, :, :, :, -g:, :]
+    field_tiles = field_tiles.at[:, :, :, :, -2 * g:-g, :].add(
         jnp.roll(y_lower_ghost, shift=-1, axis=1)
     )
-    field_tiles = field_tiles.at[:, :, :, :, 1, :].add(
+    field_tiles = field_tiles.at[:, :, :, :, g:2 * g, :].add(
         jnp.roll(y_upper_ghost, shift=1, axis=1)
     )
     field_tiles = jax.lax.cond(
         bc_y == BC_CONDUCTING,
         lambda tiles: tiles
-        .at[:, -1, :, :, -2, :].add(-y_lower_ghost[:, 0, :, :, :])
-        .at[:, 0, :, :, 1, :].add(-y_upper_ghost[:, -1, :, :, :])
-        .at[:, 0, :, :, 1, :].add(-y_lower_ghost[:, 0, :, :, :])
-        .at[:, -1, :, :, -2, :].add(-y_upper_ghost[:, -1, :, :, :]),
+        .at[:, -1, :, :, -2 * g:-g, :].add(-y_lower_ghost[:, 0, :, :, :])
+        .at[:, 0, :, :, g:2 * g, :].add(-y_upper_ghost[:, -1, :, :, :])
+        .at[:, 0, :, :, g:2 * g, :].add(-y_lower_ghost[:, 0, :, :, :])
+        .at[:, -1, :, :, -2 * g:-g, :].add(-y_upper_ghost[:, -1, :, :, :]),
         lambda tiles: tiles,
         operand=field_tiles,
     )
-    field_tiles = field_tiles.at[:, :, :, :, 0, :].set(0.0)
-    field_tiles = field_tiles.at[:, :, :, :, -1, :].set(0.0)
+    field_tiles = field_tiles.at[:, :, :, :, :g, :].set(0.0)
+    field_tiles = field_tiles.at[:, :, :, :, -g:, :].set(0.0)
 
-    z_lower_ghost = field_tiles[:, :, :, :, :, 0]
-    z_upper_ghost = field_tiles[:, :, :, :, :, -1]
-    field_tiles = field_tiles.at[:, :, :, :, :, -2].add(
+    z_lower_ghost = field_tiles[:, :, :, :, :, :g]
+    z_upper_ghost = field_tiles[:, :, :, :, :, -g:]
+    field_tiles = field_tiles.at[:, :, :, :, :, -2 * g:-g].add(
         jnp.roll(z_lower_ghost, shift=-1, axis=2)
     )
-    field_tiles = field_tiles.at[:, :, :, :, :, 1].add(
+    field_tiles = field_tiles.at[:, :, :, :, :, g:2 * g].add(
         jnp.roll(z_upper_ghost, shift=1, axis=2)
     )
     field_tiles = jax.lax.cond(
         bc_z == BC_CONDUCTING,
         lambda tiles: tiles
-        .at[:, :, -1, :, :, -2].add(-z_lower_ghost[:, :, 0, :, :])
-        .at[:, :, 0, :, :, 1].add(-z_upper_ghost[:, :, -1, :, :])
-        .at[:, :, 0, :, :, 1].add(-z_lower_ghost[:, :, 0, :, :])
-        .at[:, :, -1, :, :, -2].add(-z_upper_ghost[:, :, -1, :, :]),
+        .at[:, :, -1, :, :, -2 * g:-g].add(-z_lower_ghost[:, :, 0, :, :])
+        .at[:, :, 0, :, :, g:2 * g].add(-z_upper_ghost[:, :, -1, :, :])
+        .at[:, :, 0, :, :, g:2 * g].add(-z_lower_ghost[:, :, 0, :, :])
+        .at[:, :, -1, :, :, -2 * g:-g].add(-z_upper_ghost[:, :, -1, :, :]),
         lambda tiles: tiles,
         operand=field_tiles,
     )
-    field_tiles = field_tiles.at[:, :, :, :, :, 0].set(0.0)
-    field_tiles = field_tiles.at[:, :, :, :, :, -1].set(0.0)
+    field_tiles = field_tiles.at[:, :, :, :, :, :g].set(0.0)
+    field_tiles = field_tiles.at[:, :, :, :, :, -g:].set(0.0)
 
     return field_tiles
 
 
-def fold_tiled_ghost_cells_periodic(field_tiles):
+def fold_tiled_ghost_cells_periodic(field_tiles, num_guard_cells=1):
     """
     Fold all-periodic tile-ghost deposits for one scalar component.
     """
 
     world = {"boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC}}
-    return fold_tiled_ghost_cells(field_tiles, world)
+    return fold_tiled_ghost_cells(field_tiles, world, num_guard_cells)
 
 
-def fold_tiled_vector_ghost_cells(field_tiles, world):
+def fold_tiled_vector_ghost_cells(field_tiles, world, num_guard_cells=1):
     """
     Fold tile-ghost deposits for each vector component.
     """
 
-    return tuple(fold_tiled_ghost_cells(component, world) for component in field_tiles)
+    return tuple(fold_tiled_ghost_cells(component, world, num_guard_cells) for component in field_tiles)
 
 
-def fold_tiled_vector_ghost_cells_periodic(field_tiles):
+def fold_tiled_vector_ghost_cells_periodic(field_tiles, num_guard_cells=1):
     """
     Fold all-periodic tile-ghost deposits for each vector component.
     """
 
-    return tuple(fold_tiled_ghost_cells_periodic(component) for component in field_tiles)
+    return tuple(fold_tiled_ghost_cells_periodic(component, num_guard_cells) for component in field_tiles)
 
 
 def update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape, pml_state=None):
