@@ -44,6 +44,7 @@ from PyPIC3D.particles.tiled_particle_initialization import (
 )
 
 from PyPIC3D.solvers.yee_tiled import (
+    empty_tiled_vector_field,
     tile_scalar_field,
     tile_vector_field,
 )
@@ -66,6 +67,7 @@ from PyPIC3D.pusher.particle_push import validate_particle_pusher
 from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
 from PyPIC3D.deposition.direct_deposition_tiled import direct_J_from_tiled_particles
+from PyPIC3D.deposition.esirkepov_tiled import tiled_esirkepov_current
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
@@ -122,13 +124,27 @@ def _tile_shape_from_parameters(simulation_parameters):
     )
 
 
+CURRENT_J_FROM_RHOV = 0
+CURRENT_ESIRKEPOV = 1
+
+
+def _encode_current_calculation(current_calculation):
+    current_codes = {
+        "j_from_rhov": CURRENT_J_FROM_RHOV,
+        "esirkepov": CURRENT_ESIRKEPOV,
+    }
+    if current_calculation not in current_codes:
+        raise ValueError("Unsupported current_calculation. Use 'j_from_rhov' or 'esirkepov'.")
+    return current_codes[current_calculation]
+
+
 def _validate_tiled_yee_configuration(simulation_parameters, electrostatic, pml_active):
     """
     Keep the first tile-native PIC path tied to the kernels that exist today.
     """
 
-    if simulation_parameters["current_calculation"] != "j_from_rhov":
-        raise ValueError("tiled_yee currently supports only current_calculation='j_from_rhov'")
+    if simulation_parameters["current_calculation"] not in ("j_from_rhov", "esirkepov"):
+        raise ValueError("tiled_yee currently supports current_calculation='j_from_rhov' or 'esirkepov'")
     if simulation_parameters["particle_pusher"] not in ("boris", "higuera_cary"):
         raise ValueError("tiled_yee currently supports only particle_pusher='boris' or 'higuera_cary'")
     if simulation_parameters["filter_j"] not in ("none", "digital", "bilinear"):
@@ -333,6 +349,8 @@ def initialize_simulation(toml_file):
         'y_wind': y_wind,
         'z_wind': z_wind,
         'shape_factor': simulation_parameters['shape_factor'],
+        'current_calculation': _encode_current_calculation(simulation_parameters['current_calculation']),
+        'current_guard_cells': 2 if simulation_parameters['current_calculation'] == "esirkepov" else 1,
         'boundary_conditions': {
             'x': _encode_field_bc(simulation_parameters['x_bc']),
             'y': _encode_field_bc(simulation_parameters['y_bc']),
@@ -505,8 +523,10 @@ def initialize_simulation(toml_file):
 
     if simulation_parameters['current_calculation'] == "esirkepov":
         print("Using Esirkepov current calculation method")
-        # raise NotImplementedError("Esirkepov current calculation method is not fully functional yet.")
-        J_func = Esirkepov_current
+        if solver == "tiled_yee":
+            J_func = tiled_esirkepov_current
+        else:
+            J_func = Esirkepov_current
     elif simulation_parameters['current_calculation'] == "j_from_rhov":
         print(f"Using J from rhov current calculation method with filter: {simulation_parameters['filter_j']}")
         if solver == "tiled_yee":
@@ -521,7 +541,10 @@ def initialize_simulation(toml_file):
         particles = to_tiled_particles(particles, world, simulation_parameters)
         E = tile_vector_field(E, world, tile_shape)
         B = tile_vector_field(B, world, tile_shape)
-        J = tile_vector_field(J, world, tile_shape)
+        if simulation_parameters["current_calculation"] == "esirkepov":
+            J = empty_tiled_vector_field(world, tile_shape, num_guard_cells=2, dtype=E[0].dtype)
+        else:
+            J = tile_vector_field(J, world, tile_shape)
         external_E, external_B = external_fields
         external_fields = (
             tile_vector_field(external_E, world, tile_shape),

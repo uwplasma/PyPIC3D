@@ -1,6 +1,7 @@
 import jax.numpy as jnp
 
 from PyPIC3D.deposition.direct_deposition_tiled import direct_J_from_tiled_particles
+from PyPIC3D.deposition.esirkepov_tiled import tiled_esirkepov_current
 from PyPIC3D.particles.tiled_particle_refresh import (
     refresh_tiled_particle_tiles,
     update_tiled_particle_positions,
@@ -70,35 +71,40 @@ def time_loop_electrodynamic_tiled(
     )
     # use the selected tiled pusher for particle velocities
 
-    particles = update_tiled_particle_positions(particles, world["dt"]/2)
-    # update particle forward positions before current deposition half a time step
-    particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)
-    overflow = overflow_previous | overflow
-    # wrap periodic particles and move them into their owning tiles.  Overflow
-    # means the fixed tile capacity was exceeded and the Python driver must
-    # reject the step rather than silently dropping particles.
+    use_esirkepov = J_func is tiled_esirkepov_current
+    # Esirkepov needs old and new particle positions.  The deposition kernel
+    # predicts the new positions locally, then the actual particle state is
+    # advanced and retiled after the current has been computed.
 
-    if J_func is None:
-        J_tiles = direct_J_from_tiled_particles(
-            particles,
-            J_tiles,
-            constants,
-            world,
-            filter="none",
-        )
-    else:
+    if use_esirkepov:
         J_tiles = J_func(particles, J_tiles, constants, world)
-    # deposit current directly into tile-local Yee current arrays
+        particles = update_tiled_particle_positions(particles, world["dt"])
+        particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)
+        overflow = overflow_previous | overflow
+    else:
+        particles = update_tiled_particle_positions(particles, world["dt"]/2)
+        # update particle positions to the centered direct-current deposition time
+        particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)
+        overflow = overflow_previous | overflow
+        # wrap periodic particles and move them into their owning tiles.
 
+        if J_func is None:
+            J_tiles = direct_J_from_tiled_particles(
+                particles,
+                J_tiles,
+                constants,
+                world,
+                filter="none",
+            )
+        else:
+            J_tiles = J_func(particles, J_tiles, constants, world)
+        # deposit current directly into tile-local Yee current arrays
 
-    particles = update_tiled_particle_positions(particles, world["dt"]/2)
-    # update particle forward positions before current deposition half a time step
-    particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)
-    overflow = overflow_previous | overflow
-    # wrap periodic particles and move them into their owning tiles.  Overflow
-    # means the fixed tile capacity was exceeded and the Python driver must
-    # reject the step rather than silently dropping particles.
-
+        particles = update_tiled_particle_positions(particles, world["dt"]/2)
+        # complete the full particle position update
+        particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)
+        overflow = overflow_previous | overflow
+        # refresh tile ownership after the full position update.
 
 
     if pml_state is None:

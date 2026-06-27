@@ -15,20 +15,65 @@ def _tile_axis_count(n_cells, cells_per_tile):
     return int(n_cells) // int(cells_per_tile)
 
 
-def tile_scalar_field(field, world, tile_shape):
+def empty_tiled_scalar_field(world, tile_shape, num_guard_cells=1, dtype=None):
+    """
+    Allocate an empty tile-major scalar field with ``num_guard_cells`` guards.
+    """
+
+    tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
+    ntx = _tile_axis_count(world["Nx"], tile_nx)
+    nty = _tile_axis_count(world["Ny"], tile_ny)
+    ntz = _tile_axis_count(world["Nz"], tile_nz)
+    g = int(num_guard_cells)
+    if dtype is None:
+        dtype = jnp.float64
+
+    return jnp.zeros(
+        (
+            ntx,
+            nty,
+            ntz,
+            tile_nx + 2 * g,
+            tile_ny + 2 * g,
+            tile_nz + 2 * g,
+        ),
+        dtype=dtype,
+    )
+
+
+def empty_tiled_vector_field(world, tile_shape, num_guard_cells=1, dtype=None):
+    """
+    Allocate empty tile-major vector-field components.
+    """
+
+    return tuple(empty_tiled_scalar_field(world, tile_shape, num_guard_cells, dtype) for _ in range(3))
+
+
+def tile_scalar_field(field, world, tile_shape, num_guard_cells=1):
     """
     Split a ghost-celled field into compact tiles using the shared tile shape.
     """
 
-    del world
-
     tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
+    g = int(num_guard_cells)
     Nx = int(field.shape[0]) - 2
     Ny = int(field.shape[1]) - 2
     Nz = int(field.shape[2]) - 2
     ntx = _tile_axis_count(Nx, tile_nx)
     nty = _tile_axis_count(Ny, tile_ny)
     ntz = _tile_axis_count(Nz, tile_nz)
+
+    if g != 1:
+        field_tiles = empty_tiled_scalar_field(world, tile_shape, g, field.dtype)
+        for tx in range(ntx):
+            for ty in range(nty):
+                for tz in range(ntz):
+                    ix = 1 + tx * tile_nx
+                    iy = 1 + ty * tile_ny
+                    iz = 1 + tz * tile_nz
+                    interior = field[ix:ix + tile_nx, iy:iy + tile_ny, iz:iz + tile_nz]
+                    field_tiles = field_tiles.at[tx, ty, tz, g:-g, g:-g, g:-g].set(interior)
+        return update_tiled_ghost_cells(field_tiles, world, g)
 
     def tile_at(tx, ty, tz):
         start = (tx * tile_nx, ty * tile_ny, tz * tile_nz)
@@ -54,7 +99,7 @@ def _tile_scalar_field(field, tile_shape):
     return tile_scalar_field(field, None, tile_shape)
 
 
-def tile_vector_field(field, world, tile_shape):
+def tile_vector_field(field, world, tile_shape, num_guard_cells=1):
     """
     Split ``(Fx, Fy, Fz)`` into compact ghost-celled tiles.
 
@@ -63,15 +108,16 @@ def tile_vector_field(field, world, tile_shape):
     ``(tile_nx + 2, tile_ny + 2, tile_nz + 2)``.
     """
 
-    return tuple(tile_scalar_field(component, world, tile_shape) for component in field)
+    return tuple(tile_scalar_field(component, world, tile_shape, num_guard_cells) for component in field)
 
 
-def assemble_tiled_scalar_field(field_tiles, world, tile_shape):
+def assemble_tiled_scalar_field(field_tiles, world, tile_shape, num_guard_cells=1):
     """
     Assemble compact field tiles back into one global ghost-celled field.
     """
 
     tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
+    g = int(num_guard_cells)
     ntx, nty, ntz = field_tiles.shape[:3]
     Nx = int(ntx) * tile_nx
     Ny = int(nty) * tile_ny
@@ -82,7 +128,7 @@ def assemble_tiled_scalar_field(field_tiles, world, tile_shape):
     for tx in range(ntx):
         for ty in range(nty):
             for tz in range(ntz):
-                interior = field_tiles[tx, ty, tz, 1:-1, 1:-1, 1:-1]
+                interior = field_tiles[tx, ty, tz, g:-g, g:-g, g:-g]
                 ix = 1 + tx * tile_nx
                 iy = 1 + ty * tile_ny
                 iz = 1 + tz * tile_nz
@@ -94,12 +140,12 @@ def assemble_tiled_scalar_field(field_tiles, world, tile_shape):
     return update_ghost_cells(field, bc_x, bc_y, bc_z)
 
 
-def assemble_tiled_vector_field(field_tiles, world, tile_shape):
+def assemble_tiled_vector_field(field_tiles, world, tile_shape, num_guard_cells=1):
     """
     Assemble tiled vector-field components into ordinary ghost-celled arrays.
     """
 
-    return tuple(assemble_tiled_scalar_field(component, world, tile_shape) for component in field_tiles)
+    return tuple(assemble_tiled_scalar_field(component, world, tile_shape, num_guard_cells) for component in field_tiles)
 
 
 def _assemble_scalar_tiles(field_tiles, world, tile_shape):
@@ -397,6 +443,9 @@ def update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_
     else:
         Bx, By, Bz = update_tiled_vector_ghost_cells_for_pml(B_tiles, world)
     Jx, Jy, Jz = J_tiles
+    gx = (Jx.shape[3] - (Ex.shape[3] - 2)) // 2
+    gy = (Jx.shape[4] - (Ex.shape[4] - 2)) // 2
+    gz = (Jx.shape[5] - (Ex.shape[5] - 2)) // 2
 
     dt = world["dt"]
     dx, dy, dz = world["dx"], world["dy"], world["dz"]
@@ -426,15 +475,15 @@ def update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_
 
     Ex = Ex.at[:, :, :, 1:-1, 1:-1, 1:-1].set(
         Ex[:, :, :, 1:-1, 1:-1, 1:-1]
-        + (C**2 * curl_x - Jx[:, :, :, 1:-1, 1:-1, 1:-1] / eps) * dt
+        + (C**2 * curl_x - Jx[:, :, :, gx:-gx, gy:-gy, gz:-gz] / eps) * dt
     )
     Ey = Ey.at[:, :, :, 1:-1, 1:-1, 1:-1].set(
         Ey[:, :, :, 1:-1, 1:-1, 1:-1]
-        + (C**2 * curl_y - Jy[:, :, :, 1:-1, 1:-1, 1:-1] / eps) * dt
+        + (C**2 * curl_y - Jy[:, :, :, gx:-gx, gy:-gy, gz:-gz] / eps) * dt
     )
     Ez = Ez.at[:, :, :, 1:-1, 1:-1, 1:-1].set(
         Ez[:, :, :, 1:-1, 1:-1, 1:-1]
-        + (C**2 * curl_z - Jz[:, :, :, 1:-1, 1:-1, 1:-1] / eps) * dt
+        + (C**2 * curl_z - Jz[:, :, :, gx:-gx, gy:-gy, gz:-gz] / eps) * dt
     )
 
     Ex, Ey, Ez = apply_tiled_conducting_bc((Ex, Ey, Ez), world)
