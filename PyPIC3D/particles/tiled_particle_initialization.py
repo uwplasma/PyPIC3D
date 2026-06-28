@@ -60,6 +60,8 @@ def to_tiled_particles(particles, world, simulation_parameters):
             tile_counts[tx[p], ty[p], tz[p], species_index] += 1
 
     max_particles_per_tile = int(np.max(tile_counts)) if tile_counts.size else 0
+    capacity_factor = float(simulation_parameters.get("particle_tile_capacity_factor", 1.0))
+    max_particles_per_tile = int(math.ceil(max_particles_per_tile * capacity_factor))
 
     x = jnp.zeros((ntx, nty, ntz, n_species, max_particles_per_tile, 3))
     u = jnp.zeros_like(x)

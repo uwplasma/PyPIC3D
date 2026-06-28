@@ -19,6 +19,7 @@ from PyPIC3D.particles.tiled_particles import TiledParticles
 from PyPIC3D.solvers.yee_tiled import assemble_tiled_vector_field, tile_vector_field
 from PyPIC3D.utils import build_yee_grid, compute_energy
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
+from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 
 
 jax.config.update("jax_enable_x64", True)
@@ -298,6 +299,79 @@ class TestTiledYeeIntegration(unittest.TestCase):
 
     def test_validate_field_solver_accepts_tiled_yee(self):
         validate_field_solver("tiled_yee")
+
+    def test_tiled_yee_field_update_applies_standard_field_filter(self):
+        world = self._build_world()
+        constants = {"C": 10.0, "eps": 1.0, "mu": 1.0, "alpha": 0.6}
+        tile_shape = (2, 1, 1)
+        shape = (world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2)
+        interior = (slice(1, -1), slice(1, -1), slice(1, -1))
+
+        x = jnp.arange(world["Nx"], dtype=jnp.float64)[:, None, None]
+        seed = jnp.zeros(shape)
+        Ex = update_ghost_cells(seed.at[interior].set(0.1 + 0.03 * x), BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
+        Ey = update_ghost_cells(seed.at[interior].set(0.2 - 0.02 * x), BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
+        Ez = update_ghost_cells(seed.at[interior].set(0.05 * jnp.sin(x + 1.0)), BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
+        Bx = update_ghost_cells(seed.at[interior].set(0.07 * jnp.cos(x + 0.5)), BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
+        By = update_ghost_cells(seed.at[interior].set(0.04 + 0.01 * x), BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
+        Bz = update_ghost_cells(seed.at[interior].set(0.03 * jnp.sin(2.0 * x)), BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
+        E = (Ex, Ey, Ez)
+        B = (Bx, By, Bz)
+        J = (seed, seed, seed)
+        rho = seed
+        phi = seed
+        external_fields = ((seed, seed, seed), (seed, seed, seed))
+
+        _, reference_fields = time_loop_electrodynamic(
+            [],
+            (E, B, J, rho, phi, external_fields, None),
+            world,
+            constants,
+            unused_curl,
+            J_func=lambda particles, J, constants, world: J,
+            solver="fdtd",
+            relativistic=False,
+            particle_pusher="boris",
+        )
+
+        tiled_fields = (
+            tile_vector_field(E, world, tile_shape),
+            tile_vector_field(B, world, tile_shape),
+            tile_vector_field(J, world, tile_shape),
+            rho,
+            phi,
+            (
+                tile_vector_field(external_fields[0], world, tile_shape),
+                tile_vector_field(external_fields[1], world, tile_shape),
+            ),
+            None,
+        )
+        _, tiled_fields = time_loop_electrodynamic_tiled(
+            [],
+            tiled_fields,
+            world,
+            constants,
+            unused_curl,
+            J_func=lambda particles, J, constants, world: J,
+            solver="tiled_yee",
+            relativistic=False,
+            particle_pusher="boris",
+        )
+
+        reference_E, reference_B, *_ = reference_fields
+        E_tiles, B_tiles, *_ = tiled_fields
+        self._assert_vector_fields_close(
+            reference_E,
+            assemble_tiled_vector_field(E_tiles, world, tile_shape),
+            1,
+            "E",
+        )
+        self._assert_vector_fields_close(
+            reference_B,
+            assemble_tiled_vector_field(B_tiles, world, tile_shape),
+            1,
+            "B",
+        )
 
     def test_initialize_simulation_uses_tiled_particles_and_fields_for_tiled_yee(self):
         with tempfile.TemporaryDirectory() as tmpdir:

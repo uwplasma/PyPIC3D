@@ -1,7 +1,8 @@
 import jax.numpy as jnp
+import jax
 
 from PyPIC3D.deposition.direct_deposition_tiled import direct_J_from_tiled_particles
-from PyPIC3D.deposition.esirkepov_tiled import tiled_esirkepov_current
+from PyPIC3D.deposition.current_methods import CURRENT_ESIRKEPOV, CURRENT_J_FROM_RHOV
 from PyPIC3D.particles.tiled_particle_refresh import (
     refresh_tiled_particle_tiles,
     update_tiled_particle_positions,
@@ -71,33 +72,38 @@ def time_loop_electrodynamic_tiled(
     )
     # use the selected tiled pusher for particle velocities
 
-    use_esirkepov = J_func is tiled_esirkepov_current
-    # Esirkepov needs old and new particle positions.  The deposition kernel
-    # predicts the new positions locally, then the actual particle state is
-    # advanced and retiled after the current has been computed.
-
-    if use_esirkepov:
-        J_tiles = J_func(particles, J_tiles, constants, world)
-        particles = update_tiled_particle_positions(particles, world["dt"])
-        particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)
-        overflow = overflow_previous | overflow
-    else:
-        particles = update_tiled_particle_positions(particles, world["dt"]/2)
-        # update particle positions to the centered direct-current deposition time
-        particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)
-        overflow = overflow_previous | overflow
-        # wrap periodic particles and move them into their owning tiles.
-
-        if J_func is None:
-            J_tiles = direct_J_from_tiled_particles(
+    if J_func is None:
+        def current_deposition(particles, J_tiles, constants, world):
+            return direct_J_from_tiled_particles(
                 particles,
                 J_tiles,
                 constants,
                 world,
                 filter="none",
             )
-        else:
-            J_tiles = J_func(particles, J_tiles, constants, world)
+    else:
+        current_deposition = J_func
+
+    def esirkepov_step(state):
+        particles, J_tiles, overflow_previous = state
+        # Esirkepov needs old and new particle positions.  The deposition kernel
+        # predicts the new positions locally, then the actual particle state is
+        # advanced and retiled after the current has been computed.
+        J_tiles = current_deposition(particles, J_tiles, constants, world)
+        particles = update_tiled_particle_positions(particles, world["dt"])
+        particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)
+        overflow = overflow_previous | overflow
+        return particles, J_tiles, overflow
+
+    def direct_current_step(state):
+        particles, J_tiles, overflow_previous = state
+        particles = update_tiled_particle_positions(particles, world["dt"]/2)
+        # update particle positions to the centered direct-current deposition time
+        particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)
+        overflow = overflow_previous | overflow
+        # wrap periodic particles and move them into their owning tiles.
+
+        J_tiles = current_deposition(particles, J_tiles, constants, world)
         # deposit current directly into tile-local Yee current arrays
 
         particles = update_tiled_particle_positions(particles, world["dt"]/2)
@@ -105,7 +111,15 @@ def time_loop_electrodynamic_tiled(
         particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)
         overflow = overflow_previous | overflow
         # refresh tile ownership after the full position update.
+        return particles, J_tiles, overflow
 
+    current_calculation = world.get("current_calculation", CURRENT_J_FROM_RHOV)
+    particles, J_tiles, overflow = jax.lax.cond(
+        current_calculation == CURRENT_ESIRKEPOV,
+        esirkepov_step,
+        direct_current_step,
+        (particles, J_tiles, overflow_previous),
+    )
 
     if pml_state is None:
         E_tiles = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape)

@@ -24,6 +24,15 @@ def _tile_shape_from_world_or_field(world, field):
     return _tile_shape_from_field(field)
 
 
+def _guard_depth_from_field(field, tile_shape):
+    guard_depths = tuple((int(local_width) - int(tile_width)) // 2 for local_width, tile_width in zip(field.shape[3:], tile_shape))
+    if any(int(local_width) != int(tile_width) + 2 * guard_depth for local_width, tile_width, guard_depth in zip(field.shape[3:], tile_shape, guard_depths)):
+        raise ValueError("Tiled field local shape is incompatible with world['tile_shape'].")
+    if guard_depths[0] != guard_depths[1] or guard_depths[1] != guard_depths[2]:
+        raise ValueError("Output assembly requires the same guard depth on each local field axis.")
+    return guard_depths[0]
+
+
 def scalar_field_for_output(field, world):
     """
     Return an ordinary ghost-celled scalar field for file formats.
@@ -48,7 +57,8 @@ def vector_field_for_output(field, world):
         return field
 
     tile_shape = _tile_shape_from_world_or_field(world, field[0])
-    return assemble_tiled_vector_field(field, world, tile_shape)
+    num_guard_cells = _guard_depth_from_field(field[0], tile_shape)
+    return assemble_tiled_vector_field(field, world, tile_shape, num_guard_cells=num_guard_cells)
 
 
 def fields_for_output(fields, world):

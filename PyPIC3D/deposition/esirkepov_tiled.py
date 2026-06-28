@@ -15,7 +15,6 @@ from PyPIC3D.deposition.Esirkepov import (
 )
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.solvers.yee_tiled import (
-    fold_tiled_vector_ghost_cells,
     update_tiled_vector_ghost_cells,
 )
 
@@ -27,6 +26,60 @@ def _tile_axis_grid(global_axis_grid, tile_index, tile_n, local_n, d, num_guard_
 
     offsets = jnp.arange(local_n, dtype=global_axis_grid.dtype)
     return global_axis_grid[0] + (offsets + tile_index * tile_n - (num_guard_cells - 1)) * d
+
+
+def fold_tiled_esirkepov_ghost_cells(field_tiles, world, component_axis, num_guard_cells=2):
+    """
+    Fold two-guard Esirkepov current deposits using particle boundary codes.
+
+    Internal tile faces are pure ownership transfers.  At global particle
+    boundaries, periodic deposits wrap, reflecting deposits mirror into the
+    same-side physical layer with the Esirkepov component sign, and absorbing
+    deposits are discarded.
+    """
+
+    g = int(num_guard_cells)
+    particle_bc = world.get("particle_boundary_conditions", {"x": 0, "y": 0, "z": 0})
+
+    def fold_axis(field_tiles, axis, bc):
+        tiles = jnp.moveaxis(field_tiles, (axis, 3 + axis), (0, 3))
+        lower_ghost = tiles[:, :, :, :g, :, :]
+        upper_ghost = tiles[:, :, :, -g:, :, :]
+        sign = -1.0 if axis == component_axis else 1.0
+
+        tiles = tiles.at[:-1, :, :, -2 * g:-g, :, :].add(lower_ghost[1:, :, :, :, :, :])
+        tiles = tiles.at[1:, :, :, g:2 * g, :, :].add(upper_ghost[:-1, :, :, :, :, :])
+
+        def periodic_boundary(tiles):
+            tiles = tiles.at[-1, :, :, -2 * g:-g, :, :].add(lower_ghost[0, :, :, :, :, :])
+            tiles = tiles.at[0, :, :, g:2 * g, :, :].add(upper_ghost[-1, :, :, :, :, :])
+            return tiles
+
+        def reflecting_boundary(tiles):
+            tiles = tiles.at[0, :, :, g:2 * g, :, :].add(sign * lower_ghost[0, :, :, :, :, :])
+            tiles = tiles.at[-1, :, :, -2 * g:-g, :, :].add(sign * upper_ghost[-1, :, :, :, :, :])
+            return tiles
+
+        def absorbing_boundary(tiles):
+            return tiles
+
+        tiles = jax.lax.switch(bc, (periodic_boundary, reflecting_boundary, absorbing_boundary), tiles)
+        tiles = tiles.at[:, :, :, :g, :, :].set(0.0)
+        tiles = tiles.at[:, :, :, -g:, :, :].set(0.0)
+        return jnp.moveaxis(tiles, (0, 3), (axis, 3 + axis))
+
+    field_tiles = fold_axis(field_tiles, 0, particle_bc["x"])
+    field_tiles = fold_axis(field_tiles, 1, particle_bc["y"])
+    field_tiles = fold_axis(field_tiles, 2, particle_bc["z"])
+
+    return field_tiles
+
+
+def fold_tiled_esirkepov_vector_ghost_cells(field_tiles, world, num_guard_cells=2):
+    return tuple(
+        fold_tiled_esirkepov_ghost_cells(component, world, component_axis, num_guard_cells)
+        for component_axis, component in enumerate(field_tiles)
+    )
 
 
 @jit
@@ -234,7 +287,7 @@ def tiled_esirkepov_current(tiled_particles, J_tiles, constants, world, grid=Non
         tz,
     )
 
-    J_tiles = fold_tiled_vector_ghost_cells((Jx_tiles, Jy_tiles, Jz_tiles), world, num_guard_cells=2)
+    J_tiles = fold_tiled_esirkepov_vector_ghost_cells((Jx_tiles, Jy_tiles, Jz_tiles), world, num_guard_cells=2)
     J_tiles = update_tiled_vector_ghost_cells(J_tiles, world, num_guard_cells=2)
 
     return J_tiles

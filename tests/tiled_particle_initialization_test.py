@@ -87,6 +87,52 @@ class TestTiledParticleInitialization(unittest.TestCase):
         self.assertTrue(bool(particles.update_u2[1, 1, 0, 0, 1]))
         self.assertTrue(bool(particles.update_u3[1, 1, 0, 0, 1]))
 
+    def test_to_tiled_particles_can_allocate_inactive_capacity_headroom(self):
+        world = {
+            "Nx": 4,
+            "Ny": 1,
+            "Nz": 1,
+            "dx": 1.0,
+            "dy": 1.0,
+            "dz": 1.0,
+            "dt": 0.1,
+            "x_wind": 4.0,
+            "y_wind": 1.0,
+            "z_wind": 1.0,
+        }
+        simulation_parameters = {
+            "particle_tile_nx": 2,
+            "particle_tile_ny": 1,
+            "particle_tile_nz": 1,
+            "particle_tile_capacity_factor": 3.0,
+        }
+        species = particle_species(
+            name="ions",
+            N_particles=3,
+            charge=1.0,
+            mass=1.0,
+            weight=1.0,
+            T=1.0,
+            x1=jnp.array([-1.5, -0.5, 1.5]),
+            x2=jnp.zeros(3),
+            x3=jnp.zeros(3),
+            v1=jnp.zeros(3),
+            v2=jnp.zeros(3),
+            v3=jnp.zeros(3),
+            xwind=world["x_wind"],
+            ywind=world["y_wind"],
+            zwind=world["z_wind"],
+            dx=world["dx"],
+            dy=world["dy"],
+            dz=world["dz"],
+            dt=world["dt"],
+        )
+
+        particles = to_tiled_particles([species], world, simulation_parameters)
+
+        self.assertEqual(particles.active.shape[-1], 6)
+        self.assertEqual(int(jnp.sum(particles.active)), 3)
+
     def test_load_tiled_particles_from_toml_uses_tile_axes_before_species(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             x_path = self._write_array(tmpdir, "x.npy", [-1.5, 0.5, 1.5])

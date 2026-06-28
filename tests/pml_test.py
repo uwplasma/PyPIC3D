@@ -17,6 +17,7 @@ from PyPIC3D.initialization import initialize_fields, initialize_simulation
 from PyPIC3D.solvers.first_order_yee import update_B, update_E
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
+    empty_tiled_vector_field,
     tile_vector_field,
     update_tiled_B,
     update_tiled_E,
@@ -417,6 +418,52 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         final_energy = sum(compute_energy([], E_tiles, B_tiles, world, constants)[:2])
         self.assertTrue(jnp.isfinite(final_energy))
         self.assertLess(float(final_energy), 0.65 * float(initial_energy))
+
+    def test_tiled_pml_step_reads_two_guard_current_without_changing_timing(self):
+        world = _base_world(nx=8, ny=1, nz=1)
+        constants = {"C": 1.0, "eps": 2.0, "mu": 1.0, "alpha": 1.0}
+        world["pml"] = load_pml_from_toml(
+            [{"wall": "+x", "thickness": 2, "order": 3.0, "sigma_max": 4.0}],
+            world,
+            constants,
+        )
+        tile_shape = (2, 1, 1)
+        E, B, J, _, _ = initialize_fields(world["Nx"], world["Ny"], world["Nz"])
+        Ex, Ey, Ez = E
+        Bx, By, Bz = B
+        Ey = Ey.at[1:-1, 1, 1].set(jnp.linspace(0.0, 0.3, world["Nx"]))
+        Bz = Bz.at[1:-1, 1, 1].set(jnp.linspace(0.1, -0.2, world["Nx"]))
+        E_tiles = tile_vector_field((Ex, Ey, Ez), world, tile_shape)
+        B_tiles = tile_vector_field((Bx, By, Bz), world, tile_shape)
+
+        J_one_guard = tile_vector_field(J, world, tile_shape)
+        Jx, Jy, Jz = J_one_guard
+        Jx = Jx.at[:, :, :, 1:-1, 1:-1, 1:-1].set(0.25)
+        J_one_guard = (Jx, Jy, Jz)
+        J_two_guard = empty_tiled_vector_field(world, tile_shape, num_guard_cells=2)
+        Jx2, Jy2, Jz2 = J_two_guard
+        Jx2 = Jx2.at[:, :, :, 2:-2, 2:-2, 2:-2].set(0.25)
+        J_two_guard = (Jx2, Jy2, Jz2)
+
+        pml_one = initialize_tiled_pml_state(world, tile_shape)
+        pml_two = initialize_tiled_pml_state(world, tile_shape)
+        E_one, pml_one = update_tiled_E(
+            E_tiles, B_tiles, J_one_guard, world, constants, lambda *args: None, tile_shape, pml_one
+        )
+        B_one, pml_one = update_tiled_B(
+            E_one, B_tiles, world, constants, lambda *args: None, tile_shape, pml_one
+        )
+        E_two, pml_two = update_tiled_E(
+            E_tiles, B_tiles, J_two_guard, world, constants, lambda *args: None, tile_shape, pml_two
+        )
+        B_two, pml_two = update_tiled_B(
+            E_two, B_tiles, world, constants, lambda *args: None, tile_shape, pml_two
+        )
+
+        for one_component, two_component in zip(E_one + B_one, E_two + B_two):
+            self.assertTrue(jnp.allclose(one_component, two_component, rtol=1.0e-12, atol=1.0e-12))
+        for one_state, two_state in zip(pml_one[0] + pml_one[1], pml_two[0] + pml_two[1]):
+            self.assertTrue(jnp.allclose(one_state, two_state, rtol=1.0e-12, atol=1.0e-12))
 
 
 if __name__ == "__main__":

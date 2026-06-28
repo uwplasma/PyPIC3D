@@ -320,6 +320,36 @@ def apply_tiled_conducting_bc(E_tiles, world):
     return Ex, Ey, Ez
 
 
+def digital_filter_tiled_scalar(field_tiles, alpha):
+    """
+    Apply the standard six-neighbor digital filter to each tile interior.
+
+    Tile halos play the same role as global ghost cells in ``digital_filter``:
+    the filtered values replace only the physical tile interiors.
+    """
+
+    neighbor_weight = (1 - alpha) / 6
+    filtered = (
+        alpha * field_tiles[:, :, :, 1:-1, 1:-1, 1:-1]
+        + neighbor_weight * field_tiles[:, :, :, :-2, 1:-1, 1:-1]
+        + neighbor_weight * field_tiles[:, :, :, 2:, 1:-1, 1:-1]
+        + neighbor_weight * field_tiles[:, :, :, 1:-1, :-2, 1:-1]
+        + neighbor_weight * field_tiles[:, :, :, 1:-1, 2:, 1:-1]
+        + neighbor_weight * field_tiles[:, :, :, 1:-1, 1:-1, :-2]
+        + neighbor_weight * field_tiles[:, :, :, 1:-1, 1:-1, 2:]
+    )
+
+    return field_tiles.at[:, :, :, 1:-1, 1:-1, 1:-1].set(filtered)
+
+
+def digital_filter_tiled_vector(field_tiles, alpha):
+    """
+    Apply the standard field filter component-wise in tile-major storage.
+    """
+
+    return tuple(digital_filter_tiled_scalar(component, alpha) for component in field_tiles)
+
+
 def fold_tiled_ghost_cells(field_tiles, world, num_guard_cells=1):
     """
     Add tile-ghost deposits into owning interiors, then clear ghosts.
@@ -486,6 +516,15 @@ def update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_
         + (C**2 * curl_z - Jz[:, :, :, gx:-gx, gy:-gy, gz:-gz] / eps) * dt
     )
 
+    if pml_state is None:
+        Ex, Ey, Ez = update_tiled_vector_ghost_cells((Ex, Ey, Ez), world)
+    else:
+        Ex, Ey, Ez = update_tiled_vector_ghost_cells_for_pml((Ex, Ey, Ez), world)
+    # refresh tile halos before the digital field filter, matching the global
+    # ghost-cell order in the standard Yee solver.
+
+    Ex, Ey, Ez = digital_filter_tiled_vector((Ex, Ey, Ez), constants.get("alpha", 1.0))
+
     Ex, Ey, Ez = apply_tiled_conducting_bc((Ex, Ey, Ez), world)
 
     if pml_state is None:
@@ -502,7 +541,7 @@ def update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape, pm
     have been refreshed from neighbor tiles or field boundary conditions.
     """
 
-    del constants, curl_func, tile_shape
+    del curl_func, tile_shape
 
     if pml_state is None:
         Ex, Ey, Ez = update_tiled_vector_ghost_cells(E_tiles, world)
@@ -537,6 +576,15 @@ def update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape, pm
     Bx = Bx.at[:, :, :, 1:-1, 1:-1, 1:-1].set(Bx[:, :, :, 1:-1, 1:-1, 1:-1] - dt * curl_x)
     By = By.at[:, :, :, 1:-1, 1:-1, 1:-1].set(By[:, :, :, 1:-1, 1:-1, 1:-1] - dt * curl_y)
     Bz = Bz.at[:, :, :, 1:-1, 1:-1, 1:-1].set(Bz[:, :, :, 1:-1, 1:-1, 1:-1] - dt * curl_z)
+
+    if pml_state is None:
+        Bx, By, Bz = update_tiled_vector_ghost_cells((Bx, By, Bz), world)
+    else:
+        Bx, By, Bz = update_tiled_vector_ghost_cells_for_pml((Bx, By, Bz), world)
+    # refresh tile halos before the digital field filter, matching the global
+    # ghost-cell order in the standard Yee solver.
+
+    Bx, By, Bz = digital_filter_tiled_vector((Bx, By, Bz), constants.get("alpha", 1.0))
 
     if pml_state is None:
         return update_tiled_vector_ghost_cells((Bx, By, Bz), world)

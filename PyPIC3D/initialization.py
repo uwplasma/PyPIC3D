@@ -66,6 +66,11 @@ from PyPIC3D.pusher.particle_push import validate_particle_pusher
 
 from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
+from PyPIC3D.deposition.current_methods import (
+    CURRENT_ESIRKEPOV,
+    CURRENT_J_FROM_RHOV,
+    encode_current_calculation,
+)
 from PyPIC3D.deposition.direct_deposition_tiled import direct_J_from_tiled_particles
 from PyPIC3D.deposition.esirkepov_tiled import tiled_esirkepov_current
 
@@ -124,18 +129,16 @@ def _tile_shape_from_parameters(simulation_parameters):
     )
 
 
-CURRENT_J_FROM_RHOV = 0
-CURRENT_ESIRKEPOV = 1
-
-
 def _encode_current_calculation(current_calculation):
-    current_codes = {
-        "j_from_rhov": CURRENT_J_FROM_RHOV,
-        "esirkepov": CURRENT_ESIRKEPOV,
-    }
-    if current_calculation not in current_codes:
-        raise ValueError("Unsupported current_calculation. Use 'j_from_rhov' or 'esirkepov'.")
-    return current_codes[current_calculation]
+    return encode_current_calculation(current_calculation)
+
+
+def _validate_current_filter_contract(simulation_parameters):
+    if (
+        simulation_parameters["current_calculation"] == "esirkepov"
+        and simulation_parameters["filter_j"] != "none"
+    ):
+        raise ValueError("Esirkepov current filtering is not supported; use filter_j='none'.")
 
 
 def _validate_tiled_yee_configuration(simulation_parameters, electrostatic, pml_active):
@@ -224,6 +227,7 @@ def default_parameters():
         "particle_tile_nx": 1, # number of x cells per shared field/particle tile
         "particle_tile_ny": 1, # number of y cells per shared field/particle tile
         "particle_tile_nz": 1, # number of z cells per shared field/particle tile
+        "particle_tile_capacity_factor": 1.0, # inactive particle slot headroom per tile
         "current_calculation": "j_from_rhov",  # current calculation method: esirkepov, villasenor_buneman, j_from_rhov
         "filter_j": "bilinear",  # filter for the current density: bilinear, digital, none
     }
@@ -302,6 +306,7 @@ def initialize_simulation(toml_file):
     relativistic = simulation_parameters['relativistic']
     particle_pusher = simulation_parameters['particle_pusher']
     validate_particle_pusher(particle_pusher)
+    _validate_current_filter_contract(simulation_parameters)
     verbose = simulation_parameters['verbose']
     GPUs = simulation_parameters['GPUs']
     # set the simulation parameters
