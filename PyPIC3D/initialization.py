@@ -546,11 +546,12 @@ def initialize_simulation(toml_file):
             J_func = functools.partial(J_from_rhov, filter=simulation_parameters['filter_j'])
 
 
+    species_config = None
     if solver == "tiled_yee":
         tile_shape = _tile_shape_from_parameters(simulation_parameters)
         world["tile_shape"] = tile_shape
         guard_cells = int(world["guard_cells"])
-        particles = to_tiled_particles(particles, world, simulation_parameters)
+        particles, species_config = to_tiled_particles(particles, world, simulation_parameters)
         E = tile_vector_field(E, world, tile_shape, num_guard_cells=guard_cells)
         B = tile_vector_field(B, world, tile_shape, num_guard_cells=guard_cells)
         if simulation_parameters["current_calculation"] == "esirkepov":
@@ -594,11 +595,13 @@ def initialize_simulation(toml_file):
     if GPUs:
         print(f"GPUs Detected! Using GPUs for simulation\n")
         particles = jax.device_put(particles, jax.devices("gpu")[0])
+        if species_config is not None:
+            species_config = jax.device_put(species_config, jax.devices("gpu")[0])
     # put the particles on the GPU if GPUs are enabled
 
 
     return evolve_loop, particles, fields, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, \
-        solver, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic, particle_pusher
+        solver, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic, particle_pusher, species_config
 
 
 

@@ -11,7 +11,7 @@ from jax import jit
 
 
 @jit
-def compute_mass_density(particles, rho, world):
+def compute_mass_density(particles, rho, world, species_config=None):
     """
     Compute the mass density (rho) for a given set of particles in a simulation world.
     Parameters:
@@ -29,7 +29,7 @@ def compute_mass_density(particles, rho, world):
     ndarray: The updated charge density array.
     """
     if isinstance(particles, TiledParticles):
-        return compute_mass_density_from_tiled_particles(particles, rho, world)
+        return compute_mass_density_from_tiled_particles(particles, species_config, rho, world)
 
     dx = world['dx']
     dy = world['dy']

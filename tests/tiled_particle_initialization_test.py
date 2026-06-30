@@ -8,7 +8,7 @@ import numpy as np
 
 from PyPIC3D.particles.tiled_particle_initialization import load_tiled_particles_from_toml
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
-from PyPIC3D.particles.tiled_particles import TiledParticles
+from PyPIC3D.particles.tiled_particles import SpeciesConfig, TiledParticles
 from PyPIC3D.particles.species_class import particle_species
 
 
@@ -65,27 +65,108 @@ class TestTiledParticleInitialization(unittest.TestCase):
             dt=world["dt"],
         )
 
-        particles = to_tiled_particles([species], world, simulation_parameters)
+        particles, species_config = to_tiled_particles([species], world, simulation_parameters)
 
         self.assertIsInstance(particles, TiledParticles)
+        self.assertIsInstance(species_config, SpeciesConfig)
         self.assertEqual(particles.x.shape, (2, 2, 1, 1, 2, 3))
         self.assertEqual(int(jnp.sum(particles.active)), 2)
+        self.assertFalse(hasattr(particles, "charge"))
+        self.assertFalse(hasattr(particles, "mass"))
+        self.assertFalse(hasattr(particles, "weight"))
 
         self.assertTrue(jnp.allclose(particles.x[0, 0, 0, 0, 0], jnp.array([-1.5, -0.5, 0.0])))
         self.assertTrue(jnp.allclose(particles.x[1, 1, 0, 0, 0], jnp.array([0.5, 0.5, 0.0])))
         self.assertTrue(jnp.allclose(particles.x[1, 1, 0, 0, 1], jnp.array([1.5, 0.5, 0.0])))
         self.assertTrue(jnp.allclose(particles.u[1, 1, 0, 0, 1], jnp.array([0.3, 0.0, 3.0])))
 
-        self.assertTrue(jnp.allclose(particles.charge[particles.x[..., 0] != 0.0], 2.0))
-        self.assertTrue(jnp.allclose(particles.mass[particles.x[..., 0] != 0.0], 3.0))
-        self.assertTrue(jnp.allclose(particles.weight[particles.x[..., 0] != 0.0], 4.0))
+        self.assertEqual(species_config.charge.shape, (1,))
+        self.assertEqual(species_config.mass.shape, (1,))
+        self.assertEqual(species_config.weight.shape, (1,))
+        self.assertEqual(species_config.update_x.shape, (1, 3))
+        self.assertEqual(species_config.update_u.shape, (1, 3))
+        self.assertTrue(jnp.allclose(species_config.charge, jnp.array([2.0])))
+        self.assertTrue(jnp.allclose(species_config.mass, jnp.array([3.0])))
+        self.assertTrue(jnp.allclose(species_config.weight, jnp.array([4.0])))
 
-        self.assertTrue(bool(particles.update_x1[1, 1, 0, 0, 1]))
-        self.assertFalse(bool(particles.update_x2[1, 1, 0, 0, 1]))
-        self.assertTrue(bool(particles.update_x3[1, 1, 0, 0, 1]))
-        self.assertFalse(bool(particles.update_u1[1, 1, 0, 0, 1]))
-        self.assertTrue(bool(particles.update_u2[1, 1, 0, 0, 1]))
-        self.assertTrue(bool(particles.update_u3[1, 1, 0, 0, 1]))
+        self.assertTrue(bool(species_config.update_x[0, 0]))
+        self.assertFalse(bool(species_config.update_x[0, 1]))
+        self.assertTrue(bool(species_config.update_x[0, 2]))
+        self.assertFalse(bool(species_config.update_u[0, 0]))
+        self.assertTrue(bool(species_config.update_u[0, 1]))
+        self.assertTrue(bool(species_config.update_u[0, 2]))
+
+    def test_species_metadata_is_not_slot_shaped(self):
+        world = {
+            "Nx": 4,
+            "Ny": 1,
+            "Nz": 1,
+            "dx": 1.0,
+            "dy": 1.0,
+            "dz": 1.0,
+            "dt": 0.1,
+            "x_wind": 4.0,
+            "y_wind": 1.0,
+            "z_wind": 1.0,
+        }
+        simulation_parameters = {
+            "particle_tile_nx": 1,
+            "particle_tile_ny": 1,
+            "particle_tile_nz": 1,
+        }
+        species = [
+            particle_species(
+                name="electrons",
+                N_particles=2,
+                charge=-1.0,
+                mass=2.0,
+                weight=0.5,
+                T=1.0,
+                x1=jnp.array([-1.5, -0.5]),
+                x2=jnp.zeros(2),
+                x3=jnp.zeros(2),
+                v1=jnp.zeros(2),
+                v2=jnp.zeros(2),
+                v3=jnp.zeros(2),
+                xwind=world["x_wind"],
+                ywind=world["y_wind"],
+                zwind=world["z_wind"],
+                dx=world["dx"],
+                dy=world["dy"],
+                dz=world["dz"],
+                dt=world["dt"],
+            ),
+            particle_species(
+                name="ions",
+                N_particles=2,
+                charge=2.0,
+                mass=5.0,
+                weight=0.25,
+                T=1.0,
+                x1=jnp.array([0.5, 1.5]),
+                x2=jnp.zeros(2),
+                x3=jnp.zeros(2),
+                v1=jnp.zeros(2),
+                v2=jnp.zeros(2),
+                v3=jnp.zeros(2),
+                xwind=world["x_wind"],
+                ywind=world["y_wind"],
+                zwind=world["z_wind"],
+                dx=world["dx"],
+                dy=world["dy"],
+                dz=world["dz"],
+                dt=world["dt"],
+            ),
+        ]
+
+        particles, species_config = to_tiled_particles(species, world, simulation_parameters)
+
+        self.assertEqual(particles.x.shape[:4], (4, 1, 1, 2))
+        self.assertEqual(species_config.charge.shape, (2,))
+        self.assertEqual(species_config.mass.shape, (2,))
+        self.assertEqual(species_config.weight.shape, (2,))
+        self.assertEqual(species_config.update_x.shape, (2, 3))
+        self.assertEqual(species_config.update_u.shape, (2, 3))
 
     def test_to_tiled_particles_can_allocate_inactive_capacity_headroom(self):
         world = {
@@ -128,10 +209,11 @@ class TestTiledParticleInitialization(unittest.TestCase):
             dt=world["dt"],
         )
 
-        particles = to_tiled_particles([species], world, simulation_parameters)
+        particles, species_config = to_tiled_particles([species], world, simulation_parameters)
 
         self.assertEqual(particles.active.shape[-1], 6)
         self.assertEqual(int(jnp.sum(particles.active)), 3)
+        self.assertEqual(species_config.charge.shape, (1,))
 
     def test_load_tiled_particles_from_toml_uses_tile_axes_before_species(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -179,12 +261,12 @@ class TestTiledParticleInitialization(unittest.TestCase):
                 }
             }
 
-            particles = load_tiled_particles_from_toml(config, simulation_parameters, world, constants)
+            particles, species_config = load_tiled_particles_from_toml(config, simulation_parameters, world, constants)
 
             self.assertIsInstance(particles, TiledParticles)
+            self.assertIsInstance(species_config, SpeciesConfig)
             self.assertEqual(particles.x.shape, (2, 2, 1, 1, 2, 3))
             self.assertEqual(particles.u.shape, (2, 2, 1, 1, 2, 3))
-            self.assertEqual(particles.charge.shape, (2, 2, 1, 1, 2))
 
             self.assertTrue(particles.active[0, 0, 0, 0, 0])
             self.assertTrue(particles.active[1, 1, 0, 0, 0])
@@ -196,9 +278,9 @@ class TestTiledParticleInitialization(unittest.TestCase):
             self.assertTrue(jnp.allclose(particles.x[1, 1, 0, 0, 1], jnp.array([1.5, 0.5, 0.0])))
             self.assertTrue(jnp.allclose(particles.u[1, 1, 0, 0, 1], jnp.array([0.3, 0.0, 3.0])))
 
-            self.assertTrue(jnp.allclose(particles.charge[particles.active], -1.0))
-            self.assertTrue(jnp.allclose(particles.mass[particles.active], 2.0))
-            self.assertTrue(jnp.allclose(particles.weight[particles.active], 4.0))
+            self.assertTrue(jnp.allclose(species_config.charge, jnp.array([-1.0])))
+            self.assertTrue(jnp.allclose(species_config.mass, jnp.array([2.0])))
+            self.assertTrue(jnp.allclose(species_config.weight, jnp.array([4.0])))
 
     def test_load_tiled_particles_from_toml_maps_update_flags_to_active_particles(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -250,14 +332,14 @@ class TestTiledParticleInitialization(unittest.TestCase):
                 }
             }
 
-            particles = load_tiled_particles_from_toml(config, simulation_parameters, world, constants)
+            particles, species_config = load_tiled_particles_from_toml(config, simulation_parameters, world, constants)
 
-            self.assertTrue(bool(particles.update_x1[0, 0, 0, 0, 0]))
-            self.assertFalse(bool(particles.update_x2[0, 0, 0, 0, 0]))
-            self.assertTrue(bool(particles.update_x3[0, 0, 0, 0, 0]))
-            self.assertFalse(bool(particles.update_u1[0, 0, 0, 0, 0]))
-            self.assertTrue(bool(particles.update_u2[0, 0, 0, 0, 0]))
-            self.assertFalse(bool(particles.update_u3[0, 0, 0, 0, 0]))
+            self.assertTrue(bool(species_config.update_x[0, 0]))
+            self.assertFalse(bool(species_config.update_x[0, 1]))
+            self.assertTrue(bool(species_config.update_x[0, 2]))
+            self.assertFalse(bool(species_config.update_u[0, 0]))
+            self.assertTrue(bool(species_config.update_u[0, 1]))
+            self.assertFalse(bool(species_config.update_u[0, 2]))
 
 
 if __name__ == "__main__":

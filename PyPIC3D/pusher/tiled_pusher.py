@@ -19,7 +19,7 @@ def _tile_axis(axis, tile_index, cells_per_tile, num_guard_cells, d):
 
 
 @partial(jit, static_argnames=("tile_shape", "g", "relativistic", "particle_pusher"))
-def tiled_particle_push(tiled_particles, E_tiles, B_tiles, world, constants, tile_shape, g, relativistic=True, particle_pusher="boris"):
+def tiled_particle_push(tiled_particles, species_config, E_tiles, B_tiles, world, constants, tile_shape, g, relativistic=True, particle_pusher="boris"):
     """
     Push tile-major particles with the selected pusher using compact tiled Yee fields.
 
@@ -41,7 +41,7 @@ def tiled_particle_push(tiled_particles, E_tiles, B_tiles, world, constants, til
 
     ntx, nty, ntz = tiled_particles.x.shape[:3]
 
-    def push_one_tile(tx, ty, tz, x_tile, u_tile, charge_tile, mass_tile, active_tile, update_u1, update_u2, update_u3,
+    def push_one_tile(tx, ty, tz, x_tile, u_tile, active_tile, charge_species, mass_species, update_u_species,
                       Ex_tile, Ey_tile, Ez_tile, Bx_tile, By_tile, Bz_tile):
         x = x_tile[..., 0].reshape(-1)
         y = x_tile[..., 1].reshape(-1)
@@ -49,8 +49,8 @@ def tiled_particle_push(tiled_particles, E_tiles, B_tiles, world, constants, til
         vx = u_tile[..., 0].reshape(-1)
         vy = u_tile[..., 1].reshape(-1)
         vz = u_tile[..., 2].reshape(-1)
-        q = charge_tile.reshape(-1)
-        m = mass_tile.reshape(-1)
+        q = jnp.broadcast_to(charge_species[:, jnp.newaxis], active_tile.shape).reshape(-1)
+        m = jnp.broadcast_to(mass_species[:, jnp.newaxis], active_tile.shape).reshape(-1)
 
         center_x = _tile_axis(center_grid[0], tx, tile_nx, g, world["dx"])
         center_y = _tile_axis(center_grid[1], ty, tile_ny, g, world["dy"])
@@ -115,9 +115,9 @@ def tiled_particle_push(tiled_particles, E_tiles, B_tiles, world, constants, til
             raise ValueError(f"Unknown particle_pusher: {particle_pusher}")
 
         active = active_tile.reshape(-1)
-        update_u1 = update_u1.reshape(-1)
-        update_u2 = update_u2.reshape(-1)
-        update_u3 = update_u3.reshape(-1)
+        update_u1 = jnp.broadcast_to(update_u_species[:, 0, jnp.newaxis], active_tile.shape).reshape(-1)
+        update_u2 = jnp.broadcast_to(update_u_species[:, 1, jnp.newaxis], active_tile.shape).reshape(-1)
+        update_u3 = jnp.broadcast_to(update_u_species[:, 2, jnp.newaxis], active_tile.shape).reshape(-1)
 
         new_u = u_tile.reshape(-1, 3)
         new_u = new_u.at[:, 0].set(jnp.where(active & update_u1, new_vx, vx))
@@ -131,20 +131,18 @@ def tiled_particle_push(tiled_particles, E_tiles, B_tiles, world, constants, til
     ty = jnp.arange(nty)
     tz = jnp.arange(ntz)
 
-    push_tiles = jax.vmap(push_tiles, in_axes=(None, None, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), out_axes=0)
-    push_tiles = jax.vmap(push_tiles, in_axes=(None, 0, None, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), out_axes=0)
-    push_tiles = jax.vmap(push_tiles, in_axes=(0, None, None, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), out_axes=0)
+    push_tiles = jax.vmap(push_tiles, in_axes=(None, None, 0, 0, 0, 0, None, None, None, 0, 0, 0, 0, 0, 0), out_axes=0)
+    push_tiles = jax.vmap(push_tiles, in_axes=(None, 0, None, 0, 0, 0, None, None, None, 0, 0, 0, 0, 0, 0), out_axes=0)
+    push_tiles = jax.vmap(push_tiles, in_axes=(0, None, None, 0, 0, 0, None, None, None, 0, 0, 0, 0, 0, 0), out_axes=0)
 
     new_u = push_tiles(
         tx, ty, tz,
         tiled_particles.x,
         tiled_particles.u,
-        tiled_particles.charge,
-        tiled_particles.mass,
         tiled_particles.active,
-        tiled_particles.update_u1,
-        tiled_particles.update_u2,
-        tiled_particles.update_u3,
+        species_config.charge,
+        species_config.mass,
+        species_config.update_u,
         Ex_tiles,
         Ey_tiles,
         Ez_tiles,
@@ -156,14 +154,5 @@ def tiled_particle_push(tiled_particles, E_tiles, B_tiles, world, constants, til
     return TiledParticles(
         x=tiled_particles.x,
         u=new_u,
-        charge=tiled_particles.charge,
-        mass=tiled_particles.mass,
-        weight=tiled_particles.weight,
         active=tiled_particles.active,
-        update_x1=tiled_particles.update_x1,
-        update_x2=tiled_particles.update_x2,
-        update_x3=tiled_particles.update_x3,
-        update_u1=tiled_particles.update_u1,
-        update_u2=tiled_particles.update_u2,
-        update_u3=tiled_particles.update_u3,
     )

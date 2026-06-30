@@ -66,11 +66,12 @@ field.
 
 Tiled particles use the same leading tile axes, followed by species and fixed
 slot axes.  Positions and velocities have shape
-``(ntx, nty, ntz, species, max_particles_per_tile, 3)``; scalar particle data
-such as charge, mass, weight, active flags, and update masks have shape
-``(ntx, nty, ntz, species, max_particles_per_tile)``.  The slot capacity is set
-when tiled particles are initialized.  Empty slots remain inactive so the array
-shape stays static during JAX updates.
+``(ntx, nty, ntz, species, max_particles_per_tile, 3)``; the active mask has
+shape ``(ntx, nty, ntz, species, max_particles_per_tile)``.  Species-level
+metadata such as charge, mass, weight, and position/velocity update masks is
+stored once in ``SpeciesConfig`` and broadcast over tile slots inside the tiled
+kernels.  The slot capacity is set when tiled particles are initialized.  Empty
+slots remain inactive so the array shape stays static during JAX updates.
 
 Retiling preserves this fixed-capacity layout.  If later particle motion would
 place more active particles in a tile/species block than its slot capacity can

@@ -88,7 +88,7 @@ class TestDirectDepositionTiled(unittest.TestCase):
         refreshes tile ownership at the centered position.
         """
 
-        tiled_particles = to_tiled_particles(particles, world, simulation_parameters)
+        tiled_particles, species_config = to_tiled_particles(particles, world, simulation_parameters)
         tiled_particles = tiled_particles._replace(
             x=tiled_particles.x - 0.5 * tiled_particles.u * world["dt"]
         )
@@ -100,16 +100,17 @@ class TestDirectDepositionTiled(unittest.TestCase):
         )
         self.assertFalse(bool(overflow))
 
-        return centered_particles
+        return centered_particles, species_config
 
     def _compare_tiled_to_standard(self, particles, world, simulation_parameters):
         constants = {"C": 3.0e8, "alpha": 1.0}
-        tiled_particles = self._centered_tiled_particles(particles, world, simulation_parameters)
+        tiled_particles, species_config = self._centered_tiled_particles(particles, world, simulation_parameters)
         tile_shape = self._tile_shape(simulation_parameters)
 
         J_reference = J_from_rhov(particles, self._empty_J(world), constants, world, filter="none")
         J_tiles = direct_J_from_tiled_particles(
             tiled_particles,
+            species_config,
             self._empty_J_tiles(world, simulation_parameters),
             constants,
             world,
@@ -224,12 +225,13 @@ class TestDirectDepositionTiled(unittest.TestCase):
             dz=world["dz"],
             dt=world["dt"],
         )
-        tiled_particles = self._centered_tiled_particles([species], world, simulation_parameters)
+        tiled_particles, species_config = self._centered_tiled_particles([species], world, simulation_parameters)
         tile_shape = self._tile_shape(simulation_parameters)
 
         J_reference = J_from_rhov([species], self._empty_J(world), constants, world, filter="bilinear")
         J_tiles = direct_J_from_tiled_particles(
             tiled_particles,
+            species_config,
             self._empty_J_tiles(world, simulation_parameters),
             constants,
             world,
@@ -419,11 +421,12 @@ class TestDirectDepositionTiled(unittest.TestCase):
             dz=world["dz"],
             dt=world["dt"],
         )
-        tiled_particles = self._centered_tiled_particles([species], world, simulation_parameters)
+        tiled_particles, species_config = self._centered_tiled_particles([species], world, simulation_parameters)
         tile_shape = self._tile_shape(simulation_parameters)
 
         J_tiles = direct_J_from_tiled_particles(
             tiled_particles,
+            species_config,
             self._empty_J_tiles(world, simulation_parameters),
             constants,
             world,
@@ -519,12 +522,13 @@ class TestDirectDepositionTiled(unittest.TestCase):
             dz=world["dz"],
             dt=world["dt"],
         )
-        tiled_particles = self._centered_tiled_particles([species], world, simulation_parameters)
+        tiled_particles, species_config = self._centered_tiled_particles([species], world, simulation_parameters)
         tile_shape = self._tile_shape(simulation_parameters)
 
         J_reference = J_from_rhov([species], self._empty_J(world), constants, world, filter="digital")
         J_tiles = direct_J_from_tiled_particles(
             tiled_particles,
+            species_config,
             self._empty_J_tiles(world, simulation_parameters),
             constants,
             world,
@@ -566,12 +570,13 @@ class TestDirectDepositionTiled(unittest.TestCase):
             dz=world["dz"],
             dt=world["dt"],
         )
-        tiled_particles = self._centered_tiled_particles([species], world, simulation_parameters)
+        tiled_particles, species_config = self._centered_tiled_particles([species], world, simulation_parameters)
         tile_shape = self._tile_shape(simulation_parameters)
 
         J_reference = J_from_rhov([species], self._empty_J(world), constants, world, filter="bilinear")
         J_tiles = direct_J_from_tiled_particles(
             tiled_particles,
+            species_config,
             self._empty_J_tiles(world, simulation_parameters),
             constants,
             world,

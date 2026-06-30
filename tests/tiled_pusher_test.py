@@ -112,9 +112,10 @@ class TestTiledParticlePusher(unittest.TestCase):
             particle_pusher="boris",
         )
 
-        tiled_particles = to_tiled_particles([species], world, simulation_parameters)
+        tiled_particles, species_config = to_tiled_particles([species], world, simulation_parameters)
         pushed = tiled_particle_push(
             tiled_particles,
+            species_config,
             tile_vector_field(E, world, tile_shape),
             tile_vector_field(B, world, tile_shape),
             world,
@@ -179,9 +180,10 @@ class TestTiledParticlePusher(unittest.TestCase):
             particle_pusher="higuera_cary",
         )
 
-        tiled_particles = to_tiled_particles([species], world, simulation_parameters)
+        tiled_particles, species_config = to_tiled_particles([species], world, simulation_parameters)
         pushed = tiled_particle_push(
             tiled_particles,
+            species_config,
             tile_vector_field(E, world, tile_shape),
             tile_vector_field(B, world, tile_shape),
             world,
@@ -216,10 +218,11 @@ class TestTiledParticlePusher(unittest.TestCase):
             update_vy=True,
             update_vz=False,
         )
-        tiled_particles = to_tiled_particles([species], world, simulation_parameters)
+        tiled_particles, species_config = to_tiled_particles([species], world, simulation_parameters)
 
         pushed = tiled_particle_push(
             tiled_particles,
+            species_config,
             tile_vector_field(E, world, tile_shape),
             tile_vector_field(B, world, tile_shape),
             world,
@@ -281,9 +284,10 @@ class TestTiledParticlePusher(unittest.TestCase):
             particle_pusher="boris",
         )
 
-        tiled_particles = to_tiled_particles([species], world, simulation_parameters)
+        tiled_particles, species_config = to_tiled_particles([species], world, simulation_parameters)
         pushed = tiled_particle_push(
             tiled_particles,
+            species_config,
             tile_vector_field(E, world, tile_shape),
             tile_vector_field(B, world, tile_shape),
             world,

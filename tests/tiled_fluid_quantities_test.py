@@ -97,18 +97,16 @@ class TestTiledFluidQuantities(unittest.TestCase):
     def test_tiled_mass_density_matches_compute_mass_density_on_interior(self):
         world = self._build_world(shape_factor=2)
         particles = self._particles(world)
-        tiled_particles = to_tiled_particles(particles, world, self._simulation_parameters())
+        tiled_particles, species_config = to_tiled_particles(particles, world, self._simulation_parameters())
 
         inactive = ~tiled_particles.active
         x = tiled_particles.x.at[inactive, 0].set(0.10)
         x = x.at[inactive, 1].set(0.20)
         x = x.at[inactive, 2].set(-0.30)
-        mass = tiled_particles.mass.at[inactive].set(1000.0)
-        weight = tiled_particles.weight.at[inactive].set(1000.0)
-        tiled_particles = tiled_particles._replace(x=x, mass=mass, weight=weight)
+        tiled_particles = tiled_particles._replace(x=x)
 
         mass_reference = compute_mass_density(particles, self._empty_scalar(world), world)
-        mass_tiled = compute_mass_density(tiled_particles, self._empty_scalar(world), world)
+        mass_tiled = compute_mass_density(tiled_particles, self._empty_scalar(world), world, species_config=species_config)
 
         self.assertTrue(
             jnp.allclose(
@@ -127,12 +125,13 @@ class TestTiledFluidQuantities(unittest.TestCase):
             self._simulation_parameters()["particle_tile_nz"],
         )
         particles = self._particles(world)
-        tiled_particles = to_tiled_particles(particles, world, self._simulation_parameters())
+        tiled_particles, species_config = to_tiled_particles(particles, world, self._simulation_parameters())
         rho_tiles = tile_scalar_field(self._empty_scalar(world), world, world["tile_shape"])
 
         mass_reference = compute_mass_density(particles, self._empty_scalar(world), world)
         mass_tiles = compute_tiled_mass_density_from_tiled_particles(
             tiled_particles,
+            species_config,
             rho_tiles,
             world,
             tile_shape=world["tile_shape"],

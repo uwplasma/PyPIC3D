@@ -65,7 +65,7 @@ def _raise_if_tiled_particles_overflowed(fields, simulation_parameters):
 def run_PyPIC3D(config_file):
     ##################################### INITIALIZE SIMULATION ################################################
 
-    loop, particles, fields, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, solver, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic, particle_pusher = initialize_simulation(config_file)
+    loop, particles, fields, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, solver, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic, particle_pusher, species_config = initialize_simulation(config_file)
     # initialize the simulation
 
     dt = world['dt']
@@ -91,7 +91,7 @@ def run_PyPIC3D(config_file):
     # unpack the fields
     total_E, total_B = add_external_fields(E, B, external_fields)
     # energy diagnostics use the fields seen by the particle pusher
-    e_energy, b_energy, kinetic_energy = compute_energy(particles, total_E, total_B, world, constants)
+    e_energy, b_energy, kinetic_energy = compute_energy(particles, total_E, total_B, world, constants, species_config=species_config)
     # Compute the energy of the system
     initial_energy = e_energy + b_energy + kinetic_energy
 
@@ -116,7 +116,7 @@ def run_PyPIC3D(config_file):
 
             total_E, total_B = add_external_fields(E, B, external_fields)
             # energy diagnostics use the fields seen by the particle pusher
-            e_energy, b_energy, kinetic_energy = compute_energy(particles, total_E, total_B, world, constants)
+            e_energy, b_energy, kinetic_energy = compute_energy(particles, total_E, total_B, world, constants, species_config=species_config)
             # Compute the energy of the system
             write_data(f"{output_dir}/data/total_energy.txt", t * dt, e_energy + b_energy + kinetic_energy)
             write_data(f"{output_dir}/data/energy_error.txt", t * dt, abs( initial_energy - (e_energy + b_energy + kinetic_energy)) / max(initial_energy, 1e-10))
@@ -124,7 +124,7 @@ def run_PyPIC3D(config_file):
             write_data(f"{output_dir}/data/magnetic_field_energy.txt", t * dt, b_energy)
             write_data(f"{output_dir}/data/kinetic_energy.txt", t * dt, kinetic_energy)
             # Write the total energy to a file
-            total_momentum = compute_total_momentum(particles)
+            total_momentum = compute_total_momentum(particles, species_config=species_config)
             # Total momentum of the particles
             write_data(f"{output_dir}/data/total_momentum.txt", t * dt, total_momentum)
             # Write the total momentum to a file
@@ -134,27 +134,27 @@ def run_PyPIC3D(config_file):
 
 
             if plotting_parameters['plot_phasespace']:
-                write_particles_phase_space(particles, t, output_dir, species_names=particle_species_names, world=world)
+                write_particles_phase_space(particles, t, output_dir, species_config=species_config, species_names=particle_species_names, world=world)
 
 
 
             if plotting_parameters['plot_vtk_scalars']:
                 if getattr(rho, "ndim", 0) == 6:
                     rho = compute_tiled_rho_from_tiled_particles(
-                        particles, rho, world, constants, tile_shape=tile_shape, g=g
+                        particles, species_config, rho, world, constants, tile_shape=tile_shape, g=g
                     )
                     mass_density = compute_tiled_mass_density_from_tiled_particles(
-                        particles, rho, world, tile_shape=tile_shape, g=g
+                        particles, species_config, rho, world, tile_shape=tile_shape, g=g
                     )
                     rho_output = scalar_field_for_output(rho, world)
                     mass_density_output = scalar_field_for_output(mass_density, world)
                 else:
                     if tiled_run:
-                        rho = compute_rho_from_tiled_particles(particles, rho, world, constants)
+                        rho = compute_rho_from_tiled_particles(particles, species_config, rho, world, constants)
                     else:
                         rho = compute_rho(particles, rho, world, constants)
                     # calculate the charge density based on the particle positions
-                    mass_density = compute_mass_density(particles, rho, world)
+                    mass_density = compute_mass_density(particles, rho, world, species_config=species_config)
                     # calculate the mass density based on the particle positions
                     rho_output = rho
                     mass_density_output = mass_density
@@ -179,11 +179,11 @@ def run_PyPIC3D(config_file):
                 # Plot the vector fields in VTK format
 
             if plotting_parameters['plot_vtk_particles']:
-                plot_vtk_particles(particles, plot_num, output_dir, species_names=particle_species_names, world=world)
+                plot_vtk_particles(particles, plot_num, output_dir, species_config=species_config, species_names=particle_species_names, world=world)
             # Plot the particles in VTK format
 
             if plotting_parameters['plot_openpmd_particles']:
-                write_openpmd_particles(particles, world, constants, os.path.join(output_dir, "data"), plot_num, t, "particles", ".h5", species_names=particle_species_names)
+                write_openpmd_particles(particles, world, constants, os.path.join(output_dir, "data"), plot_num, t, "particles", ".h5", species_config=species_config, species_names=particle_species_names)
             # Write the particles in openPMD format
 
             if plotting_parameters['plot_openpmd_fields']:
@@ -197,6 +197,7 @@ def run_PyPIC3D(config_file):
         if tiled_run:
             particles, fields = jit_loop(
                 particles,
+                species_config,
                 fields,
                 world,
                 constants,
@@ -256,7 +257,7 @@ def main():
 
     total_E, total_B = add_external_fields(E, B, external_fields)
     # energy diagnostics use the fields seen by the particle pusher
-    e_energy, b_energy, kinetic_energy = compute_energy(particles, total_E, total_B, world, constants)
+    e_energy, b_energy, kinetic_energy = compute_energy(particles, total_E, total_B, world, constants, species_config=species_config)
     # compute the energy of the system
     print(f"Final Electric Field Energy: {e_energy}")
     print(f"Final Magnetic Field Energy: {b_energy}")

@@ -119,6 +119,7 @@ def _collapse_tiled_axis_stencil(points, weights, local_n, reduced_axis, g):
 @partial(jit, static_argnames=("filter", "tile_shape", "g"))
 def direct_J_from_tiled_particles(
     tiled_particles,
+    species_config,
     J_tiles,
     constants,
     world,
@@ -164,7 +165,9 @@ def direct_J_from_tiled_particles(
     # edge should land in tile ghost cells and be exchanged by the tiled fold.
     local_bc = 2
 
-    def deposit_one_tile(x_tile, u_tile, charge_tile, weight_tile, active_tile, tx, ty, tz):
+    species_weighted_charge = species_config.charge * species_config.weight
+
+    def deposit_one_tile(x_tile, u_tile, active_tile, tx, ty, tz):
         x = x_tile[..., 0].reshape(-1)
         y = x_tile[..., 1].reshape(-1)
         z = x_tile[..., 2].reshape(-1)
@@ -172,7 +175,8 @@ def direct_J_from_tiled_particles(
         vy = u_tile[..., 1].reshape(-1)
         vz = u_tile[..., 2].reshape(-1)
         active = active_tile.reshape(-1).astype(x.dtype)
-        dq = (charge_tile * weight_tile).reshape(-1) / (dx * dy * dz)
+        q = jnp.broadcast_to(species_weighted_charge[:, jnp.newaxis], active_tile.shape).reshape(-1)
+        dq = q / (dx * dy * dz)
 
         x_grid = _tile_axis_grid(grid[0], tx, tile_nx, local_Nx, dx, g)
         y_grid = _tile_axis_grid(grid[1], ty, tile_ny, local_Ny, dy, g)
@@ -273,15 +277,13 @@ def direct_J_from_tiled_particles(
     )
 
     deposit_tiles = deposit_one_tile
-    deposit_tiles = jax.vmap(deposit_tiles, in_axes=(0, 0, 0, 0, 0, 0, 0, 0), out_axes=0)
-    deposit_tiles = jax.vmap(deposit_tiles, in_axes=(0, 0, 0, 0, 0, 0, 0, 0), out_axes=0)
-    deposit_tiles = jax.vmap(deposit_tiles, in_axes=(0, 0, 0, 0, 0, 0, 0, 0), out_axes=0)
+    deposit_tiles = jax.vmap(deposit_tiles, in_axes=(0, 0, 0, 0, 0, 0), out_axes=0)
+    deposit_tiles = jax.vmap(deposit_tiles, in_axes=(0, 0, 0, 0, 0, 0), out_axes=0)
+    deposit_tiles = jax.vmap(deposit_tiles, in_axes=(0, 0, 0, 0, 0, 0), out_axes=0)
 
     Jx_tiles, Jy_tiles, Jz_tiles = deposit_tiles(
         tiled_particles.x,
         tiled_particles.u,
-        tiled_particles.charge,
-        tiled_particles.weight,
         tiled_particles.active,
         tx,
         ty,

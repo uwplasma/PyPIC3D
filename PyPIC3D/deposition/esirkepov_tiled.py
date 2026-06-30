@@ -113,7 +113,7 @@ def fold_tiled_esirkepov_vector_ghost_cells(field_tiles, world, num_guard_cells=
 
 
 @partial(jit, static_argnames=("tile_shape", "g"))
-def tiled_esirkepov_current(tiled_particles, J_tiles, constants, world, grid=None, tile_shape=None, g=1):
+def tiled_esirkepov_current(tiled_particles, species_config, J_tiles, constants, world, grid=None, tile_shape=None, g=1):
     """
     Deposit Esirkepov current into tile-local current buffers.
 
@@ -148,7 +148,9 @@ def tiled_esirkepov_current(tiled_particles, J_tiles, constants, world, grid=Non
     Jy_template = jnp.zeros_like(Jy_tiles[0, 0, 0])
     Jz_template = jnp.zeros_like(Jz_tiles[0, 0, 0])
 
-    def deposit_one_tile(x_tile, u_tile, charge_tile, weight_tile, active_tile, update_x1, update_x2, update_x3, tx, ty, tz):
+    species_weighted_charge = species_config.charge * species_config.weight
+
+    def deposit_one_tile(x_tile, u_tile, active_tile, tx, ty, tz):
         old_x = x_tile[..., 0].reshape(-1)
         old_y = x_tile[..., 1].reshape(-1)
         old_z = x_tile[..., 2].reshape(-1)
@@ -156,12 +158,15 @@ def tiled_esirkepov_current(tiled_particles, J_tiles, constants, world, grid=Non
         vy = u_tile[..., 1].reshape(-1)
         vz = u_tile[..., 2].reshape(-1)
         active = active_tile.reshape(-1).astype(old_x.dtype)
-        q = (charge_tile * weight_tile).reshape(-1)
+        q = jnp.broadcast_to(species_weighted_charge[:, jnp.newaxis], active_tile.shape).reshape(-1)
         N_particles = old_x.shape[0]
+        update_x1 = jnp.broadcast_to(species_config.update_x[:, 0, jnp.newaxis], active_tile.shape).reshape(-1)
+        update_x2 = jnp.broadcast_to(species_config.update_x[:, 1, jnp.newaxis], active_tile.shape).reshape(-1)
+        update_x3 = jnp.broadcast_to(species_config.update_x[:, 2, jnp.newaxis], active_tile.shape).reshape(-1)
 
-        x = old_x + jnp.where(update_x1.reshape(-1), vx * dt, 0.0)
-        y = old_y + jnp.where(update_x2.reshape(-1), vy * dt, 0.0)
-        z = old_z + jnp.where(update_x3.reshape(-1), vz * dt, 0.0)
+        x = old_x + jnp.where(update_x1, vx * dt, 0.0)
+        y = old_y + jnp.where(update_x2, vy * dt, 0.0)
+        z = old_z + jnp.where(update_x3, vz * dt, 0.0)
 
         x_grid = _tile_axis_grid(grid[0], tx, tile_nx, local_Nx, dx, g)
         y_grid = _tile_axis_grid(grid[1], ty, tile_ny, local_Ny, dy, g)
@@ -297,19 +302,14 @@ def tiled_esirkepov_current(tiled_particles, J_tiles, constants, world, grid=Non
     )
 
     deposit_tiles = deposit_one_tile
-    deposit_tiles = jax.vmap(deposit_tiles, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), out_axes=0)
-    deposit_tiles = jax.vmap(deposit_tiles, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), out_axes=0)
-    deposit_tiles = jax.vmap(deposit_tiles, in_axes=(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), out_axes=0)
+    deposit_tiles = jax.vmap(deposit_tiles, in_axes=(0, 0, 0, 0, 0, 0), out_axes=0)
+    deposit_tiles = jax.vmap(deposit_tiles, in_axes=(0, 0, 0, 0, 0, 0), out_axes=0)
+    deposit_tiles = jax.vmap(deposit_tiles, in_axes=(0, 0, 0, 0, 0, 0), out_axes=0)
 
     Jx_tiles, Jy_tiles, Jz_tiles = deposit_tiles(
         tiled_particles.x,
         tiled_particles.u,
-        tiled_particles.charge,
-        tiled_particles.weight,
         tiled_particles.active,
-        tiled_particles.update_x1,
-        tiled_particles.update_x2,
-        tiled_particles.update_x3,
         tx,
         ty,
         tz,

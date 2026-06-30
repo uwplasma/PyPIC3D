@@ -442,6 +442,7 @@ class TestYeeTiled(unittest.TestCase):
 
         particles_after, fields_after = time_loop_electrodynamic_tiled(
             particles,
+            None,
             fields,
             world,
             constants,

@@ -19,6 +19,13 @@ from PyPIC3D.solvers.yee_tiled import (
 from PyPIC3D.utils import digital_filter
 
 
+def _species_scalar_to_slots(tiled_particles, species_value):
+    return jnp.broadcast_to(
+        species_value.reshape((1, 1, 1, species_value.shape[0], 1)),
+        tiled_particles.active.shape,
+    )
+
+
 def _deposit_tiled_scalar_moment(
     tiled_particles,
     rho,
@@ -296,12 +303,15 @@ def _digital_filter_tiled_scalar(field_tiles, alpha, world, g, tile_shape):
 
 
 @jit
-def compute_rho_from_tiled_particles(tiled_particles, rho, world, constants, grid=None):
+def compute_rho_from_tiled_particles(tiled_particles, species_config, rho, world, constants, grid=None):
     """Compute charge density on the vertex grid from tile-major particles."""
     if grid is None:
         grid = world["grids"]["vertex"]
 
-    scalar_weight = tiled_particles.charge * tiled_particles.weight
+    scalar_weight = _species_scalar_to_slots(
+        tiled_particles,
+        species_config.charge * species_config.weight,
+    )
     rho = _deposit_tiled_scalar_moment(
         tiled_particles,
         rho,
@@ -323,12 +333,15 @@ def compute_rho_from_tiled_particles(tiled_particles, rho, world, constants, gri
 
 
 @partial(jit, static_argnames=("tile_shape", "g"))
-def compute_tiled_rho_from_tiled_particles(tiled_particles, rho_tiles, world, constants, grid=None, tile_shape=None, g=1):
+def compute_tiled_rho_from_tiled_particles(tiled_particles, species_config, rho_tiles, world, constants, grid=None, tile_shape=None, g=1):
     """Compute charge density into tile-major vertex-grid scalar arrays."""
     if grid is None:
         grid = world["grids"]["vertex"]
 
-    scalar_weight = tiled_particles.charge * tiled_particles.weight
+    scalar_weight = _species_scalar_to_slots(
+        tiled_particles,
+        species_config.charge * species_config.weight,
+    )
     rho_tiles = _deposit_tiled_scalar_moment_to_tiles(
         tiled_particles,
         rho_tiles,
@@ -347,12 +360,15 @@ def compute_tiled_rho_from_tiled_particles(tiled_particles, rho_tiles, world, co
 
 
 @jit
-def compute_mass_density_from_tiled_particles(tiled_particles, rho, world, grid=None):
+def compute_mass_density_from_tiled_particles(tiled_particles, species_config, rho, world, grid=None):
     """Compute mass density on the vertex grid from tile-major particles."""
     if grid is None:
         grid = world["grids"]["vertex"]
 
-    scalar_weight = tiled_particles.mass * tiled_particles.weight
+    scalar_weight = _species_scalar_to_slots(
+        tiled_particles,
+        species_config.mass * species_config.weight,
+    )
     position = _diagnostic_mass_position(tiled_particles, world)
     return _deposit_tiled_scalar_moment(
         tiled_particles,
@@ -365,12 +381,15 @@ def compute_mass_density_from_tiled_particles(tiled_particles, rho, world, grid=
 
 
 @partial(jit, static_argnames=("tile_shape", "g"))
-def compute_tiled_mass_density_from_tiled_particles(tiled_particles, rho_tiles, world, grid=None, tile_shape=None, g=1):
+def compute_tiled_mass_density_from_tiled_particles(tiled_particles, species_config, rho_tiles, world, grid=None, tile_shape=None, g=1):
     """Compute mass density into tile-major vertex-grid scalar arrays."""
     if grid is None:
         grid = world["grids"]["vertex"]
 
-    scalar_weight = tiled_particles.mass * tiled_particles.weight
+    scalar_weight = _species_scalar_to_slots(
+        tiled_particles,
+        species_config.mass * species_config.weight,
+    )
     position = _diagnostic_mass_position(tiled_particles, world)
     g = int(g)
     tile_shape = tuple(int(width) for width in tile_shape)

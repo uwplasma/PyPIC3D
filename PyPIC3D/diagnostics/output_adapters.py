@@ -82,13 +82,14 @@ def fields_for_output(fields, world):
     return output_fields + (pml_state,)
 
 
-def particles_for_output(particles, species_names=None, world=None):
+def particles_for_output(particles, species_config=None, species_names=None, world=None):
     """
     Flatten fixed-capacity tiled particle storage for diagnostics.
     """
 
     return flatten_tiled_particles_by_species(
         particles,
+        species_config=species_config,
         species_names=species_names,
         world=world,
     )

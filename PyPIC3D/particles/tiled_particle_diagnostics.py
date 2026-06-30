@@ -70,7 +70,7 @@ def _diagnostic_position(x, u, world):
     return jnp.stack((x_diagnostic, y_diagnostic, z_diagnostic), axis=-1)
 
 
-def flatten_tiled_particles_by_species(tiled_particles, species_names=None, world=None):
+def flatten_tiled_particles_by_species(tiled_particles, species_config=None, species_names=None, world=None):
     """
     Flatten active tile-major particles into diagnostic species arrays.
 
@@ -90,9 +90,10 @@ def flatten_tiled_particles_by_species(tiled_particles, species_names=None, worl
 
         x = tiled_particles.x[:, :, :, species_index, :, :].reshape(-1, 3)[active]
         u = tiled_particles.u[:, :, :, species_index, :, :].reshape(-1, 3)[active]
-        charge = tiled_particles.charge[:, :, :, species_index, :].reshape(-1)[active]
-        mass = tiled_particles.mass[:, :, :, species_index, :].reshape(-1)[active]
-        weight = tiled_particles.weight[:, :, :, species_index, :].reshape(-1)[active]
+        n_active = int(jnp.sum(active))
+        charge = jnp.full((n_active,), species_config.charge[species_index])
+        mass = jnp.full((n_active,), species_config.mass[species_index])
+        weight = jnp.full((n_active,), species_config.weight[species_index])
 
         x_diagnostic = _diagnostic_position(x, u, world)
 

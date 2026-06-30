@@ -172,7 +172,7 @@ def convergence_test(func):
 
     return slope
 
-def compute_energy(particles, E, B, world, constants):
+def compute_energy(particles, E, B, world, constants, species_config=None):
     """
     Compute the total energy of the system, including electric field energy, magnetic field energy, and kinetic energy of particles.
 
@@ -242,7 +242,11 @@ def compute_energy(particles, E, B, world, constants):
         vz = particles.u[..., 2]
         v2 = vx**2 + vy**2 + vz**2
         active = particles.active.astype(v2.dtype)
-        mass = particles.mass * particles.weight
+        species_mass = species_config.mass * species_config.weight
+        mass = jnp.broadcast_to(
+            species_mass.reshape((1, 1, 1, species_mass.shape[0], 1)),
+            particles.active.shape,
+        )
         gamma = 1.0 / jnp.sqrt(1 - v2 / C**2)
         momentum2 = jnp.square(mass * gamma) * v2
         kinetic_energy = jnp.sum(active * (jnp.sqrt(momentum2 * C**2 + mass**2 * C**4) - mass * C**2))
@@ -265,7 +269,7 @@ def compute_energy(particles, E, B, world, constants):
     return e_energy, b_energy, kinetic_energy
 
 
-def compute_total_momentum(particles):
+def compute_total_momentum(particles, species_config=None):
     """
     Compute the scalar momentum diagnostic for either species-list or tiled particles.
     """
@@ -273,7 +277,12 @@ def compute_total_momentum(particles):
     if hasattr(particles, "active") and hasattr(particles, "u"):
         vmag = jnp.sqrt(particles.u[..., 0]**2 + particles.u[..., 1]**2 + particles.u[..., 2]**2)
         active = particles.active.astype(vmag.dtype)
-        return jnp.sum(active * vmag * particles.mass * particles.weight)
+        species_mass = species_config.mass * species_config.weight
+        mass = jnp.broadcast_to(
+            species_mass.reshape((1, 1, 1, species_mass.shape[0], 1)),
+            particles.active.shape,
+        )
+        return jnp.sum(active * vmag * mass)
 
     return sum(particle_species.momentum() for particle_species in particles)
 

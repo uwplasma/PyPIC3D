@@ -93,17 +93,15 @@ class TestTiledRho(unittest.TestCase):
         return [electrons, ions]
 
     def _tiled_with_noisy_inactive_slots(self, particles, world):
-        tiled_particles = to_tiled_particles(particles, world, self._simulation_parameters())
+        tiled_particles, species_config = to_tiled_particles(particles, world, self._simulation_parameters())
 
         inactive = ~tiled_particles.active
         x = tiled_particles.x.at[inactive, 0].set(0.33)
         x = x.at[inactive, 1].set(-0.27)
         x = x.at[inactive, 2].set(0.18)
         u = tiled_particles.u.at[inactive, 0].set(4.0)
-        charge = tiled_particles.charge.at[inactive].set(1000.0)
-        weight = tiled_particles.weight.at[inactive].set(1000.0)
 
-        return tiled_particles._replace(x=x, u=u, charge=charge, weight=weight)
+        return tiled_particles._replace(x=x, u=u), species_config
 
     def _zero_species_velocities(self, particles):
         for species in particles:
@@ -119,11 +117,12 @@ class TestTiledRho(unittest.TestCase):
         world = self._build_world(shape_factor)
         constants = {"alpha": alpha}
         particles = self._particles(world)
-        tiled_particles = self._tiled_with_noisy_inactive_slots(particles, world)
+        tiled_particles, species_config = self._tiled_with_noisy_inactive_slots(particles, world)
 
         rho_reference = compute_rho(particles, self._empty_scalar(world), world, constants)
         rho_tiled = compute_rho_from_tiled_particles(
             tiled_particles,
+            species_config,
             self._empty_scalar(world),
             world,
             constants,
@@ -169,17 +168,19 @@ class TestTiledRho(unittest.TestCase):
         world = self._build_world(shape_factor=2)
         constants = {"alpha": 1.0}
         particles = self._particles(world)
-        tiled_particles = self._tiled_with_noisy_inactive_slots(particles, world)
+        tiled_particles, species_config = self._tiled_with_noisy_inactive_slots(particles, world)
         zero_velocity_tiled_particles = self._zero_tiled_velocities(tiled_particles)
 
         rho_with_velocity = compute_rho_from_tiled_particles(
             tiled_particles,
+            species_config,
             self._empty_scalar(world),
             world,
             constants,
         )
         rho_with_zero_velocity = compute_rho_from_tiled_particles(
             zero_velocity_tiled_particles,
+            species_config,
             self._empty_scalar(world),
             world,
             constants,
@@ -203,12 +204,13 @@ class TestTiledRho(unittest.TestCase):
         )
         constants = {"alpha": 1.0}
         particles = self._particles(world)
-        tiled_particles = self._tiled_with_noisy_inactive_slots(particles, world)
+        tiled_particles, species_config = self._tiled_with_noisy_inactive_slots(particles, world)
         zero_velocity_tiled_particles = self._zero_tiled_velocities(tiled_particles)
         rho_tiles = tile_scalar_field(self._empty_scalar(world), world, world["tile_shape"])
 
         rho_tiles_with_velocity = compute_tiled_rho_from_tiled_particles(
             tiled_particles,
+            species_config,
             rho_tiles,
             world,
             constants,
@@ -217,6 +219,7 @@ class TestTiledRho(unittest.TestCase):
         )
         rho_tiles_with_zero_velocity = compute_tiled_rho_from_tiled_particles(
             zero_velocity_tiled_particles,
+            species_config,
             rho_tiles,
             world,
             constants,

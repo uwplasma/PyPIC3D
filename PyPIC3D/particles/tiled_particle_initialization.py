@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from PyPIC3D.particles.particle_initialization import load_particles_from_toml
-from PyPIC3D.particles.tiled_particles import TiledParticles
+from PyPIC3D.particles.tiled_particles import SpeciesConfig, TiledParticles
 
 
 def _as_int(value):
@@ -65,16 +65,33 @@ def to_tiled_particles(particles, world, simulation_parameters):
 
     x = jnp.zeros((ntx, nty, ntz, n_species, max_particles_per_tile, 3))
     u = jnp.zeros_like(x)
-    charge = jnp.zeros((ntx, nty, ntz, n_species, max_particles_per_tile))
-    mass = jnp.zeros_like(charge)
-    weight = jnp.zeros_like(charge)
     active = jnp.zeros((ntx, nty, ntz, n_species, max_particles_per_tile), dtype=bool)
-    update_x1 = jnp.zeros_like(active)
-    update_x2 = jnp.zeros_like(active)
-    update_x3 = jnp.zeros_like(active)
-    update_u1 = jnp.zeros_like(active)
-    update_u2 = jnp.zeros_like(active)
-    update_u3 = jnp.zeros_like(active)
+
+    charge = jnp.asarray([species.charge for species in particles])
+    mass = jnp.asarray([species.mass for species in particles])
+    weight = jnp.asarray([species.weight for species in particles])
+    update_x = jnp.asarray(
+        [
+            [
+                species.update_pos and species.update_x,
+                species.update_pos and species.update_y,
+                species.update_pos and species.update_z,
+            ]
+            for species in particles
+        ],
+        dtype=bool,
+    )
+    update_u = jnp.asarray(
+        [
+            [
+                species.update_v and species.update_vx,
+                species.update_v and species.update_vy,
+                species.update_v and species.update_vz,
+            ]
+            for species in particles
+        ],
+        dtype=bool,
+    )
 
     next_slot = np.zeros_like(tile_counts)
 
@@ -96,32 +113,16 @@ def to_tiled_particles(particles, world, simulation_parameters):
             u = u.at[index + (1,)].set(u2[p])
             u = u.at[index + (2,)].set(u3[p])
 
-            charge = charge.at[index].set(species.charge)
-            mass = mass.at[index].set(species.mass)
-            weight = weight.at[index].set(species.weight)
             active = active.at[index].set(species.active_mask[p])
 
-            update_x1 = update_x1.at[index].set(species.update_pos and species.update_x)
-            update_x2 = update_x2.at[index].set(species.update_pos and species.update_y)
-            update_x3 = update_x3.at[index].set(species.update_pos and species.update_z)
-            update_u1 = update_u1.at[index].set(species.update_v and species.update_vx)
-            update_u2 = update_u2.at[index].set(species.update_v and species.update_vy)
-            update_u3 = update_u3.at[index].set(species.update_v and species.update_vz)
-
-    return TiledParticles(
-        x=x,
-        u=u,
+    species_config = SpeciesConfig(
         charge=charge,
         mass=mass,
         weight=weight,
-        active=active,
-        update_x1=update_x1,
-        update_x2=update_x2,
-        update_x3=update_x3,
-        update_u1=update_u1,
-        update_u2=update_u2,
-        update_u3=update_u3,
+        update_x=update_x,
+        update_u=update_u,
     )
+    return TiledParticles(x=x, u=u, active=active), species_config
 
 
 def load_tiled_particles_from_toml(config, simulation_parameters, world, constants):

@@ -50,21 +50,22 @@ def _particle_tile_indices(x, y, z, world, tile_shape, tile_counts):
     )
 
 
-def update_tiled_particle_positions(tiled_particles, dt):
+def update_tiled_particle_positions(tiled_particles, species_config, dt):
     """
     Advance tile-major particle positions without changing tile ownership.
     """
 
     active = tiled_particles.active.astype(tiled_particles.x.dtype)
+    update_x = species_config.update_x.reshape((1, 1, 1, species_config.update_x.shape[0], 1, 3))
 
     dx = active * tiled_particles.u[..., 0] * dt
     dy = active * tiled_particles.u[..., 1] * dt
     dz = active * tiled_particles.u[..., 2] * dt
 
     x = tiled_particles.x
-    x = x.at[..., 0].set(jnp.where(tiled_particles.active & tiled_particles.update_x1, x[..., 0] + dx, x[..., 0]))
-    x = x.at[..., 1].set(jnp.where(tiled_particles.active & tiled_particles.update_x2, x[..., 1] + dy, x[..., 1]))
-    x = x.at[..., 2].set(jnp.where(tiled_particles.active & tiled_particles.update_x3, x[..., 2] + dz, x[..., 2]))
+    x = x.at[..., 0].set(jnp.where(tiled_particles.active & update_x[..., 0], x[..., 0] + dx, x[..., 0]))
+    x = x.at[..., 1].set(jnp.where(tiled_particles.active & update_x[..., 1], x[..., 1] + dy, x[..., 1]))
+    x = x.at[..., 2].set(jnp.where(tiled_particles.active & update_x[..., 2], x[..., 2] + dz, x[..., 2]))
 
     return tiled_particles._replace(x=x)
 
@@ -138,16 +139,7 @@ def refresh_tiled_particle_tiles(tiled_particles, world, tile_shape):
 
     new_x = jnp.zeros_like(tiled_particles.x)
     new_u = jnp.zeros_like(tiled_particles.u)
-    new_charge = jnp.zeros_like(tiled_particles.charge)
-    new_mass = jnp.zeros_like(tiled_particles.mass)
-    new_weight = jnp.zeros_like(tiled_particles.weight)
     new_active = jnp.zeros_like(tiled_particles.active)
-    new_update_x1 = jnp.zeros_like(tiled_particles.update_x1)
-    new_update_x2 = jnp.zeros_like(tiled_particles.update_x2)
-    new_update_x3 = jnp.zeros_like(tiled_particles.update_x3)
-    new_update_u1 = jnp.zeros_like(tiled_particles.update_u1)
-    new_update_u2 = jnp.zeros_like(tiled_particles.update_u2)
-    new_update_u3 = jnp.zeros_like(tiled_particles.update_u3)
     overflow = jnp.asarray(False)
 
     x_offsets = _neighbor_offsets(ntx)
@@ -160,16 +152,7 @@ def refresh_tiled_particle_tiles(tiled_particles, world, tile_shape):
                 for species in range(n_species):
                     candidate_x = []
                     candidate_u = []
-                    candidate_charge = []
-                    candidate_mass = []
-                    candidate_weight = []
                     candidate_active = []
-                    candidate_update_x1 = []
-                    candidate_update_x2 = []
-                    candidate_update_x3 = []
-                    candidate_update_u1 = []
-                    candidate_update_u2 = []
-                    candidate_update_u3 = []
                     candidate_dest_tx = []
                     candidate_dest_ty = []
                     candidate_dest_tz = []
@@ -183,32 +166,14 @@ def refresh_tiled_particle_tiles(tiled_particles, world, tile_shape):
                                 index = (sx, sy, sz, species)
                                 candidate_x.append(bounded_x[index])
                                 candidate_u.append(bounded_u[index])
-                                candidate_charge.append(tiled_particles.charge[index])
-                                candidate_mass.append(tiled_particles.mass[index])
-                                candidate_weight.append(tiled_particles.weight[index])
                                 candidate_active.append(bounded_active[index])
-                                candidate_update_x1.append(tiled_particles.update_x1[index])
-                                candidate_update_x2.append(tiled_particles.update_x2[index])
-                                candidate_update_x3.append(tiled_particles.update_x3[index])
-                                candidate_update_u1.append(tiled_particles.update_u1[index])
-                                candidate_update_u2.append(tiled_particles.update_u2[index])
-                                candidate_update_u3.append(tiled_particles.update_u3[index])
                                 candidate_dest_tx.append(dest_tx[index])
                                 candidate_dest_ty.append(dest_ty[index])
                                 candidate_dest_tz.append(dest_tz[index])
 
                     candidate_x = jnp.concatenate(candidate_x, axis=0)
                     candidate_u = jnp.concatenate(candidate_u, axis=0)
-                    candidate_charge = jnp.concatenate(candidate_charge, axis=0)
-                    candidate_mass = jnp.concatenate(candidate_mass, axis=0)
-                    candidate_weight = jnp.concatenate(candidate_weight, axis=0)
                     candidate_active = jnp.concatenate(candidate_active, axis=0)
-                    candidate_update_x1 = jnp.concatenate(candidate_update_x1, axis=0)
-                    candidate_update_x2 = jnp.concatenate(candidate_update_x2, axis=0)
-                    candidate_update_x3 = jnp.concatenate(candidate_update_x3, axis=0)
-                    candidate_update_u1 = jnp.concatenate(candidate_update_u1, axis=0)
-                    candidate_update_u2 = jnp.concatenate(candidate_update_u2, axis=0)
-                    candidate_update_u3 = jnp.concatenate(candidate_update_u3, axis=0)
                     candidate_dest_tx = jnp.concatenate(candidate_dest_tx, axis=0)
                     candidate_dest_ty = jnp.concatenate(candidate_dest_ty, axis=0)
                     candidate_dest_tz = jnp.concatenate(candidate_dest_tz, axis=0)
@@ -225,59 +190,23 @@ def refresh_tiled_particle_tiles(tiled_particles, world, tile_shape):
 
                     local_x = jnp.zeros_like(new_x[tx, ty, tz, species])
                     local_u = jnp.zeros_like(new_u[tx, ty, tz, species])
-                    local_charge = jnp.zeros_like(new_charge[tx, ty, tz, species])
-                    local_mass = jnp.zeros_like(new_mass[tx, ty, tz, species])
-                    local_weight = jnp.zeros_like(new_weight[tx, ty, tz, species])
                     local_active_count = jnp.zeros(n_slots, dtype=int)
-                    local_update_x1_count = jnp.zeros(n_slots, dtype=int)
-                    local_update_x2_count = jnp.zeros(n_slots, dtype=int)
-                    local_update_x3_count = jnp.zeros(n_slots, dtype=int)
-                    local_update_u1_count = jnp.zeros(n_slots, dtype=int)
-                    local_update_u2_count = jnp.zeros(n_slots, dtype=int)
-                    local_update_u3_count = jnp.zeros(n_slots, dtype=int)
 
                     valid = fits.astype(candidate_x.dtype)
                     local_x = local_x.at[safe_rank].add(valid[:, None] * candidate_x)
                     local_u = local_u.at[safe_rank].add(valid[:, None] * candidate_u)
-                    local_charge = local_charge.at[safe_rank].add(valid * candidate_charge)
-                    local_mass = local_mass.at[safe_rank].add(valid * candidate_mass)
-                    local_weight = local_weight.at[safe_rank].add(valid * candidate_weight)
                     local_active_count = local_active_count.at[safe_rank].add(fits.astype(int))
-                    local_update_x1_count = local_update_x1_count.at[safe_rank].add((fits & candidate_update_x1).astype(int))
-                    local_update_x2_count = local_update_x2_count.at[safe_rank].add((fits & candidate_update_x2).astype(int))
-                    local_update_x3_count = local_update_x3_count.at[safe_rank].add((fits & candidate_update_x3).astype(int))
-                    local_update_u1_count = local_update_u1_count.at[safe_rank].add((fits & candidate_update_u1).astype(int))
-                    local_update_u2_count = local_update_u2_count.at[safe_rank].add((fits & candidate_update_u2).astype(int))
-                    local_update_u3_count = local_update_u3_count.at[safe_rank].add((fits & candidate_update_u3).astype(int))
 
                     index = (tx, ty, tz, species)
                     new_x = new_x.at[index].set(local_x)
                     new_u = new_u.at[index].set(local_u)
-                    new_charge = new_charge.at[index].set(local_charge)
-                    new_mass = new_mass.at[index].set(local_mass)
-                    new_weight = new_weight.at[index].set(local_weight)
                     new_active = new_active.at[index].set(local_active_count > 0)
-                    new_update_x1 = new_update_x1.at[index].set(local_update_x1_count > 0)
-                    new_update_x2 = new_update_x2.at[index].set(local_update_x2_count > 0)
-                    new_update_x3 = new_update_x3.at[index].set(local_update_x3_count > 0)
-                    new_update_u1 = new_update_u1.at[index].set(local_update_u1_count > 0)
-                    new_update_u2 = new_update_u2.at[index].set(local_update_u2_count > 0)
-                    new_update_u3 = new_update_u3.at[index].set(local_update_u3_count > 0)
                     overflow = overflow | (jnp.sum(keep) > n_slots)
 
     refreshed = TiledParticles(
         x=new_x,
         u=new_u,
-        charge=new_charge,
-        mass=new_mass,
-        weight=new_weight,
         active=new_active,
-        update_x1=new_update_x1,
-        update_x2=new_update_x2,
-        update_x3=new_update_x3,
-        update_u1=new_update_u1,
-        update_u2=new_update_u2,
-        update_u3=new_update_u3,
     )
 
     return refreshed, overflow

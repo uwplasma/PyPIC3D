@@ -212,20 +212,10 @@ class TestUtilsFunctions(unittest.TestCase):
     def test_dump_parameters_to_toml_writes_tiled_species_summaries(self):
         active = jnp.array([[[[[True, False, True], [False, True, False]]]]])
         zeros3 = jnp.zeros(active.shape + (3,))
-        ones = jnp.ones(active.shape)
         particles = TiledParticles(
             x=zeros3,
             u=zeros3,
-            charge=ones,
-            mass=ones,
-            weight=ones,
             active=active,
-            update_x1=active,
-            update_x2=active,
-            update_x3=active,
-            update_u1=active,
-            update_u2=active,
-            update_u3=active,
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:

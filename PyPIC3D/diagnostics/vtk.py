@@ -42,7 +42,7 @@ def plot_fields(fieldx, fieldy, fieldz, t, name, dx, dy, dz):
 # plot the electric fields in the vtk file format
 
 
-def plot_vtk_particles(particles, t, path, species_names=None, world=None):
+def plot_vtk_particles(particles, t, path, species_config=None, species_names=None, world=None):
     """
     Plot the particles in VTK format.
 
@@ -57,7 +57,7 @@ def plot_vtk_particles(particles, t, path, species_names=None, world=None):
     if not os.path.exists(f"{path}/data/particles"):
         os.makedirs(f"{path}/data/particles")
 
-    particles = particles_for_output(particles, species_names=species_names, world=world)
+    particles = particles_for_output(particles, species_config=species_config, species_names=species_names, world=world)
     # Tiled particle arrays are fixed-capacity by tile; VTK particle output only
     # receives the active diagnostic particles.
 

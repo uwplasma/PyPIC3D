@@ -14,6 +14,7 @@ from PyPIC3D.utils import add_external_fields
 
 def time_loop_electrodynamic_tiled(
     particles,
+    species_config,
     fields,
     world,
     constants,
@@ -64,6 +65,7 @@ def time_loop_electrodynamic_tiled(
 
     particles = tiled_particle_push(
         particles,
+        species_config,
         push_E_tiles,
         push_B_tiles,
         world,
@@ -76,9 +78,10 @@ def time_loop_electrodynamic_tiled(
     # use the selected tiled pusher for particle velocities
 
     if J_func is None:
-        def current_deposition(particles, J_tiles, constants, world, tile_shape=None, g=None):
+        def current_deposition(particles, species_config, J_tiles, constants, world, tile_shape=None, g=None):
             return direct_J_from_tiled_particles(
                 particles,
+                species_config,
                 J_tiles,
                 constants,
                 world,
@@ -94,24 +97,24 @@ def time_loop_electrodynamic_tiled(
         # Esirkepov needs old and new particle positions.  The deposition kernel
         # predicts the new positions locally, then the actual particle state is
         # advanced and retiled after the current has been computed.
-        J_tiles = current_deposition(particles, J_tiles, constants, world, tile_shape=tile_shape, g=g)
-        particles = update_tiled_particle_positions(particles, world["dt"])
+        J_tiles = current_deposition(particles, species_config, J_tiles, constants, world, tile_shape=tile_shape, g=g)
+        particles = update_tiled_particle_positions(particles, species_config, world["dt"])
         particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)
         overflow = overflow_previous | overflow
         return particles, J_tiles, overflow
 
     def direct_current_step(state):
         particles, J_tiles, overflow_previous = state
-        particles = update_tiled_particle_positions(particles, world["dt"]/2)
+        particles = update_tiled_particle_positions(particles, species_config, world["dt"]/2)
         # update particle positions to the centered direct-current deposition time
         particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)
         overflow = overflow_previous | overflow
         # wrap periodic particles and move them into their owning tiles.
 
-        J_tiles = current_deposition(particles, J_tiles, constants, world, tile_shape=tile_shape, g=g)
+        J_tiles = current_deposition(particles, species_config, J_tiles, constants, world, tile_shape=tile_shape, g=g)
         # deposit current directly into tile-local Yee current arrays
 
-        particles = update_tiled_particle_positions(particles, world["dt"]/2)
+        particles = update_tiled_particle_positions(particles, species_config, world["dt"]/2)
         # complete the full particle position update
         particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)
         overflow = overflow_previous | overflow

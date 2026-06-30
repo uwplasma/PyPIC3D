@@ -202,7 +202,7 @@ def _centered_tiled_electrostatic_gradient(phi_tiles, world, tile_shape, g):
     return update_tiled_vector_ghost_cells((Ex, Ey, Ez), world, g, tile_shape)
 
 
-def calculate_tiled_electrostatic_fields(world, particles, constants, rho_tiles, phi_tiles, solver, bc, tile_shape, g):
+def calculate_tiled_electrostatic_fields(world, particles, species_config, constants, rho_tiles, phi_tiles, solver, bc, tile_shape, g):
     """
     Compute electrostatic fields from tiled rho deposition and a global Poisson solve.
 
@@ -218,7 +218,7 @@ def calculate_tiled_electrostatic_fields(world, particles, constants, rho_tiles,
     bc_z = world["boundary_conditions"]["z"]
 
     g = int(g)
-    rho_tiles = compute_tiled_rho_from_tiled_particles(particles, rho_tiles, world, constants, tile_shape=tile_shape, g=g)
+    rho_tiles = compute_tiled_rho_from_tiled_particles(particles, species_config, rho_tiles, world, constants, tile_shape=tile_shape, g=g)
     rho = assemble_tiled_scalar_field(rho_tiles, world, tile_shape, num_guard_cells=g)
     phi = assemble_tiled_scalar_field(phi_tiles, world, tile_shape, num_guard_cells=g)
 

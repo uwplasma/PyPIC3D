@@ -146,11 +146,12 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
 
         old_species = self._species_from_arrays(world, x_old, u)
         new_species = self._species_from_arrays(world, x_old + u * world["dt"], u)
-        tiled_particles = to_tiled_particles([old_species], world, simulation_parameters)
+        tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
 
         J_reference = Esirkepov_current([new_species], self._empty_J(world), constants, world)
         J_tiles = tiled_esirkepov_current(
             tiled_particles,
+            species_config,
             empty_tiled_vector_field(world, tile_shape, num_guard_cells=g),
             constants,
             world,
@@ -281,11 +282,12 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         x_new = x_old + old_species.v1 * world["dt"]
         new_species = self._species(world, x_new)
 
-        tiled_particles = to_tiled_particles([old_species], world, simulation_parameters)
+        tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
         J_reference = Esirkepov_current([new_species], self._empty_J(world), constants, world)
         g = int(world["guard_cells"])
         J_tiles = tiled_esirkepov_current(
             tiled_particles,
+            species_config,
             empty_tiled_vector_field(world, tile_shape, num_guard_cells=g),
             constants,
             world,
@@ -398,22 +400,23 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
             ]
         )
         old_species = self._species_from_arrays(world, x_old, u)
-        tiled_particles = to_tiled_particles([old_species], world, simulation_parameters)
+        tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
         g = int(world["guard_cells"])
         rho_tiles = empty_tiled_scalar_field(world, tile_shape, num_guard_cells=g)
 
-        rho_old = compute_tiled_rho_from_tiled_particles(tiled_particles, rho_tiles, world, constants, tile_shape=tile_shape, g=g)
+        rho_old = compute_tiled_rho_from_tiled_particles(tiled_particles, species_config, rho_tiles, world, constants, tile_shape=tile_shape, g=g)
         J_tiles = tiled_esirkepov_current(
             tiled_particles,
+            species_config,
             empty_tiled_vector_field(world, tile_shape, num_guard_cells=g),
             constants,
             world,
             tile_shape=tile_shape,
             g=g,
         )
-        new_particles = update_tiled_particle_positions(tiled_particles, world["dt"])
+        new_particles = update_tiled_particle_positions(tiled_particles, species_config, world["dt"])
         new_particles, overflow = refresh_tiled_particle_tiles(new_particles, world, tile_shape)
-        rho_new = compute_tiled_rho_from_tiled_particles(new_particles, rho_tiles, world, constants, tile_shape=tile_shape, g=g)
+        rho_new = compute_tiled_rho_from_tiled_particles(new_particles, species_config, rho_tiles, world, constants, tile_shape=tile_shape, g=g)
 
         self.assertFalse(bool(overflow))
         drhodt = (rho_new[:, :, :, g:-g, g:-g, g:-g] - rho_old[:, :, :, g:-g, g:-g, g:-g]) / world["dt"]
@@ -593,10 +596,11 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
                 toml.dump(config, f)
 
             loop, particles, fields, world, _simulation_parameters, constants, _plotting_parameters, _plasma_parameters, \
-                solver, _electrostatic, _verbose, _GPUs, _Nt, curl_func, J_func, relativistic, particle_pusher = initialize_simulation(toml.load(config_path))
+                solver, _electrostatic, _verbose, _GPUs, _Nt, curl_func, J_func, relativistic, particle_pusher, species_config = initialize_simulation(toml.load(config_path))
 
             particles, fields = loop(
                 particles,
+                species_config,
                 fields,
                 world,
                 constants,
@@ -667,10 +671,11 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
             }
 
             loop, particles, fields, world, _simulation_parameters, constants, _plotting_parameters, _plasma_parameters, \
-                solver, _electrostatic, _verbose, _GPUs, _Nt, curl_func, _J_func, relativistic, particle_pusher = initialize_simulation(config)
+                solver, _electrostatic, _verbose, _GPUs, _Nt, curl_func, _J_func, relativistic, particle_pusher, species_config = initialize_simulation(config)
             alias_J_func = functools.partial(tiled_esirkepov_current)
             particles, fields = loop(
                 particles,
+                species_config,
                 fields,
                 world,
                 constants,

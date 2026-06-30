@@ -83,9 +83,9 @@ class TestTiledParticleDiagnostics(unittest.TestCase):
 
     def test_flatten_tiled_particles_matches_active_original_species(self):
         species_list = self._species()
-        tiled_particles = to_tiled_particles(species_list, self._world(), self._simulation_parameters())
+        tiled_particles, species_config = to_tiled_particles(species_list, self._world(), self._simulation_parameters())
 
-        flattened_species = flatten_tiled_particles_by_species(tiled_particles)
+        flattened_species = flatten_tiled_particles_by_species(tiled_particles, species_config=species_config)
 
         self.assertEqual(len(flattened_species), len(species_list))
         for species_index, (original, flattened) in enumerate(zip(species_list, flattened_species)):
@@ -105,9 +105,9 @@ class TestTiledParticleDiagnostics(unittest.TestCase):
 
     def test_inactive_tiled_slots_are_not_flattened(self):
         species_list = self._species()
-        tiled_particles = to_tiled_particles(species_list, self._world(), self._simulation_parameters())
+        tiled_particles, species_config = to_tiled_particles(species_list, self._world(), self._simulation_parameters())
 
-        flattened_species = flatten_tiled_particles_by_species(tiled_particles)
+        flattened_species = flatten_tiled_particles_by_species(tiled_particles, species_config=species_config)
 
         self.assertEqual(flattened_species[0].get_number_of_particles(), 3)
         self.assertEqual(flattened_species[1].get_number_of_particles(), 2)
@@ -116,12 +116,12 @@ class TestTiledParticleDiagnostics(unittest.TestCase):
 
     def test_absorbed_particles_do_not_appear_in_flattened_output(self):
         species_list = self._species()
-        tiled_particles = to_tiled_particles(species_list, self._world(), self._simulation_parameters())
+        tiled_particles, species_config = to_tiled_particles(species_list, self._world(), self._simulation_parameters())
 
         tiled_particles = tiled_particles._replace(
             active=tiled_particles.active.at[1, 1, 0, 0, 1].set(False)
         )
-        flattened_species = flatten_tiled_particles_by_species(tiled_particles)
+        flattened_species = flatten_tiled_particles_by_species(tiled_particles, species_config=species_config)
 
         self.assertEqual(flattened_species[0].get_number_of_particles(), 2)
         self.assertFalse(jnp.any(jnp.isclose(flattened_species[0].get_forward_position()[0], 1.5)))
@@ -134,9 +134,9 @@ class TestTiledParticleDiagnostics(unittest.TestCase):
             "y": 0,
             "z": 0,
         }
-        tiled_particles = to_tiled_particles(species_list, world, self._simulation_parameters())
+        tiled_particles, species_config = to_tiled_particles(species_list, world, self._simulation_parameters())
 
-        flattened_species = flatten_tiled_particles_by_species(tiled_particles, world=world)
+        flattened_species = flatten_tiled_particles_by_species(tiled_particles, species_config=species_config, world=world)
 
         for original, flattened in zip(species_list, flattened_species):
             active = original.get_active_mask()
@@ -147,10 +147,10 @@ class TestTiledParticleDiagnostics(unittest.TestCase):
 
     def test_species_names_are_preserved_when_metadata_is_available(self):
         species_list = self._species()
-        tiled_particles = to_tiled_particles(species_list, self._world(), self._simulation_parameters())
+        tiled_particles, species_config = to_tiled_particles(species_list, self._world(), self._simulation_parameters())
         species_names = tuple(species.get_name() for species in species_list)
 
-        flattened_species = flatten_tiled_particles_by_species(tiled_particles, species_names=species_names)
+        flattened_species = flatten_tiled_particles_by_species(tiled_particles, species_config=species_config, species_names=species_names)
 
         self.assertEqual(flattened_species[0].get_name(), "ions")
         self.assertEqual(flattened_species[1].get_name(), "electrons")

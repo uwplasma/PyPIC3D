@@ -169,7 +169,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
             "particle_tile_ny": tile_shape[1],
             "particle_tile_nz": tile_shape[2],
         }
-        tiled_particles = to_tiled_particles(particles, world, simulation_parameters)
+        tiled_particles, species_config = to_tiled_particles(particles, world, simulation_parameters)
         tiled_particles = self._pad_tiled_particle_capacity(tiled_particles, min_slots=12)
         g = int(world["guard_cells"])
         if current_calculation == CURRENT_ESIRKEPOV:
@@ -214,30 +214,12 @@ class TestTiledYeeIntegration(unittest.TestCase):
 
         scalar_pad_width = [(0, 0)] * tiled_particles.active.ndim
         scalar_pad_width[-1] = (0, min_slots - current_slots)
-        charge = jnp.pad(tiled_particles.charge, scalar_pad_width)
-        mass = jnp.pad(tiled_particles.mass, scalar_pad_width)
-        weight = jnp.pad(tiled_particles.weight, scalar_pad_width)
         active = jnp.pad(tiled_particles.active, scalar_pad_width)
-        update_x1 = jnp.pad(tiled_particles.update_x1, scalar_pad_width)
-        update_x2 = jnp.pad(tiled_particles.update_x2, scalar_pad_width)
-        update_x3 = jnp.pad(tiled_particles.update_x3, scalar_pad_width)
-        update_u1 = jnp.pad(tiled_particles.update_u1, scalar_pad_width)
-        update_u2 = jnp.pad(tiled_particles.update_u2, scalar_pad_width)
-        update_u3 = jnp.pad(tiled_particles.update_u3, scalar_pad_width)
 
         return TiledParticles(
             x=x,
             u=u,
-            charge=charge,
-            mass=mass,
-            weight=weight,
             active=active,
-            update_x1=update_x1,
-            update_x2=update_x2,
-            update_x3=update_x3,
-            update_u1=update_u1,
-            update_u2=update_u2,
-            update_u3=update_u3,
         )
 
     def _standard_species_rows(self, particles, species_index):
@@ -361,6 +343,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         )
         _, tiled_fields = time_loop_electrodynamic_tiled(
             [],
+            None,
             tiled_fields,
             world,
             constants,
@@ -712,7 +695,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
             particle_pusher="boris",
         )
 
-        tiled_particles = to_tiled_particles([species], world, simulation_parameters)
+        tiled_particles, species_config = to_tiled_particles([species], world, simulation_parameters)
         tiled_fields = (
             tile_vector_field(E, world, tile_shape),
             tile_vector_field(B, world, tile_shape),
@@ -727,6 +710,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         )
         tiled_particles, tiled_fields = time_loop_electrodynamic_tiled(
             tiled_particles,
+            species_config,
             tiled_fields,
             world,
             constants,
@@ -759,7 +743,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
             self.assertTrue(jnp.allclose(tiled, reference, rtol=1.0e-12, atol=1.0e-12))
 
         reference_energy = compute_energy(reference_particles, reference_E, reference_B, world, constants)
-        tiled_energy = compute_energy(tiled_particles, E_tiles, B_tiles, world, constants)
+        tiled_energy = compute_energy(tiled_particles, E_tiles, B_tiles, world, constants, species_config=species_config)
         for reference, tiled in zip(reference_energy, tiled_energy):
             self.assertTrue(jnp.allclose(tiled, reference, rtol=1.0e-12, atol=1.0e-12))
 
@@ -791,7 +775,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
             particle_pusher="boris",
         )
 
-        tiled_particles = to_tiled_particles([species], world, simulation_parameters)
+        tiled_particles, species_config = to_tiled_particles([species], world, simulation_parameters)
         tiled_fields = (
             tile_vector_field(E, world, tile_shape),
             tile_vector_field(B, world, tile_shape),
@@ -806,6 +790,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         )
         _, tiled_fields = time_loop_electrodynamic_tiled(
             tiled_particles,
+            species_config,
             tiled_fields,
             world,
             constants,
@@ -854,7 +839,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
             particle_pusher="boris",
         )
 
-        tiled_particles = to_tiled_particles([species], world, simulation_parameters)
+        tiled_particles, species_config = to_tiled_particles([species], world, simulation_parameters)
         tiled_fields = (
             tile_vector_field(E, world, tile_shape),
             tile_vector_field(B, world, tile_shape),
@@ -869,6 +854,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         )
         _, tiled_fields = time_loop_electrodynamic_tiled(
             tiled_particles,
+            species_config,
             tiled_fields,
             world,
             constants,
@@ -914,7 +900,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
             particle_pusher="boris",
         )
 
-        tiled_particles = to_tiled_particles([species], world, simulation_parameters)
+        tiled_particles, species_config = to_tiled_particles([species], world, simulation_parameters)
         tiled_fields = (
             tile_vector_field(E, world, tile_shape),
             tile_vector_field(B, world, tile_shape),
@@ -929,6 +915,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         )
         _, tiled_fields = time_loop_electrodynamic_tiled(
             tiled_particles,
+            species_config,
             tiled_fields,
             world,
             constants,
@@ -1016,7 +1003,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
             particle_pusher="boris",
         )
 
-        tiled_particles = to_tiled_particles([species], world, simulation_parameters)
+        tiled_particles, species_config = to_tiled_particles([species], world, simulation_parameters)
         tiled_fields = (
             tile_vector_field(E, world, tile_shape, num_guard_cells=int(world["guard_cells"])),
             tile_vector_field(B, world, tile_shape, num_guard_cells=int(world["guard_cells"])),
@@ -1031,6 +1018,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         )
         _, tiled_fields = time_loop_electrodynamic_tiled(
             tiled_particles,
+            species_config,
             tiled_fields,
             world,
             constants,

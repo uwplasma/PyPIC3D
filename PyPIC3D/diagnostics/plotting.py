@@ -51,7 +51,7 @@ def plot_positions(particles, t, x_wind, y_wind, z_wind, path):
 
     fig.write_html(f"{path}/data/positions/particles.{t:09}.html")
 
-def write_particles_phase_space(particles, t, path, species_names=None, world=None):
+def write_particles_phase_space(particles, t, path, species_config=None, species_names=None, world=None):
     """
     Write the phase space of the particles to a file.
 
@@ -71,7 +71,7 @@ def write_particles_phase_space(particles, t, path, species_names=None, world=No
         os.makedirs(f"{path}/data/phase_space/z")
     # Create directory if it doesn't exist
 
-    particles = particles_for_output(particles, species_names=species_names, world=world)
+    particles = particles_for_output(particles, species_config=species_config, species_names=species_names, world=world)
     # Tiled storage contains fixed-capacity inactive slots; phase-space output
     # writes only active particles and otherwise keeps the old species-list path.
 

@@ -136,16 +136,7 @@ class TestTiledElectrostatic(unittest.TestCase):
         return TiledParticles(
             x=x,
             u=u,
-            charge=jnp.pad(tiled_particles.charge, scalar_pad_width),
-            mass=jnp.pad(tiled_particles.mass, scalar_pad_width),
-            weight=jnp.pad(tiled_particles.weight, scalar_pad_width),
             active=jnp.pad(tiled_particles.active, scalar_pad_width),
-            update_x1=jnp.pad(tiled_particles.update_x1, scalar_pad_width),
-            update_x2=jnp.pad(tiled_particles.update_x2, scalar_pad_width),
-            update_x3=jnp.pad(tiled_particles.update_x3, scalar_pad_width),
-            update_u1=jnp.pad(tiled_particles.update_u1, scalar_pad_width),
-            update_u2=jnp.pad(tiled_particles.update_u2, scalar_pad_width),
-            update_u3=jnp.pad(tiled_particles.update_u3, scalar_pad_width),
         )
 
     def _long_two_stream_species(self, world):
@@ -211,7 +202,7 @@ class TestTiledElectrostatic(unittest.TestCase):
         reference_fields = (E, B, J, rho, phi, external_fields)
         reference_particles = self._long_two_stream_species(world)
 
-        tiled_particles = to_tiled_particles(
+        tiled_particles, species_config = to_tiled_particles(
             self._long_two_stream_species(world),
             world,
             {
@@ -350,13 +341,14 @@ class TestTiledElectrostatic(unittest.TestCase):
         world = self._build_world(shape_factor=1)
         constants = {"alpha": 1.0}
         species = self._species(world)
-        tiled_particles = to_tiled_particles([species], world, self._simulation_parameters())
+        tiled_particles, species_config = to_tiled_particles([species], world, self._simulation_parameters())
         _, _, _, rho, _, _ = self._empty_fields(world)
         rho_tiles = tile_scalar_field(rho, world, world["tile_shape"])
 
         reference_rho = compute_rho([self._species(world)], rho, world, constants)
         tiled_rho = compute_tiled_rho_from_tiled_particles(
             tiled_particles,
+            species_config,
             rho_tiles,
             world,
             constants,
@@ -391,7 +383,7 @@ class TestTiledElectrostatic(unittest.TestCase):
             particle_pusher="boris",
         )
 
-        tiled_particles = to_tiled_particles(self._neutral_species(world), world, self._simulation_parameters())
+        tiled_particles, species_config = to_tiled_particles(self._neutral_species(world), world, self._simulation_parameters())
         tiled_fields = (
             tile_vector_field(E, world, world["tile_shape"]),
             tile_vector_field(B, world, world["tile_shape"]),
@@ -407,6 +399,7 @@ class TestTiledElectrostatic(unittest.TestCase):
 
         tiled_particles, tiled_fields = time_loop_electrostatic_tiled(
             tiled_particles,
+            species_config,
             tiled_fields,
             world,
             constants,

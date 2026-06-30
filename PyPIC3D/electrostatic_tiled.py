@@ -11,6 +11,7 @@ from PyPIC3D.utils import add_external_fields
 
 def time_loop_electrostatic_tiled(
     particles,
+    species_config,
     fields,
     world,
     constants,
@@ -52,6 +53,7 @@ def time_loop_electrostatic_tiled(
 
     particles = tiled_particle_push(
         particles,
+        species_config,
         push_E_tiles,
         push_B_tiles,
         world,
@@ -63,7 +65,7 @@ def time_loop_electrostatic_tiled(
     )
     # push velocities using the selected tiled particle pusher
 
-    particles = update_tiled_particle_positions(particles, world["dt"])
+    particles = update_tiled_particle_positions(particles, species_config, world["dt"])
     # update particle forward positions before depositing rho
 
     particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)
@@ -73,6 +75,7 @@ def time_loop_electrostatic_tiled(
     E_tiles, phi_tiles, rho_tiles = calculate_tiled_electrostatic_fields(
         world,
         particles,
+        species_config,
         constants,
         rho_tiles,
         phi_tiles,

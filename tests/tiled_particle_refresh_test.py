@@ -71,11 +71,8 @@ class TestTiledParticleRefresh(unittest.TestCase):
         active = tiled_particles.active.reshape(-1)
         x = tiled_particles.x.reshape(-1, 3)[active]
         u = tiled_particles.u.reshape(-1, 3)[active]
-        charge = tiled_particles.charge.reshape(-1)[active]
-        mass = tiled_particles.mass.reshape(-1)[active]
-        weight = tiled_particles.weight.reshape(-1)[active]
         order = jnp.argsort(x[:, 0])
-        return x[order], u[order], charge[order], mass[order], weight[order]
+        return x[order], u[order]
 
     def test_update_tiled_particle_positions_respects_active_and_update_flags(self):
         world = self._build_world()
@@ -85,23 +82,23 @@ class TestTiledParticleRefresh(unittest.TestCase):
             v1=[0.25, 0.5, 0.75],
             active_mask=jnp.array([True, False, True]),
         )
-        tiled_particles = to_tiled_particles([species], world, self._simulation_parameters())
+        tiled_particles, species_config = to_tiled_particles([species], world, self._simulation_parameters())
 
-        moved = update_tiled_particle_positions(tiled_particles, world["dt"])
+        moved = update_tiled_particle_positions(tiled_particles, species_config, world["dt"])
 
-        x, _, _, _, _ = self._active_rows(moved)
+        x, _ = self._active_rows(moved)
         self.assertTrue(jnp.allclose(x[:, 0], jnp.array([-1.25, 1.25])))
         self.assertTrue(jnp.allclose(moved.x[~tiled_particles.active], tiled_particles.x[~tiled_particles.active]))
 
         fixed_species = self._species(world, x1=[-1.5], v1=[0.25], update_x=False)
-        fixed = to_tiled_particles([fixed_species], world, self._simulation_parameters())
-        fixed_moved = update_tiled_particle_positions(fixed, world["dt"])
+        fixed, fixed_species_config = to_tiled_particles([fixed_species], world, self._simulation_parameters())
+        fixed_moved = update_tiled_particle_positions(fixed, fixed_species_config, world["dt"])
         self.assertTrue(jnp.allclose(fixed_moved.x, fixed.x))
 
     def test_refresh_moves_particles_to_neighbor_tiles_with_static_shape(self):
         world = self._build_world()
         species = self._species(world, x1=[-1.5, -0.25, 0.25], v1=[0.0, 0.0, 0.0])
-        tiled_particles = to_tiled_particles([species], world, self._simulation_parameters())
+        tiled_particles, species_config = to_tiled_particles([species], world, self._simulation_parameters())
         moved_x = tiled_particles.x.at[0, 0, 0, 0, 1, 0].set(0.25)
         moved = tiled_particles._replace(x=moved_x)
 
@@ -111,17 +108,14 @@ class TestTiledParticleRefresh(unittest.TestCase):
         self.assertFalse(bool(overflow))
         self.assertEqual(int(jnp.sum(refreshed.active[0, 0, 0, 0])), 1)
         self.assertEqual(int(jnp.sum(refreshed.active[1, 0, 0, 0])), 2)
-        x, u, charge, mass, weight = self._active_rows(refreshed)
+        x, u = self._active_rows(refreshed)
         self.assertTrue(jnp.allclose(x[:, 0], jnp.array([-1.5, 0.25, 0.25])))
         self.assertTrue(jnp.allclose(u[:, 0], jnp.array([0.0, 0.0, 0.0])))
-        self.assertTrue(jnp.allclose(charge, 2.0))
-        self.assertTrue(jnp.allclose(mass, 3.0))
-        self.assertTrue(jnp.allclose(weight, 4.0))
 
     def test_refresh_wraps_periodic_particle_to_opposite_tile(self):
         world = self._build_world()
         species = self._species(world, x1=[1.75], v1=[0.0])
-        tiled_particles = to_tiled_particles([species], world, self._simulation_parameters())
+        tiled_particles, species_config = to_tiled_particles([species], world, self._simulation_parameters())
         moved = tiled_particles._replace(x=tiled_particles.x.at[1, 0, 0, 0, 0, 0].set(2.25))
 
         refreshed, overflow = refresh_tiled_particle_tiles(moved, world, tile_shape=(2, 1, 1))
@@ -134,7 +128,7 @@ class TestTiledParticleRefresh(unittest.TestCase):
         world = self._build_world()
         world["particle_boundary_conditions"] = {"x": 1, "y": 0, "z": 0}
         species = self._species(world, x1=[1.75, -1.75], v1=[0.5, -0.25], x_bc="periodic")
-        tiled_particles = to_tiled_particles([species], world, self._simulation_parameters())
+        tiled_particles, species_config = to_tiled_particles([species], world, self._simulation_parameters())
         moved = tiled_particles._replace(
             x=tiled_particles.x
             .at[1, 0, 0, 0, 0, 0].set(2.25)
@@ -144,7 +138,7 @@ class TestTiledParticleRefresh(unittest.TestCase):
         refreshed, overflow = refresh_tiled_particle_tiles(moved, world, tile_shape=(2, 1, 1))
 
         self.assertFalse(bool(overflow))
-        x, u, _, _, _ = self._active_rows(refreshed)
+        x, u = self._active_rows(refreshed)
         self.assertTrue(jnp.allclose(x[:, 0], jnp.array([-1.90, 1.75])))
         self.assertTrue(jnp.allclose(u[:, 0], jnp.array([0.25, -0.5])))
 
@@ -152,21 +146,21 @@ class TestTiledParticleRefresh(unittest.TestCase):
         world = self._build_world()
         world["particle_boundary_conditions"] = {"x": 2, "y": 0, "z": 0}
         species = self._species(world, x1=[1.75, -0.25], v1=[0.5, 0.0], x_bc="periodic")
-        tiled_particles = to_tiled_particles([species], world, self._simulation_parameters())
+        tiled_particles, species_config = to_tiled_particles([species], world, self._simulation_parameters())
         moved = tiled_particles._replace(x=tiled_particles.x.at[1, 0, 0, 0, 0, 0].set(2.25))
 
         refreshed, overflow = refresh_tiled_particle_tiles(moved, world, tile_shape=(2, 1, 1))
 
         self.assertFalse(bool(overflow))
         self.assertEqual(int(jnp.sum(refreshed.active)), 1)
-        x, u, _, _, _ = self._active_rows(refreshed)
+        x, u = self._active_rows(refreshed)
         self.assertTrue(jnp.allclose(x[:, 0], jnp.array([-0.25])))
         self.assertTrue(jnp.allclose(u[:, 0], jnp.array([0.0])))
 
     def test_refresh_reports_overflow_without_changing_shape(self):
         world = self._build_world()
         species = self._species(world, x1=[-1.5, 0.5, 1.5], v1=[0.0, 0.0, 0.0])
-        tiled_particles = to_tiled_particles([species], world, self._simulation_parameters())
+        tiled_particles, species_config = to_tiled_particles([species], world, self._simulation_parameters())
         moved = tiled_particles._replace(x=tiled_particles.x.at[0, 0, 0, 0, 0, 0].set(0.25))
 
         refreshed, overflow = refresh_tiled_particle_tiles(moved, world, tile_shape=(2, 1, 1))
