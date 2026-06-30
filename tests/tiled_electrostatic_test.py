@@ -49,6 +49,7 @@ class TestTiledElectrostatic(unittest.TestCase):
             "y_wind": 1.0,
             "z_wind": 1.0,
             "shape_factor": shape_factor,
+            "guard_cells": 2,
             "boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},
         }
         vertex_grid, center_grid = build_yee_grid(world)
@@ -353,9 +354,9 @@ class TestTiledElectrostatic(unittest.TestCase):
             world,
             constants,
             tile_shape=world["tile_shape"],
-            g=1,
+            g=int(world["guard_cells"]),
         )
-        assembled_rho = assemble_tiled_scalar_field(tiled_rho, world, world["tile_shape"])
+        assembled_rho = assemble_tiled_scalar_field(tiled_rho, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))
 
         self.assertTrue(
             jnp.allclose(
@@ -407,7 +408,7 @@ class TestTiledElectrostatic(unittest.TestCase):
             J_func=None,
             solver="tiled_yee",
             tile_shape=world["tile_shape"],
-            g=1,
+            g=int(world["guard_cells"]),
             relativistic=False,
             particle_pusher="boris",
         )
@@ -415,15 +416,15 @@ class TestTiledElectrostatic(unittest.TestCase):
         E_tiles, B_tiles, J_tiles, rho_tiles, phi_tiles, *_ = tiled_fields
         reference_E, reference_B, reference_J, reference_rho, reference_phi, *_ = reference_fields
 
-        for reference, tiled in zip(reference_E, assemble_tiled_vector_field(E_tiles, world, world["tile_shape"])):
+        for reference, tiled in zip(reference_E, assemble_tiled_vector_field(E_tiles, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))):
             self.assertTrue(jnp.allclose(tiled, reference, rtol=1.0e-8, atol=1.0e-8))
-        for reference, tiled in zip(reference_B, assemble_tiled_vector_field(B_tiles, world, world["tile_shape"])):
+        for reference, tiled in zip(reference_B, assemble_tiled_vector_field(B_tiles, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))):
             self.assertTrue(jnp.allclose(tiled, reference, rtol=1.0e-12, atol=1.0e-12))
-        for reference, tiled in zip(reference_J, assemble_tiled_vector_field(J_tiles, world, world["tile_shape"])):
+        for reference, tiled in zip(reference_J, assemble_tiled_vector_field(J_tiles, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))):
             self.assertTrue(jnp.allclose(tiled, reference, rtol=1.0e-12, atol=1.0e-12))
 
-        rho_from_tiles = assemble_tiled_scalar_field(rho_tiles, world, world["tile_shape"])
-        phi_from_tiles = assemble_tiled_scalar_field(phi_tiles, world, world["tile_shape"])
+        rho_from_tiles = assemble_tiled_scalar_field(rho_tiles, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))
+        phi_from_tiles = assemble_tiled_scalar_field(phi_tiles, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))
         self.assertTrue(jnp.allclose(rho_from_tiles[1:-1, 1:-1, 1:-1], reference_rho[1:-1, 1:-1, 1:-1], rtol=1.0e-12, atol=1.0e-12))
         tiled_phi_interior = phi_from_tiles[1:-1, 1:-1, 1:-1]
         reference_phi_interior = reference_phi[1:-1, 1:-1, 1:-1]
@@ -473,7 +474,7 @@ class TestTiledElectrostatic(unittest.TestCase):
                 J_func=None,
                 solver="tiled_yee",
                 tile_shape=tile_shape,
-                g=1,
+                g=int(world["guard_cells"]),
                 relativistic=False,
                 particle_pusher="boris",
             )
@@ -548,8 +549,9 @@ class TestTiledElectrostatic(unittest.TestCase):
                 self.assertTrue(jnp.allclose(vertex_axis, center_axis))
             self.assertIn("tiled_center_grid", world["grids"])
             self.assertIn("tiled_vertex_grid", world["grids"])
-            self.assertEqual(world["grids"]["tiled_center_grid"][0].shape, (4, 1, 1, 4))
-            self.assertEqual(world["grids"]["tiled_center_grid"][1].shape, (4, 1, 1, 3))
+            self.assertEqual(int(world["guard_cells"]), 2)
+            self.assertEqual(world["grids"]["tiled_center_grid"][0].shape, (4, 1, 1, 6))
+            self.assertEqual(world["grids"]["tiled_center_grid"][1].shape, (4, 1, 1, 5))
             for tiled_vertex_axis, tiled_center_axis in zip(
                 world["grids"]["tiled_vertex_grid"],
                 world["grids"]["tiled_center_grid"],

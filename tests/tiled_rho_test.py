@@ -30,6 +30,7 @@ class TestTiledRho(unittest.TestCase):
             "z_wind": z_wind,
             "dt": dt,
             "shape_factor": shape_factor,
+            "guard_cells": 2,
             "boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},
         }
         vertex_grid, center_grid = build_yee_grid(world)
@@ -215,7 +216,7 @@ class TestTiledRho(unittest.TestCase):
             world,
             constants,
             tile_shape=world["tile_shape"],
-            g=1,
+            g=int(world["guard_cells"]),
         )
         rho_tiles_with_zero_velocity = compute_tiled_rho_from_tiled_particles(
             zero_velocity_tiled_particles,
@@ -224,10 +225,10 @@ class TestTiledRho(unittest.TestCase):
             world,
             constants,
             tile_shape=world["tile_shape"],
-            g=1,
+            g=int(world["guard_cells"]),
         )
-        rho_with_velocity = assemble_tiled_scalar_field(rho_tiles_with_velocity, world, world["tile_shape"])
-        rho_with_zero_velocity = assemble_tiled_scalar_field(rho_tiles_with_zero_velocity, world, world["tile_shape"])
+        rho_with_velocity = assemble_tiled_scalar_field(rho_tiles_with_velocity, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))
+        rho_with_zero_velocity = assemble_tiled_scalar_field(rho_tiles_with_zero_velocity, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))
 
         self.assertTrue(
             jnp.allclose(

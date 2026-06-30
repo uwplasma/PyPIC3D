@@ -39,7 +39,7 @@ def _reduced_tiled_axes(field_tiles, tile_shape, g):
     )
 
 
-def empty_tiled_scalar_field(world, tile_shape, num_guard_cells=1, dtype=None):
+def empty_tiled_scalar_field(world, tile_shape, num_guard_cells=2, dtype=None):
     """
     Allocate an empty tile-major scalar field with ``num_guard_cells`` guards.
     """
@@ -65,12 +65,46 @@ def empty_tiled_scalar_field(world, tile_shape, num_guard_cells=1, dtype=None):
     )
 
 
-def empty_tiled_vector_field(world, tile_shape, num_guard_cells=1, dtype=None):
+def empty_tiled_vector_field(world, tile_shape, num_guard_cells=2, dtype=None):
     """
     Allocate empty tile-major vector-field components.
     """
 
     return tuple(empty_tiled_scalar_field(world, tile_shape, num_guard_cells, dtype) for _ in range(3))
+
+
+def _is_stacked_tiled_vector_field(field_tiles):
+    return hasattr(field_tiles, "ndim") and field_tiles.ndim == 7 and int(field_tiles.shape[0]) == 3
+
+
+def stack_tiled_vector_field(field_tiles):
+    """
+    Stack tiled vector components onto one leading component axis.
+
+    The public tiled field state still uses the existing ``(Fx, Fy, Fz)``
+    tuples.  This packed view gives halo/fold/filter routines one vector-field
+    surface, which is the shape later shard-local exchange should operate on.
+    """
+
+    if _is_stacked_tiled_vector_field(field_tiles):
+        return field_tiles
+    return jnp.stack(field_tiles, axis=0)
+
+
+def unstack_tiled_vector_field(field_tiles):
+    """
+    Return a tiled vector field as the existing ``(Fx, Fy, Fz)`` tuple.
+    """
+
+    if _is_stacked_tiled_vector_field(field_tiles):
+        return field_tiles[0], field_tiles[1], field_tiles[2]
+    return field_tiles
+
+
+def _restore_tiled_vector_layout(stacked_tiles, original_tiles):
+    if _is_stacked_tiled_vector_field(original_tiles):
+        return stacked_tiles
+    return unstack_tiled_vector_field(stacked_tiles)
 
 
 def _tile_grid_axis(global_axis_grid, world, tile_shape, tile_counts, axis_index, num_guard_cells):
@@ -96,7 +130,7 @@ def _tile_grid_axis(global_axis_grid, world, tile_shape, tile_counts, axis_index
     return jnp.broadcast_to(axis_lines.reshape(axis_shape), tiled_shape)
 
 
-def tile_grid_axes(grid, world, tile_shape, num_guard_cells=1):
+def tile_grid_axes(grid, world, tile_shape, num_guard_cells=2):
     """
     Build tile-local coordinate lines for a center or vertex grid.
 
@@ -122,7 +156,7 @@ def tile_grid_axes(grid, world, tile_shape, num_guard_cells=1):
     )
 
 
-def tiled_grid_axes_from_world(world, grid, tiled_grid_key, tile_shape, num_guard_cells=1):
+def tiled_grid_axes_from_world(world, grid, tiled_grid_key, tile_shape, num_guard_cells=2):
     """
     Read precomputed tile-local grid axes, with a construction fallback.
 
@@ -138,7 +172,7 @@ def tiled_grid_axes_from_world(world, grid, tiled_grid_key, tile_shape, num_guar
     return tile_grid_axes(grid, world, tile_shape, num_guard_cells)
 
 
-def tile_scalar_field(field, world, tile_shape, num_guard_cells=1):
+def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
     """
     Split a ghost-celled field into compact tiles using the shared tile shape.
     """
@@ -188,7 +222,7 @@ def _tile_scalar_field(field, tile_shape):
     return tile_scalar_field(field, None, tile_shape)
 
 
-def tile_vector_field(field, world, tile_shape, num_guard_cells=1):
+def tile_vector_field(field, world, tile_shape, num_guard_cells=2):
     """
     Split ``(Fx, Fy, Fz)`` into compact ghost-celled tiles.
 
@@ -200,7 +234,7 @@ def tile_vector_field(field, world, tile_shape, num_guard_cells=1):
     return tuple(tile_scalar_field(component, world, tile_shape, num_guard_cells) for component in field)
 
 
-def assemble_tiled_scalar_field(field_tiles, world, tile_shape, num_guard_cells=1):
+def assemble_tiled_scalar_field(field_tiles, world, tile_shape, num_guard_cells=2):
     """
     Assemble compact field tiles back into one global ghost-celled field.
     """
@@ -229,7 +263,7 @@ def assemble_tiled_scalar_field(field_tiles, world, tile_shape, num_guard_cells=
     return update_ghost_cells(field, bc_x, bc_y, bc_z)
 
 
-def assemble_tiled_vector_field(field_tiles, world, tile_shape, num_guard_cells=1):
+def assemble_tiled_vector_field(field_tiles, world, tile_shape, num_guard_cells=2):
     """
     Assemble tiled vector-field components into ordinary ghost-celled arrays.
     """
@@ -241,7 +275,7 @@ def _assemble_scalar_tiles(field_tiles, world, tile_shape):
     return assemble_tiled_scalar_field(field_tiles, world, tile_shape)
 
 
-def update_tiled_ghost_cells(field_tiles, world, num_guard_cells=1, tile_shape=None):
+def update_tiled_ghost_cells(field_tiles, world, num_guard_cells=2, tile_shape=None):
     """
     Refresh tile halos using the field boundary conditions.
 
@@ -342,7 +376,7 @@ def update_tiled_ghost_cells(field_tiles, world, num_guard_cells=1, tile_shape=N
     return field_tiles
 
 
-def update_tiled_ghost_cells_periodic(field_tiles, num_guard_cells=1):
+def update_tiled_ghost_cells_periodic(field_tiles, num_guard_cells=2):
     """
     Refresh tile halos with all-periodic boundary conditions.
     """
@@ -351,23 +385,35 @@ def update_tiled_ghost_cells_periodic(field_tiles, num_guard_cells=1):
     return update_tiled_ghost_cells(field_tiles, world, num_guard_cells)
 
 
-def update_tiled_vector_ghost_cells(field_tiles, world, num_guard_cells=1, tile_shape=None):
+def update_tiled_vector_ghost_cells(field_tiles, world, num_guard_cells=2, tile_shape=None):
     """
-    Refresh tile halos for each component of a vector field.
+    Refresh tile halos for a tiled vector field.
     """
 
-    return tuple(update_tiled_ghost_cells(component, world, num_guard_cells, tile_shape) for component in field_tiles)
+    stacked_tiles = stack_tiled_vector_field(field_tiles)
+    refreshed = jax.vmap(
+        lambda component: update_tiled_ghost_cells(component, world, num_guard_cells, tile_shape),
+        in_axes=0,
+        out_axes=0,
+    )(stacked_tiles)
+    return _restore_tiled_vector_layout(refreshed, field_tiles)
 
 
-def update_tiled_vector_ghost_cells_periodic(field_tiles, num_guard_cells=1):
+def update_tiled_vector_ghost_cells_periodic(field_tiles, num_guard_cells=2):
     """
     Refresh periodic tile halos for each component of a vector field.
     """
 
-    return tuple(update_tiled_ghost_cells_periodic(component, num_guard_cells) for component in field_tiles)
+    stacked_tiles = stack_tiled_vector_field(field_tiles)
+    refreshed = jax.vmap(
+        lambda component: update_tiled_ghost_cells_periodic(component, num_guard_cells),
+        in_axes=0,
+        out_axes=0,
+    )(stacked_tiles)
+    return _restore_tiled_vector_layout(refreshed, field_tiles)
 
 
-def update_tiled_ghost_cells_for_pml(field_tiles, world, num_guard_cells=1, tile_shape=None):
+def update_tiled_ghost_cells_for_pml(field_tiles, world, num_guard_cells=2, tile_shape=None):
     """
     Refresh tile halos without wrapping across PML-active global walls.
     """
@@ -385,15 +431,21 @@ def update_tiled_ghost_cells_for_pml(field_tiles, world, num_guard_cells=1, tile
     return update_tiled_ghost_cells(field_tiles, pml_world, num_guard_cells, tile_shape)
 
 
-def update_tiled_vector_ghost_cells_for_pml(field_tiles, world, num_guard_cells=1, tile_shape=None):
+def update_tiled_vector_ghost_cells_for_pml(field_tiles, world, num_guard_cells=2, tile_shape=None):
     """
     Refresh tile halos for a vector field with PML-active exterior walls.
     """
 
-    return tuple(update_tiled_ghost_cells_for_pml(component, world, num_guard_cells, tile_shape) for component in field_tiles)
+    stacked_tiles = stack_tiled_vector_field(field_tiles)
+    refreshed = jax.vmap(
+        lambda component: update_tiled_ghost_cells_for_pml(component, world, num_guard_cells, tile_shape),
+        in_axes=0,
+        out_axes=0,
+    )(stacked_tiles)
+    return _restore_tiled_vector_layout(refreshed, field_tiles)
 
 
-def apply_tiled_conducting_bc(E_tiles, world, num_guard_cells=1):
+def apply_tiled_conducting_bc(E_tiles, world, num_guard_cells=2):
     """
     Zero tangential electric-field components on global conducting faces.
     """
@@ -449,7 +501,7 @@ def apply_tiled_conducting_bc(E_tiles, world, num_guard_cells=1):
     return Ex, Ey, Ez
 
 
-def digital_filter_tiled_scalar(field_tiles, alpha, num_guard_cells=1):
+def digital_filter_tiled_scalar(field_tiles, alpha, num_guard_cells=2):
     """
     Apply the standard six-neighbor digital filter to each tile interior.
 
@@ -476,15 +528,21 @@ def digital_filter_tiled_scalar(field_tiles, alpha, num_guard_cells=1):
     return field_tiles.at[:, :, :, active, active, active].set(filtered)
 
 
-def digital_filter_tiled_vector(field_tiles, alpha, num_guard_cells=1):
+def digital_filter_tiled_vector(field_tiles, alpha, num_guard_cells=2):
     """
     Apply the standard field filter component-wise in tile-major storage.
     """
 
-    return tuple(digital_filter_tiled_scalar(component, alpha, num_guard_cells) for component in field_tiles)
+    stacked_tiles = stack_tiled_vector_field(field_tiles)
+    filtered = jax.vmap(
+        lambda component: digital_filter_tiled_scalar(component, alpha, num_guard_cells),
+        in_axes=0,
+        out_axes=0,
+    )(stacked_tiles)
+    return _restore_tiled_vector_layout(filtered, field_tiles)
 
 
-def fold_tiled_ghost_cells(field_tiles, world, num_guard_cells=1, tile_shape=None):
+def fold_tiled_ghost_cells(field_tiles, world, num_guard_cells=2, tile_shape=None):
     """
     Add tile-ghost deposits into owning interiors, then clear ghosts.
 
@@ -609,7 +667,7 @@ def fold_tiled_ghost_cells(field_tiles, world, num_guard_cells=1, tile_shape=Non
     return field_tiles
 
 
-def fold_tiled_ghost_cells_periodic(field_tiles, num_guard_cells=1):
+def fold_tiled_ghost_cells_periodic(field_tiles, num_guard_cells=2):
     """
     Fold all-periodic tile-ghost deposits for one scalar component.
     """
@@ -618,20 +676,32 @@ def fold_tiled_ghost_cells_periodic(field_tiles, num_guard_cells=1):
     return fold_tiled_ghost_cells(field_tiles, world, num_guard_cells)
 
 
-def fold_tiled_vector_ghost_cells(field_tiles, world, num_guard_cells=1, tile_shape=None):
+def fold_tiled_vector_ghost_cells(field_tiles, world, num_guard_cells=2, tile_shape=None):
     """
-    Fold tile-ghost deposits for each vector component.
+    Fold tile-ghost deposits for a tiled vector field.
     """
 
-    return tuple(fold_tiled_ghost_cells(component, world, num_guard_cells, tile_shape) for component in field_tiles)
+    stacked_tiles = stack_tiled_vector_field(field_tiles)
+    folded = jax.vmap(
+        lambda component: fold_tiled_ghost_cells(component, world, num_guard_cells, tile_shape),
+        in_axes=0,
+        out_axes=0,
+    )(stacked_tiles)
+    return _restore_tiled_vector_layout(folded, field_tiles)
 
 
-def fold_tiled_vector_ghost_cells_periodic(field_tiles, num_guard_cells=1):
+def fold_tiled_vector_ghost_cells_periodic(field_tiles, num_guard_cells=2):
     """
     Fold all-periodic tile-ghost deposits for each vector component.
     """
 
-    return tuple(fold_tiled_ghost_cells_periodic(component, num_guard_cells) for component in field_tiles)
+    stacked_tiles = stack_tiled_vector_field(field_tiles)
+    folded = jax.vmap(
+        lambda component: fold_tiled_ghost_cells_periodic(component, num_guard_cells),
+        in_axes=0,
+        out_axes=0,
+    )(stacked_tiles)
+    return _restore_tiled_vector_layout(folded, field_tiles)
 
 
 def update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape, g, pml_state=None):

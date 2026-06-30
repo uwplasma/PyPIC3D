@@ -30,6 +30,7 @@ class TestInitializationFunctions(unittest.TestCase):
         self.assertEqual(sim["particle_x_bc"], "periodic")
         self.assertEqual(sim["particle_y_bc"], "periodic")
         self.assertEqual(sim["particle_z_bc"], "periodic")
+        self.assertEqual(sim["guard_cells"], 2)
         self.assertIn('eps', const)
         self.assertIn('plotfields', plotting)
         # check that the default parameters contain expected keys

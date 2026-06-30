@@ -213,13 +213,14 @@ def compute_energy(particles, E, B, world, constants, species_config=None):
     # integral.  Tiled fields have leading tile axes followed by local
     # ghost-celled Yee arrays.
     if Ex.ndim == 6:
+        g = int(world.get("guard_cells", 2))
         interior = (
             slice(None),
             slice(None),
             slice(None),
-            slice(1, -1),
-            slice(1, -1),
-            slice(1, -1),
+            slice(g, -g),
+            slice(g, -g),
+            slice(g, -g),
         )
     else:
         interior = (slice(1, -1), slice(1, -1), slice(1, -1))

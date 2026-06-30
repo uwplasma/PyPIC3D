@@ -135,7 +135,7 @@ def _tile_axis_count(n_cells, cells_per_tile):
     return int(n_cells) // int(cells_per_tile)
 
 
-def _tile_scalar_profile(profile, tile_shape):
+def _tile_scalar_profile(profile, tile_shape, num_guard_cells=2):
     """
     Split one ghost-celled PML profile into compact tile-local profile arrays.
     """
@@ -147,6 +147,22 @@ def _tile_scalar_profile(profile, tile_shape):
     ntx = _tile_axis_count(Nx, tile_nx)
     nty = _tile_axis_count(Ny, tile_ny)
     ntz = _tile_axis_count(Nz, tile_nz)
+    g = int(num_guard_cells)
+
+    if g != 1:
+        profile_tiles = jnp.zeros(
+            (ntx, nty, ntz, tile_nx + 2 * g, tile_ny + 2 * g, tile_nz + 2 * g),
+            dtype=profile.dtype,
+        )
+        for tx in range(ntx):
+            for ty in range(nty):
+                for tz in range(ntz):
+                    ix = 1 + tx * tile_nx
+                    iy = 1 + ty * tile_ny
+                    iz = 1 + tz * tile_nz
+                    interior = profile[ix:ix + tile_nx, iy:iy + tile_ny, iz:iz + tile_nz]
+                    profile_tiles = profile_tiles.at[tx, ty, tz, g:-g, g:-g, g:-g].set(interior)
+        return profile_tiles
 
     def tile_at(tx, ty, tz):
         start = (tx * tile_nx, ty * tile_ny, tz * tile_nz)
@@ -172,13 +188,13 @@ def tile_pml_profiles(world, tile_shape):
     """
     Tile the ghost-celled PML conductivity profiles.
 
-    The leading tile axes match tiled field storage.  The final three axes keep
-    the same one-cell tile halos as the field tiles, so the derivative stretch
-    uses ``[..., 1:-1, 1:-1, 1:-1]`` next to the Yee derivative arrays.
+    The leading tile axes match tiled field storage.  The final three axes use
+    the same guard-cell depth as the field tiles.
     """
 
     _, _, _, _, profiles = world["pml"]
-    return tuple(_tile_scalar_profile(profile, tile_shape) for profile in profiles)
+    g = int(world.get("guard_cells", 2))
+    return tuple(_tile_scalar_profile(profile, tile_shape, num_guard_cells=g) for profile in profiles)
 
 
 def initialize_tiled_pml_state(world, tile_shape):
@@ -342,9 +358,10 @@ def apply_tiled_pml_to_e_curl(derivatives, world, pml_state):
     ) = e_memory
 
     sigma_x, sigma_y, sigma_z = tiled_profiles
-    sigma_x = sigma_x[:, :, :, 1:-1, 1:-1, 1:-1]
-    sigma_y = sigma_y[:, :, :, 1:-1, 1:-1, 1:-1]
-    sigma_z = sigma_z[:, :, :, 1:-1, 1:-1, 1:-1]
+    g = int(world.get("guard_cells", 2))
+    sigma_x = sigma_x[:, :, :, g:-g, g:-g, g:-g]
+    sigma_y = sigma_y[:, :, :, g:-g, g:-g, g:-g]
+    sigma_z = sigma_z[:, :, :, g:-g, g:-g, g:-g]
     dt = world["dt"]
 
     dBz_dy, memory_dBz_dy = stretch_spatial_derivative(dBz_dy, memory_dBz_dy, sigma_y, dt)
@@ -387,9 +404,10 @@ def apply_tiled_pml_to_b_curl(derivatives, world, pml_state):
     ) = b_memory
 
     sigma_x, sigma_y, sigma_z = tiled_profiles
-    sigma_x = sigma_x[:, :, :, 1:-1, 1:-1, 1:-1]
-    sigma_y = sigma_y[:, :, :, 1:-1, 1:-1, 1:-1]
-    sigma_z = sigma_z[:, :, :, 1:-1, 1:-1, 1:-1]
+    g = int(world.get("guard_cells", 2))
+    sigma_x = sigma_x[:, :, :, g:-g, g:-g, g:-g]
+    sigma_y = sigma_y[:, :, :, g:-g, g:-g, g:-g]
+    sigma_z = sigma_z[:, :, :, g:-g, g:-g, g:-g]
     dt = world["dt"]
 
     dEz_dy, memory_dEz_dy = stretch_spatial_derivative(dEz_dy, memory_dEz_dy, sigma_y, dt)

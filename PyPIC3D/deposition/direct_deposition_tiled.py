@@ -16,7 +16,7 @@ from PyPIC3D.solvers.yee_tiled import (
 )
 
 
-def bilinear_filter_tiled_current_density(J_tiles, world, num_guard_cells=1, tile_shape=None):
+def bilinear_filter_tiled_current_density(J_tiles, world, num_guard_cells=2, tile_shape=None):
     """
     Apply the global bilinear current filter to compact current tiles.
 
@@ -77,7 +77,7 @@ def bilinear_filter_tiled_current_density(J_tiles, world, num_guard_cells=1, til
     return J_tiles
 
 
-def digital_filter_tiled_current_density(J_tiles, alpha, world, num_guard_cells=1, tile_shape=None):
+def digital_filter_tiled_current_density(J_tiles, alpha, world, num_guard_cells=2, tile_shape=None):
     """
     Apply the global digital current filter to compact current tiles.
 
@@ -113,7 +113,7 @@ def direct_J_from_tiled_particles(
     grid=None,
     filter="bilinear",
     tile_shape=None,
-    g=1,
+    g=2,
 ):
     """
     Compute direct current deposition using tile-local stencils only.

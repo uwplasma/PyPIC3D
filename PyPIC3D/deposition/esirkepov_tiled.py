@@ -21,7 +21,7 @@ from PyPIC3D.solvers.yee_tiled import (
 )
 
 
-def fold_tiled_esirkepov_ghost_cells(field_tiles, world, component_axis, num_guard_cells=1, tile_shape=None):
+def fold_tiled_esirkepov_ghost_cells(field_tiles, world, component_axis, num_guard_cells=2, tile_shape=None):
     """
     Fold Esirkepov current deposits using the configured guard depth.
 
@@ -97,7 +97,7 @@ def fold_tiled_esirkepov_ghost_cells(field_tiles, world, component_axis, num_gua
     return field_tiles
 
 
-def fold_tiled_esirkepov_vector_ghost_cells(field_tiles, world, num_guard_cells=1, tile_shape=None):
+def fold_tiled_esirkepov_vector_ghost_cells(field_tiles, world, num_guard_cells=2, tile_shape=None):
     return tuple(
         fold_tiled_esirkepov_ghost_cells(component, world, component_axis, num_guard_cells, tile_shape)
         for component_axis, component in enumerate(field_tiles)
@@ -105,7 +105,7 @@ def fold_tiled_esirkepov_vector_ghost_cells(field_tiles, world, num_guard_cells=
 
 
 @partial(jit, static_argnames=("tile_shape", "g"))
-def tiled_esirkepov_current(tiled_particles, species_config, J_tiles, constants, world, grid=None, tile_shape=None, g=1):
+def tiled_esirkepov_current(tiled_particles, species_config, J_tiles, constants, world, grid=None, tile_shape=None, g=2):
     """
     Deposit Esirkepov current into tile-local current buffers.
 

@@ -51,7 +51,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
             "y_wind": 1.0,
             "z_wind": 1.0,
             "shape_factor": 1,
-            "guard_cells": 1,
+            "guard_cells": 2,
             "boundary_conditions": boundary_conditions,
         }
         vertex_grid, center_grid = build_yee_grid(world)

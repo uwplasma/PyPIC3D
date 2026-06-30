@@ -334,7 +334,7 @@ def compute_rho_from_tiled_particles(tiled_particles, species_config, rho, world
 
 
 @partial(jit, static_argnames=("tile_shape", "g"))
-def compute_tiled_rho_from_tiled_particles(tiled_particles, species_config, rho_tiles, world, constants, grid=None, tile_shape=None, g=1):
+def compute_tiled_rho_from_tiled_particles(tiled_particles, species_config, rho_tiles, world, constants, grid=None, tile_shape=None, g=2):
     """Compute charge density into tile-major vertex-grid scalar arrays."""
     if grid is None:
         grid = world["grids"]["vertex"]
@@ -390,7 +390,7 @@ def compute_mass_density_from_tiled_particles(tiled_particles, species_config, r
 
 
 @partial(jit, static_argnames=("tile_shape", "g"))
-def compute_tiled_mass_density_from_tiled_particles(tiled_particles, species_config, rho_tiles, world, grid=None, tile_shape=None, g=1):
+def compute_tiled_mass_density_from_tiled_particles(tiled_particles, species_config, rho_tiles, world, grid=None, tile_shape=None, g=2):
     """Compute mass density into tile-major vertex-grid scalar arrays."""
     if grid is None:
         grid = world["grids"]["vertex"]

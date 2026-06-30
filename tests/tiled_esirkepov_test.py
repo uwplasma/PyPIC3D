@@ -616,7 +616,8 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
             active_x = np.asarray(particles.x[..., 0][particles.active])
             expected_x = np.sort(x_initial + vx_initial * float(world["dt"]))
             self.assertTrue(np.allclose(np.sort(active_x), expected_x, rtol=1.0e-12, atol=1.0e-12))
-            self.assertEqual(fields[2][0].shape[-3:], (4, 3, 3))
+            self.assertEqual(int(world["guard_cells"]), 2)
+            self.assertEqual(fields[2][0].shape[-3:], (6, 5, 5))
             self.assertFalse(bool(fields[-1]))
 
     def test_tiled_yee_esirkepov_staging_uses_world_contract_not_function_identity(self):

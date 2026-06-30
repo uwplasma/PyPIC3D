@@ -39,6 +39,7 @@ def _base_world(nx=24, ny=1, nz=1):
         "x_wind": 1.0,
         "y_wind": 1.0,
         "z_wind": 1.0,
+        "guard_cells": 2,
         "boundary_conditions": {"x": 0, "y": 0, "z": 0},
     }
     center_grid, vertex_grid = build_yee_grid(world)
@@ -169,7 +170,7 @@ class TestPMLInitialization(unittest.TestCase):
         for memory in b_memory:
             self.assertEqual(memory.shape, (4, 2, 2, 2, 2, 1))
         for profile in tiled_profiles:
-            self.assertEqual(profile.shape, (4, 2, 2, 4, 4, 3))
+            self.assertEqual(profile.shape, (4, 2, 2, 6, 6, 5))
 
     def test_tile_pml_profiles_matches_global_profiles_on_tile_interiors(self):
         world = _base_world(nx=8, ny=4, nz=2)
@@ -185,7 +186,7 @@ class TestPMLInitialization(unittest.TestCase):
 
         tiled_profiles = tile_pml_profiles(world, tile_shape)
         global_profiles = world["pml"][-1]
-        assembled_profiles = assemble_tiled_vector_field(tiled_profiles, world, tile_shape)
+        assembled_profiles = assemble_tiled_vector_field(tiled_profiles, world, tile_shape, num_guard_cells=int(world["guard_cells"]))
 
         for assembled, reference in zip(assembled_profiles, global_profiles):
             self.assertTrue(
@@ -244,7 +245,8 @@ class TestPMLInitialization(unittest.TestCase):
         self.assertEqual(tuple(world["tile_shape"]), (2, 1, 1))
         self.assertEqual(e_memory[0].shape, (4, 1, 1, 2, 1, 1))
         self.assertEqual(b_memory[0].shape, (4, 1, 1, 2, 1, 1))
-        self.assertEqual(tiled_profiles[0].shape, (4, 1, 1, 4, 3, 3))
+        self.assertEqual(int(world["guard_cells"]), 2)
+        self.assertEqual(tiled_profiles[0].shape, (4, 1, 1, 6, 5, 5))
 
     def test_initialize_simulation_uses_none_pml_state_without_pml_for_fdtd(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -355,7 +357,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
             constants,
             lambda *args: None,
             tile_shape,
-            1,
+            int(world["guard_cells"]),
             tiled_pml_state,
         )
         B_tiles, tiled_pml_state = update_tiled_B(
@@ -365,12 +367,12 @@ class TestPMLFDTDBehavior(unittest.TestCase):
             constants,
             lambda *args: None,
             tile_shape,
-            1,
+            int(world["guard_cells"]),
             tiled_pml_state,
         )
 
-        E_tiled = assemble_tiled_vector_field(E_tiles, world, tile_shape)
-        B_tiled = assemble_tiled_vector_field(B_tiles, world, tile_shape)
+        E_tiled = assemble_tiled_vector_field(E_tiles, world, tile_shape, num_guard_cells=int(world["guard_cells"]))
+        B_tiled = assemble_tiled_vector_field(B_tiles, world, tile_shape, num_guard_cells=int(world["guard_cells"]))
 
         interior = (slice(1, -1), slice(1, -1), slice(1, -1))
         for reference, tiled in zip(E_reference, E_tiled):
@@ -406,10 +408,10 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         initial_energy = sum(compute_energy([], E_tiles, B_tiles, world, constants)[:2])
         def step(E_tiles, B_tiles, tiled_pml_state):
             E_tiles, tiled_pml_state = update_tiled_E(
-                E_tiles, B_tiles, J_tiles, world, constants, lambda *args: None, tile_shape, 1, tiled_pml_state
+                E_tiles, B_tiles, J_tiles, world, constants, lambda *args: None, tile_shape, int(world["guard_cells"]), tiled_pml_state
             )
             B_tiles, tiled_pml_state = update_tiled_B(
-                E_tiles, B_tiles, world, constants, lambda *args: None, tile_shape, 1, tiled_pml_state
+                E_tiles, B_tiles, world, constants, lambda *args: None, tile_shape, int(world["guard_cells"]), tiled_pml_state
             )
             return E_tiles, B_tiles, tiled_pml_state
 
@@ -438,7 +440,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         E_tiles = tile_vector_field((Ex, Ey, Ez), world, tile_shape)
         B_tiles = tile_vector_field((Bx, By, Bz), world, tile_shape)
 
-        g = 1
+        g = int(world["guard_cells"])
         J_tiles = tile_vector_field(J, world, tile_shape, num_guard_cells=g)
         Jx, Jy, Jz = J_tiles
         Jx = Jx.at[:, :, :, 1:-1, 1:-1, 1:-1].set(0.25)

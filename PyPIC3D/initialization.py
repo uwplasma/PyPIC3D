@@ -225,7 +225,7 @@ def default_parameters():
         "cfl"  : 1.0, # CFL condition number
         "ds_per_debye" : None, # number of grid spacings per debye length
         "shape_factor" : 1, # shape factor for the simulation (1 for 1st order, 2 for 2nd order)
-        "guard_cells": 1, # tile guard-cell depth shared by tiled fields and tiled currents
+        "guard_cells": 2, # tile guard-cell depth shared by tiled fields and tiled currents
         "particle_tile_nx": 1, # number of x cells per shared field/particle tile
         "particle_tile_ny": 1, # number of y cells per shared field/particle tile
         "particle_tile_nz": 1, # number of z cells per shared field/particle tile
@@ -309,6 +309,8 @@ def initialize_simulation(toml_file):
     particle_pusher = simulation_parameters['particle_pusher']
     validate_particle_pusher(particle_pusher)
     guard_cells = int(simulation_parameters["guard_cells"])
+    if solver == "tiled_yee":
+        guard_cells = max(guard_cells, 2)
     _validate_current_filter_contract(simulation_parameters)
     verbose = simulation_parameters['verbose']
     GPUs = simulation_parameters['GPUs']
