@@ -11,6 +11,7 @@ from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_
 from PyPIC3D.solvers.yee_tiled import (
     digital_filter_tiled_vector,
     fold_tiled_vector_ghost_cells,
+    tiled_grid_axes_from_world,
     update_tiled_vector_ghost_cells,
 )
 
@@ -94,20 +95,6 @@ def digital_filter_tiled_current_density(J_tiles, alpha, world, num_guard_cells=
     return J_tiles
 
 
-def _tile_axis_grid(global_axis_grid, tile_index, tile_n, local_n, d, num_guard_cells):
-    """
-    Build the ghost-celled coordinate line for one compact tile.
-
-    The first local grid point is shifted by the configured tile guard depth.
-    With one guard cell this is the old compact-tile convention; with two guard
-    cells the extra point gives quadratic shape factors their full local
-    stencil at tile faces.
-    """
-
-    offsets = jnp.arange(local_n, dtype=global_axis_grid.dtype)
-    return global_axis_grid[0] + (offsets + tile_index * tile_n - (num_guard_cells - 1)) * d
-
-
 def _collapse_tiled_axis_stencil(points, weights, local_n, reduced_axis, g):
     if reduced_axis:
         collapsed_points = jnp.full((1, points.shape[1]), int(g), dtype=points.dtype)
@@ -140,6 +127,13 @@ def direct_J_from_tiled_particles(
 
     if grid is None:
         grid = world["grids"]["center"]
+    tiled_grid = tiled_grid_axes_from_world(
+        world,
+        grid,
+        "tiled_center_grid",
+        tile_shape,
+        g,
+    )
 
     dx = world["dx"]
     dy = world["dy"]
@@ -178,9 +172,9 @@ def direct_J_from_tiled_particles(
         q = jnp.broadcast_to(species_weighted_charge[:, jnp.newaxis], active_tile.shape).reshape(-1)
         dq = q / (dx * dy * dz)
 
-        x_grid = _tile_axis_grid(grid[0], tx, tile_nx, local_Nx, dx, g)
-        y_grid = _tile_axis_grid(grid[1], ty, tile_ny, local_Ny, dy, g)
-        z_grid = _tile_axis_grid(grid[2], tz, tile_nz, local_Nz, dz, g)
+        x_grid = tiled_grid[0][tx, ty, tz]
+        y_grid = tiled_grid[1][tx, ty, tz]
+        z_grid = tiled_grid[2][tx, ty, tz]
 
         x, x0, deltax_node, xpts = prepare_particle_axis_stencil(
             x,

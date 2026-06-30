@@ -16,17 +16,9 @@ from PyPIC3D.deposition.Esirkepov import (
 )
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.solvers.yee_tiled import (
+    tiled_grid_axes_from_world,
     update_tiled_vector_ghost_cells,
 )
-
-
-def _tile_axis_grid(global_axis_grid, tile_index, tile_n, local_n, d, num_guard_cells):
-    """
-    Build one local tile axis with ``num_guard_cells`` guard points per side.
-    """
-
-    offsets = jnp.arange(local_n, dtype=global_axis_grid.dtype)
-    return global_axis_grid[0] + (offsets + tile_index * tile_n - (num_guard_cells - 1)) * d
 
 
 def fold_tiled_esirkepov_ghost_cells(field_tiles, world, component_axis, num_guard_cells=1, tile_shape=None):
@@ -125,6 +117,13 @@ def tiled_esirkepov_current(tiled_particles, species_config, J_tiles, constants,
 
     if grid is None:
         grid = world["grids"]["center"]
+    tiled_grid = tiled_grid_axes_from_world(
+        world,
+        grid,
+        "tiled_center_grid",
+        tile_shape,
+        g,
+    )
 
     dx = world["dx"]
     dy = world["dy"]
@@ -168,9 +167,9 @@ def tiled_esirkepov_current(tiled_particles, species_config, J_tiles, constants,
         y = old_y + jnp.where(update_x2, vy * dt, 0.0)
         z = old_z + jnp.where(update_x3, vz * dt, 0.0)
 
-        x_grid = _tile_axis_grid(grid[0], tx, tile_nx, local_Nx, dx, g)
-        y_grid = _tile_axis_grid(grid[1], ty, tile_ny, local_Ny, dy, g)
-        z_grid = _tile_axis_grid(grid[2], tz, tile_nz, local_Nz, dz, g)
+        x_grid = tiled_grid[0][tx, ty, tz]
+        y_grid = tiled_grid[1][tx, ty, tz]
+        z_grid = tiled_grid[2][tx, ty, tz]
 
         x0 = compute_particle_anchor(x, x_grid, shape_factor)
         y0 = compute_particle_anchor(y, y_grid, shape_factor)

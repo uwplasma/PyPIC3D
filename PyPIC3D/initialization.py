@@ -45,6 +45,7 @@ from PyPIC3D.particles.tiled_particle_initialization import (
 
 from PyPIC3D.solvers.yee_tiled import (
     empty_tiled_vector_field,
+    tile_grid_axes,
     tile_scalar_field,
     tile_vector_field,
 )
@@ -551,6 +552,18 @@ def initialize_simulation(toml_file):
         tile_shape = _tile_shape_from_parameters(simulation_parameters)
         world["tile_shape"] = tile_shape
         guard_cells = int(world["guard_cells"])
+        world["grids"]["tiled_center_grid"] = tile_grid_axes(
+            world["grids"]["center"],
+            world,
+            tile_shape,
+            num_guard_cells=guard_cells,
+        )
+        world["grids"]["tiled_vertex_grid"] = tile_grid_axes(
+            world["grids"]["vertex"],
+            world,
+            tile_shape,
+            num_guard_cells=guard_cells,
+        )
         particles, species_config = to_tiled_particles(particles, world, simulation_parameters)
         E = tile_vector_field(E, world, tile_shape, num_guard_cells=guard_cells)
         B = tile_vector_field(B, world, tile_shape, num_guard_cells=guard_cells)

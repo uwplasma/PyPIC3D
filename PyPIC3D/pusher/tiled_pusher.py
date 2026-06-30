@@ -10,12 +10,7 @@ from PyPIC3D.pusher.boris import (
     relativistic_boris_single_particle,
 )
 from PyPIC3D.pusher.higuera_cary import higuera_cary_single_particle
-
-
-def _tile_axis(axis, tile_index, cells_per_tile, num_guard_cells, d):
-    local_n = cells_per_tile + 2 * num_guard_cells
-    offsets = jnp.arange(local_n, dtype=axis.dtype)
-    return axis[0] + (offsets + tile_index * cells_per_tile - (num_guard_cells - 1)) * d
+from PyPIC3D.solvers.yee_tiled import tiled_grid_axes_from_world
 
 
 @partial(jit, static_argnames=("tile_shape", "g", "relativistic", "particle_pusher"))
@@ -34,6 +29,20 @@ def tiled_particle_push(tiled_particles, species_config, E_tiles, B_tiles, world
 
     center_grid = world["grids"]["center"]
     vertex_grid = world["grids"]["vertex"]
+    tiled_center_grid = tiled_grid_axes_from_world(
+        world,
+        center_grid,
+        "tiled_center_grid",
+        tile_shape,
+        g,
+    )
+    tiled_vertex_grid = tiled_grid_axes_from_world(
+        world,
+        vertex_grid,
+        "tiled_vertex_grid",
+        tile_shape,
+        g,
+    )
 
     Ex_tiles, Ey_tiles, Ez_tiles = E_tiles
     Bx_tiles, By_tiles, Bz_tiles = B_tiles
@@ -52,12 +61,12 @@ def tiled_particle_push(tiled_particles, species_config, E_tiles, B_tiles, world
         q = jnp.broadcast_to(charge_species[:, jnp.newaxis], active_tile.shape).reshape(-1)
         m = jnp.broadcast_to(mass_species[:, jnp.newaxis], active_tile.shape).reshape(-1)
 
-        center_x = _tile_axis(center_grid[0], tx, tile_nx, g, world["dx"])
-        center_y = _tile_axis(center_grid[1], ty, tile_ny, g, world["dy"])
-        center_z = _tile_axis(center_grid[2], tz, tile_nz, g, world["dz"])
-        vertex_x = _tile_axis(vertex_grid[0], tx, tile_nx, g, world["dx"])
-        vertex_y = _tile_axis(vertex_grid[1], ty, tile_ny, g, world["dy"])
-        vertex_z = _tile_axis(vertex_grid[2], tz, tile_nz, g, world["dz"])
+        center_x = tiled_center_grid[0][tx, ty, tz]
+        center_y = tiled_center_grid[1][tx, ty, tz]
+        center_z = tiled_center_grid[2][tx, ty, tz]
+        vertex_x = tiled_vertex_grid[0][tx, ty, tz]
+        vertex_y = tiled_vertex_grid[1][tx, ty, tz]
+        vertex_z = tiled_vertex_grid[2][tx, ty, tz]
 
         Ex_grid = vertex_x, center_y, center_z
         Ey_grid = center_x, vertex_y, center_z

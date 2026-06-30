@@ -546,6 +546,15 @@ class TestTiledElectrostatic(unittest.TestCase):
             self.assertEqual(tuple(simulation_parameters["tile_shape"]), (2, 1, 1))
             for vertex_axis, center_axis in zip(world["grids"]["vertex"], world["grids"]["center"]):
                 self.assertTrue(jnp.allclose(vertex_axis, center_axis))
+            self.assertIn("tiled_center_grid", world["grids"])
+            self.assertIn("tiled_vertex_grid", world["grids"])
+            self.assertEqual(world["grids"]["tiled_center_grid"][0].shape, (4, 1, 1, 4))
+            self.assertEqual(world["grids"]["tiled_center_grid"][1].shape, (4, 1, 1, 3))
+            for tiled_vertex_axis, tiled_center_axis in zip(
+                world["grids"]["tiled_vertex_grid"],
+                world["grids"]["tiled_center_grid"],
+            ):
+                self.assertTrue(jnp.allclose(tiled_vertex_axis, tiled_center_axis))
             self.assertEqual(fields[0][0].shape[:3], (4, 1, 1))
             self.assertEqual(fields[3].shape[:3], (4, 1, 1))
             self.assertEqual(fields[4].shape[:3], (4, 1, 1))

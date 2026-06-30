@@ -13,7 +13,7 @@ from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_
 from PyPIC3D.solvers.yee_tiled import (
     digital_filter_tiled_scalar,
     fold_tiled_ghost_cells,
-    tile_scalar_field,
+    tiled_grid_axes_from_world,
     update_tiled_ghost_cells,
 )
 from PyPIC3D.utils import digital_filter
@@ -160,12 +160,6 @@ def _diagnostic_mass_position(tiled_particles, world):
     return x, y, z
 
 
-def _tile_axis(axis, tile_index, cells_per_tile, num_guard_cells, d):
-    local_n = cells_per_tile + 2 * num_guard_cells
-    offsets = jnp.arange(local_n, dtype=axis.dtype)
-    return axis[0] + (offsets + tile_index * cells_per_tile - (num_guard_cells - 1)) * d
-
-
 def _collapse_tiled_axis_stencil(points, weights, local_n, reduced_axis, g):
     if reduced_axis:
         collapsed_points = jnp.full((1, points.shape[1]), int(g), dtype=points.dtype)
@@ -182,6 +176,8 @@ def _deposit_tiled_scalar_moment_to_tiles(
     scalar_weight,
     tile_shape,
     g,
+    tiled_grid,
+    position=None,
 ):
     dx = world["dx"]
     dy = world["dy"]
@@ -203,14 +199,19 @@ def _deposit_tiled_scalar_moment_to_tiles(
 
     def deposit_one_tile(tx, ty, tz, x_tile, u_tile, active_tile, scalar_weight_tile):
         local_grid = (
-            _tile_axis(grid[0], tx, tile_nx, g, dx),
-            _tile_axis(grid[1], ty, tile_ny, g, dy),
-            _tile_axis(grid[2], tz, tile_nz, g, dz),
+            tiled_grid[0][tx, ty, tz],
+            tiled_grid[1][tx, ty, tz],
+            tiled_grid[2][tx, ty, tz],
         )
 
-        x = x_tile[..., 0].reshape(-1)
-        y = x_tile[..., 1].reshape(-1)
-        z = x_tile[..., 2].reshape(-1)
+        if position is None:
+            x = x_tile[..., 0].reshape(-1)
+            y = x_tile[..., 1].reshape(-1)
+            z = x_tile[..., 2].reshape(-1)
+        else:
+            x = position[0][tx, ty, tz].reshape(-1)
+            y = position[1][tx, ty, tz].reshape(-1)
+            z = position[2][tx, ty, tz].reshape(-1)
         active = active_tile.reshape(-1).astype(x.dtype)
         scalar_density = scalar_weight_tile.reshape(-1) / (dx * dy * dz)
 
@@ -337,6 +338,13 @@ def compute_tiled_rho_from_tiled_particles(tiled_particles, species_config, rho_
     """Compute charge density into tile-major vertex-grid scalar arrays."""
     if grid is None:
         grid = world["grids"]["vertex"]
+    tiled_grid = tiled_grid_axes_from_world(
+        world,
+        grid,
+        "tiled_vertex_grid",
+        tile_shape,
+        g,
+    )
 
     scalar_weight = _species_scalar_to_slots(
         tiled_particles,
@@ -350,6 +358,7 @@ def compute_tiled_rho_from_tiled_particles(tiled_particles, species_config, rho_
         scalar_weight,
         tile_shape,
         g,
+        tiled_grid,
     )
 
     alpha = constants["alpha"]
@@ -385,32 +394,27 @@ def compute_tiled_mass_density_from_tiled_particles(tiled_particles, species_con
     """Compute mass density into tile-major vertex-grid scalar arrays."""
     if grid is None:
         grid = world["grids"]["vertex"]
+    tiled_grid = tiled_grid_axes_from_world(
+        world,
+        grid,
+        "tiled_vertex_grid",
+        tile_shape,
+        g,
+    )
 
     scalar_weight = _species_scalar_to_slots(
         tiled_particles,
         species_config.mass * species_config.weight,
     )
     position = _diagnostic_mass_position(tiled_particles, world)
-    g = int(g)
-    tile_shape = tuple(int(width) for width in tile_shape)
-    Nx = int(rho_tiles.shape[0]) * tile_shape[0]
-    Ny = int(rho_tiles.shape[1]) * tile_shape[1]
-    Nz = int(rho_tiles.shape[2]) * tile_shape[2]
-    rho = jnp.zeros(
-        (
-            Nx + 2,
-            Ny + 2,
-            Nz + 2,
-        ),
-        dtype=rho_tiles.dtype,
-    )
-    rho = _deposit_tiled_scalar_moment(
+    return _deposit_tiled_scalar_moment_to_tiles(
         tiled_particles,
-        rho,
+        rho_tiles,
         world,
         grid,
         scalar_weight,
+        tile_shape,
+        g,
+        tiled_grid,
         position=position,
     )
-
-    return tile_scalar_field(rho, world, tile_shape, num_guard_cells=g)

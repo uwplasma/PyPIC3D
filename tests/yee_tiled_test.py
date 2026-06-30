@@ -8,6 +8,7 @@ from PyPIC3D.electrodynamic_tiled import time_loop_electrodynamic_tiled
 from PyPIC3D.solvers.first_order_yee import update_B, update_E
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
+    tile_grid_axes,
     tile_vector_field,
     update_tiled_ghost_cells,
     update_tiled_ghost_cells_periodic,
@@ -150,6 +151,30 @@ class TestYeeTiled(unittest.TestCase):
 
         for original, assembled in zip(E, E_assembled):
             self.assertTrue(jnp.allclose(assembled, original, rtol=1.0e-12, atol=1.0e-12))
+
+    def test_tile_grid_axes_include_configured_guard_cells(self):
+        world = self._build_world()
+        tile_shape = (2, 3, 2)
+        g = 2
+        tiled_center_grid = tile_grid_axes(world["grids"]["center"], world, tile_shape, num_guard_cells=g)
+        tiled_vertex_grid = tile_grid_axes(world["grids"]["vertex"], world, tile_shape, num_guard_cells=g)
+
+        self.assertEqual(tiled_center_grid[0].shape, (4, 2, 2, tile_shape[0] + 2 * g))
+        self.assertEqual(tiled_center_grid[1].shape, (4, 2, 2, tile_shape[1] + 2 * g))
+        self.assertEqual(tiled_center_grid[2].shape, (4, 2, 2, tile_shape[2] + 2 * g))
+
+        for tx in range(4):
+            for ty in range(2):
+                for tz in range(2):
+                    center_x = world["grids"]["center"][0][0] + (
+                        jnp.arange(tile_shape[0] + 2 * g) + tx * tile_shape[0] - (g - 1)
+                    ) * world["dx"]
+                    vertex_y = world["grids"]["vertex"][1][0] + (
+                        jnp.arange(tile_shape[1] + 2 * g) + ty * tile_shape[1] - (g - 1)
+                    ) * world["dy"]
+
+                    self.assertTrue(jnp.allclose(tiled_center_grid[0][tx, ty, tz], center_x))
+                    self.assertTrue(jnp.allclose(tiled_vertex_grid[1][tx, ty, tz], vertex_y))
 
     def test_update_tiled_ghost_cells_periodic_refreshes_neighbor_halos(self):
         world = self._build_world()
