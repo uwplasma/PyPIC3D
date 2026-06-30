@@ -9,13 +9,74 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
 )
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.solvers.yee_tiled import (
+    digital_filter_tiled_vector,
     fold_tiled_vector_ghost_cells,
     update_tiled_vector_ghost_cells,
 )
-from PyPIC3D.utils import bilinear_filter, digital_filter
 
 
-def digital_filter_tiled_current_density(J_tiles, alpha, world):
+def bilinear_filter_tiled_current_density(J_tiles, world, num_guard_cells=1, tile_shape=None):
+    """
+    Apply the global bilinear current filter to compact current tiles.
+
+    The filter is the same separable [1, 2, 1]/4 stencil used by
+    ``bilinear_filter`` on assembled fields.  Only the physical tile cells are
+    overwritten; guard cells are refreshed before and after the stencil.
+    """
+
+    g = int(num_guard_cells)
+    active = slice(g, -g)
+    backward = slice(g - 1, -g - 1)
+    forward = slice(g + 1, None if g == 1 else -g + 1)
+
+    J_tiles = update_tiled_vector_ghost_cells(J_tiles, world, g, tile_shape)
+
+    def filter_component(component):
+        center = component[:, :, :, active, active, active]
+        filtered = (
+            8.0 * center
+            + 4.0 * (
+                component[:, :, :, backward, active, active]
+                + component[:, :, :, forward, active, active]
+                + component[:, :, :, active, backward, active]
+                + component[:, :, :, active, forward, active]
+                + component[:, :, :, active, active, backward]
+                + component[:, :, :, active, active, forward]
+            )
+            + 2.0 * (
+                component[:, :, :, backward, backward, active]
+                + component[:, :, :, backward, forward, active]
+                + component[:, :, :, forward, backward, active]
+                + component[:, :, :, forward, forward, active]
+                + component[:, :, :, backward, active, backward]
+                + component[:, :, :, backward, active, forward]
+                + component[:, :, :, forward, active, backward]
+                + component[:, :, :, forward, active, forward]
+                + component[:, :, :, active, backward, backward]
+                + component[:, :, :, active, backward, forward]
+                + component[:, :, :, active, forward, backward]
+                + component[:, :, :, active, forward, forward]
+            )
+            + (
+                component[:, :, :, backward, backward, backward]
+                + component[:, :, :, backward, backward, forward]
+                + component[:, :, :, backward, forward, backward]
+                + component[:, :, :, backward, forward, forward]
+                + component[:, :, :, forward, backward, backward]
+                + component[:, :, :, forward, backward, forward]
+                + component[:, :, :, forward, forward, backward]
+                + component[:, :, :, forward, forward, forward]
+            )
+        ) / 64.0
+        return component.at[:, :, :, active, active, active].set(filtered)
+
+    J_tiles = tuple(filter_component(component) for component in J_tiles)
+    J_tiles = update_tiled_vector_ghost_cells(J_tiles, world, g, tile_shape)
+
+    return J_tiles
+
+
+def digital_filter_tiled_current_density(J_tiles, alpha, world, num_guard_cells=1, tile_shape=None):
     """
     Apply the global digital current filter to compact current tiles.
 
@@ -25,32 +86,37 @@ def digital_filter_tiled_current_density(J_tiles, alpha, world):
     filtered guard-cell values.
     """
 
-    J_tiles = update_tiled_vector_ghost_cells(J_tiles, world)
+    J_tiles = update_tiled_vector_ghost_cells(J_tiles, world, num_guard_cells, tile_shape)
 
-    def filter_component(component_tiles):
-        filter_tiles = jax.vmap(jax.vmap(jax.vmap(lambda tile: digital_filter(tile, alpha))))
-        return filter_tiles(component_tiles)
-
-    J_tiles = tuple(filter_component(component) for component in J_tiles)
-    J_tiles = update_tiled_vector_ghost_cells(J_tiles, world)
+    J_tiles = digital_filter_tiled_vector(J_tiles, alpha, num_guard_cells)
+    J_tiles = update_tiled_vector_ghost_cells(J_tiles, world, num_guard_cells, tile_shape)
 
     return J_tiles
 
 
-def _tile_axis_grid(global_axis_grid, tile_index, tile_n, local_n, d):
+def _tile_axis_grid(global_axis_grid, tile_index, tile_n, local_n, d, num_guard_cells):
     """
     Build the ghost-celled coordinate line for one compact tile.
 
-    The first local grid point is the global ghost-cell origin shifted by the
-    tile's active-cell offset.  With this convention, local active indices are
-    1..tile_n and local ghost indices are 0 and tile_n + 1.
+    The first local grid point is shifted by the configured tile guard depth.
+    With one guard cell this is the old compact-tile convention; with two guard
+    cells the extra point gives quadratic shape factors their full local
+    stencil at tile faces.
     """
 
     offsets = jnp.arange(local_n, dtype=global_axis_grid.dtype)
-    return global_axis_grid[0] + (offsets + tile_index * tile_n) * d
+    return global_axis_grid[0] + (offsets + tile_index * tile_n - (num_guard_cells - 1)) * d
 
 
-@partial(jit, static_argnames=("filter",))
+def _collapse_tiled_axis_stencil(points, weights, local_n, reduced_axis, g):
+    if reduced_axis:
+        collapsed_points = jnp.full((1, points.shape[1]), int(g), dtype=points.dtype)
+        collapsed_weights = jnp.sum(weights, axis=0, keepdims=True)
+        return collapsed_points, collapsed_weights
+    return collapse_axis_stencil(points, weights, local_n, ghost_cells=True)
+
+
+@partial(jit, static_argnames=("filter", "tile_shape", "g"))
 def direct_J_from_tiled_particles(
     tiled_particles,
     J_tiles,
@@ -58,6 +124,8 @@ def direct_J_from_tiled_particles(
     world,
     grid=None,
     filter="bilinear",
+    tile_shape=None,
+    g=1,
 ):
     """
     Compute direct current deposition using tile-local stencils only.
@@ -78,13 +146,15 @@ def direct_J_from_tiled_particles(
 
     Jx_tiles, Jy_tiles, Jz_tiles = J_tiles
     ntx, nty, ntz = Jx_tiles.shape[:3]
-    tile_nx = Jx_tiles.shape[3] - 2
-    tile_ny = Jx_tiles.shape[4] - 2
-    tile_nz = Jx_tiles.shape[5] - 2
-    local_Nx = tile_nx + 2
-    local_Ny = tile_ny + 2
-    local_Nz = tile_nz + 2
+    tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
+    g = int(g)
+    local_Nx = tile_nx + 2 * g
+    local_Ny = tile_ny + 2 * g
+    local_Nz = tile_nz + 2 * g
     shape_factor = world["shape_factor"]
+    reduced_x = int(ntx) == 1 and tile_nx == 1
+    reduced_y = int(nty) == 1 and tile_ny == 1
+    reduced_z = int(ntz) == 1 and tile_nz == 1
 
     Jx_template = jnp.zeros_like(Jx_tiles[0, 0, 0])
     Jy_template = jnp.zeros_like(Jy_tiles[0, 0, 0])
@@ -104,9 +174,9 @@ def direct_J_from_tiled_particles(
         active = active_tile.reshape(-1).astype(x.dtype)
         dq = (charge_tile * weight_tile).reshape(-1) / (dx * dy * dz)
 
-        x_grid = _tile_axis_grid(grid[0], tx, tile_nx, local_Nx, dx)
-        y_grid = _tile_axis_grid(grid[1], ty, tile_ny, local_Ny, dy)
-        z_grid = _tile_axis_grid(grid[2], tz, tile_nz, local_Nz, dz)
+        x_grid = _tile_axis_grid(grid[0], tx, tile_nx, local_Nx, dx, g)
+        y_grid = _tile_axis_grid(grid[1], ty, tile_ny, local_Ny, dy, g)
+        z_grid = _tile_axis_grid(grid[2], tz, tile_nz, local_Nz, dz, g)
 
         x, x0, deltax_node, xpts = prepare_particle_axis_stencil(
             x,
@@ -163,12 +233,12 @@ def direct_J_from_tiled_particles(
         y_weights_face = jnp.asarray(y_weights_face)
         z_weights_face = jnp.asarray(z_weights_face)
 
-        xpts, x_weights_node = collapse_axis_stencil(xpts, x_weights_node, local_Nx, ghost_cells=True)
-        _, x_weights_face = collapse_axis_stencil(xpts, x_weights_face, local_Nx, ghost_cells=True)
-        ypts, y_weights_node = collapse_axis_stencil(ypts, y_weights_node, local_Ny, ghost_cells=True)
-        _, y_weights_face = collapse_axis_stencil(ypts, y_weights_face, local_Ny, ghost_cells=True)
-        zpts, z_weights_node = collapse_axis_stencil(zpts, z_weights_node, local_Nz, ghost_cells=True)
-        _, z_weights_face = collapse_axis_stencil(zpts, z_weights_face, local_Nz, ghost_cells=True)
+        xpts, x_weights_node = _collapse_tiled_axis_stencil(xpts, x_weights_node, local_Nx, reduced_x, g)
+        _, x_weights_face = _collapse_tiled_axis_stencil(xpts, x_weights_face, local_Nx, reduced_x, g)
+        ypts, y_weights_node = _collapse_tiled_axis_stencil(ypts, y_weights_node, local_Ny, reduced_y, g)
+        _, y_weights_face = _collapse_tiled_axis_stencil(ypts, y_weights_face, local_Ny, reduced_y, g)
+        zpts, z_weights_node = _collapse_tiled_axis_stencil(zpts, z_weights_node, local_Nz, reduced_z, g)
+        _, z_weights_face = _collapse_tiled_axis_stencil(zpts, z_weights_face, local_Nz, reduced_z, g)
 
         tile_Jx = Jx_template
         tile_Jy = Jy_template
@@ -218,14 +288,12 @@ def direct_J_from_tiled_particles(
         tz,
     )
 
-    J_tiles = fold_tiled_vector_ghost_cells((Jx_tiles, Jy_tiles, Jz_tiles), world)
-    J_tiles = update_tiled_vector_ghost_cells(J_tiles, world)
+    J_tiles = fold_tiled_vector_ghost_cells((Jx_tiles, Jy_tiles, Jz_tiles), world, g, tile_shape)
+    J_tiles = update_tiled_vector_ghost_cells(J_tiles, world, g, tile_shape)
 
     if filter == "bilinear":
-        apply_filter = jax.vmap(jax.vmap(jax.vmap(bilinear_filter)))
-        J_tiles = tuple(apply_filter(component) for component in J_tiles)
-        J_tiles = update_tiled_vector_ghost_cells(J_tiles, world)
+        J_tiles = bilinear_filter_tiled_current_density(J_tiles, world, num_guard_cells=g, tile_shape=tile_shape)
     elif filter == "digital":
-        J_tiles = digital_filter_tiled_current_density(J_tiles, constants["alpha"], world)
+        J_tiles = digital_filter_tiled_current_density(J_tiles, constants["alpha"], world, num_guard_cells=g, tile_shape=tile_shape)
 
     return J_tiles

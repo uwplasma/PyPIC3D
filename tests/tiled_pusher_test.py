@@ -120,6 +120,7 @@ class TestTiledParticlePusher(unittest.TestCase):
             world,
             constants,
             tile_shape,
+            1,
             relativistic=False,
         )
 
@@ -186,6 +187,7 @@ class TestTiledParticlePusher(unittest.TestCase):
             world,
             constants,
             tile_shape,
+            1,
             particle_pusher="higuera_cary",
         )
 
@@ -223,6 +225,7 @@ class TestTiledParticlePusher(unittest.TestCase):
             world,
             constants,
             tile_shape,
+            1,
             relativistic=False,
         )
 
@@ -286,6 +289,7 @@ class TestTiledParticlePusher(unittest.TestCase):
             world,
             constants,
             tile_shape,
+            1,
             relativistic=True,
         )
 

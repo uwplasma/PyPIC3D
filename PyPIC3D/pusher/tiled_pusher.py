@@ -12,18 +12,19 @@ from PyPIC3D.pusher.boris import (
 from PyPIC3D.pusher.higuera_cary import higuera_cary_single_particle
 
 
-def _tile_axis(axis, tile_index, cells_per_tile):
-    start = tile_index * cells_per_tile
-    return jax.lax.dynamic_slice(axis, (start,), (cells_per_tile + 2,))
+def _tile_axis(axis, tile_index, cells_per_tile, num_guard_cells, d):
+    local_n = cells_per_tile + 2 * num_guard_cells
+    offsets = jnp.arange(local_n, dtype=axis.dtype)
+    return axis[0] + (offsets + tile_index * cells_per_tile - (num_guard_cells - 1)) * d
 
 
-@partial(jit, static_argnames=("tile_shape", "relativistic", "particle_pusher"))
-def tiled_particle_push(tiled_particles, E_tiles, B_tiles, world, constants, tile_shape, relativistic=True, particle_pusher="boris"):
+@partial(jit, static_argnames=("tile_shape", "g", "relativistic", "particle_pusher"))
+def tiled_particle_push(tiled_particles, E_tiles, B_tiles, world, constants, tile_shape, g, relativistic=True, particle_pusher="boris"):
     """
     Push tile-major particles with the selected pusher using compact tiled Yee fields.
 
     Particles are assumed to live in the tile that owns their current forward
-    position.  The one-cell field halos on each compact tile provide the
+    position.  The configured field halos on each compact tile provide the
     neighboring Yee data needed by the interpolation stencil near tile faces.
     """
 
@@ -36,6 +37,7 @@ def tiled_particle_push(tiled_particles, E_tiles, B_tiles, world, constants, til
 
     Ex_tiles, Ey_tiles, Ez_tiles = E_tiles
     Bx_tiles, By_tiles, Bz_tiles = B_tiles
+    g = int(g)
 
     ntx, nty, ntz = tiled_particles.x.shape[:3]
 
@@ -50,12 +52,12 @@ def tiled_particle_push(tiled_particles, E_tiles, B_tiles, world, constants, til
         q = charge_tile.reshape(-1)
         m = mass_tile.reshape(-1)
 
-        center_x = _tile_axis(center_grid[0], tx, tile_nx)
-        center_y = _tile_axis(center_grid[1], ty, tile_ny)
-        center_z = _tile_axis(center_grid[2], tz, tile_nz)
-        vertex_x = _tile_axis(vertex_grid[0], tx, tile_nx)
-        vertex_y = _tile_axis(vertex_grid[1], ty, tile_ny)
-        vertex_z = _tile_axis(vertex_grid[2], tz, tile_nz)
+        center_x = _tile_axis(center_grid[0], tx, tile_nx, g, world["dx"])
+        center_y = _tile_axis(center_grid[1], ty, tile_ny, g, world["dy"])
+        center_z = _tile_axis(center_grid[2], tz, tile_nz, g, world["dz"])
+        vertex_x = _tile_axis(vertex_grid[0], tx, tile_nx, g, world["dx"])
+        vertex_y = _tile_axis(vertex_grid[1], ty, tile_ny, g, world["dy"])
+        vertex_z = _tile_axis(vertex_grid[2], tz, tile_nz, g, world["dz"])
 
         Ex_grid = vertex_x, center_y, center_z
         Ey_grid = center_x, vertex_y, center_z

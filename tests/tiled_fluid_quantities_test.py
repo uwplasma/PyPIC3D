@@ -131,7 +131,13 @@ class TestTiledFluidQuantities(unittest.TestCase):
         rho_tiles = tile_scalar_field(self._empty_scalar(world), world, world["tile_shape"])
 
         mass_reference = compute_mass_density(particles, self._empty_scalar(world), world)
-        mass_tiles = compute_tiled_mass_density_from_tiled_particles(tiled_particles, rho_tiles, world)
+        mass_tiles = compute_tiled_mass_density_from_tiled_particles(
+            tiled_particles,
+            rho_tiles,
+            world,
+            tile_shape=world["tile_shape"],
+            g=1,
+        )
         mass_from_tiles = assemble_tiled_scalar_field(mass_tiles, world, world["tile_shape"])
 
         self.assertTrue(

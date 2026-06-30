@@ -224,6 +224,7 @@ def default_parameters():
         "cfl"  : 1.0, # CFL condition number
         "ds_per_debye" : None, # number of grid spacings per debye length
         "shape_factor" : 1, # shape factor for the simulation (1 for 1st order, 2 for 2nd order)
+        "guard_cells": 1, # tile guard-cell depth shared by tiled fields and tiled currents
         "particle_tile_nx": 1, # number of x cells per shared field/particle tile
         "particle_tile_ny": 1, # number of y cells per shared field/particle tile
         "particle_tile_nz": 1, # number of z cells per shared field/particle tile
@@ -306,6 +307,7 @@ def initialize_simulation(toml_file):
     relativistic = simulation_parameters['relativistic']
     particle_pusher = simulation_parameters['particle_pusher']
     validate_particle_pusher(particle_pusher)
+    guard_cells = int(simulation_parameters["guard_cells"])
     _validate_current_filter_contract(simulation_parameters)
     verbose = simulation_parameters['verbose']
     GPUs = simulation_parameters['GPUs']
@@ -354,8 +356,8 @@ def initialize_simulation(toml_file):
         'y_wind': y_wind,
         'z_wind': z_wind,
         'shape_factor': simulation_parameters['shape_factor'],
+        'guard_cells': guard_cells,
         'current_calculation': _encode_current_calculation(simulation_parameters['current_calculation']),
-        'current_guard_cells': 2 if simulation_parameters['current_calculation'] == "esirkepov" else 1,
         'boundary_conditions': {
             'x': _encode_field_bc(simulation_parameters['x_bc']),
             'y': _encode_field_bc(simulation_parameters['y_bc']),
@@ -384,6 +386,10 @@ def initialize_simulation(toml_file):
     simulation_parameters = convert_to_jax_compatible(simulation_parameters)
     plotting_parameters = convert_to_jax_compatible(plotting_parameters)
     # convert the world parameters to jax compatible format
+    world["guard_cells"] = guard_cells
+    simulation_parameters["guard_cells"] = guard_cells
+    # Guard-cell depth controls static tiled array shapes, so keep it as a
+    # Python integer for jitted tile kernels.
 
     if electrostatic:
         B_grid, E_grid = build_collocated_grid(world)
@@ -543,17 +549,20 @@ def initialize_simulation(toml_file):
     if solver == "tiled_yee":
         tile_shape = _tile_shape_from_parameters(simulation_parameters)
         world["tile_shape"] = tile_shape
+        guard_cells = int(world["guard_cells"])
         particles = to_tiled_particles(particles, world, simulation_parameters)
-        E = tile_vector_field(E, world, tile_shape)
-        B = tile_vector_field(B, world, tile_shape)
+        E = tile_vector_field(E, world, tile_shape, num_guard_cells=guard_cells)
+        B = tile_vector_field(B, world, tile_shape, num_guard_cells=guard_cells)
         if simulation_parameters["current_calculation"] == "esirkepov":
-            J = empty_tiled_vector_field(world, tile_shape, num_guard_cells=2, dtype=E[0].dtype)
+            J = empty_tiled_vector_field(world, tile_shape, num_guard_cells=guard_cells, dtype=E[0].dtype)
+            J_func = tiled_esirkepov_current
         else:
-            J = tile_vector_field(J, world, tile_shape)
+            J = tile_vector_field(J, world, tile_shape, num_guard_cells=guard_cells)
+            J_func = functools.partial(direct_J_from_tiled_particles, filter=simulation_parameters['filter_j'])
         external_E, external_B = external_fields
         external_fields = (
-            tile_vector_field(external_E, world, tile_shape),
-            tile_vector_field(external_B, world, tile_shape),
+            tile_vector_field(external_E, world, tile_shape, num_guard_cells=guard_cells),
+            tile_vector_field(external_B, world, tile_shape, num_guard_cells=guard_cells),
         )
         simulation_parameters["fast_backend"] = "tiled"
         simulation_parameters["tile_shape"] = tile_shape
@@ -561,8 +570,8 @@ def initialize_simulation(toml_file):
 
     if electrostatic:
         if solver == "tiled_yee":
-            rho = tile_scalar_field(rho, world, tile_shape)
-            phi = tile_scalar_field(phi, world, tile_shape)
+            rho = tile_scalar_field(rho, world, tile_shape, num_guard_cells=guard_cells)
+            phi = tile_scalar_field(phi, world, tile_shape, num_guard_cells=guard_cells)
         fields = (E, B, J, rho, phi, external_fields)
         # define the fields tuple for the electrostatic solver
     else:

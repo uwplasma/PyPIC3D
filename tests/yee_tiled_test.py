@@ -290,6 +290,7 @@ class TestYeeTiled(unittest.TestCase):
             constants,
             unused_curl,
             tile_shape,
+            1,
         )
         E_from_tiles = assemble_tiled_vector_field(E_tiled, world, tile_shape)
 
@@ -313,6 +314,7 @@ class TestYeeTiled(unittest.TestCase):
             constants,
             unused_curl,
             tile_shape,
+            1,
         )
         E_from_tiles = assemble_tiled_vector_field(E_tiled, world, tile_shape)
 
@@ -334,6 +336,7 @@ class TestYeeTiled(unittest.TestCase):
             constants,
             unused_curl,
             tile_shape,
+            1,
         )
         B_from_tiles = assemble_tiled_vector_field(B_tiled, world, tile_shape)
 
@@ -355,6 +358,7 @@ class TestYeeTiled(unittest.TestCase):
             constants,
             unused_curl,
             tile_shape,
+            1,
         )
         B_from_tiles = assemble_tiled_vector_field(B_tiled, world, tile_shape)
 
@@ -375,8 +379,8 @@ class TestYeeTiled(unittest.TestCase):
         E_tiles = tile_vector_field(E, world, tile_shape)
         B_tiles = tile_vector_field(B, world, tile_shape)
         J_tiles = tile_vector_field(J, world, tile_shape)
-        E_tiles = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, unused_curl, tile_shape)
-        B_tiles = update_tiled_B(E_tiles, B_tiles, world, constants, unused_curl, tile_shape)
+        E_tiles = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, unused_curl, tile_shape, 1)
+        B_tiles = update_tiled_B(E_tiles, B_tiles, world, constants, unused_curl, tile_shape, 1)
 
         E_from_tiles = assemble_tiled_vector_field(E_tiles, world, tile_shape)
         B_from_tiles = assemble_tiled_vector_field(B_tiles, world, tile_shape)
@@ -400,8 +404,8 @@ class TestYeeTiled(unittest.TestCase):
         E_tiles = tile_vector_field(E, world, tile_shape)
         B_tiles = tile_vector_field(B, world, tile_shape)
         J_tiles = tile_vector_field(J, world, tile_shape)
-        E_tiles = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, unused_curl, tile_shape)
-        B_tiles = update_tiled_B(E_tiles, B_tiles, world, constants, unused_curl, tile_shape)
+        E_tiles = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, unused_curl, tile_shape, 1)
+        B_tiles = update_tiled_B(E_tiles, B_tiles, world, constants, unused_curl, tile_shape, 1)
 
         E_from_tiles = assemble_tiled_vector_field(E_tiles, world, tile_shape)
         B_from_tiles = assemble_tiled_vector_field(B_tiles, world, tile_shape)
@@ -445,6 +449,7 @@ class TestYeeTiled(unittest.TestCase):
             J_func=None,
             solver="fdtd",
             tile_shape=tile_shape,
+            g=1,
             relativistic=False,
             particle_pusher="boris",
         )

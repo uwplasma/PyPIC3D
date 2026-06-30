@@ -21,6 +21,7 @@ def time_loop_electrodynamic_tiled(
     J_func,
     solver,
     tile_shape=None,
+    g=None,
     relativistic=True,
     particle_pusher="boris",
 ):
@@ -38,19 +39,20 @@ def time_loop_electrodynamic_tiled(
     # unpack the tile-major field state.  ``overflow_previous`` carries the
     # particle-retile overflow diagnostic out to the Python driver.
 
-    if tile_shape is None:
-        tile_shape = tuple(int(width) - 2 for width in E_tiles[0].shape[3:])
+    if tile_shape is None or g is None:
+        raise ValueError("tiled electrodynamic updates require explicit tile_shape and g.")
+    g = int(g)
 
     if not hasattr(particles, "active"):
         if pml_state is None:
-            E_tiles = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape)
-            B_tiles = update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape)
+            E_tiles = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape, g)
+            B_tiles = update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape, g)
         else:
             E_tiles, pml_state = update_tiled_E(
-                E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape, pml_state
+                E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape, g, pml_state
             )
             B_tiles, pml_state = update_tiled_B(
-                E_tiles, B_tiles, world, constants, curl_func, tile_shape, pml_state
+                E_tiles, B_tiles, world, constants, curl_func, tile_shape, g, pml_state
             )
         fields = (E_tiles, B_tiles, J_tiles, rho, phi, external_fields, pml_state)
         return particles, fields
@@ -67,19 +69,22 @@ def time_loop_electrodynamic_tiled(
         world,
         constants,
         tile_shape,
+        g,
         relativistic=relativistic,
         particle_pusher=particle_pusher,
     )
     # use the selected tiled pusher for particle velocities
 
     if J_func is None:
-        def current_deposition(particles, J_tiles, constants, world):
+        def current_deposition(particles, J_tiles, constants, world, tile_shape=None, g=None):
             return direct_J_from_tiled_particles(
                 particles,
                 J_tiles,
                 constants,
                 world,
                 filter="none",
+                tile_shape=tile_shape,
+                g=g,
             )
     else:
         current_deposition = J_func
@@ -89,7 +94,7 @@ def time_loop_electrodynamic_tiled(
         # Esirkepov needs old and new particle positions.  The deposition kernel
         # predicts the new positions locally, then the actual particle state is
         # advanced and retiled after the current has been computed.
-        J_tiles = current_deposition(particles, J_tiles, constants, world)
+        J_tiles = current_deposition(particles, J_tiles, constants, world, tile_shape=tile_shape, g=g)
         particles = update_tiled_particle_positions(particles, world["dt"])
         particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)
         overflow = overflow_previous | overflow
@@ -103,7 +108,7 @@ def time_loop_electrodynamic_tiled(
         overflow = overflow_previous | overflow
         # wrap periodic particles and move them into their owning tiles.
 
-        J_tiles = current_deposition(particles, J_tiles, constants, world)
+        J_tiles = current_deposition(particles, J_tiles, constants, world, tile_shape=tile_shape, g=g)
         # deposit current directly into tile-local Yee current arrays
 
         particles = update_tiled_particle_positions(particles, world["dt"]/2)
@@ -122,17 +127,17 @@ def time_loop_electrodynamic_tiled(
     )
 
     if pml_state is None:
-        E_tiles = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape)
+        E_tiles = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape, g)
     else:
         E_tiles, pml_state = update_tiled_E(
-            E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape, pml_state
+            E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape, g, pml_state
         )
     # update electric field from B and the supplied tiled current
 
     if pml_state is None:
-        B_tiles = update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape)
+        B_tiles = update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape, g)
     else:
-        B_tiles, pml_state = update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape, pml_state)
+        B_tiles, pml_state = update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape, g, pml_state)
     # update magnetic field from the newly updated electric field
 
     fields = (E_tiles, B_tiles, J_tiles, rho, phi, external_fields, pml_state, overflow)

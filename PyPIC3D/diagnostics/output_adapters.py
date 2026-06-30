@@ -14,23 +14,12 @@ def _is_tiled_vector(field):
     )
 
 
-def _tile_shape_from_field(field):
-    return tuple(int(width) - 2 for width in field.shape[3:])
+def _tile_shape_from_world(world):
+    return tuple(int(width) for width in world["tile_shape"])
 
 
-def _tile_shape_from_world_or_field(world, field):
-    if "tile_shape" in world:
-        return tuple(int(width) for width in world["tile_shape"])
-    return _tile_shape_from_field(field)
-
-
-def _guard_depth_from_field(field, tile_shape):
-    guard_depths = tuple((int(local_width) - int(tile_width)) // 2 for local_width, tile_width in zip(field.shape[3:], tile_shape))
-    if any(int(local_width) != int(tile_width) + 2 * guard_depth for local_width, tile_width, guard_depth in zip(field.shape[3:], tile_shape, guard_depths)):
-        raise ValueError("Tiled field local shape is incompatible with world['tile_shape'].")
-    if guard_depths[0] != guard_depths[1] or guard_depths[1] != guard_depths[2]:
-        raise ValueError("Output assembly requires the same guard depth on each local field axis.")
-    return guard_depths[0]
+def _guard_depth_from_world(world):
+    return int(world["guard_cells"])
 
 
 def scalar_field_for_output(field, world):
@@ -44,8 +33,9 @@ def scalar_field_for_output(field, world):
     if not _is_tiled_scalar(field):
         return field
 
-    tile_shape = _tile_shape_from_world_or_field(world, field)
-    return assemble_tiled_scalar_field(field, world, tile_shape)
+    tile_shape = _tile_shape_from_world(world)
+    g = _guard_depth_from_world(world)
+    return assemble_tiled_scalar_field(field, world, tile_shape, num_guard_cells=g)
 
 
 def vector_field_for_output(field, world):
@@ -56,9 +46,9 @@ def vector_field_for_output(field, world):
     if not _is_tiled_vector(field):
         return field
 
-    tile_shape = _tile_shape_from_world_or_field(world, field[0])
-    num_guard_cells = _guard_depth_from_field(field[0], tile_shape)
-    return assemble_tiled_vector_field(field, world, tile_shape, num_guard_cells=num_guard_cells)
+    tile_shape = _tile_shape_from_world(world)
+    g = _guard_depth_from_world(world)
+    return assemble_tiled_vector_field(field, world, tile_shape, num_guard_cells=g)
 
 
 def fields_for_output(fields, world):

@@ -128,6 +128,7 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
             "Ny": 2,
             "Nz": 2,
             "tile_shape": (2, 1, 1),
+            "guard_cells": 1,
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
         tiled_fields = (

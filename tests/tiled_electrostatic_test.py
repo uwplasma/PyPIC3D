@@ -360,6 +360,8 @@ class TestTiledElectrostatic(unittest.TestCase):
             rho_tiles,
             world,
             constants,
+            tile_shape=world["tile_shape"],
+            g=1,
         )
         assembled_rho = assemble_tiled_scalar_field(tiled_rho, world, world["tile_shape"])
 
@@ -411,6 +413,8 @@ class TestTiledElectrostatic(unittest.TestCase):
             unused_curl,
             J_func=None,
             solver="tiled_yee",
+            tile_shape=world["tile_shape"],
+            g=1,
             relativistic=False,
             particle_pusher="boris",
         )
@@ -452,7 +456,7 @@ class TestTiledElectrostatic(unittest.TestCase):
 
         tiled_loop = jax.jit(
             time_loop_electrostatic_tiled,
-            static_argnames=("curl_func", "J_func", "solver", "tile_shape", "relativistic", "particle_pusher"),
+            static_argnames=("curl_func", "J_func", "solver", "tile_shape", "g", "relativistic", "particle_pusher"),
         )
 
         for step in range(1, Nt + 1):
@@ -476,6 +480,7 @@ class TestTiledElectrostatic(unittest.TestCase):
                 J_func=None,
                 solver="tiled_yee",
                 tile_shape=tile_shape,
+                g=1,
                 relativistic=False,
                 particle_pusher="boris",
             )

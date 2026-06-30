@@ -18,6 +18,7 @@ def time_loop_electrostatic_tiled(
     J_func,
     solver,
     tile_shape=None,
+    g=None,
     relativistic=True,
     particle_pusher="boris",
 ):
@@ -42,8 +43,9 @@ def time_loop_electrostatic_tiled(
     else:
         E_tiles, B_tiles, J_tiles, rho_tiles, phi_tiles, external_fields, pml_state, overflow_previous = fields
 
-    if tile_shape is None:
-        tile_shape = tuple(int(width) - 2 for width in E_tiles[0].shape[3:])
+    if tile_shape is None or g is None:
+        raise ValueError("tiled electrostatic updates require explicit tile_shape and g.")
+    g = int(g)
 
     push_E_tiles, push_B_tiles = add_external_fields(E_tiles, B_tiles, external_fields)
     # particles see evolved fields plus prescribed external fields
@@ -55,6 +57,7 @@ def time_loop_electrostatic_tiled(
         world,
         constants,
         tile_shape,
+        g,
         relativistic=relativistic,
         particle_pusher=particle_pusher,
     )
@@ -76,6 +79,7 @@ def time_loop_electrostatic_tiled(
         solver,
         "periodic",
         tile_shape,
+        g,
     )
     # solve electrostatic fields from tiled charge density
 

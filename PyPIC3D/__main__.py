@@ -68,8 +68,6 @@ def run_PyPIC3D(config_file):
     loop, particles, fields, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, solver, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic, particle_pusher = initialize_simulation(config_file)
     # initialize the simulation
 
-    jit_loop = jax.jit(loop, static_argnames=('curl_func', 'J_func', 'solver', 'relativistic', 'particle_pusher'))
-
     dt = world['dt']
     output_dir = simulation_parameters['output_dir']
     vertex_grid = tuple(g[1:-1] for g in world['grids']['vertex'])
@@ -78,7 +76,16 @@ def run_PyPIC3D(config_file):
     scalar_field_names = ["rho", "mass_density"]
     vector_field_names = ["E", "B", "J"]
     tiled_run = simulation_parameters["solver"] == "tiled_yee"
+    tile_shape = tuple(int(width) for width in world["tile_shape"]) if tiled_run else None
+    g = int(world["guard_cells"]) if tiled_run else None
     particle_species_names = simulation_parameters.get("particle_species_names")
+    if tiled_run:
+        jit_loop = jax.jit(
+            loop,
+            static_argnames=('curl_func', 'J_func', 'solver', 'tile_shape', 'g', 'relativistic', 'particle_pusher'),
+        )
+    else:
+        jit_loop = jax.jit(loop, static_argnames=('curl_func', 'J_func', 'solver', 'relativistic', 'particle_pusher'))
 
     E, B, J, rho, phi, external_fields, *rest = fields
     # unpack the fields
@@ -133,8 +140,12 @@ def run_PyPIC3D(config_file):
 
             if plotting_parameters['plot_vtk_scalars']:
                 if getattr(rho, "ndim", 0) == 6:
-                    rho = compute_tiled_rho_from_tiled_particles(particles, rho, world, constants)
-                    mass_density = compute_tiled_mass_density_from_tiled_particles(particles, rho, world)
+                    rho = compute_tiled_rho_from_tiled_particles(
+                        particles, rho, world, constants, tile_shape=tile_shape, g=g
+                    )
+                    mass_density = compute_tiled_mass_density_from_tiled_particles(
+                        particles, rho, world, tile_shape=tile_shape, g=g
+                    )
                     rho_output = scalar_field_for_output(rho, world)
                     mass_density_output = scalar_field_for_output(mass_density, world)
                 else:
@@ -183,17 +194,32 @@ def run_PyPIC3D(config_file):
                 fields = (E, B, J, rho, phi, external_fields, *rest)
                 # repack the fields for non-tiled diagnostics that updated rho
 
-        particles, fields = jit_loop(
-            particles,
-            fields,
-            world,
-            constants,
-            curl_func,
-            J_func,
-            solver,
-            relativistic=relativistic,
-            particle_pusher=particle_pusher,
-        )
+        if tiled_run:
+            particles, fields = jit_loop(
+                particles,
+                fields,
+                world,
+                constants,
+                curl_func,
+                J_func,
+                solver,
+                tile_shape=tile_shape,
+                g=g,
+                relativistic=relativistic,
+                particle_pusher=particle_pusher,
+            )
+        else:
+            particles, fields = jit_loop(
+                particles,
+                fields,
+                world,
+                constants,
+                curl_func,
+                J_func,
+                solver,
+                relativistic=relativistic,
+                particle_pusher=particle_pusher,
+            )
         # time loop to update the particles and fields
         _raise_if_tiled_particles_overflowed(fields, simulation_parameters)
         # fixed tile capacity overflow would silently drop particles; stop as

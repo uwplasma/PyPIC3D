@@ -165,7 +165,7 @@ def calculate_electrostatic_fields(world, particles, constants, rho, phi, solver
     return (Ex_full, Ey_full, Ez_full), phi, rho
 
 
-def _centered_tiled_electrostatic_gradient(phi_tiles, world):
+def _centered_tiled_electrostatic_gradient(phi_tiles, world, tile_shape, g):
     """
     Compute ``E = -grad(phi)`` on compact scalar tiles.
 
@@ -178,27 +178,31 @@ def _centered_tiled_electrostatic_gradient(phi_tiles, world):
     dx = world["dx"]
     dy = world["dy"]
     dz = world["dz"]
+    g = int(g)
+    active = slice(g, -g)
+    forward = slice(g + 1, None if g == 1 else -g + 1)
+    backward = slice(g - 1, -g - 1)
 
-    phi_tiles = update_tiled_ghost_cells(phi_tiles, world)
+    phi_tiles = update_tiled_ghost_cells(phi_tiles, world, g, tile_shape)
 
     Ex = jnp.zeros_like(phi_tiles)
     Ey = jnp.zeros_like(phi_tiles)
     Ez = jnp.zeros_like(phi_tiles)
 
-    Ex = Ex.at[:, :, :, 1:-1, 1:-1, 1:-1].set(
-        -1.0 * (phi_tiles[:, :, :, 2:, 1:-1, 1:-1] - phi_tiles[:, :, :, :-2, 1:-1, 1:-1]) / (2.0 * dx)
+    Ex = Ex.at[:, :, :, active, active, active].set(
+        -1.0 * (phi_tiles[:, :, :, forward, active, active] - phi_tiles[:, :, :, backward, active, active]) / (2.0 * dx)
     )
-    Ey = Ey.at[:, :, :, 1:-1, 1:-1, 1:-1].set(
-        -1.0 * (phi_tiles[:, :, :, 1:-1, 2:, 1:-1] - phi_tiles[:, :, :, 1:-1, :-2, 1:-1]) / (2.0 * dy)
+    Ey = Ey.at[:, :, :, active, active, active].set(
+        -1.0 * (phi_tiles[:, :, :, active, forward, active] - phi_tiles[:, :, :, active, backward, active]) / (2.0 * dy)
     )
-    Ez = Ez.at[:, :, :, 1:-1, 1:-1, 1:-1].set(
-        -1.0 * (phi_tiles[:, :, :, 1:-1, 1:-1, 2:] - phi_tiles[:, :, :, 1:-1, 1:-1, :-2]) / (2.0 * dz)
+    Ez = Ez.at[:, :, :, active, active, active].set(
+        -1.0 * (phi_tiles[:, :, :, active, active, forward] - phi_tiles[:, :, :, active, active, backward]) / (2.0 * dz)
     )
 
-    return update_tiled_vector_ghost_cells((Ex, Ey, Ez), world)
+    return update_tiled_vector_ghost_cells((Ex, Ey, Ez), world, g, tile_shape)
 
 
-def calculate_tiled_electrostatic_fields(world, particles, constants, rho_tiles, phi_tiles, solver, bc, tile_shape):
+def calculate_tiled_electrostatic_fields(world, particles, constants, rho_tiles, phi_tiles, solver, bc, tile_shape, g):
     """
     Compute electrostatic fields from tiled rho deposition and a global Poisson solve.
 
@@ -213,9 +217,10 @@ def calculate_tiled_electrostatic_fields(world, particles, constants, rho_tiles,
     bc_y = world["boundary_conditions"]["y"]
     bc_z = world["boundary_conditions"]["z"]
 
-    rho_tiles = compute_tiled_rho_from_tiled_particles(particles, rho_tiles, world, constants)
-    rho = assemble_tiled_scalar_field(rho_tiles, world, tile_shape)
-    phi = assemble_tiled_scalar_field(phi_tiles, world, tile_shape)
+    g = int(g)
+    rho_tiles = compute_tiled_rho_from_tiled_particles(particles, rho_tiles, world, constants, tile_shape=tile_shape, g=g)
+    rho = assemble_tiled_scalar_field(rho_tiles, world, tile_shape, num_guard_cells=g)
+    phi = assemble_tiled_scalar_field(phi_tiles, world, tile_shape, num_guard_cells=g)
 
     phi = solve_poisson_with_conjugate_gradient(rho, phi, constants, world)
 
@@ -228,7 +233,7 @@ def calculate_tiled_electrostatic_fields(world, particles, constants, rho_tiles,
     phi = update_ghost_cells(phi, bc_x, bc_y, bc_z)
     # keep the same global phi post-processing order as the untiled solver
 
-    phi_tiles = tile_scalar_field(phi, world, tile_shape)
-    E_tiles = _centered_tiled_electrostatic_gradient(phi_tiles, world)
+    phi_tiles = tile_scalar_field(phi, world, tile_shape, num_guard_cells=g)
+    E_tiles = _centered_tiled_electrostatic_gradient(phi_tiles, world, tile_shape, g)
 
     return E_tiles, phi_tiles, rho_tiles

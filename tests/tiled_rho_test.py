@@ -212,12 +212,16 @@ class TestTiledRho(unittest.TestCase):
             rho_tiles,
             world,
             constants,
+            tile_shape=world["tile_shape"],
+            g=1,
         )
         rho_tiles_with_zero_velocity = compute_tiled_rho_from_tiled_particles(
             zero_velocity_tiled_particles,
             rho_tiles,
             world,
             constants,
+            tile_shape=world["tile_shape"],
+            g=1,
         )
         rho_with_velocity = assemble_tiled_scalar_field(rho_tiles_with_velocity, world, world["tile_shape"])
         rho_with_zero_velocity = assemble_tiled_scalar_field(rho_tiles_with_zero_velocity, world, world["tile_shape"])
