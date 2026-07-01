@@ -49,6 +49,12 @@ def tiled_particle_push(tiled_particles, species_config, E_tiles, B_tiles, world
     g = int(g)
 
     ntx, nty, ntz = tiled_particles.x.shape[:3]
+    active_axes = (
+        int(ntx) * int(tile_nx) > 1,
+        int(nty) * int(tile_ny) > 1,
+        int(ntz) * int(tile_nz) > 1,
+    )
+    inactive_axis_indices = (g, g, g)
 
     def push_one_tile(tx, ty, tz, x_tile, u_tile, active_tile, charge_species, mass_species, update_u_species,
                       Ex_tile, Ey_tile, Ez_tile, Bx_tile, By_tile, Bz_tile):
@@ -75,13 +81,31 @@ def tiled_particle_push(tiled_particles, species_config, E_tiles, B_tiles, world
         By_grid = vertex_x, center_y, vertex_z
         Bz_grid = vertex_x, vertex_y, center_z
 
-        efield_atx = interpolate_field_to_particles(Ex_tile, x, y, z, Ex_grid, shape_factor, ghost_cells=True)
-        efield_aty = interpolate_field_to_particles(Ey_tile, x, y, z, Ey_grid, shape_factor, ghost_cells=True)
-        efield_atz = interpolate_field_to_particles(Ez_tile, x, y, z, Ez_grid, shape_factor, ghost_cells=True)
+        efield_atx = interpolate_field_to_particles(
+            Ex_tile, x, y, z, Ex_grid, shape_factor, ghost_cells=True,
+            active_axes=active_axes, inactive_axis_indices=inactive_axis_indices
+        )
+        efield_aty = interpolate_field_to_particles(
+            Ey_tile, x, y, z, Ey_grid, shape_factor, ghost_cells=True,
+            active_axes=active_axes, inactive_axis_indices=inactive_axis_indices
+        )
+        efield_atz = interpolate_field_to_particles(
+            Ez_tile, x, y, z, Ez_grid, shape_factor, ghost_cells=True,
+            active_axes=active_axes, inactive_axis_indices=inactive_axis_indices
+        )
 
-        bfield_atx = interpolate_field_to_particles(Bx_tile, x, y, z, Bx_grid, shape_factor, ghost_cells=True)
-        bfield_aty = interpolate_field_to_particles(By_tile, x, y, z, By_grid, shape_factor, ghost_cells=True)
-        bfield_atz = interpolate_field_to_particles(Bz_tile, x, y, z, Bz_grid, shape_factor, ghost_cells=True)
+        bfield_atx = interpolate_field_to_particles(
+            Bx_tile, x, y, z, Bx_grid, shape_factor, ghost_cells=True,
+            active_axes=active_axes, inactive_axis_indices=inactive_axis_indices
+        )
+        bfield_aty = interpolate_field_to_particles(
+            By_tile, x, y, z, By_grid, shape_factor, ghost_cells=True,
+            active_axes=active_axes, inactive_axis_indices=inactive_axis_indices
+        )
+        bfield_atz = interpolate_field_to_particles(
+            Bz_tile, x, y, z, Bz_grid, shape_factor, ghost_cells=True,
+            active_axes=active_axes, inactive_axis_indices=inactive_axis_indices
+        )
 
         boris_vmap = jax.vmap(
             boris_single_particle,

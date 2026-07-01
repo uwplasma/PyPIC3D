@@ -116,8 +116,8 @@ class TestTiledParticlePusher(unittest.TestCase):
         pushed = tiled_particle_push(
             tiled_particles,
             species_config,
-            tile_vector_field(E, world, tile_shape),
-            tile_vector_field(B, world, tile_shape),
+            tile_vector_field(E, world, tile_shape, num_guard_cells=1),
+            tile_vector_field(B, world, tile_shape, num_guard_cells=1),
             world,
             constants,
             tile_shape,
@@ -184,8 +184,8 @@ class TestTiledParticlePusher(unittest.TestCase):
         pushed = tiled_particle_push(
             tiled_particles,
             species_config,
-            tile_vector_field(E, world, tile_shape),
-            tile_vector_field(B, world, tile_shape),
+            tile_vector_field(E, world, tile_shape, num_guard_cells=1),
+            tile_vector_field(B, world, tile_shape, num_guard_cells=1),
             world,
             constants,
             tile_shape,
@@ -223,8 +223,8 @@ class TestTiledParticlePusher(unittest.TestCase):
         pushed = tiled_particle_push(
             tiled_particles,
             species_config,
-            tile_vector_field(E, world, tile_shape),
-            tile_vector_field(B, world, tile_shape),
+            tile_vector_field(E, world, tile_shape, num_guard_cells=1),
+            tile_vector_field(B, world, tile_shape, num_guard_cells=1),
             world,
             constants,
             tile_shape,
@@ -288,12 +288,82 @@ class TestTiledParticlePusher(unittest.TestCase):
         pushed = tiled_particle_push(
             tiled_particles,
             species_config,
-            tile_vector_field(E, world, tile_shape),
-            tile_vector_field(B, world, tile_shape),
+            tile_vector_field(E, world, tile_shape, num_guard_cells=1),
+            tile_vector_field(B, world, tile_shape, num_guard_cells=1),
             world,
             constants,
             tile_shape,
             1,
+            relativistic=True,
+        )
+
+        _, tiled_u = self._flatten_active_by_position(pushed)
+        flat_u = jnp.stack(reference.get_velocity(), axis=1)
+        flat_x = jnp.stack(reference.get_forward_position(), axis=1)
+        order = jnp.lexsort((flat_x[:, 2], flat_x[:, 1], flat_x[:, 0]))
+
+        self.assertTrue(jnp.allclose(tiled_u, flat_u[order], rtol=1.0e-12, atol=1.0e-12))
+
+    def test_tiled_particle_push_matches_flat_boris_on_two_guard_reduced_axes(self):
+        world = self._build_world(Nx=8, Ny=1, Nz=1, shape_factor=2)
+        constants = {"C": 10.0}
+        tile_shape = (2, 1, 1)
+        g = 2
+        simulation_parameters = {
+            "particle_tile_nx": tile_shape[0],
+            "particle_tile_ny": tile_shape[1],
+            "particle_tile_nz": tile_shape[2],
+        }
+        E = self._deterministic_vector_field(world, scale=0.1)
+        B = self._deterministic_vector_field(world, scale=0.02)
+
+        def make_species():
+            return particle_species(
+                name="two guard one dimensional",
+                N_particles=3,
+                charge=1.0,
+                mass=1.0,
+                weight=1.0,
+                T=1.0,
+                x1=jnp.array([-1.25, 0.15, 1.25]),
+                x2=jnp.zeros(3),
+                x3=jnp.zeros(3),
+                v1=jnp.array([0.02, -0.01, 0.03]),
+                v2=jnp.array([0.0, 0.01, -0.02]),
+                v3=jnp.array([-0.005, 0.025, 0.01]),
+                xwind=world["x_wind"],
+                ywind=world["y_wind"],
+                zwind=world["z_wind"],
+                dx=world["dx"],
+                dy=world["dy"],
+                dz=world["dz"],
+                dt=world["dt"],
+            )
+
+        species = make_species()
+        reference = make_species()
+        reference = particle_push(
+            reference,
+            E,
+            B,
+            world["grids"]["center"],
+            world["grids"]["vertex"],
+            world,
+            constants,
+            relativistic=True,
+            particle_pusher="boris",
+        )
+
+        tiled_particles, species_config = to_tiled_particles([species], world, simulation_parameters)
+        pushed = tiled_particle_push(
+            tiled_particles,
+            species_config,
+            tile_vector_field(E, world, tile_shape, num_guard_cells=g),
+            tile_vector_field(B, world, tile_shape, num_guard_cells=g),
+            world,
+            constants,
+            tile_shape,
+            g,
             relativistic=True,
         )
 

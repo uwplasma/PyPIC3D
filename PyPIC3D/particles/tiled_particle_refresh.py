@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import wrap_periodic_position
@@ -70,15 +71,75 @@ def update_tiled_particle_positions(tiled_particles, species_config, dt):
     return tiled_particles._replace(x=x)
 
 
-def _neighbor_offsets(count):
-    offsets = []
-    seen = set()
-    for offset in (-1, 0, 1):
-        key = offset % count
-        if key not in seen:
-            offsets.append(offset)
-            seen.add(key)
-    return tuple(offsets)
+def _movement_offsets(count):
+    if count == 1:
+        return (0,)
+    return (1, 0, -1)
+
+
+def _adjacent_tile_offset(dest_tile, source_tile, tile_count):
+    """
+    Signed adjacent offset from the source tile to the destination tile.
+
+    The tiled particle step assumes particles move by at most one cell, so tile
+    ownership can only change by one neighboring tile along any active axis.
+    Periodic end points are represented with the physical crossing direction:
+    first -> last is -1, last -> first is +1.
+    """
+
+    if tile_count == 1:
+        return jnp.zeros_like(dest_tile)
+
+    offset = dest_tile - source_tile
+    if tile_count == 2:
+        return offset
+
+    offset = jnp.where(offset == tile_count - 1, -1, offset)
+    offset = jnp.where(offset == -(tile_count - 1), 1, offset)
+
+    return offset
+
+
+def _compact_tile_candidates(candidate_x, candidate_u, candidate_active, n_slots):
+    """
+    Repack fixed-size incoming streams into the destination tile slot axis.
+    """
+
+    leading_shape = candidate_active.shape[:-1]
+    n_candidates = candidate_active.shape[-1]
+
+    flat_x = candidate_x.reshape((-1, n_candidates, 3))
+    flat_u = candidate_u.reshape((-1, n_candidates, 3))
+    flat_active = candidate_active.reshape((-1, n_candidates))
+
+    def compact_one(local_x_in, local_u_in, local_active_in):
+        rank = jnp.cumsum(local_active_in.astype(int)) - 1
+        fits = local_active_in & (rank < n_slots)
+        safe_rank = jnp.where(fits, rank, 0)
+
+        local_x = jnp.zeros((n_slots, 3), dtype=local_x_in.dtype)
+        local_u = jnp.zeros((n_slots, 3), dtype=local_u_in.dtype)
+        local_active_count = jnp.zeros(n_slots, dtype=int)
+
+        valid = fits.astype(local_x_in.dtype)
+        local_x = local_x.at[safe_rank].add(valid[:, None] * local_x_in)
+        local_u = local_u.at[safe_rank].add(valid[:, None] * local_u_in)
+        local_active_count = local_active_count.at[safe_rank].add(fits.astype(int))
+
+        return local_x, local_u, local_active_count > 0, jnp.sum(local_active_in) > n_slots
+
+    flat_new_x, flat_new_u, flat_new_active, flat_overflow = jax.vmap(compact_one)(
+        flat_x,
+        flat_u,
+        flat_active,
+    )
+
+    new_x = flat_new_x.reshape(leading_shape + (n_slots, 3))
+    new_u = flat_new_u.reshape(leading_shape + (n_slots, 3))
+    new_active = flat_new_active.reshape(leading_shape + (n_slots,))
+    overflow = jnp.any(flat_overflow)
+
+    return new_x, new_u, new_active, overflow
 
 
 def refresh_tiled_particle_tiles(tiled_particles, world, tile_shape):
@@ -86,7 +147,7 @@ def refresh_tiled_particle_tiles(tiled_particles, world, tile_shape):
     Move active particles into their owning tiles while preserving static shape.
 
     The refresh assumes particles move by at most one cell in a timestep, so each
-    destination tile only reads candidate particles from its neighboring tiles.
+    particle either stays in its current tile or moves to an adjacent tile.
     Particles that do not fit in the destination tile capacity are dropped from
     the returned active mask and reported through the overflow flag.
     """
@@ -137,71 +198,58 @@ def refresh_tiled_particle_tiles(tiled_particles, world, tile_shape):
         tile_counts,
     )
 
-    new_x = jnp.zeros_like(tiled_particles.x)
-    new_u = jnp.zeros_like(tiled_particles.u)
-    new_active = jnp.zeros_like(tiled_particles.active)
-    overflow = jnp.asarray(False)
+    tx = jnp.arange(ntx).reshape((ntx, 1, 1, 1, 1))
+    ty = jnp.arange(nty).reshape((1, nty, 1, 1, 1))
+    tz = jnp.arange(ntz).reshape((1, 1, ntz, 1, 1))
 
-    x_offsets = _neighbor_offsets(ntx)
-    y_offsets = _neighbor_offsets(nty)
-    z_offsets = _neighbor_offsets(ntz)
+    offset_x = _adjacent_tile_offset(dest_tx, tx, ntx)
+    offset_y = _adjacent_tile_offset(dest_ty, ty, nty)
+    offset_z = _adjacent_tile_offset(dest_tz, tz, ntz)
 
-    for tx in range(ntx):
-        for ty in range(nty):
-            for tz in range(ntz):
-                for species in range(n_species):
-                    candidate_x = []
-                    candidate_u = []
-                    candidate_active = []
-                    candidate_dest_tx = []
-                    candidate_dest_ty = []
-                    candidate_dest_tz = []
+    x_offsets = _movement_offsets(ntx)
+    y_offsets = _movement_offsets(nty)
+    z_offsets = _movement_offsets(ntz)
 
-                    for ox in x_offsets:
-                        sx = (tx + ox) % ntx
-                        for oy in y_offsets:
-                            sy = (ty + oy) % nty
-                            for oz in z_offsets:
-                                sz = (tz + oz) % ntz
-                                index = (sx, sy, sz, species)
-                                candidate_x.append(bounded_x[index])
-                                candidate_u.append(bounded_u[index])
-                                candidate_active.append(bounded_active[index])
-                                candidate_dest_tx.append(dest_tx[index])
-                                candidate_dest_ty.append(dest_ty[index])
-                                candidate_dest_tz.append(dest_tz[index])
+    candidate_x = []
+    candidate_u = []
+    candidate_active = []
 
-                    candidate_x = jnp.concatenate(candidate_x, axis=0)
-                    candidate_u = jnp.concatenate(candidate_u, axis=0)
-                    candidate_active = jnp.concatenate(candidate_active, axis=0)
-                    candidate_dest_tx = jnp.concatenate(candidate_dest_tx, axis=0)
-                    candidate_dest_ty = jnp.concatenate(candidate_dest_ty, axis=0)
-                    candidate_dest_tz = jnp.concatenate(candidate_dest_tz, axis=0)
+    for ox in x_offsets:
+        for oy in y_offsets:
+            for oz in z_offsets:
+                stream_active = (
+                    bounded_active
+                    & (offset_x == ox)
+                    & (offset_y == oy)
+                    & (offset_z == oz)
+                )
+                stream_x = jnp.where(stream_active[..., None], bounded_x, 0.0)
+                stream_u = jnp.where(stream_active[..., None], bounded_u, 0.0)
 
-                    keep = (
-                        candidate_active
-                        & (candidate_dest_tx == tx)
-                        & (candidate_dest_ty == ty)
-                        & (candidate_dest_tz == tz)
-                    )
-                    rank = jnp.cumsum(keep.astype(int)) - 1
-                    fits = keep & (rank < n_slots)
-                    safe_rank = jnp.where(fits, rank, 0)
+                stream_x = jnp.roll(stream_x, shift=ox, axis=0)
+                stream_x = jnp.roll(stream_x, shift=oy, axis=1)
+                stream_x = jnp.roll(stream_x, shift=oz, axis=2)
+                stream_u = jnp.roll(stream_u, shift=ox, axis=0)
+                stream_u = jnp.roll(stream_u, shift=oy, axis=1)
+                stream_u = jnp.roll(stream_u, shift=oz, axis=2)
+                stream_active = jnp.roll(stream_active, shift=ox, axis=0)
+                stream_active = jnp.roll(stream_active, shift=oy, axis=1)
+                stream_active = jnp.roll(stream_active, shift=oz, axis=2)
 
-                    local_x = jnp.zeros_like(new_x[tx, ty, tz, species])
-                    local_u = jnp.zeros_like(new_u[tx, ty, tz, species])
-                    local_active_count = jnp.zeros(n_slots, dtype=int)
+                candidate_x.append(stream_x)
+                candidate_u.append(stream_u)
+                candidate_active.append(stream_active)
 
-                    valid = fits.astype(candidate_x.dtype)
-                    local_x = local_x.at[safe_rank].add(valid[:, None] * candidate_x)
-                    local_u = local_u.at[safe_rank].add(valid[:, None] * candidate_u)
-                    local_active_count = local_active_count.at[safe_rank].add(fits.astype(int))
+    candidate_x = jnp.concatenate(candidate_x, axis=-2)
+    candidate_u = jnp.concatenate(candidate_u, axis=-2)
+    candidate_active = jnp.concatenate(candidate_active, axis=-1)
 
-                    index = (tx, ty, tz, species)
-                    new_x = new_x.at[index].set(local_x)
-                    new_u = new_u.at[index].set(local_u)
-                    new_active = new_active.at[index].set(local_active_count > 0)
-                    overflow = overflow | (jnp.sum(keep) > n_slots)
+    new_x, new_u, new_active, overflow = _compact_tile_candidates(
+        candidate_x,
+        candidate_u,
+        candidate_active,
+        n_slots,
+    )
 
     refreshed = TiledParticles(
         x=new_x,

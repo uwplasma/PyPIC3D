@@ -88,6 +88,45 @@ class TestBorisMethods(unittest.TestCase):
 
         self.assertTrue(jnp.allclose(interpolated, 7.0))
 
+    def test_interpolate_field_to_particles_accepts_explicit_active_axes(self):
+        field = jnp.zeros((7, 5, 5))
+        field = field.at[:, 2, 2].set(jnp.linspace(1.0, 2.0, 7))
+        field = field.at[:, 1, 2].set(100.0)
+        field = field.at[:, 3, 2].set(-50.0)
+        field = field.at[:, 2, 1].set(25.0)
+        field = field.at[:, 2, 3].set(-10.0)
+        x = jnp.array([-0.25, 0.0, 0.25])
+        y = jnp.zeros_like(x)
+        z = jnp.zeros_like(x)
+        grid = (
+            jnp.linspace(-0.5, 0.5, 7),
+            jnp.linspace(-1.0, 1.0, 5),
+            jnp.linspace(-1.0, 1.0, 5),
+        )
+
+        interpolated = interpolate_field_to_particles(
+            field,
+            x,
+            y,
+            z,
+            grid,
+            shape_factor=2,
+            ghost_cells=True,
+            active_axes=(True, False, False),
+            inactive_axis_indices=(None, 2, 2),
+        )
+        reference = interpolate_field_to_particles(
+            field[:, 2:3, 2:3],
+            x,
+            y,
+            z,
+            (grid[0], grid[1][2:3], grid[2][2:3]),
+            shape_factor=2,
+            ghost_cells=False,
+        )
+
+        self.assertTrue(jnp.allclose(interpolated, reference, rtol=1.0e-12, atol=1.0e-12))
+
 
 
     def test_boris_single_particle(self):

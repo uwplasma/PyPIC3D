@@ -6,6 +6,7 @@ import jax.numpy as jnp
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
 from PyPIC3D.particles.tiled_particle_refresh import (
+    _adjacent_tile_offset,
     refresh_tiled_particle_tiles,
     update_tiled_particle_positions,
 )
@@ -94,6 +95,14 @@ class TestTiledParticleRefresh(unittest.TestCase):
         fixed, fixed_species_config = to_tiled_particles([fixed_species], world, self._simulation_parameters())
         fixed_moved = update_tiled_particle_positions(fixed, fixed_species_config, world["dt"])
         self.assertTrue(jnp.allclose(fixed_moved.x, fixed.x))
+
+    def test_adjacent_tile_offset_handles_periodic_edges(self):
+        source = jnp.array([0, 0, 1, 1])
+        dest = jnp.array([0, 1, 0, 1])
+
+        offset = _adjacent_tile_offset(dest, source, tile_count=2)
+
+        self.assertTrue(jnp.array_equal(offset, jnp.array([0, 1, -1, 0])))
 
     def test_refresh_moves_particles_to_neighbor_tiles_with_static_shape(self):
         world = self._build_world()
