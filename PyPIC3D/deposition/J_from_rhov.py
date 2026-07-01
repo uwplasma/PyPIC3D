@@ -9,7 +9,7 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
     prepare_particle_axis_stencil,
 )
 from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, update_ghost_cells
-from PyPIC3D.deposition.direct_deposition_tiled import direct_J_from_tiled_particles
+from PyPIC3D.deposition.direct_deposition_tiled import _direct_J_from_tiled_particles
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.particles.tiled_particles import TiledParticles
 from PyPIC3D.utils import bilinear_filter, digital_filter
@@ -44,7 +44,7 @@ def J_from_rhov(
         if g is None:
             g = int(world["guard_cells"])
 
-        return direct_J_from_tiled_particles(
+        return _direct_J_from_tiled_particles(
             particles,
             species_config,
             J,

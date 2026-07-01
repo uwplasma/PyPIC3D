@@ -10,7 +10,7 @@ import toml
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
 from PyPIC3D.deposition.rho import _compute_rho_flat
 from PyPIC3D.deposition.rho_tiled import compute_tiled_rho_from_tiled_particles
-from PyPIC3D.electrostatic_tiled import time_loop_electrostatic_tiled
+from PyPIC3D.evolve import time_loop_electrostatic
 from PyPIC3D.evolve import _time_loop_electrostatic_global_reference
 from PyPIC3D.initialization import initialize_simulation
 from PyPIC3D.particles.species_class import particle_species
@@ -398,7 +398,7 @@ class TestTiledElectrostatic(unittest.TestCase):
             None,
         )
 
-        tiled_particles, tiled_fields = time_loop_electrostatic_tiled(
+        tiled_particles, tiled_fields = time_loop_electrostatic(
             tiled_particles,
             species_config,
             tiled_fields,
@@ -449,7 +449,7 @@ class TestTiledElectrostatic(unittest.TestCase):
         ) = self._long_two_stream_state()
 
         tiled_loop = jax.jit(
-            time_loop_electrostatic_tiled,
+            time_loop_electrostatic,
             static_argnames=("curl_func", "J_func", "solver", "tile_shape", "g", "relativistic", "particle_pusher"),
         )
 
@@ -539,7 +539,7 @@ class TestTiledElectrostatic(unittest.TestCase):
 
             loop, particles, fields, world, simulation_parameters, *_ = initialize_simulation(toml.loads(toml.dumps(config)))
 
-            self.assertIs(loop, time_loop_electrostatic_tiled)
+            self.assertIs(loop, time_loop_electrostatic)
             self.assertIsInstance(particles, TiledParticles)
             self.assertEqual(tuple(world["tile_shape"]), (2, 1, 1))
             self.assertEqual(tuple(simulation_parameters["tile_shape"]), (2, 1, 1))

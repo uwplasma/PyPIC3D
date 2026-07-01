@@ -8,7 +8,6 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIO
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov, _J_from_rhov_flat
 from PyPIC3D.deposition.direct_deposition_tiled import (
     digital_filter_tiled_current_density,
-    direct_J_from_tiled_particles,
 )
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
@@ -108,7 +107,7 @@ class TestDirectDepositionTiled(unittest.TestCase):
         tile_shape = self._tile_shape(simulation_parameters)
 
         J_reference = _J_from_rhov_flat(particles, self._empty_J(world), constants, world, filter="none")
-        J_tiles = direct_J_from_tiled_particles(
+        J_tiles = J_from_rhov(
             tiled_particles,
             species_config,
             self._empty_J_tiles(world, simulation_parameters),
@@ -256,7 +255,7 @@ class TestDirectDepositionTiled(unittest.TestCase):
         tile_shape = self._tile_shape(simulation_parameters)
 
         J_reference = _J_from_rhov_flat([species], self._empty_J(world), constants, world, filter="bilinear")
-        J_tiles = direct_J_from_tiled_particles(
+        J_tiles = J_from_rhov(
             tiled_particles,
             species_config,
             self._empty_J_tiles(world, simulation_parameters),
@@ -451,7 +450,7 @@ class TestDirectDepositionTiled(unittest.TestCase):
         tiled_particles, species_config = self._centered_tiled_particles([species], world, simulation_parameters)
         tile_shape = self._tile_shape(simulation_parameters)
 
-        J_tiles = direct_J_from_tiled_particles(
+        J_tiles = J_from_rhov(
             tiled_particles,
             species_config,
             self._empty_J_tiles(world, simulation_parameters),
@@ -609,7 +608,7 @@ class TestDirectDepositionTiled(unittest.TestCase):
         tile_shape = self._tile_shape(simulation_parameters)
 
         J_reference = _J_from_rhov_flat([species], self._empty_J(world), constants, world, filter="digital")
-        J_tiles = direct_J_from_tiled_particles(
+        J_tiles = J_from_rhov(
             tiled_particles,
             species_config,
             self._empty_J_tiles(world, simulation_parameters),
@@ -657,7 +656,7 @@ class TestDirectDepositionTiled(unittest.TestCase):
         tile_shape = self._tile_shape(simulation_parameters)
 
         J_reference = _J_from_rhov_flat([species], self._empty_J(world), constants, world, filter="bilinear")
-        J_tiles = direct_J_from_tiled_particles(
+        J_tiles = J_from_rhov(
             tiled_particles,
             species_config,
             self._empty_J_tiles(world, simulation_parameters),

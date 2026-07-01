@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 
 from PyPIC3D.initialization import initialize_fields
-from PyPIC3D.electrodynamic_tiled import time_loop_electrodynamic_tiled
+from PyPIC3D.evolve import time_loop_electrodynamic
 from PyPIC3D.solvers.first_order_yee import _update_B_global, _update_E_global, update_B, update_E
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
@@ -515,7 +515,7 @@ class TestYeeTiled(unittest.TestCase):
             None,
         )
 
-        particles_after, fields_after = time_loop_electrodynamic_tiled(
+        particles_after, fields_after = time_loop_electrodynamic(
             particles,
             None,
             fields,

@@ -14,7 +14,6 @@ from PyPIC3D.deposition.esirkepov_tiled import (
     _active_stencil_indices,
     _compact_1d_esirkepov_weights,
     _compact_2d_esirkepov_weights,
-    tiled_esirkepov_current,
 )
 from PyPIC3D.deposition.current_methods import CURRENT_ESIRKEPOV
 from PyPIC3D.deposition.rho_tiled import compute_tiled_rho_from_tiled_particles
@@ -155,7 +154,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
 
         J_reference = Esirkepov_current([new_species], self._empty_J(world), constants, world)
-        J_tiles = tiled_esirkepov_current(
+        J_tiles = Esirkepov_current(
             tiled_particles,
             species_config,
             empty_tiled_vector_field(world, tile_shape, num_guard_cells=g),
@@ -325,7 +324,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
         J_reference = Esirkepov_current([new_species], self._empty_J(world), constants, world)
         g = int(world["guard_cells"])
-        J_tiles = tiled_esirkepov_current(
+        J_tiles = Esirkepov_current(
             tiled_particles,
             species_config,
             empty_tiled_vector_field(world, tile_shape, num_guard_cells=g),
@@ -511,7 +510,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         rho_tiles = empty_tiled_scalar_field(world, tile_shape, num_guard_cells=g)
 
         rho_old = compute_tiled_rho_from_tiled_particles(tiled_particles, species_config, rho_tiles, world, constants, tile_shape=tile_shape, g=g)
-        J_tiles = tiled_esirkepov_current(
+        J_tiles = Esirkepov_current(
             tiled_particles,
             species_config,
             empty_tiled_vector_field(world, tile_shape, num_guard_cells=g),
@@ -775,7 +774,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
 
             loop, particles, fields, world, _simulation_parameters, constants, _plotting_parameters, _plasma_parameters, \
                 solver, _electrostatic, _verbose, _GPUs, _Nt, curl_func, _J_func, relativistic, particle_pusher, species_config = initialize_simulation(config)
-            alias_J_func = functools.partial(tiled_esirkepov_current)
+            alias_J_func = functools.partial(Esirkepov_current)
             particles, fields = loop(
                 particles,
                 species_config,

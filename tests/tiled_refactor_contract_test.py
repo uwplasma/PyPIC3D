@@ -3,7 +3,7 @@ import unittest
 
 import jax.numpy as jnp
 
-from PyPIC3D import electrodynamic_tiled
+from PyPIC3D import evolve
 from PyPIC3D.solvers import electrostatic_yee
 from PyPIC3D.solvers import yee_tiled
 from PyPIC3D.utils import build_yee_grid
@@ -87,8 +87,8 @@ class TestTiledRefactorContracts(unittest.TestCase):
         self.assertEqual(stage_specs["tiled_pic_step"].static_argnames, ("J_func", "relativistic", "particle_pusher"))
         self.assertEqual(stage_specs["tiled_current_deposition"].static_argnames, ("J_func",))
 
-    def test_electrodynamic_tiled_hot_step_does_not_assemble_global_fields(self):
-        source = inspect.getsource(electrodynamic_tiled.time_loop_electrodynamic_tiled)
+    def test_electrodynamic_hot_step_does_not_assemble_global_fields(self):
+        source = inspect.getsource(evolve.time_loop_electrodynamic)
         self.assertNotIn("assemble_tiled_scalar_field", source)
         self.assertNotIn("assemble_tiled_vector_field", source)
         self.assertNotIn("fields_for_output", source)

@@ -104,7 +104,7 @@ def _collapse_tiled_axis_stencil(points, weights, local_n, reduced_axis, g):
 
 
 @partial(jit, static_argnames=("filter", "tile_shape", "g"))
-def direct_J_from_tiled_particles(
+def _direct_J_from_tiled_particles(
     tiled_particles,
     species_config,
     J_tiles,

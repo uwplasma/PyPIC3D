@@ -238,9 +238,9 @@ def Esirkepov_current(
         if g is None:
             g = int(world["guard_cells"])
 
-        from PyPIC3D.deposition.esirkepov_tiled import tiled_esirkepov_current
+        from PyPIC3D.deposition.esirkepov_tiled import _tiled_esirkepov_current
 
-        return tiled_esirkepov_current(
+        return _tiled_esirkepov_current(
             particles,
             species_config,
             J,

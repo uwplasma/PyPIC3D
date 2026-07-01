@@ -10,11 +10,9 @@ import toml
 
 from PyPIC3D.evolve import _time_loop_electrodynamic_global_reference
 from PyPIC3D.deposition.Esirkepov import Esirkepov_current
-from PyPIC3D.deposition.J_from_rhov import _J_from_rhov_flat
+from PyPIC3D.deposition.J_from_rhov import J_from_rhov, _J_from_rhov_flat
 from PyPIC3D.deposition.current_methods import CURRENT_ESIRKEPOV, CURRENT_J_FROM_RHOV
-from PyPIC3D.deposition.direct_deposition_tiled import direct_J_from_tiled_particles
-from PyPIC3D.deposition.esirkepov_tiled import tiled_esirkepov_current
-from PyPIC3D.electrodynamic_tiled import time_loop_electrodynamic_tiled
+from PyPIC3D.evolve import time_loop_electrodynamic
 from PyPIC3D.initialization import initialize_simulation, validate_field_solver
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
@@ -361,7 +359,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
             ),
             None,
         )
-        _, tiled_fields = time_loop_electrodynamic_tiled(
+        _, tiled_fields = time_loop_electrodynamic(
             [],
             None,
             tiled_fields,
@@ -444,7 +442,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
 
             loop, particles, fields, world, *_rest = initialize_simulation(toml.load(config_path))
 
-            self.assertIs(loop.func if hasattr(loop, "func") else loop, time_loop_electrodynamic_tiled)
+            self.assertIs(loop.func if hasattr(loop, "func") else loop, time_loop_electrodynamic)
             self.assertIsInstance(particles, TiledParticles)
             self.assertEqual(fields[0][0].ndim, 6)
             self.assertEqual(tuple(world["tile_shape"]), (2, 1, 1))
@@ -502,7 +500,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
 
             loop, particles, fields, world, simulation_parameters, *_rest = initialize_simulation(toml.load(config_path))
 
-            self.assertIs(loop.func if hasattr(loop, "func") else loop, time_loop_electrodynamic_tiled)
+            self.assertIs(loop.func if hasattr(loop, "func") else loop, time_loop_electrodynamic)
             self.assertIsInstance(particles, TiledParticles)
             self.assertEqual(fields[0][0].ndim, 6)
             self.assertEqual(simulation_parameters["particle_pusher"], "higuera_cary")
@@ -560,7 +558,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
 
             loop, particles, fields, world, simulation_parameters, *_rest = initialize_simulation(toml.load(config_path))
 
-            self.assertIs(loop.func if hasattr(loop, "func") else loop, time_loop_electrodynamic_tiled)
+            self.assertIs(loop.func if hasattr(loop, "func") else loop, time_loop_electrodynamic)
             self.assertIsInstance(particles, TiledParticles)
             self.assertEqual(fields[0][0].ndim, 6)
             self.assertEqual(simulation_parameters["filter_j"], "digital")
@@ -618,7 +616,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
 
             loop, particles, fields, world, simulation_parameters, *_rest = initialize_simulation(toml.load(config_path))
 
-            self.assertIs(loop.func if hasattr(loop, "func") else loop, time_loop_electrodynamic_tiled)
+            self.assertIs(loop.func if hasattr(loop, "func") else loop, time_loop_electrodynamic)
             self.assertIsInstance(particles, TiledParticles)
             self.assertEqual(fields[0][0].ndim, 6)
             self.assertEqual(simulation_parameters["filter_j"], "bilinear")
@@ -679,7 +677,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
 
             loop, particles, fields, world, *_rest = initialize_simulation(toml.load(config_path))
 
-            self.assertIs(loop.func if hasattr(loop, "func") else loop, time_loop_electrodynamic_tiled)
+            self.assertIs(loop.func if hasattr(loop, "func") else loop, time_loop_electrodynamic)
             self.assertIsInstance(particles, TiledParticles)
             self.assertEqual(fields[0][0].ndim, 6)
             self.assertEqual(world["boundary_conditions"], {"x": 1, "y": 1, "z": 1})
@@ -723,7 +721,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
             ),
             None,
         )
-        tiled_particles, tiled_fields = time_loop_electrodynamic_tiled(
+        tiled_particles, tiled_fields = time_loop_electrodynamic(
             tiled_particles,
             species_config,
             tiled_fields,
@@ -803,7 +801,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
             ),
             None,
         )
-        _, tiled_fields = time_loop_electrodynamic_tiled(
+        _, tiled_fields = time_loop_electrodynamic(
             tiled_particles,
             species_config,
             tiled_fields,
@@ -867,14 +865,14 @@ class TestTiledYeeIntegration(unittest.TestCase):
             ),
             None,
         )
-        _, tiled_fields = time_loop_electrodynamic_tiled(
+        _, tiled_fields = time_loop_electrodynamic(
             tiled_particles,
             species_config,
             tiled_fields,
             world,
             constants,
             unused_curl,
-            J_func=functools.partial(direct_J_from_tiled_particles, filter="digital"),
+            J_func=functools.partial(J_from_rhov, filter="digital"),
             solver="electrodynamic_yee",
             tile_shape=tile_shape,
             g=int(world["guard_cells"]),
@@ -928,14 +926,14 @@ class TestTiledYeeIntegration(unittest.TestCase):
             ),
             None,
         )
-        _, tiled_fields = time_loop_electrodynamic_tiled(
+        _, tiled_fields = time_loop_electrodynamic(
             tiled_particles,
             species_config,
             tiled_fields,
             world,
             constants,
             unused_curl,
-            J_func=functools.partial(direct_J_from_tiled_particles, filter="bilinear"),
+            J_func=functools.partial(J_from_rhov, filter="bilinear"),
             solver="electrodynamic_yee",
             tile_shape=tile_shape,
             g=int(world["guard_cells"]),
@@ -1031,14 +1029,14 @@ class TestTiledYeeIntegration(unittest.TestCase):
             ),
             None,
         )
-        _, tiled_fields = time_loop_electrodynamic_tiled(
+        _, tiled_fields = time_loop_electrodynamic(
             tiled_particles,
             species_config,
             tiled_fields,
             world,
             constants,
             unused_curl,
-            J_func=functools.partial(direct_J_from_tiled_particles, filter="bilinear"),
+            J_func=functools.partial(J_from_rhov, filter="bilinear"),
             solver="electrodynamic_yee",
             tile_shape=tile_shape,
             g=int(world["guard_cells"]),
@@ -1075,7 +1073,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
 
         standard_J = functools.partial(_J_from_rhov_flat, filter="none")
         tiled_loop = jax.jit(
-            time_loop_electrodynamic_tiled,
+            time_loop_electrodynamic,
             static_argnames=("curl_func", "J_func", "solver", "tile_shape", "g", "relativistic", "particle_pusher"),
         )
 
@@ -1141,7 +1139,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         ) = self._long_two_stream_state(CURRENT_ESIRKEPOV)
 
         tiled_loop = jax.jit(
-            time_loop_electrodynamic_tiled,
+            time_loop_electrodynamic,
             static_argnames=("curl_func", "J_func", "solver", "tile_shape", "g", "relativistic", "particle_pusher"),
         )
 
@@ -1164,7 +1162,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
                 world,
                 constants,
                 unused_curl,
-                J_func=tiled_esirkepov_current,
+                J_func=Esirkepov_current,
                 solver="electrodynamic_yee",
                 tile_shape=tile_shape,
                 g=int(world["guard_cells"]),

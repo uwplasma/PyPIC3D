@@ -185,7 +185,7 @@ def fold_tiled_esirkepov_vector_ghost_cells(field_tiles, world, num_guard_cells=
 
 
 @partial(jit, static_argnames=("tile_shape", "g"))
-def tiled_esirkepov_current(tiled_particles, species_config, J_tiles, constants, world, grid=None, tile_shape=None, g=2):
+def _tiled_esirkepov_current(tiled_particles, species_config, J_tiles, constants, world, grid=None, tile_shape=None, g=2):
     """
     Deposit Esirkepov current into tile-local current buffers.
 

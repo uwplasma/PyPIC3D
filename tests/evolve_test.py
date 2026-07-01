@@ -3,8 +3,6 @@ import unittest
 import jax
 import jax.numpy as jnp
 
-from PyPIC3D.electrodynamic_tiled import time_loop_electrodynamic_tiled
-from PyPIC3D.electrostatic_tiled import time_loop_electrostatic_tiled
 from PyPIC3D.evolve import (
     _time_loop_electrodynamic_global_reference,
     _time_loop_electrostatic_global_reference,
@@ -29,12 +27,9 @@ def unused_curl(Ex, Ey, Ez):
 
 
 class TestEvolveExternalFields(unittest.TestCase):
-    def test_public_loop_names_use_tiled_contracts(self):
-        electrodynamic_loop = time_loop_electrodynamic.func if hasattr(time_loop_electrodynamic, "func") else time_loop_electrodynamic
-        electrostatic_loop = time_loop_electrostatic.func if hasattr(time_loop_electrostatic, "func") else time_loop_electrostatic
-
-        self.assertIs(electrodynamic_loop, time_loop_electrodynamic_tiled)
-        self.assertIs(electrostatic_loop, time_loop_electrostatic_tiled)
+    def test_public_loop_names_own_tiled_contracts(self):
+        self.assertEqual(time_loop_electrodynamic.__module__, "PyPIC3D.evolve")
+        self.assertEqual(time_loop_electrostatic.__module__, "PyPIC3D.evolve")
 
     def _electrostatic_grid_order_species(self, world, charge):
         return particle_species(

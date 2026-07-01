@@ -6,9 +6,9 @@ import jax.numpy as jnp
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
 from PyPIC3D.deposition.current_methods import CURRENT_J_FROM_RHOV
-from PyPIC3D.deposition.direct_deposition_tiled import direct_J_from_tiled_particles
+from PyPIC3D.deposition.J_from_rhov import J_from_rhov
 from PyPIC3D.diagnostics.output_adapters import particles_for_output, vector_field_for_output
-from PyPIC3D.electrodynamic_tiled import time_loop_electrodynamic_tiled
+from PyPIC3D.evolve import time_loop_electrodynamic
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
 from PyPIC3D.particles.tiled_particle_refresh import (
@@ -274,7 +274,7 @@ def _tiled_output_bridge_stage(case):
 
 def benchmark_tiled_pic_step(case, J_func, relativistic=True, particle_pusher="boris"):
     with jax.named_scope("tiled_pic_step"):
-        return time_loop_electrodynamic_tiled(
+        return time_loop_electrodynamic(
             case.particles,
             case.species_config,
             case.fields,
@@ -300,7 +300,7 @@ def build_tiled_stage_specs(case, J_func=None, relativistic=True, particle_pushe
     """
 
     if J_func is None:
-        J_func = partial(direct_J_from_tiled_particles, filter="none")
+        J_func = partial(J_from_rhov, filter="none")
 
     pushed_particles = _tiled_particle_push_stage(case, relativistic=relativistic, particle_pusher=particle_pusher)
     deposited_J = _tiled_current_deposition_stage(case, pushed_particles, J_func)
