@@ -10,7 +10,7 @@ import toml
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 from PyPIC3D.deposition.Esirkepov import Esirkepov_current
-from PyPIC3D.deposition.esirkepov_tiled import tiled_esirkepov_current
+from PyPIC3D.deposition.esirkepov_tiled import _active_stencil_indices, tiled_esirkepov_current
 from PyPIC3D.deposition.rho_tiled import compute_tiled_rho_from_tiled_particles
 from PyPIC3D.diagnostics.output_adapters import fields_for_output
 from PyPIC3D.initialization import CURRENT_ESIRKEPOV, initialize_simulation
@@ -267,6 +267,10 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         E_after = update_tiled_E(E_tiles, B_tiles, (Jx, Jy, Jz), world, constants, None, tile_shape, g)
 
         self.assertTrue(jnp.allclose(E_after[0][:, :, :, g:-g, g:-g, g:-g], -0.5))
+
+    def test_reduced_axis_esirkepov_scatter_uses_only_collapsed_stencil_index(self):
+        self.assertEqual(_active_stencil_indices(True), (0, 1, 2, 3, 4))
+        self.assertEqual(_active_stencil_indices(False), (2,))
 
     def test_tiled_esirkepov_matches_global_1d_periodic_current(self):
         world = self._build_world(Nx=8, Ny=1, Nz=1, dt=0.05)

@@ -21,6 +21,12 @@ from PyPIC3D.solvers.yee_tiled import (
 )
 
 
+def _active_stencil_indices(axis_active):
+    if axis_active:
+        return (0, 1, 2, 3, 4)
+    return (2,)
+
+
 def fold_tiled_esirkepov_ghost_cells(field_tiles, world, component_axis, num_guard_cells=2, tile_shape=None):
     """
     Fold Esirkepov current deposits using the configured guard depth.
@@ -272,9 +278,13 @@ def tiled_esirkepov_current(tiled_particles, species_config, J_tiles, constants,
         tile_Jy = Jy_template
         tile_Jz = Jz_template
 
-        for i in range(5):
-            for j in range(5):
-                for k in range(5):
+        x_stencil_indices = _active_stencil_indices(x_active)
+        y_stencil_indices = _active_stencil_indices(y_active)
+        z_stencil_indices = _active_stencil_indices(z_active)
+
+        for i in x_stencil_indices:
+            for j in y_stencil_indices:
+                for k in z_stencil_indices:
                     ix = xpts[i, :]
                     iy = ypts[j, :]
                     iz = zpts[k, :]
