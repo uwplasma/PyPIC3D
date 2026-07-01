@@ -12,11 +12,8 @@ from PyPIC3D.particles.particle_initialization import (
 
 from PyPIC3D.particles.species_class import particle_species
 
-from PyPIC3D.deposition.J_from_rhov import _J_from_rhov_flat
-from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.deposition.rho import _compute_rho_flat
 from PyPIC3D.utils import build_yee_grid
-from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 
 
 
@@ -455,65 +452,7 @@ class TestParticleMethods(unittest.TestCase):
         self.assertAlmostEqual(species.kinetic_energy(), 0.0)
         self.assertAlmostEqual(species.momentum(), 0.0)
 
-    def test_J_from_rhov(self):
-        x = jnp.array([0.0])
-        y = jnp.array([0.0])
-        z = jnp.array([0.0])
-        vx = jnp.array([0.5])
-        vy = jnp.array([0.5])
-        vz = jnp.array([0.5])
-        # define particle position and velocity
-
-        Nx, Ny, Nz = 10, 10, 10
-        dx = self.x_wind / Nx
-        dy = self.y_wind / Ny
-        dz = self.z_wind / Nz
-        # uniform spatial resolution in xyz
-
-        world = {
-            'dx': dx, 'dy': dy, 'dz': dz,
-            'Nx': Nx, 'Ny': Ny, 'Nz': Nz,
-            'x_wind': self.x_wind, 'y_wind': self.y_wind, 'z_wind': self.z_wind,
-            'dt': 0.0001,
-            'shape_factor': 1,
-            'boundary_conditions': {'x': 0, 'y': 0, 'z': 0},
-        }
-        vertex_grid, center_grid = build_yee_grid(world)
-        world['grids'] = {'vertex': vertex_grid, 'center': center_grid}
-        # build world with extended grids
-
-        # ghost-celled J arrays: shape (Nx+2, Ny+2, Nz+2)
-        num_J = (jnp.zeros((Nx+2, Ny+2, Nz+2)), jnp.zeros((Nx+2, Ny+2, Nz+2)), jnp.zeros((Nx+2, Ny+2, Nz+2)))
-
-        species = particle_species(
-            name="test",
-            N_particles=1,
-            charge=1.0,
-            mass=self.mass,
-            weight=1.0,
-            T=self.T,
-            v1 = vx,
-            v2 = vy,
-            v3 = vz,
-            x1=x,
-            x2=y,
-            x3=z,
-            dx=1.0,
-            dy=1.0,
-            dz=1.0,
-            xwind=self.x_wind,
-            ywind=self.y_wind,
-            zwind=self.z_wind,
-        )
-
-        constants = {'C': 3e8, 'alpha' : 1.0}
-
-        num_J = _J_from_rhov_flat([species], num_J, constants, world)
-
-        # Jan 12, 2025: Suppressing test for now. I have done benchmarks of the two stream and weibel
-        # against WarpX and have validated this method
-
-    def test_inactive_particles_do_not_deposit_rho_or_current(self):
+    def test_inactive_particles_do_not_deposit_rho(self):
         Nx, Ny, Nz = 10, 10, 10
         dx = self.x_wind / Nx
         dy = self.y_wind / Ny
@@ -560,20 +499,8 @@ class TestParticleMethods(unittest.TestCase):
 
         constants = {"C": 3e8, "alpha": 1.0}
         rho = _compute_rho_flat([species], jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), world, constants)
-        J = _J_from_rhov_flat(
-            [species],
-            (
-                jnp.zeros((Nx + 2, Ny + 2, Nz + 2)),
-                jnp.zeros((Nx + 2, Ny + 2, Nz + 2)),
-                jnp.zeros((Nx + 2, Ny + 2, Nz + 2)),
-            ),
-            constants,
-            world,
-            filter="none",
-        )
 
         self.assertAlmostEqual(float(jnp.sum(rho[1:-1, 1:-1, 1:-1]) * dx * dy * dz), 0.0)
-        self.assertAlmostEqual(float(jnp.sum(J[0][1:-1, 1:-1, 1:-1]) * dx * dy * dz), 0.0)
 
     def test_rho(self):
         x = jnp.array([0.0])
@@ -742,64 +669,6 @@ class TestParticleMethods(unittest.TestCase):
         self.assertAlmostEqual(float(interior[0, Ny // 2, Nz // 2]), 0.9)
         self.assertAlmostEqual(float(interior[-1, Ny // 2, Nz // 2]), 0.1)
 
-    def test_J_from_rhov_periodic_boundary_crossing(self):
-        Nx, Ny, Nz = 10, 10, 10
-        dx = self.x_wind / Nx
-        dy = self.y_wind / Ny
-        dz = self.z_wind / Nz
-        world = {
-            "dx": dx,
-            "dy": dy,
-            "dz": dz,
-            "Nx": Nx,
-            "Ny": Ny,
-            "Nz": Nz,
-            "x_wind": self.x_wind,
-            "y_wind": self.y_wind,
-            "z_wind": self.z_wind,
-            "dt": 0.0,
-            "shape_factor": 1,
-            "boundary_conditions": {"x": 0, "y": 0, "z": 0},
-        }
-        vertex_grid, center_grid = build_yee_grid(world)
-        world["grids"] = {"vertex": vertex_grid, "center": center_grid}
-
-        species = particle_species(
-            name="crossing-current",
-            N_particles=1,
-            charge=1.0,
-            mass=self.mass,
-            weight=1.0,
-            T=self.T,
-            v1=jnp.array([0.5]),
-            v2=jnp.array([0.0]),
-            v3=jnp.array([0.0]),
-            x1=jnp.array([self.x_wind / 2 + 0.1 * dx]),
-            x2=jnp.array([0.0]),
-            x3=jnp.array([0.0]),
-            dx=dx,
-            dy=dy,
-            dz=dz,
-            xwind=self.x_wind,
-            ywind=self.y_wind,
-            zwind=self.z_wind,
-        )
-
-        J = _J_from_rhov_flat(
-            [species],
-            (jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), jnp.zeros((Nx + 2, Ny + 2, Nz + 2))),
-            {"C": 3e8, "alpha": 1.0},
-            world,
-            filter="none",
-        )
-        Jx_int = J[0][1:-1, 1:-1, 1:-1]
-
-        self.assertAlmostEqual(float(jnp.sum(Jx_int) * dx * dy * dz), 0.5)
-        # The interior portion stays on the last physical face; only the
-        # +x ghost deposit folds to the first physical face.
-        self.assertAlmostEqual(float(jnp.sum(Jx_int[0, :, :]) * dx * dy * dz), 0.05)
-        self.assertAlmostEqual(float(jnp.sum(Jx_int[-1, :, :]) * dx * dy * dz), 0.45)
-
     def test_rho_reduced_dimensions_periodic(self):
         Nx, Ny, Nz = 16, 1, 1
         x_wind, y_wind, z_wind = 1.0, 1.0, 1.0
@@ -901,101 +770,6 @@ class TestParticleMethods(unittest.TestCase):
         self.assertTrue(jnp.allclose(rho[:, -1, :], rho[:, 1, :]))
         self.assertTrue(jnp.allclose(rho[:, :, 0], rho[:, :, -2]))
         self.assertTrue(jnp.allclose(rho[:, :, -1], rho[:, :, 1]))
-
-    def test_check_continuity_1D(self):
-
-        # WORLD PARAMETERS ########
-        Nx = 100
-        Ny = 1
-        Nz = 1
-        x_wind = 1.0
-        y_wind = 1.0
-        z_wind = 1.0
-        dx = x_wind / Nx
-        dy = y_wind / Ny
-        dz = z_wind / Nz
-        dt = dx / (3e8)
-        ###########################
-
-        world = {
-            "dx": dx, "dy": dy, "dz": dz,
-            "Nx": Nx, "Ny": Ny, "Nz": Nz,
-            "x_wind": x_wind, "y_wind": y_wind, "z_wind": z_wind,
-            "dt": dt,
-            "shape_factor": 1,
-            "boundary_conditions": {"x": 0, "y": 0, "z": 0},
-        }
-        vertex_grid, center_grid = build_yee_grid(world)
-        world["grids"] = {"vertex": vertex_grid, "center": center_grid}
-
-        constants = {"C": 3e8, "alpha": 1.0}
-        # build constants and world parameters data structures
-
-        vy = 0.0
-        vz = 0.0
-        y0  = 0.0
-        z0  = 0.0
-        # transverse dimensions
-
-        vx = 0.01  # particle velocity in x
-        x0 = 0.0  # initial particle position in x
-
-        species = particle_species(
-            name="single",
-            N_particles=1,
-            charge=1.0,
-            mass=1.0,
-            weight=1.0,
-            T=0.0,
-            v1=jnp.array([vx]),
-            v2=jnp.array([vy]),
-            v3=jnp.array([vz]),
-            x1=jnp.array([x0]),
-            x2=jnp.array([y0]),
-            x3=jnp.array([z0]),
-            dx=dx, dy=dy, dz=dz,
-            dt=dt,
-            xwind=x_wind, ywind=y_wind, zwind=z_wind,
-        )
-
-        # ghost-celled arrays: (Nx+2, Ny+2, Nz+2)
-        rho = jnp.zeros((Nx+2, Ny+2, Nz+2))
-
-        species.update_position()
-        # move particles to new position
-        prev_rho = _compute_rho_flat([species], rho, world, constants)
-        # compute rho
-        species.update_position()
-        rho = _compute_rho_flat([species], rho, world, constants)
-        # compute rho again
-
-        # compute drhodt on interior
-        drhodt = (rho[1:-1, 1:-1, 1:-1] - prev_rho[1:-1, 1:-1, 1:-1]) / dt
-        # calculate backward difference for drhodt
-
-        Jx = jnp.zeros((Nx+2, Ny+2, Nz+2))
-        Jy = jnp.zeros((Nx+2, Ny+2, Nz+2))
-        Jz = jnp.zeros((Nx+2, Ny+2, Nz+2))
-        J = (Jx, Jy, Jz)
-        J = Esirkepov_current([species], J, constants, world)
-        # compute J using Esirkepov method
-
-        # update ghost cells on J for periodic divergence computation
-        Jx_gc = update_ghost_cells(J[0], 0, 0, 0)
-
-        # backward difference for divergence in 1D on interior
-        # uses ghost cell neighbor for the left boundary
-        dJxdx = ( Jx_gc[1:-1, 1:-1, 1:-1] - Jx_gc[:-2, 1:-1, 1:-1] ) / dx
-
-        continuity = drhodt + dJxdx
-        # rho lives on cell centers and J lives on vertices
-        # due to this, we need to sum over the means of the values
-        # to get a global measure of the continuity violation
-
-
-        self.assertLess(jnp.mean(continuity), 0.0004)
-
-
 
 if __name__ == '__main__':
     unittest.main()

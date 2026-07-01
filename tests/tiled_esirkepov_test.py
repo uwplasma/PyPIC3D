@@ -138,22 +138,17 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
             2 if world["Nz"] > 1 else 1,
         )
 
-    def _assert_tiled_current_matches_reference(self, world, x_old, u, tile_shape=None):
-        constants = {"C": 1.0, "eps": 1.0, "alpha": 1.0}
-        if tile_shape is None:
-            tile_shape = self._tile_shape_for_world(world)
+    def _one_tile_shape_for_world(self, world):
+        return (int(world["Nx"]), int(world["Ny"]), int(world["Nz"]))
+
+    def _assembled_esirkepov_current(self, world, old_species, constants, tile_shape):
         simulation_parameters = {
             "particle_tile_nx": tile_shape[0],
             "particle_tile_ny": tile_shape[1],
             "particle_tile_nz": tile_shape[2],
         }
         g = int(world["guard_cells"])
-
-        old_species = self._species_from_arrays(world, x_old, u)
-        new_species = self._species_from_arrays(world, x_old + u * world["dt"], u)
         tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
-
-        J_reference = Esirkepov_current([new_species], self._empty_J(world), constants, world)
         J_tiles = Esirkepov_current(
             tiled_particles,
             species_config,
@@ -164,6 +159,22 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
             g=g,
         )
         J_from_tiles = assemble_tiled_vector_field(J_tiles, world, tile_shape, num_guard_cells=g)
+
+        return J_tiles, J_from_tiles
+
+    def _assert_tiled_current_matches_reference(self, world, x_old, u, tile_shape=None):
+        constants = {"C": 1.0, "eps": 1.0, "alpha": 1.0}
+        if tile_shape is None:
+            tile_shape = self._tile_shape_for_world(world)
+
+        old_species = self._species_from_arrays(world, x_old, u)
+        J_tiles, J_from_tiles = self._assembled_esirkepov_current(world, old_species, constants, tile_shape)
+        _, J_reference = self._assembled_esirkepov_current(
+            world,
+            old_species,
+            constants,
+            self._one_tile_shape_for_world(world),
+        )
 
         for reference_component, tiled_component in zip(J_reference, J_from_tiles):
             self.assertTrue(
@@ -318,11 +329,8 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         }
         x_old = jnp.array([-1.10, -0.10, 1.05])
         old_species = self._species(world, x_old)
-        x_new = x_old + old_species.v1 * world["dt"]
-        new_species = self._species(world, x_new)
 
         tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
-        J_reference = Esirkepov_current([new_species], self._empty_J(world), constants, world)
         g = int(world["guard_cells"])
         J_tiles = Esirkepov_current(
             tiled_particles,
@@ -334,6 +342,12 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
             g=g,
         )
         J_from_tiles = assemble_tiled_vector_field(J_tiles, world, tile_shape, num_guard_cells=g)
+        _, J_reference = self._assembled_esirkepov_current(
+            world,
+            old_species,
+            constants,
+            self._one_tile_shape_for_world(world),
+        )
 
         for reference_component, tiled_component in zip(J_reference, J_from_tiles):
             self.assertTrue(
@@ -353,11 +367,8 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         }
         x_old = jnp.array([-1.10, -0.10, 1.05])
         old_species = self._species(world, x_old)
-        x_new = x_old + old_species.v1 * world["dt"]
-        new_species = self._species(world, x_new)
 
         tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
-        J_reference = Esirkepov_current([new_species], self._empty_J(world), constants, world)
         J_tiles = Esirkepov_current(
             tiled_particles,
             species_config,
@@ -372,6 +383,12 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
             world,
             world["tile_shape"],
             num_guard_cells=int(world["guard_cells"]),
+        )
+        _, J_reference = self._assembled_esirkepov_current(
+            world,
+            old_species,
+            constants,
+            self._one_tile_shape_for_world(world),
         )
 
         for tile_component in J_tiles:
@@ -795,12 +812,12 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
                 jnp.column_stack((jnp.asarray(x_initial), jnp.zeros(4), jnp.zeros(4))),
                 jnp.column_stack((jnp.asarray(vx_initial), jnp.zeros(4), jnp.zeros(4))),
             )
-            new_species = self._species_from_arrays(
+            _, reference_J = self._assembled_esirkepov_current(
                 world,
-                jnp.column_stack((jnp.asarray(x_initial + vx_initial * world["dt"]), jnp.zeros(4), jnp.zeros(4))),
-                jnp.column_stack((jnp.asarray(vx_initial), jnp.zeros(4), jnp.zeros(4))),
+                old_species,
+                constants,
+                self._one_tile_shape_for_world(world),
             )
-            reference_J = Esirkepov_current([new_species], self._empty_J(world), constants, world)
             tiled_J = assemble_tiled_vector_field(
                 fields[2],
                 world,

@@ -4,6 +4,7 @@ import unittest
 import jax.numpy as jnp
 
 from PyPIC3D import evolve
+from PyPIC3D.deposition import J_from_rhov
 from PyPIC3D.solvers import electrostatic_yee
 from PyPIC3D.solvers import yee_tiled
 from PyPIC3D.utils import build_yee_grid
@@ -97,6 +98,10 @@ class TestTiledRefactorContracts(unittest.TestCase):
         source = inspect.getsource(electrostatic_yee.calculate_tiled_electrostatic_fields)
         self.assertIn("assemble_tiled_scalar_field", source)
         self.assertIn("tile_scalar_field", source)
+
+    def test_flat_current_and_electrodynamic_references_are_removed(self):
+        self.assertFalse(hasattr(J_from_rhov, "_J_from_rhov_flat"))
+        self.assertFalse(hasattr(evolve, "_time_loop_electrodynamic_global_reference"))
 
 
 if __name__ == "__main__":
