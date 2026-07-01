@@ -188,14 +188,9 @@ def _compact_tile_candidates(
     return new_x, new_u, new_active, overflow
 
 
-def refresh_tiled_particle_tiles(tiled_particles, world, tile_shape):
+def _bounded_state_and_tile_offsets(tiled_particles, world, tile_shape):
     """
-    Move active particles into their owning tiles while preserving static shape.
-
-    The refresh assumes particles move by at most one cell in a timestep, so each
-    particle either stays in its current tile or moves to an adjacent tile.
-    Particles that do not fit in the destination tile capacity are dropped from
-    the returned active mask and reported through the overflow flag.
+    Apply physical particle boundaries and identify the adjacent tile offset.
     """
 
     ntx, nty, ntz, n_species, n_slots = tiled_particles.active.shape
@@ -251,6 +246,22 @@ def refresh_tiled_particle_tiles(tiled_particles, world, tile_shape):
     offset_x = _adjacent_tile_offset(dest_tx, tx, ntx)
     offset_y = _adjacent_tile_offset(dest_ty, ty, nty)
     offset_z = _adjacent_tile_offset(dest_tz, tz, ntz)
+
+    return bounded_x, bounded_u, bounded_active, offset_x, offset_y, offset_z
+
+
+def _refresh_tiled_particle_tiles_compacting(tiled_particles, world, tile_shape):
+    """
+    Move active particles into owning tiles by compacting all neighbor streams.
+    """
+
+    bounded_x, bounded_u, bounded_active, offset_x, offset_y, offset_z = _bounded_state_and_tile_offsets(
+        tiled_particles,
+        world,
+        tile_shape,
+    )
+
+    ntx, nty, ntz, n_species, n_slots = bounded_active.shape
     repack_mask = _tiles_need_repack(offset_x, offset_y, offset_z, bounded_active)
 
     x_offsets = _movement_offsets(ntx)
@@ -309,3 +320,156 @@ def refresh_tiled_particle_tiles(tiled_particles, world, tile_shape):
     )
 
     return refreshed, overflow
+
+
+def _fill_incoming_particles(stay_x, stay_u, stay_active, incoming_x, incoming_u, incoming_active):
+    """
+    Fill inactive destination slots with incoming neighbor particles.
+
+    The slot layout remains fixed.  Tiles without incoming particles keep their
+    stay-particle slots untouched; tiles with incoming particles use the first
+    available inactive slots and report overflow when the incoming stream is
+    larger than the local free capacity.
+    """
+
+    leading_shape = stay_active.shape[:-1]
+    n_slots = stay_active.shape[-1]
+    n_candidates = incoming_active.shape[-1]
+
+    flat_stay_x = stay_x.reshape((-1, n_slots, 3))
+    flat_stay_u = stay_u.reshape((-1, n_slots, 3))
+    flat_stay_active = stay_active.reshape((-1, n_slots))
+    flat_incoming_x = incoming_x.reshape((-1, n_candidates, 3))
+    flat_incoming_u = incoming_u.reshape((-1, n_candidates, 3))
+    flat_incoming_active = incoming_active.reshape((-1, n_candidates))
+
+    slot_ids = jnp.arange(n_slots)
+
+    def fill_one(local_x, local_u, local_active, incoming_x_in, incoming_u_in, incoming_active_in):
+        free = ~local_active
+        free_rank = jnp.cumsum(free.astype(int)) - 1
+        safe_free_rank = jnp.where(free, free_rank, 0)
+        slot_for_rank = jnp.zeros(n_slots, dtype=slot_ids.dtype)
+        slot_for_rank = slot_for_rank.at[safe_free_rank].add(jnp.where(free, slot_ids, 0))
+
+        incoming_rank = jnp.cumsum(incoming_active_in.astype(int)) - 1
+        n_free = jnp.sum(free.astype(int))
+        fits = incoming_active_in & (incoming_rank < n_free)
+        overflow = jnp.any(incoming_active_in & (incoming_rank >= n_free))
+
+        safe_rank = jnp.where(fits, incoming_rank, 0)
+        selected_slots = slot_for_rank[safe_rank]
+        valid = fits.astype(local_x.dtype)
+
+        incoming_count = jnp.zeros(n_slots, dtype=int)
+        local_x = local_x.at[selected_slots].add(valid[:, None] * incoming_x_in)
+        local_u = local_u.at[selected_slots].add(valid[:, None] * incoming_u_in)
+        incoming_count = incoming_count.at[selected_slots].add(fits.astype(int))
+        local_active = local_active | (incoming_count > 0)
+
+        return local_x, local_u, local_active, overflow
+
+    flat_x, flat_u, flat_active, flat_overflow = jax.vmap(fill_one)(
+        flat_stay_x,
+        flat_stay_u,
+        flat_stay_active,
+        flat_incoming_x,
+        flat_incoming_u,
+        flat_incoming_active,
+    )
+
+    new_x = flat_x.reshape(leading_shape + (n_slots, 3))
+    new_u = flat_u.reshape(leading_shape + (n_slots, 3))
+    new_active = flat_active.reshape(leading_shape + (n_slots,))
+    overflow = jnp.any(flat_overflow)
+
+    return new_x, new_u, new_active, overflow
+
+
+def _refresh_tiled_particle_tiles_sparse(tiled_particles, world, tile_shape):
+    """
+    Move active particles into owning tiles using neighbor-only incoming streams.
+    """
+
+    bounded_x, bounded_u, bounded_active, offset_x, offset_y, offset_z = _bounded_state_and_tile_offsets(
+        tiled_particles,
+        world,
+        tile_shape,
+    )
+
+    ntx, nty, ntz, n_species, n_slots = bounded_active.shape
+    moving = bounded_active & ((offset_x != 0) | (offset_y != 0) | (offset_z != 0))
+    stay_active = bounded_active & ~moving
+    stay_x = jnp.where(stay_active[..., None], bounded_x, 0.0)
+    stay_u = jnp.where(stay_active[..., None], bounded_u, 0.0)
+
+    incoming_x = []
+    incoming_u = []
+    incoming_active = []
+
+    for ox in _movement_offsets(ntx):
+        for oy in _movement_offsets(nty):
+            for oz in _movement_offsets(ntz):
+                if ox == 0 and oy == 0 and oz == 0:
+                    continue
+
+                stream_active = (
+                    moving
+                    & (offset_x == ox)
+                    & (offset_y == oy)
+                    & (offset_z == oz)
+                )
+                stream_x = jnp.where(stream_active[..., None], bounded_x, 0.0)
+                stream_u = jnp.where(stream_active[..., None], bounded_u, 0.0)
+
+                stream_x = jnp.roll(stream_x, shift=ox, axis=0)
+                stream_x = jnp.roll(stream_x, shift=oy, axis=1)
+                stream_x = jnp.roll(stream_x, shift=oz, axis=2)
+                stream_u = jnp.roll(stream_u, shift=ox, axis=0)
+                stream_u = jnp.roll(stream_u, shift=oy, axis=1)
+                stream_u = jnp.roll(stream_u, shift=oz, axis=2)
+                stream_active = jnp.roll(stream_active, shift=ox, axis=0)
+                stream_active = jnp.roll(stream_active, shift=oy, axis=1)
+                stream_active = jnp.roll(stream_active, shift=oz, axis=2)
+
+                incoming_x.append(stream_x)
+                incoming_u.append(stream_u)
+                incoming_active.append(stream_active)
+
+    if len(incoming_active) == 0:
+        overflow = jnp.asarray(False)
+        return TiledParticles(x=stay_x, u=stay_u, active=stay_active), overflow
+
+    incoming_x = jnp.concatenate(incoming_x, axis=-2)
+    incoming_u = jnp.concatenate(incoming_u, axis=-2)
+    incoming_active = jnp.concatenate(incoming_active, axis=-1)
+
+    new_x, new_u, new_active, overflow = _fill_incoming_particles(
+        stay_x,
+        stay_u,
+        stay_active,
+        incoming_x,
+        incoming_u,
+        incoming_active,
+    )
+
+    refreshed = TiledParticles(
+        x=new_x,
+        u=new_u,
+        active=new_active,
+    )
+
+    return refreshed, overflow
+
+
+def refresh_tiled_particle_tiles(tiled_particles, world, tile_shape):
+    """
+    Move active particles into their owning tiles while preserving static shape.
+
+    The refresh assumes particles move by at most one cell in a timestep, so each
+    particle either stays in its current tile or moves to an adjacent tile.
+    Particles that do not fit in the destination tile capacity are dropped from
+    the returned active mask and reported through the overflow flag.
+    """
+
+    return _refresh_tiled_particle_tiles_sparse(tiled_particles, world, tile_shape)

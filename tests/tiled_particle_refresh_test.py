@@ -7,6 +7,8 @@ from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
 from PyPIC3D.particles.tiled_particle_refresh import (
     _adjacent_tile_offset,
+    _refresh_tiled_particle_tiles_compacting,
+    _refresh_tiled_particle_tiles_sparse,
     _tiles_need_repack,
     refresh_tiled_particle_tiles,
     update_tiled_particle_positions,
@@ -186,6 +188,43 @@ class TestTiledParticleRefresh(unittest.TestCase):
         self.assertEqual(refreshed.x.shape, tiled_particles.x.shape)
         self.assertTrue(bool(overflow))
         self.assertEqual(int(jnp.sum(refreshed.active)), 2)
+
+    def test_sparse_refresh_matches_compacting_refresh_for_neighbor_exchange(self):
+        world = self._build_world()
+        species = self._species(
+            world,
+            x1=[-1.5, -0.25, 0.25, 1.25],
+            v1=[0.0, 0.0, 0.0, 0.0],
+        )
+        tiled_particles, species_config = to_tiled_particles([species], world, self._simulation_parameters())
+        moved = tiled_particles._replace(
+            x=tiled_particles.x
+            .at[0, 0, 0, 0, 1, 0].set(0.25)
+            .at[1, 0, 0, 0, 1, 0].set(-0.25)
+        )
+
+        compacted, compacted_overflow = _refresh_tiled_particle_tiles_compacting(moved, world, tile_shape=(2, 1, 1))
+        sparse, sparse_overflow = _refresh_tiled_particle_tiles_sparse(moved, world, tile_shape=(2, 1, 1))
+
+        self.assertEqual(sparse.x.shape, moved.x.shape)
+        self.assertEqual(bool(sparse_overflow), bool(compacted_overflow))
+        self.assertEqual(int(jnp.sum(sparse.active)), int(jnp.sum(compacted.active)))
+        compacted_x, compacted_u = self._active_rows(compacted)
+        sparse_x, sparse_u = self._active_rows(sparse)
+        self.assertTrue(jnp.allclose(sparse_x, compacted_x))
+        self.assertTrue(jnp.allclose(sparse_u, compacted_u))
+
+    def test_sparse_refresh_reports_same_overflow_as_compacting_refresh(self):
+        world = self._build_world()
+        species = self._species(world, x1=[-1.5, 0.5, 1.5], v1=[0.0, 0.0, 0.0])
+        tiled_particles, species_config = to_tiled_particles([species], world, self._simulation_parameters())
+        moved = tiled_particles._replace(x=tiled_particles.x.at[0, 0, 0, 0, 0, 0].set(0.25))
+
+        compacted, compacted_overflow = _refresh_tiled_particle_tiles_compacting(moved, world, tile_shape=(2, 1, 1))
+        sparse, sparse_overflow = _refresh_tiled_particle_tiles_sparse(moved, world, tile_shape=(2, 1, 1))
+
+        self.assertEqual(bool(sparse_overflow), bool(compacted_overflow))
+        self.assertEqual(int(jnp.sum(sparse.active)), int(jnp.sum(compacted.active)))
 
 
 if __name__ == "__main__":
