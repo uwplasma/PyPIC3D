@@ -54,12 +54,12 @@ from PyPIC3D.diagnostics.output_adapters import fields_for_output, scalar_field_
 
 
 def _raise_if_tiled_particles_overflowed(fields, simulation_parameters):
-    if simulation_parameters["solver"] != "tiled_yee" or len(fields) < 8:
+    if len(fields) < 8:
         return
 
     overflow = fields[-1]
     if bool(jax.device_get(overflow)):
-        raise RuntimeError("tiled_yee particle tile capacity overflowed during periodic retile")
+        raise RuntimeError("tiled particle tile capacity overflowed during periodic retile")
 
 
 def run_PyPIC3D(config_file):
@@ -75,17 +75,14 @@ def run_PyPIC3D(config_file):
 
     scalar_field_names = ["rho", "mass_density"]
     vector_field_names = ["E", "B", "J"]
-    tiled_run = simulation_parameters["solver"] == "tiled_yee"
-    tile_shape = tuple(int(width) for width in world["tile_shape"]) if tiled_run else None
-    g = int(world["guard_cells"]) if tiled_run else None
+    tiled_run = True
+    tile_shape = tuple(int(width) for width in world["tile_shape"])
+    g = int(world["guard_cells"])
     particle_species_names = simulation_parameters.get("particle_species_names")
-    if tiled_run:
-        jit_loop = jax.jit(
-            loop,
-            static_argnames=('curl_func', 'J_func', 'solver', 'tile_shape', 'g', 'relativistic', 'particle_pusher'),
-        )
-    else:
-        jit_loop = jax.jit(loop, static_argnames=('curl_func', 'J_func', 'solver', 'relativistic', 'particle_pusher'))
+    jit_loop = jax.jit(
+        loop,
+        static_argnames=('curl_func', 'J_func', 'solver', 'tile_shape', 'g', 'relativistic', 'particle_pusher'),
+    )
 
     E, B, J, rho, phi, external_fields, *rest = fields
     # unpack the fields
@@ -194,33 +191,20 @@ def run_PyPIC3D(config_file):
                 fields = (E, B, J, rho, phi, external_fields, *rest)
                 # repack the fields for non-tiled diagnostics that updated rho
 
-        if tiled_run:
-            particles, fields = jit_loop(
-                particles,
-                species_config,
-                fields,
-                world,
-                constants,
-                curl_func,
-                J_func,
-                solver,
-                tile_shape=tile_shape,
-                g=g,
-                relativistic=relativistic,
-                particle_pusher=particle_pusher,
-            )
-        else:
-            particles, fields = jit_loop(
-                particles,
-                fields,
-                world,
-                constants,
-                curl_func,
-                J_func,
-                solver,
-                relativistic=relativistic,
-                particle_pusher=particle_pusher,
-            )
+        particles, fields = jit_loop(
+            particles,
+            species_config,
+            fields,
+            world,
+            constants,
+            curl_func,
+            J_func,
+            solver,
+            tile_shape=tile_shape,
+            g=g,
+            relativistic=relativistic,
+            particle_pusher=particle_pusher,
+        )
         # time loop to update the particles and fields
         _raise_if_tiled_particles_overflowed(fields, simulation_parameters)
         # fixed tile capacity overflow would silently drop particles; stop as

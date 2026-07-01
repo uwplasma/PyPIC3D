@@ -282,7 +282,7 @@ def benchmark_tiled_pic_step(case, J_func, relativistic=True, particle_pusher="b
             case.constants,
             unused_curl,
             J_func,
-            "tiled_yee",
+            "electrodynamic_yee",
             tile_shape=case.tile_shape,
             g=case.g,
             relativistic=relativistic,

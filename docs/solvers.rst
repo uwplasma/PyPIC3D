@@ -14,7 +14,7 @@ Set:
 
 .. code-block:: toml
 
-    electrostatic = true
+    solver = "electrostatic"
 
 Per step, PyPIC3D:
 
@@ -35,7 +35,7 @@ Set:
 
 .. code-block:: toml
 
-    electrostatic = false
+    solver = "electrodynamic_yee"
 
 Per step, PyPIC3D:
 

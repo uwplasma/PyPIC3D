@@ -48,7 +48,7 @@ Main runtime objects:
 Tiled State Contract
 --------------------
 
-The ``tiled_yee`` path uses one shared tile shape for fields and particles.
+The ``electrodynamic_yee`` path uses one shared tile shape for fields and particles.
 The existing tile-size configuration is interpreted as this common
 ``tile_shape = (tile_nx, tile_ny, tile_nz)``; there are not separate field-tile
 and particle-tile dimensions in the current contract.  Each tile width must

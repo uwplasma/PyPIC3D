@@ -25,7 +25,7 @@ class TiledEsirkepovIntegrationTest(unittest.TestCase):
                 "simulation_parameters": {
                     "name": "tiled esirkepov output smoke",
                     "output_dir": tmpdir,
-                    "solver": "tiled_yee",
+                    "solver": "electrodynamic_yee",
                     "Nx": 8,
                     "Ny": 1,
                     "Nz": 1,
@@ -40,7 +40,6 @@ class TiledEsirkepovIntegrationTest(unittest.TestCase):
                     "particle_tile_nz": 1,
                     "current_calculation": "esirkepov",
                     "filter_j": "none",
-                    "fast_backend": "default",
                     "particle_pusher": "boris",
                     "relativistic": False,
                 },

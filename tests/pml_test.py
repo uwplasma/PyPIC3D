@@ -47,12 +47,11 @@ def _base_world(nx=24, ny=1, nz=1):
     return world
 
 
-def _empty_config(tmpdir, solver="fdtd", electrostatic=False, pml=None):
+def _empty_config(tmpdir, solver="electrodynamic_yee", pml=None):
     sim = {
         "name": "pml init test",
         "output_dir": tmpdir,
         "solver": solver,
-        "electrostatic": electrostatic,
         "Nx": 8,
         "Ny": 1,
         "Nz": 1,
@@ -61,7 +60,6 @@ def _empty_config(tmpdir, solver="fdtd", electrostatic=False, pml=None):
         "z_wind": 1.0,
         "Nt": 1,
         "dt": 1e-10,
-        "fast_backend": "default",
     }
     config = {"simulation_parameters": sim, "plotting": {"plotting": False}}
     if pml is not None:
@@ -198,14 +196,14 @@ class TestPMLInitialization(unittest.TestCase):
                 )
             )
 
-    def test_initialize_simulation_rejects_pml_for_non_fdtd_solvers(self):
+    def test_initialize_simulation_rejects_pml_for_electrostatic_solver(self):
         pml = [{"wall": "+x", "thickness": 2, "sigma_max": 1.0}]
 
         with tempfile.TemporaryDirectory() as tmpdir:
             with self.assertRaisesRegex(ValueError, "PML is only supported"):
-                initialize_simulation(_empty_config(tmpdir, electrostatic=True, pml=pml))
+                initialize_simulation(_empty_config(tmpdir, solver="electrostatic", pml=pml))
 
-    def test_initialize_simulation_appends_pml_state_for_fdtd(self):
+    def test_initialize_simulation_appends_pml_state_for_electrodynamic_yee(self):
         pml = [{"wall": "+x", "thickness": 2, "sigma_max": 1.0}]
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -221,11 +219,11 @@ class TestPMLInitialization(unittest.TestCase):
         self.assertFalse(pml_y)
         self.assertFalse(pml_z)
 
-    def test_initialize_simulation_uses_tiled_pml_state_for_tiled_yee(self):
+    def test_initialize_simulation_uses_tiled_pml_state_for_electrodynamic_yee(self):
         pml = [{"wall": "+x", "thickness": 2, "sigma_max": 1.0}]
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            config = _empty_config(tmpdir, solver="tiled_yee", pml=pml)
+            config = _empty_config(tmpdir, solver="electrodynamic_yee", pml=pml)
             config["simulation_parameters"].update(
                 {
                     "particle_tile_nx": 2,
@@ -248,7 +246,7 @@ class TestPMLInitialization(unittest.TestCase):
         self.assertEqual(int(world["guard_cells"]), 2)
         self.assertEqual(tiled_profiles[0].shape, (4, 1, 1, 6, 5, 5))
 
-    def test_initialize_simulation_uses_none_pml_state_without_pml_for_fdtd(self):
+    def test_initialize_simulation_uses_none_pml_state_without_pml_for_electrodynamic_yee(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             result = initialize_simulation(_empty_config(tmpdir))
 

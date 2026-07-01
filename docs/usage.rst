@@ -33,8 +33,7 @@ Minimal Working Example
 
     [simulation_parameters]
     name = "minimal"
-    solver = "fdtd"
-    electrostatic = false
+    solver = "electrodynamic_yee"
     relativistic = true
     current_calculation = "j_from_rhov"   # j_from_rhov or esirkepov
     filter_j = "bilinear"                 # bilinear, digital, none

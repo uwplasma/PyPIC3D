@@ -35,10 +35,6 @@ from PyPIC3D.diagnostics.openPMD import (
     write_openpmd_initial_particles, write_openpmd_initial_fields
 )
 
-from PyPIC3D.particles.flat_particles import (
-    to_flat_particles, check_flat_compat
-)
-
 from PyPIC3D.particles.tiled_particle_initialization import (
     to_tiled_particles
 )
@@ -51,10 +47,6 @@ from PyPIC3D.solvers.yee_tiled import (
 )
 
 
-from PyPIC3D.evolve import (
-    time_loop_electrodynamic, time_loop_electrostatic
-)
-
 from PyPIC3D.electrodynamic_tiled import (
     time_loop_electrodynamic_tiled
 )
@@ -65,11 +57,7 @@ from PyPIC3D.electrostatic_tiled import (
 
 from PyPIC3D.pusher.particle_push import validate_particle_pusher
 
-from PyPIC3D.deposition.Esirkepov import Esirkepov_current
-from PyPIC3D.deposition.J_from_rhov import J_from_rhov
 from PyPIC3D.deposition.current_methods import (
-    CURRENT_ESIRKEPOV,
-    CURRENT_J_FROM_RHOV,
     encode_current_calculation,
 )
 from PyPIC3D.deposition.direct_deposition_tiled import direct_J_from_tiled_particles
@@ -78,7 +66,6 @@ from PyPIC3D.deposition.esirkepov_tiled import tiled_esirkepov_current
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 from PyPIC3D.boundary_conditions.PML import (
-    initialize_pml_state,
     initialize_tiled_pml_state,
     load_pml_from_toml,
     update_ghost_cells_for_pml,
@@ -117,9 +104,11 @@ def validate_field_solver(solver):
     Keep the active field-solver names explicit so stale configs do not silently
     fall through to a different numerical update.
     """
-    supported_solvers = ("fdtd", "tiled_yee")
+    supported_solvers = ("electrodynamic_yee", "electrostatic")
     if solver not in supported_solvers:
-        raise ValueError(f"Unsupported solver: {solver}. Use 'fdtd' or 'tiled_yee'.")
+        raise ValueError(
+            f"Unsupported solver: {solver}. Use 'electrodynamic_yee' or 'electrostatic'."
+        )
 
 
 def _tile_shape_from_parameters(simulation_parameters):
@@ -148,11 +137,11 @@ def _validate_tiled_yee_configuration(simulation_parameters, electrostatic, pml_
     """
 
     if simulation_parameters["current_calculation"] not in ("j_from_rhov", "esirkepov"):
-        raise ValueError("tiled_yee currently supports current_calculation='j_from_rhov' or 'esirkepov'")
+        raise ValueError("Yee runtime currently supports current_calculation='j_from_rhov' or 'esirkepov'")
     if simulation_parameters["particle_pusher"] not in ("boris", "higuera_cary"):
-        raise ValueError("tiled_yee currently supports only particle_pusher='boris' or 'higuera_cary'")
+        raise ValueError("Yee runtime currently supports only particle_pusher='boris' or 'higuera_cary'")
     if simulation_parameters["filter_j"] not in ("none", "digital", "bilinear"):
-        raise ValueError("tiled_yee currently supports only filter_j='none', filter_j='digital', or filter_j='bilinear'")
+        raise ValueError("Yee runtime currently supports only filter_j='none', filter_j='digital', or 'bilinear'")
     tile_shape = _tile_shape_from_parameters(simulation_parameters)
     grid_shape = (
         int(simulation_parameters["Nx"]),
@@ -161,7 +150,7 @@ def _validate_tiled_yee_configuration(simulation_parameters, electrostatic, pml_
     )
     for cells, tile_width in zip(grid_shape, tile_shape):
         if cells % tile_width != 0:
-            raise ValueError("tiled_yee requires the shared tile shape to divide Nx/Ny/Nz exactly")
+            raise ValueError("Yee runtime requires the shared tile shape to divide Nx/Ny/Nz exactly")
 
 
 def default_parameters():
@@ -198,8 +187,7 @@ def default_parameters():
     simulation_parameters = {
         "name": "Default Simulation",
         "output_dir": os.getcwd(),
-        "solver": "fdtd",  # solver: fdtd or tiled_yee
-        "fast_backend": "flat",  # flat | default (flat when compatible, else fallback)
+        "solver": "electrodynamic_yee",  # solver: electrodynamic_yee or electrostatic
         "particle_x_bc": "periodic",  # particle x boundary conditions: periodic, absorbing, reflecting
         "particle_y_bc": "periodic",  # particle y boundary conditions: periodic, absorbing, reflecting
         "particle_z_bc": "periodic",  # particle z boundary conditions: periodic, absorbing, reflecting
@@ -216,7 +204,6 @@ def default_parameters():
         "t_wind": 1e-12,  # size of the temporal window in seconds
         "dt": None,  # time step in seconds
         "Nt": None,  # number of time steps
-        "electrostatic": False,  # boolean for electrostatic simulation
         "relativistic": True,  # boolean for relativistic simulation
         "particle_pusher": "boris",  # particle pusher: boris, higuera_cary
         "benchmark": False, # boolean for using the profiler
@@ -278,8 +265,8 @@ def initialize_simulation(toml_file):
             plotting_parameters (dict): Dictionary containing parameters for plotting.
             plasma_parameters (dict): Dictionary containing plasma parameters.
             M (jax.numpy.ndarray or None): Preconditioner matrix, if neural network preconditioning is used.
-            solver (str): Solver type, either "fdtd" or "tiled_yee".
-            electrostatic (bool): Flag indicating if the simulation is electrostatic.
+            solver (str): Solver type, either "electrodynamic_yee" or "electrostatic".
+            electrostatic (bool): Derived flag indicating if the simulation is electrostatic.
             verbose (bool): Flag indicating if verbose output is enabled.
             GPUs (int): Number of GPUs to use.
             start (float): Start time of the simulation initialization.
@@ -302,15 +289,16 @@ def initialize_simulation(toml_file):
     x_wind, y_wind, z_wind = simulation_parameters['x_wind'], simulation_parameters['y_wind'], simulation_parameters['z_wind']
     Nx, Ny, Nz = simulation_parameters['Nx'], simulation_parameters['Ny'], simulation_parameters['Nz']
     t_wind = simulation_parameters['t_wind']
-    electrostatic = simulation_parameters['electrostatic']
     solver = simulation_parameters['solver']
+    if "electrostatic" in simulation_parameters:
+        raise ValueError("Use solver='electrostatic' instead of the deprecated electrostatic flag.")
     validate_field_solver(solver)
+    electrostatic = solver == "electrostatic"
     relativistic = simulation_parameters['relativistic']
     particle_pusher = simulation_parameters['particle_pusher']
     validate_particle_pusher(particle_pusher)
     guard_cells = int(simulation_parameters["guard_cells"])
-    if solver == "tiled_yee":
-        guard_cells = max(guard_cells, 2)
+    guard_cells = max(guard_cells, 2)
     _validate_current_filter_contract(simulation_parameters)
     verbose = simulation_parameters['verbose']
     GPUs = simulation_parameters['GPUs']
@@ -378,10 +366,9 @@ def initialize_simulation(toml_file):
     if toml_file is not None:
         raw_pml = toml_file.get("pml", [])
     pml_active = bool(raw_pml)
-    if pml_active and (solver not in ("fdtd", "tiled_yee") or electrostatic):
-        raise ValueError("PML is only supported for the fdtd or tiled_yee electrodynamic solvers")
-    if solver == "tiled_yee":
-        _validate_tiled_yee_configuration(simulation_parameters, electrostatic, pml_active)
+    if pml_active and electrostatic:
+        raise ValueError("PML is only supported for the electrodynamic_yee solver")
+    _validate_tiled_yee_configuration(simulation_parameters, electrostatic, pml_active)
     world["pml"] = load_pml_from_toml(raw_pml, world, constants)
 
     world = convert_to_jax_compatible(world)
@@ -440,26 +427,6 @@ def initialize_simulation(toml_file):
     if plotting_parameters['dump_particles']:
         write_openpmd_initial_particles(particles, world, constants, simulation_parameters['output_dir'])
     # write the initial particles to an openPMD file
-
-
-    fast_backend = simulation_parameters.get("fast_backend", "flat")
-    if fast_backend == "flat" and solver == "tiled_yee":
-        print("fast_backend='flat' not used for tiled_yee; using tiled particle storage")
-        simulation_parameters["fast_backend"] = "tiled"
-    elif fast_backend == "flat":
-        if electrostatic:
-            print("fast_backend='flat' not supported for electrostatic; falling back to default")
-            simulation_parameters["fast_backend"] = "default"
-        elif not check_flat_compat(particles):
-            print("fast_backend='flat' incompatible with species layout; falling back to default")
-            simulation_parameters["fast_backend"] = "default"
-        else:
-            print("Using flat particle backend for simulation")
-            particles = to_flat_particles(particles)
-            simulation_parameters["fast_backend"] = "flat"
-    # check if we can use the flat particle backend for faster performance, and convert to flat particles if possible
-
-
 
     E, B, J, phi, rho = initialize_fields(Nx, Ny, Nz)
     # initialize the electric and magnetic fields
@@ -522,85 +489,66 @@ def initialize_simulation(toml_file):
 
     if electrostatic:
         print("Using electrostatic solver")
-        if solver == "tiled_yee":
-            evolve_loop = time_loop_electrostatic_tiled
-        else:
-            evolve_loop = time_loop_electrostatic
-
+        evolve_loop = time_loop_electrostatic_tiled
     else:
-        print(f"Using electrodynamic solver with: {solver}")
-        if solver == "tiled_yee":
-            evolve_loop = time_loop_electrodynamic_tiled
-        else:
-            evolve_loop = time_loop_electrodynamic
+        print("Using electrodynamic Yee solver")
+        evolve_loop = time_loop_electrodynamic_tiled
     # set the evolve loop function based on the electrostatic flag
 
     if simulation_parameters['current_calculation'] == "esirkepov":
         print("Using Esirkepov current calculation method")
-        if solver == "tiled_yee":
-            J_func = tiled_esirkepov_current
-        else:
-            J_func = Esirkepov_current
+        J_func = tiled_esirkepov_current
     elif simulation_parameters['current_calculation'] == "j_from_rhov":
         print(f"Using J from rhov current calculation method with filter: {simulation_parameters['filter_j']}")
-        if solver == "tiled_yee":
-            J_func = functools.partial(direct_J_from_tiled_particles, filter=simulation_parameters['filter_j'])
-        else:
-            J_func = functools.partial(J_from_rhov, filter=simulation_parameters['filter_j'])
+        J_func = functools.partial(direct_J_from_tiled_particles, filter=simulation_parameters['filter_j'])
 
 
     species_config = None
-    if solver == "tiled_yee":
-        tile_shape = _tile_shape_from_parameters(simulation_parameters)
-        world["tile_shape"] = tile_shape
-        guard_cells = int(world["guard_cells"])
-        world["grids"]["tiled_center_grid"] = tile_grid_axes(
-            world["grids"]["center"],
-            world,
-            tile_shape,
-            num_guard_cells=guard_cells,
-        )
-        world["grids"]["tiled_vertex_grid"] = tile_grid_axes(
-            world["grids"]["vertex"],
-            world,
-            tile_shape,
-            num_guard_cells=guard_cells,
-        )
-        particles, species_config = to_tiled_particles(particles, world, simulation_parameters)
-        E = tile_vector_field(E, world, tile_shape, num_guard_cells=guard_cells)
-        B = tile_vector_field(B, world, tile_shape, num_guard_cells=guard_cells)
-        if simulation_parameters["current_calculation"] == "esirkepov":
-            J = empty_tiled_vector_field(world, tile_shape, num_guard_cells=guard_cells, dtype=E[0].dtype)
-            J_func = tiled_esirkepov_current
-        else:
-            J = tile_vector_field(J, world, tile_shape, num_guard_cells=guard_cells)
-            J_func = functools.partial(direct_J_from_tiled_particles, filter=simulation_parameters['filter_j'])
-        external_E, external_B = external_fields
-        external_fields = (
-            tile_vector_field(external_E, world, tile_shape, num_guard_cells=guard_cells),
-            tile_vector_field(external_B, world, tile_shape, num_guard_cells=guard_cells),
-        )
-        simulation_parameters["fast_backend"] = "tiled"
-        simulation_parameters["tile_shape"] = tile_shape
-        print(f"Using tiled Yee storage with tile shape: {tile_shape}")
+    tile_shape = _tile_shape_from_parameters(simulation_parameters)
+    world["tile_shape"] = tile_shape
+    guard_cells = int(world["guard_cells"])
+    world["grids"]["tiled_center_grid"] = tile_grid_axes(
+        world["grids"]["center"],
+        world,
+        tile_shape,
+        num_guard_cells=guard_cells,
+    )
+    world["grids"]["tiled_vertex_grid"] = tile_grid_axes(
+        world["grids"]["vertex"],
+        world,
+        tile_shape,
+        num_guard_cells=guard_cells,
+    )
+    particles, species_config = to_tiled_particles(particles, world, simulation_parameters)
+    E = tile_vector_field(E, world, tile_shape, num_guard_cells=guard_cells)
+    B = tile_vector_field(B, world, tile_shape, num_guard_cells=guard_cells)
+    if simulation_parameters["current_calculation"] == "esirkepov":
+        J = empty_tiled_vector_field(world, tile_shape, num_guard_cells=guard_cells, dtype=E[0].dtype)
+        J_func = tiled_esirkepov_current
+    else:
+        J = tile_vector_field(J, world, tile_shape, num_guard_cells=guard_cells)
+        J_func = functools.partial(direct_J_from_tiled_particles, filter=simulation_parameters['filter_j'])
+    external_E, external_B = external_fields
+    external_fields = (
+        tile_vector_field(external_E, world, tile_shape, num_guard_cells=guard_cells),
+        tile_vector_field(external_B, world, tile_shape, num_guard_cells=guard_cells),
+    )
+    simulation_parameters["tile_shape"] = tile_shape
+    print(f"Using tiled Yee storage with tile shape: {tile_shape}")
 
     if electrostatic:
-        if solver == "tiled_yee":
-            rho = tile_scalar_field(rho, world, tile_shape, num_guard_cells=guard_cells)
-            phi = tile_scalar_field(phi, world, tile_shape, num_guard_cells=guard_cells)
+        rho = tile_scalar_field(rho, world, tile_shape, num_guard_cells=guard_cells)
+        phi = tile_scalar_field(phi, world, tile_shape, num_guard_cells=guard_cells)
         fields = (E, B, J, rho, phi, external_fields)
         # define the fields tuple for the electrostatic solver
     else:
         pml_state = None
-        # electrodynamic FDTD always carries the PML state slot; None means
+        # electrodynamic Yee always carries the PML state slot; None means
         # ordinary, unstretched Yee derivatives.
-        if solver == "tiled_yee":
-            if pml_active:
-                pml_state = initialize_tiled_pml_state(world, tile_shape)
-        elif pml_active:
-            pml_state = initialize_pml_state(world)
+        if pml_active:
+            pml_state = initialize_tiled_pml_state(world, tile_shape)
         fields = (E, B, J, rho, phi, external_fields, pml_state)
-        # define the fields tuple for the electrodynamic FDTD solver
+        # define the fields tuple for the electrodynamic Yee solver
 
     if plotting_parameters['dump_fields']:
         write_openpmd_initial_fields(fields, world, simulation_parameters['output_dir'], filename="initial_fields.h5")

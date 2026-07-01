@@ -137,7 +137,9 @@ class TestTiledFluidQuantities(unittest.TestCase):
             tile_shape=world["tile_shape"],
             g=1,
         )
-        mass_from_tiles = assemble_tiled_scalar_field(mass_tiles, world, world["tile_shape"])
+        mass_from_tiles = assemble_tiled_scalar_field(
+            mass_tiles, world, world["tile_shape"], num_guard_cells=1
+        )
 
         self.assertTrue(
             jnp.allclose(
@@ -148,10 +150,10 @@ class TestTiledFluidQuantities(unittest.TestCase):
             )
         )
 
-    def test_tiled_scalar_vtk_path_no_longer_rejects_tiled_yee(self):
+    def test_tiled_scalar_vtk_path_no_longer_rejects_electrodynamic_yee(self):
         run_source = inspect.getsource(pypic_main.run_PyPIC3D)
 
-        self.assertNotIn("plot_vtk_scalars is not supported for tiled_yee", run_source)
+        self.assertNotIn("plot_vtk_scalars is not supported for electrodynamic_yee", run_source)
 
 
 if __name__ == "__main__":

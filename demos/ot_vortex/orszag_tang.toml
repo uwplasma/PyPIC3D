@@ -11,7 +11,6 @@ x_wind = 1
 y_wind = 1
 z_wind = 1
 verbose = false
-electrostatic = false
 cfl = 0.4
 shape_factor = 1
 
