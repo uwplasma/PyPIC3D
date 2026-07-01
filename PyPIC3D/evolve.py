@@ -13,9 +13,7 @@ from PyPIC3D.particles.tiled_particle_refresh import (
     refresh_tiled_particle_tiles,
     update_tiled_particle_positions,
 )
-from PyPIC3D.pusher.particle_push import particle_push
 from PyPIC3D.pusher.tiled_pusher import tiled_particle_push
-from PyPIC3D.solvers.electrostatic_yee import calculate_electrostatic_fields
 from PyPIC3D.solvers.electrostatic_yee import calculate_tiled_electrostatic_fields
 from PyPIC3D.solvers.yee_tiled import update_tiled_B, update_tiled_E
 from PyPIC3D.utils import add_external_fields
@@ -231,46 +229,4 @@ def time_loop_electrostatic(
     fields = (E_tiles, B_tiles, J_tiles, rho_tiles, phi_tiles, external_fields, pml_state, overflow)
     # pack the tiled field state
 
-    return particles, fields
-
-
-@partial(jit, static_argnames=("curl_func", "J_func", "solver", "relativistic", "particle_pusher"))
-def _time_loop_electrostatic_global_reference(
-    particles,
-    fields,
-    world,
-    constants,
-    curl_func,
-    J_func,
-    solver,
-    relativistic=True,
-    particle_pusher="boris",
-):
-    """
-    Old global electrostatic loop retained as a reference path for tests.
-    """
-
-    E, B, J, rho, phi, external_fields = fields
-    center_grid = world["grids"]["center"]
-    vertex_grid = world["grids"]["vertex"]
-    push_E, push_B = add_external_fields(E, B, external_fields)
-
-    for i in range(len(particles)):
-        particles[i] = particle_push(
-            particles[i],
-            push_E,
-            push_B,
-            center_grid,
-            vertex_grid,
-            world,
-            constants,
-            relativistic=relativistic,
-            particle_pusher=particle_pusher,
-        )
-        particles[i].update_position()
-        particles[i].boundary_conditions(world)
-
-    E, phi, rho = calculate_electrostatic_fields(world, particles, constants, rho, phi, solver, "periodic")
-
-    fields = (E, B, J, rho, phi, external_fields)
     return particles, fields

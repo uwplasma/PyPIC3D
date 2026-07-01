@@ -11,7 +11,6 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
 from PyPIC3D.deposition.rho import _compute_rho_flat
 from PyPIC3D.deposition.rho_tiled import compute_tiled_rho_from_tiled_particles
 from PyPIC3D.evolve import time_loop_electrostatic
-from PyPIC3D.evolve import _time_loop_electrostatic_global_reference
 from PyPIC3D.initialization import initialize_simulation
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
@@ -63,6 +62,16 @@ class TestTiledElectrostatic(unittest.TestCase):
             "particle_tile_ny": 1,
             "particle_tile_nz": 1,
         }
+
+    def _simulation_parameters_for_tile_shape(self, tile_shape):
+        return {
+            "particle_tile_nx": tile_shape[0],
+            "particle_tile_ny": tile_shape[1],
+            "particle_tile_nz": tile_shape[2],
+        }
+
+    def _one_tile_shape(self, world):
+        return (int(world["Nx"]), int(world["Ny"]), int(world["Nz"]))
 
     def _empty_fields(self, world):
         shape = (world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2)
@@ -140,6 +149,32 @@ class TestTiledElectrostatic(unittest.TestCase):
             active=jnp.pad(tiled_particles.active, scalar_pad_width),
         )
 
+    def _build_tiled_state(self, particles, fields, world, tile_shape, min_slots=None):
+        tiled_particles, species_config = to_tiled_particles(
+            particles,
+            world,
+            self._simulation_parameters_for_tile_shape(tile_shape),
+        )
+        if min_slots is not None:
+            tiled_particles = self._pad_tiled_particle_capacity(tiled_particles, min_slots)
+
+        E, B, J, rho, phi, external_fields = fields
+        g = int(world["guard_cells"])
+        tiled_fields = (
+            tile_vector_field(E, world, tile_shape, num_guard_cells=g),
+            tile_vector_field(B, world, tile_shape, num_guard_cells=g),
+            tile_vector_field(J, world, tile_shape, num_guard_cells=g),
+            tile_scalar_field(rho, world, tile_shape, num_guard_cells=g),
+            tile_scalar_field(phi, world, tile_shape, num_guard_cells=g),
+            (
+                tile_vector_field(external_fields[0], world, tile_shape, num_guard_cells=g),
+                tile_vector_field(external_fields[1], world, tile_shape, num_guard_cells=g),
+            ),
+            None,
+        )
+
+        return tiled_particles, species_config, tiled_fields
+
     def _long_two_stream_species(self, world):
         x0 = jnp.linspace(
             -0.5 * world["x_wind"],
@@ -196,39 +231,30 @@ class TestTiledElectrostatic(unittest.TestCase):
 
         constants = {"C": 10.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         tile_shape = (4, 1, 1)
+        reference_tile_shape = self._one_tile_shape(world)
         world["tile_shape"] = tile_shape
         Nt = 1500
 
         E, B, J, rho, phi, external_fields = self._empty_fields(world)
-        reference_fields = (E, B, J, rho, phi, external_fields)
-        reference_particles = self._long_two_stream_species(world)
-
-        tiled_particles, species_config = to_tiled_particles(
+        fields = (E, B, J, rho, phi, external_fields)
+        reference_particles, reference_species_config, reference_fields = self._build_tiled_state(
             self._long_two_stream_species(world),
+            fields,
             world,
-            {
-                "particle_tile_nx": tile_shape[0],
-                "particle_tile_ny": tile_shape[1],
-                "particle_tile_nz": tile_shape[2],
-            },
+            reference_tile_shape,
         )
-        tiled_particles = self._pad_tiled_particle_capacity(tiled_particles, min_slots=12)
-        tiled_fields = (
-            tile_vector_field(E, world, tile_shape),
-            tile_vector_field(B, world, tile_shape),
-            tile_vector_field(J, world, tile_shape),
-            tile_scalar_field(rho, world, tile_shape),
-            tile_scalar_field(phi, world, tile_shape),
-            (
-                tile_vector_field(external_fields[0], world, tile_shape),
-                tile_vector_field(external_fields[1], world, tile_shape),
-            ),
-            None,
+        tiled_particles, species_config, tiled_fields = self._build_tiled_state(
+            self._long_two_stream_species(world),
+            fields,
+            world,
+            tile_shape,
+            min_slots=12,
         )
 
-        self._assert_long_tiled_state_matches_standard(
+        self._assert_tiled_state_matches_reference(
             reference_particles,
             reference_fields,
+            reference_tile_shape,
             tiled_particles,
             tiled_fields,
             world,
@@ -236,15 +262,19 @@ class TestTiledElectrostatic(unittest.TestCase):
             step=0,
         )
 
-        return reference_particles, reference_fields, tiled_particles, tiled_fields, world, constants, tile_shape, Nt
-
-    def _standard_species_rows(self, particles, species_index):
-        species = particles[species_index]
-        active = species.get_active_mask()
-        x = jnp.stack(species.get_forward_position(), axis=1)[active]
-        u = jnp.stack(species.get_velocity(), axis=1)[active]
-        order = jnp.lexsort((u[:, 0], x[:, 2], x[:, 1], x[:, 0]))
-        return x[order], u[order]
+        return (
+            reference_particles,
+            reference_species_config,
+            reference_fields,
+            reference_tile_shape,
+            tiled_particles,
+            species_config,
+            tiled_fields,
+            world,
+            constants,
+            tile_shape,
+            Nt,
+        )
 
     def _tiled_species_rows(self, tiled_particles, species_index):
         active = tiled_particles.active[:, :, :, species_index, :]
@@ -261,10 +291,11 @@ class TestTiledElectrostatic(unittest.TestCase):
                 f"step {step}: {name}{component_name} max abs diff {diff}",
             )
 
-    def _assert_long_tiled_state_matches_standard(
+    def _assert_tiled_state_matches_reference(
         self,
         reference_particles,
         reference_fields,
+        reference_tile_shape,
         tiled_particles,
         tiled_fields,
         world,
@@ -274,8 +305,9 @@ class TestTiledElectrostatic(unittest.TestCase):
         if len(tiled_fields) > 7:
             self.assertFalse(bool(tiled_fields[-1]), f"step {step}: tiled particle capacity overflowed")
 
-        for species_index in range(len(reference_particles)):
-            reference_x, reference_u = self._standard_species_rows(reference_particles, species_index)
+        species_count = reference_particles.active.shape[3]
+        for species_index in range(species_count):
+            reference_x, reference_u = self._tiled_species_rows(reference_particles, species_index)
             tiled_x, tiled_u = self._tiled_species_rows(tiled_particles, species_index)
             self.assertTrue(
                 jnp.allclose(tiled_x, reference_x, rtol=ROUND_OFF_RTOL, atol=ROUND_OFF_ATOL),
@@ -288,38 +320,51 @@ class TestTiledElectrostatic(unittest.TestCase):
 
         reference_E, reference_B, reference_J, reference_rho, reference_phi, *_ = reference_fields
         E_tiles, B_tiles, J_tiles, rho_tiles, phi_tiles, *_ = tiled_fields
+        g = int(world["guard_cells"])
         self._assert_vector_fields_close(
-            reference_E,
-            assemble_tiled_vector_field(E_tiles, world, tile_shape),
+            assemble_tiled_vector_field(reference_E, world, reference_tile_shape, num_guard_cells=g),
+            assemble_tiled_vector_field(E_tiles, world, tile_shape, num_guard_cells=g),
             step,
             "E",
         )
         self._assert_vector_fields_close(
-            reference_B,
-            assemble_tiled_vector_field(B_tiles, world, tile_shape),
+            assemble_tiled_vector_field(reference_B, world, reference_tile_shape, num_guard_cells=g),
+            assemble_tiled_vector_field(B_tiles, world, tile_shape, num_guard_cells=g),
             step,
             "B",
         )
         self._assert_vector_fields_close(
-            reference_J,
-            assemble_tiled_vector_field(J_tiles, world, tile_shape),
+            assemble_tiled_vector_field(reference_J, world, reference_tile_shape, num_guard_cells=g),
+            assemble_tiled_vector_field(J_tiles, world, tile_shape, num_guard_cells=g),
             step,
             "J",
         )
 
-        rho_from_tiles = assemble_tiled_scalar_field(rho_tiles, world, tile_shape)
-        phi_from_tiles = assemble_tiled_scalar_field(phi_tiles, world, tile_shape)
+        reference_rho_from_tiles = assemble_tiled_scalar_field(
+            reference_rho,
+            world,
+            reference_tile_shape,
+            num_guard_cells=g,
+        )
+        reference_phi_from_tiles = assemble_tiled_scalar_field(
+            reference_phi,
+            world,
+            reference_tile_shape,
+            num_guard_cells=g,
+        )
+        rho_from_tiles = assemble_tiled_scalar_field(rho_tiles, world, tile_shape, num_guard_cells=g)
+        phi_from_tiles = assemble_tiled_scalar_field(phi_tiles, world, tile_shape, num_guard_cells=g)
         self.assertTrue(
             jnp.allclose(
                 rho_from_tiles[1:-1, 1:-1, 1:-1],
-                reference_rho[1:-1, 1:-1, 1:-1],
+                reference_rho_from_tiles[1:-1, 1:-1, 1:-1],
                 rtol=ROUND_OFF_RTOL,
                 atol=ROUND_OFF_ATOL,
             ),
-            f"step {step}: rho max abs diff {jnp.max(jnp.abs(rho_from_tiles - reference_rho))}",
+            f"step {step}: rho max abs diff {jnp.max(jnp.abs(rho_from_tiles - reference_rho_from_tiles))}",
         )
         tiled_phi_interior = phi_from_tiles[1:-1, 1:-1, 1:-1]
-        reference_phi_interior = reference_phi[1:-1, 1:-1, 1:-1]
+        reference_phi_interior = reference_phi_from_tiles[1:-1, 1:-1, 1:-1]
         tiled_phi_interior = tiled_phi_interior - jnp.mean(tiled_phi_interior)
         reference_phi_interior = reference_phi_interior - jnp.mean(reference_phi_interior)
         self.assertTrue(
@@ -367,37 +412,40 @@ class TestTiledElectrostatic(unittest.TestCase):
             )
         )
 
-    def test_tiled_electrostatic_step_matches_global_step_after_assembly(self):
+    def test_tiled_electrostatic_step_matches_one_tile_step_after_assembly(self):
         world = self._build_world(shape_factor=1)
         constants = {"C": 10.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         E, B, J, rho, phi, external_fields = self._empty_fields(world)
+        fields = (E, B, J, rho, phi, external_fields)
+        reference_tile_shape = self._one_tile_shape(world)
 
-        reference_particles, reference_fields = _time_loop_electrostatic_global_reference(
+        reference_particles, reference_species_config, reference_fields = self._build_tiled_state(
             self._neutral_species(world),
-            (E, B, J, rho, phi, external_fields),
+            fields,
+            world,
+            reference_tile_shape,
+        )
+        tiled_particles, species_config, tiled_fields = self._build_tiled_state(
+            self._neutral_species(world),
+            fields,
+            world,
+            world["tile_shape"],
+        )
+
+        reference_particles, reference_fields = time_loop_electrostatic(
+            reference_particles,
+            reference_species_config,
+            reference_fields,
             world,
             constants,
             unused_curl,
             J_func=None,
-            solver="fdtd",
+            solver="electrostatic",
+            tile_shape=reference_tile_shape,
+            g=int(world["guard_cells"]),
             relativistic=False,
             particle_pusher="boris",
         )
-
-        tiled_particles, species_config = to_tiled_particles(self._neutral_species(world), world, self._simulation_parameters())
-        tiled_fields = (
-            tile_vector_field(E, world, world["tile_shape"]),
-            tile_vector_field(B, world, world["tile_shape"]),
-            tile_vector_field(J, world, world["tile_shape"]),
-            tile_scalar_field(rho, world, world["tile_shape"]),
-            tile_scalar_field(phi, world, world["tile_shape"]),
-            (
-                tile_vector_field(external_fields[0], world, world["tile_shape"]),
-                tile_vector_field(external_fields[1], world, world["tile_shape"]),
-            ),
-            None,
-        )
-
         tiled_particles, tiled_fields = time_loop_electrostatic(
             tiled_particles,
             species_config,
@@ -406,41 +454,36 @@ class TestTiledElectrostatic(unittest.TestCase):
             constants,
             unused_curl,
             J_func=None,
-            solver="electrodynamic_yee",
+            solver="electrostatic",
             tile_shape=world["tile_shape"],
             g=int(world["guard_cells"]),
             relativistic=False,
             particle_pusher="boris",
         )
 
-        E_tiles, B_tiles, J_tiles, rho_tiles, phi_tiles, *_ = tiled_fields
-        reference_E, reference_B, reference_J, reference_rho, reference_phi, *_ = reference_fields
-
-        for reference, tiled in zip(reference_E, assemble_tiled_vector_field(E_tiles, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))):
-            self.assertTrue(jnp.allclose(tiled, reference, rtol=1.0e-8, atol=1.0e-8))
-        for reference, tiled in zip(reference_B, assemble_tiled_vector_field(B_tiles, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))):
-            self.assertTrue(jnp.allclose(tiled, reference, rtol=1.0e-12, atol=1.0e-12))
-        for reference, tiled in zip(reference_J, assemble_tiled_vector_field(J_tiles, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))):
-            self.assertTrue(jnp.allclose(tiled, reference, rtol=1.0e-12, atol=1.0e-12))
-
-        rho_from_tiles = assemble_tiled_scalar_field(rho_tiles, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))
-        phi_from_tiles = assemble_tiled_scalar_field(phi_tiles, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))
-        self.assertTrue(jnp.allclose(rho_from_tiles[1:-1, 1:-1, 1:-1], reference_rho[1:-1, 1:-1, 1:-1], rtol=1.0e-12, atol=1.0e-12))
-        tiled_phi_interior = phi_from_tiles[1:-1, 1:-1, 1:-1]
-        reference_phi_interior = reference_phi[1:-1, 1:-1, 1:-1]
-        tiled_phi_interior = tiled_phi_interior - jnp.mean(tiled_phi_interior)
-        reference_phi_interior = reference_phi_interior - jnp.mean(reference_phi_interior)
-        self.assertTrue(jnp.allclose(tiled_phi_interior, reference_phi_interior, rtol=1.0e-8, atol=1.0e-8))
+        self._assert_tiled_state_matches_reference(
+            reference_particles,
+            reference_fields,
+            reference_tile_shape,
+            tiled_particles,
+            tiled_fields,
+            world,
+            world["tile_shape"],
+            step=1,
+        )
 
     @unittest.skipUnless(
         os.environ.get("RUN_SLOW_TILED_ELECTROSTATIC") == "1",
         "Set RUN_SLOW_TILED_ELECTROSTATIC=1 to run the 1500-step tiled electrostatic comparison.",
     )
-    def test_long_two_stream_tiled_electrostatic_matches_global_step_every_step(self):
+    def test_long_two_stream_tiled_electrostatic_matches_one_tile_step_every_step(self):
         (
             reference_particles,
+            reference_species_config,
             reference_fields,
+            reference_tile_shape,
             tiled_particles,
+            species_config,
             tiled_fields,
             world,
             constants,
@@ -454,34 +497,39 @@ class TestTiledElectrostatic(unittest.TestCase):
         )
 
         for step in range(1, Nt + 1):
-            reference_particles, reference_fields = _time_loop_electrostatic_global_reference(
+            reference_particles, reference_fields = tiled_loop(
                 reference_particles,
+                reference_species_config,
                 reference_fields,
                 world,
                 constants,
                 unused_curl,
                 J_func=None,
-                solver="fdtd",
+                solver="electrostatic",
+                tile_shape=reference_tile_shape,
+                g=int(world["guard_cells"]),
                 relativistic=False,
                 particle_pusher="boris",
             )
             tiled_particles, tiled_fields = tiled_loop(
                 tiled_particles,
+                species_config,
                 tiled_fields,
                 world,
                 constants,
                 unused_curl,
                 J_func=None,
-                solver="electrodynamic_yee",
+                solver="electrostatic",
                 tile_shape=tile_shape,
                 g=int(world["guard_cells"]),
                 relativistic=False,
                 particle_pusher="boris",
             )
 
-            self._assert_long_tiled_state_matches_standard(
+            self._assert_tiled_state_matches_reference(
                 reference_particles,
                 reference_fields,
+                reference_tile_shape,
                 tiled_particles,
                 tiled_fields,
                 world,

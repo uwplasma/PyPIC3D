@@ -102,6 +102,7 @@ class TestTiledRefactorContracts(unittest.TestCase):
     def test_flat_current_and_electrodynamic_references_are_removed(self):
         self.assertFalse(hasattr(J_from_rhov, "_J_from_rhov_flat"))
         self.assertFalse(hasattr(evolve, "_time_loop_electrodynamic_global_reference"))
+        self.assertFalse(hasattr(evolve, "_time_loop_electrostatic_global_reference"))
 
 
 if __name__ == "__main__":
