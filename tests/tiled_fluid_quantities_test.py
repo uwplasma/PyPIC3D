@@ -10,6 +10,9 @@ from PyPIC3D.diagnostics.fluid_quantities import (
     compute_mass_density,
     compute_pressure_field,
     compute_velocity_field,
+    _compute_mass_density_flat,
+    _compute_pressure_field_flat,
+    _compute_velocity_field_flat,
 )
 from PyPIC3D.deposition.rho_tiled import compute_tiled_mass_density_from_tiled_particles
 from PyPIC3D.particles.species_class import particle_species
@@ -110,7 +113,7 @@ class TestTiledFluidQuantities(unittest.TestCase):
         x = x.at[inactive, 2].set(-0.30)
         tiled_particles = tiled_particles._replace(x=x)
 
-        mass_reference = compute_mass_density(particles, self._empty_scalar(world), world)
+        mass_reference = _compute_mass_density_flat(particles, self._empty_scalar(world), world)
         mass_tiled = compute_mass_density(tiled_particles, self._empty_scalar(world), world, species_config=species_config)
 
         self.assertTrue(
@@ -138,7 +141,7 @@ class TestTiledFluidQuantities(unittest.TestCase):
             num_guard_cells=int(world["guard_cells"]),
         )
 
-        mass_reference = compute_mass_density(particles, self._empty_scalar(world), world)
+        mass_reference = _compute_mass_density_flat(particles, self._empty_scalar(world), world)
         mass_tiles = compute_tiled_mass_density_from_tiled_particles(
             tiled_particles,
             species_config,
@@ -179,7 +182,7 @@ class TestTiledFluidQuantities(unittest.TestCase):
             num_guard_cells=int(world["guard_cells"]),
         )
 
-        mass_reference = compute_mass_density(particles, self._empty_scalar(world), world)
+        mass_reference = _compute_mass_density_flat(particles, self._empty_scalar(world), world)
         mass_tiles = compute_mass_density(tiled_particles, rho_tiles, world, species_config=species_config)
         mass_from_tiles = assemble_tiled_scalar_field(
             mass_tiles,
@@ -214,7 +217,7 @@ class TestTiledFluidQuantities(unittest.TestCase):
             num_guard_cells=int(world["guard_cells"]),
         )
 
-        velocity_reference = compute_velocity_field(particles, self._empty_scalar(world), 0, world)
+        velocity_reference = _compute_velocity_field_flat(particles, self._empty_scalar(world), 0, world)
         velocity_tiles = compute_velocity_field(
             tiled_particles,
             field_tiles,
@@ -254,8 +257,8 @@ class TestTiledFluidQuantities(unittest.TestCase):
             num_guard_cells=int(world["guard_cells"]),
         )
 
-        velocity_reference = compute_velocity_field(particles, self._empty_scalar(world), 0, world)
-        pressure_reference = compute_pressure_field(
+        velocity_reference = _compute_velocity_field_flat(particles, self._empty_scalar(world), 0, world)
+        pressure_reference = _compute_pressure_field_flat(
             particles,
             self._empty_scalar(world),
             velocity_reference,
@@ -292,6 +295,18 @@ class TestTiledFluidQuantities(unittest.TestCase):
                 atol=1.0e-12,
             )
         )
+
+    def test_public_fluid_quantities_reject_flat_particles(self):
+        world = self._build_world(shape_factor=2)
+        particles = self._particles(world)
+        field = self._empty_scalar(world)
+
+        with self.assertRaisesRegex(ValueError, "TiledParticles"):
+            compute_mass_density(particles, field, world)
+        with self.assertRaisesRegex(ValueError, "TiledParticles"):
+            compute_velocity_field(particles, field, 0, world)
+        with self.assertRaisesRegex(ValueError, "TiledParticles"):
+            compute_pressure_field(particles, field, field, 0, world)
 
     def test_tiled_scalar_vtk_path_no_longer_rejects_electrodynamic_yee(self):
         run_source = inspect.getsource(pypic_main.run_PyPIC3D)

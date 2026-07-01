@@ -3,7 +3,7 @@ from jax import jit
 from jax import lax
 from functools import partial
 
-from PyPIC3D.deposition.rho import compute_rho
+from PyPIC3D.deposition.rho import _compute_rho_flat
 from PyPIC3D.deposition.rho_tiled import compute_tiled_rho_from_tiled_particles
 from PyPIC3D.solvers.fdtd import centered_finite_difference_gradient
 from PyPIC3D.utils import digital_filter
@@ -135,7 +135,7 @@ def calculate_electrostatic_fields(world, particles, constants, rho, phi, solver
     bc_y = world['boundary_conditions']['y']
     bc_z = world['boundary_conditions']['z']
 
-    rho = compute_rho(particles, rho, world, constants)
+    rho = _compute_rho_flat(particles, rho, world, constants)
 
     phi = solve_poisson_with_conjugate_gradient(rho, phi, constants, world)
 

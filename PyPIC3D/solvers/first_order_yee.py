@@ -217,8 +217,8 @@ def update_E(E, B, J, world, constants, curl_func, pml_state=None):
 
     Tiled field/current arrays are routed to the tile-local Yee update using
     the explicit ``world['tile_shape']`` and ``world['guard_cells']`` contract.
-    Ordinary global ghost-celled arrays keep the historical first-order Yee
-    update in ``_update_E_global``.
+    Flat global ghost-celled arrays are private reference inputs; tests that
+    need them should call ``_update_E_global`` directly.
     """
 
     if E[0].ndim == 6:
@@ -228,15 +228,15 @@ def update_E(E, B, J, world, constants, curl_func, pml_state=None):
             return update_tiled_E(E, B, J, world, constants, curl_func, tile_shape, g), None
         return update_tiled_E(E, B, J, world, constants, curl_func, tile_shape, g, pml_state)
 
-    return _update_E_global(E, B, J, world, constants, curl_func, pml_state)
+    raise ValueError("Public update_E requires tiled field arrays; use _update_E_global for flat reference tests.")
 
 
 def update_B(E, B, world, constants, curl_func, pml_state=None):
     """
     Update magnetic fields through the public Yee helper.
 
-    Tiled arrays follow the tile-local Yee path and ordinary global arrays
-    follow the original global ghost-cell implementation.
+    Flat global ghost-celled arrays are private reference inputs; tests that
+    need them should call ``_update_B_global`` directly.
     """
 
     if E[0].ndim == 6:
@@ -246,4 +246,4 @@ def update_B(E, B, world, constants, curl_func, pml_state=None):
             return update_tiled_B(E, B, world, constants, curl_func, tile_shape, g), None
         return update_tiled_B(E, B, world, constants, curl_func, tile_shape, g, pml_state)
 
-    return _update_B_global(E, B, world, constants, curl_func, pml_state)
+    raise ValueError("Public update_B requires tiled field arrays; use _update_B_global for flat reference tests.")

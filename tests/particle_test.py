@@ -12,9 +12,9 @@ from PyPIC3D.particles.particle_initialization import (
 
 from PyPIC3D.particles.species_class import particle_species
 
-from PyPIC3D.deposition.J_from_rhov import J_from_rhov
+from PyPIC3D.deposition.J_from_rhov import _J_from_rhov_flat
 from PyPIC3D.deposition.Esirkepov import Esirkepov_current
-from PyPIC3D.deposition.rho import compute_rho
+from PyPIC3D.deposition.rho import _compute_rho_flat
 from PyPIC3D.utils import build_yee_grid
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 
@@ -508,7 +508,7 @@ class TestParticleMethods(unittest.TestCase):
 
         constants = {'C': 3e8, 'alpha' : 1.0}
 
-        num_J = J_from_rhov([species], num_J, constants, world)
+        num_J = _J_from_rhov_flat([species], num_J, constants, world)
 
         # Jan 12, 2025: Suppressing test for now. I have done benchmarks of the two stream and weibel
         # against WarpX and have validated this method
@@ -559,8 +559,8 @@ class TestParticleMethods(unittest.TestCase):
         species.boundary_conditions({"particle_boundary_conditions": {"x": 2, "y": 0, "z": 0}})
 
         constants = {"C": 3e8, "alpha": 1.0}
-        rho = compute_rho([species], jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), world, constants)
-        J = J_from_rhov(
+        rho = _compute_rho_flat([species], jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), world, constants)
+        J = _J_from_rhov_flat(
             [species],
             (
                 jnp.zeros((Nx + 2, Ny + 2, Nz + 2)),
@@ -634,7 +634,7 @@ class TestParticleMethods(unittest.TestCase):
 
         constants = {'C': 3e8, 'alpha' : 1.0}
 
-        num_rho = compute_rho([species], num_rho, world, constants)
+        num_rho = _compute_rho_flat([species], num_rho, world, constants)
         # compute rho
 
         self.assertTrue(jnp.allclose(num_rho, exp_rho))
@@ -682,7 +682,7 @@ class TestParticleMethods(unittest.TestCase):
             zwind=self.z_wind,
         )
 
-        rho = compute_rho([species], jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), world, {"C": 3e8, "alpha": 1.0})
+        rho = _compute_rho_flat([species], jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), world, {"C": 3e8, "alpha": 1.0})
         interior = rho[1:-1, 1:-1, 1:-1]
         cell_charge = interior * dx * dy * dz
 
@@ -733,7 +733,7 @@ class TestParticleMethods(unittest.TestCase):
             zwind=self.z_wind,
         )
 
-        rho = compute_rho([species], jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), world, {"C": 3e8, "alpha": 1.0})
+        rho = _compute_rho_flat([species], jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), world, {"C": 3e8, "alpha": 1.0})
         interior = rho[1:-1, 1:-1, 1:-1] * dx * dy * dz
 
         self.assertAlmostEqual(float(jnp.sum(interior)), 1.0)
@@ -785,7 +785,7 @@ class TestParticleMethods(unittest.TestCase):
             zwind=self.z_wind,
         )
 
-        J = J_from_rhov(
+        J = _J_from_rhov_flat(
             [species],
             (jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), jnp.zeros((Nx + 2, Ny + 2, Nz + 2))),
             {"C": 3e8, "alpha": 1.0},
@@ -843,7 +843,7 @@ class TestParticleMethods(unittest.TestCase):
             zwind=z_wind,
         )
 
-        rho = compute_rho([species], jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), world, {"C": 3e8, "alpha": 1.0})
+        rho = _compute_rho_flat([species], jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), world, {"C": 3e8, "alpha": 1.0})
         interior = rho[1:-1, 1:-1, 1:-1]
 
         self.assertEqual(interior.shape, (Nx, 1, 1))
@@ -891,7 +891,7 @@ class TestParticleMethods(unittest.TestCase):
             zwind=self.z_wind,
         )
 
-        rho = compute_rho([species], jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), world, {"C": 3e8, "alpha": 0.5})
+        rho = _compute_rho_flat([species], jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), world, {"C": 3e8, "alpha": 0.5})
         interior = rho[1:-1, 1:-1, 1:-1]
 
         self.assertAlmostEqual(float(jnp.sum(interior) * dx * dy * dz), 1.0)
@@ -963,10 +963,10 @@ class TestParticleMethods(unittest.TestCase):
 
         species.update_position()
         # move particles to new position
-        prev_rho = compute_rho([species], rho, world, constants)
+        prev_rho = _compute_rho_flat([species], rho, world, constants)
         # compute rho
         species.update_position()
-        rho = compute_rho([species], rho, world, constants)
+        rho = _compute_rho_flat([species], rho, world, constants)
         # compute rho again
 
         # compute drhodt on interior

@@ -8,7 +8,7 @@ import numpy as np
 import toml
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
-from PyPIC3D.deposition.rho import compute_rho
+from PyPIC3D.deposition.rho import _compute_rho_flat
 from PyPIC3D.deposition.rho_tiled import compute_tiled_rho_from_tiled_particles
 from PyPIC3D.electrostatic_tiled import time_loop_electrostatic_tiled
 from PyPIC3D.evolve import _time_loop_electrostatic_global_reference
@@ -346,7 +346,7 @@ class TestTiledElectrostatic(unittest.TestCase):
         _, _, _, rho, _, _ = self._empty_fields(world)
         rho_tiles = tile_scalar_field(rho, world, world["tile_shape"])
 
-        reference_rho = compute_rho([self._species(world)], rho, world, constants)
+        reference_rho = _compute_rho_flat([self._species(world)], rho, world, constants)
         tiled_rho = compute_tiled_rho_from_tiled_particles(
             tiled_particles,
             species_config,

@@ -56,7 +56,7 @@ def J_from_rhov(
             g=int(g),
         )
 
-    return _J_from_rhov_flat(particles, J, constants, world, grid=grid, filter=filter)
+    raise ValueError("Public J_from_rhov requires TiledParticles; use _J_from_rhov_flat for flat reference tests.")
 
 
 @partial(jit, static_argnames=("filter",))

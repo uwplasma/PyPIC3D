@@ -14,7 +14,7 @@ from PyPIC3D.boundary_conditions.PML import (
     update_ghost_cells_for_pml,
 )
 from PyPIC3D.initialization import initialize_fields, initialize_simulation
-from PyPIC3D.solvers.first_order_yee import update_B, update_E
+from PyPIC3D.solvers.first_order_yee import _update_B_global, _update_E_global
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
     empty_tiled_vector_field,
@@ -269,8 +269,8 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         E, B, J, _, _ = initialize_fields(world["Nx"], world["Ny"], world["Nz"])
         B = (B[0], B[1], B[2].at[1:-1, 1:-1, 1:-1].set(1.0))
 
-        E_after, pml_state = update_E(E, B, J, world, constants, lambda *args: None)
-        B_after, pml_state = update_B(E_after, B, world, constants, lambda *args: None, pml_state)
+        E_after, pml_state = _update_E_global(E, B, J, world, constants, lambda *args: None)
+        B_after, pml_state = _update_B_global(E_after, B, world, constants, lambda *args: None, pml_state)
 
         self.assertEqual(len(E_after), 3)
         self.assertEqual(len(B_after), 3)
@@ -301,8 +301,8 @@ class TestPMLFDTDBehavior(unittest.TestCase):
 
         initial_energy = sum(compute_energy([], E, B, world, constants)[:2])
         for _ in range(180):
-            E, pml_state = update_E(E, B, J, world, constants, lambda *args: None, pml_state)
-            B, pml_state = update_B(E, B, world, constants, lambda *args: None, pml_state)
+            E, pml_state = _update_E_global(E, B, J, world, constants, lambda *args: None, pml_state)
+            B, pml_state = _update_B_global(E, B, world, constants, lambda *args: None, pml_state)
 
         final_energy = sum(compute_energy([], E, B, world, constants)[:2])
         self.assertTrue(jnp.isfinite(final_energy))
@@ -343,8 +343,8 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         B = tuple(update_ghost_cells_for_pml(component, world) for component in B)
 
         pml_state = initialize_pml_state(world)
-        E_reference, pml_state = update_E(E, B, J, world, constants, lambda *args: None, pml_state)
-        B_reference, pml_state = update_B(E_reference, B, world, constants, lambda *args: None, pml_state)
+        E_reference, pml_state = _update_E_global(E, B, J, world, constants, lambda *args: None, pml_state)
+        B_reference, pml_state = _update_B_global(E_reference, B, world, constants, lambda *args: None, pml_state)
 
         tiled_pml_state = initialize_tiled_pml_state(world, tile_shape)
         E_tiles, tiled_pml_state = update_tiled_E(

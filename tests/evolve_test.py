@@ -11,7 +11,7 @@ from PyPIC3D.evolve import (
     time_loop_electrodynamic,
     time_loop_electrostatic,
 )
-from PyPIC3D.deposition.rho import compute_rho
+from PyPIC3D.deposition.rho import _compute_rho_flat
 from PyPIC3D.initialization import initialize_fields
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.pusher.particle_push import particle_push
@@ -212,7 +212,7 @@ class TestEvolveExternalFields(unittest.TestCase):
             particle_pusher="boris",
         )
         _, _, _, rho_after, _, _ = fields
-        recomputed_rho = compute_rho(particles, jnp.zeros_like(rho_after), world, constants)
+        recomputed_rho = _compute_rho_flat(particles, jnp.zeros_like(rho_after), world, constants)
 
         self.assertTrue(
             jnp.allclose(

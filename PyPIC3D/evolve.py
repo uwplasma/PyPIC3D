@@ -9,7 +9,7 @@ from PyPIC3D.electrodynamic_tiled import time_loop_electrodynamic_tiled as time_
 from PyPIC3D.electrostatic_tiled import time_loop_electrostatic_tiled as time_loop_electrostatic
 from PyPIC3D.pusher.particle_push import particle_push
 from PyPIC3D.solvers.electrostatic_yee import calculate_electrostatic_fields
-from PyPIC3D.solvers.first_order_yee import update_B, update_E
+from PyPIC3D.solvers.first_order_yee import _update_B_global, _update_E_global
 from PyPIC3D.utils import add_external_fields
 
 
@@ -94,8 +94,8 @@ def _time_loop_electrodynamic_global_reference(
         particles[i].update_position()
 
     J = J_func(particles, J, constants, world)
-    E, pml_state = update_E(E, B, J, world, constants, curl_func, pml_state)
-    B, pml_state = update_B(E, B, world, constants, curl_func, pml_state)
+    E, pml_state = _update_E_global(E, B, J, world, constants, curl_func, pml_state)
+    B, pml_state = _update_B_global(E, B, world, constants, curl_func, pml_state)
 
     for i in range(len(particles)):
         particles[i].boundary_conditions(world)

@@ -47,7 +47,7 @@ def compute_mass_density(particles, rho, world, species_config=None):
             )
         return compute_mass_density_from_tiled_particles(particles, species_config, rho, world)
 
-    return _compute_mass_density_flat(particles, rho, world)
+    raise ValueError("Public compute_mass_density requires TiledParticles; use _compute_mass_density_flat for flat reference tests.")
 
 
 @jit
@@ -130,7 +130,7 @@ def compute_velocity_field(particles, field, direction, world, species_config=No
             )
         return compute_velocity_field_from_tiled_particles(particles, species_config, field, int(direction), world)
 
-    return _compute_velocity_field_flat(particles, field, direction, world)
+    raise ValueError("Public compute_velocity_field requires TiledParticles; use _compute_velocity_field_flat for flat reference tests.")
 
 
 @partial(jit, static_argnames=("direction",))
@@ -241,7 +241,7 @@ def compute_pressure_field(particles, field, velocity_field, direction, world, s
             world,
         )
 
-    return _compute_pressure_field_flat(particles, field, velocity_field, direction, world)
+    raise ValueError("Public compute_pressure_field requires TiledParticles; use _compute_pressure_field_flat for flat reference tests.")
 
 
 @partial(jit, static_argnames=("direction",))

@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
-from PyPIC3D.deposition.rho import compute_rho
+from PyPIC3D.deposition.rho import compute_rho, _compute_rho_flat
 from PyPIC3D.deposition.rho_tiled import compute_rho_from_tiled_particles, compute_tiled_rho_from_tiled_particles
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
@@ -120,7 +120,7 @@ class TestTiledRho(unittest.TestCase):
         particles = self._particles(world)
         tiled_particles, species_config = self._tiled_with_noisy_inactive_slots(particles, world)
 
-        rho_reference = compute_rho(particles, self._empty_scalar(world), world, constants)
+        rho_reference = _compute_rho_flat(particles, self._empty_scalar(world), world, constants)
         rho_tiled = compute_rho_from_tiled_particles(
             tiled_particles,
             species_config,
@@ -153,8 +153,8 @@ class TestTiledRho(unittest.TestCase):
         particles = self._particles(world)
         zero_velocity_particles = self._zero_species_velocities(self._particles(world))
 
-        rho_with_velocity = compute_rho(particles, self._empty_scalar(world), world, constants)
-        rho_with_zero_velocity = compute_rho(zero_velocity_particles, self._empty_scalar(world), world, constants)
+        rho_with_velocity = _compute_rho_flat(particles, self._empty_scalar(world), world, constants)
+        rho_with_zero_velocity = _compute_rho_flat(zero_velocity_particles, self._empty_scalar(world), world, constants)
 
         self.assertTrue(
             jnp.allclose(
@@ -256,7 +256,7 @@ class TestTiledRho(unittest.TestCase):
             num_guard_cells=int(world["guard_cells"]),
         )
 
-        rho_reference = compute_rho(particles, self._empty_scalar(world), world, constants)
+        rho_reference = _compute_rho_flat(particles, self._empty_scalar(world), world, constants)
         rho_tiles = compute_rho(
             tiled_particles,
             rho_tiles,
@@ -279,6 +279,13 @@ class TestTiledRho(unittest.TestCase):
                 atol=1.0e-12,
             )
         )
+
+    def test_public_compute_rho_rejects_flat_particles(self):
+        world = self._build_world(shape_factor=2)
+        constants = {"alpha": 1.0}
+
+        with self.assertRaisesRegex(ValueError, "TiledParticles"):
+            compute_rho(self._particles(world), self._empty_scalar(world), world, constants)
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ import os
 
 
 from PyPIC3D.initialization import initialize_fields
-from PyPIC3D.solvers.first_order_yee import update_E, update_B
+from PyPIC3D.solvers.first_order_yee import _update_E_global, _update_B_global
 from PyPIC3D.utils import build_yee_grid
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 
@@ -161,7 +161,7 @@ class TestFieldsMethods(unittest.TestCase):
         B_initial = (Bx_initial, By_initial, Bz_initial)
         J = (Jx, Jy, Jz)
 
-        E_computed, pml_state = update_E(E_initial, B_initial, J, self.world, self.constants, curl_func)
+        E_computed, pml_state = _update_E_global(E_initial, B_initial, J, self.world, self.constants, curl_func)
         Ex_computed, Ey_computed, Ez_computed = E_computed
 
         # Check shapes (including ghost cells)
@@ -242,7 +242,7 @@ class TestFieldsMethods(unittest.TestCase):
         E_initial = (Ex_initial, Ey_initial, Ez_initial)
         B_initial = (Bx_initial, By_initial, Bz_initial)
 
-        B_computed, pml_state = update_B(E_initial, B_initial, self.world, self.constants, curl_func)
+        B_computed, pml_state = _update_B_global(E_initial, B_initial, self.world, self.constants, curl_func)
         Bx_computed, By_computed, Bz_computed = B_computed
 
         # Check shapes

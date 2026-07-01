@@ -32,7 +32,7 @@ def compute_rho(particles, rho, world, constants, species_config=None):
 
         return compute_rho_from_tiled_particles(particles, species_config, rho, world, constants)
 
-    return _compute_rho_flat(particles, rho, world, constants)
+    raise ValueError("Public compute_rho requires TiledParticles; use _compute_rho_flat for flat reference tests.")
 
 
 @jit

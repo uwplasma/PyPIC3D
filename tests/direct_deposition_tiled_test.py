@@ -5,7 +5,7 @@ import jax.numpy as jnp
 
 from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, update_ghost_cells
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
-from PyPIC3D.deposition.J_from_rhov import J_from_rhov
+from PyPIC3D.deposition.J_from_rhov import J_from_rhov, _J_from_rhov_flat
 from PyPIC3D.deposition.direct_deposition_tiled import (
     digital_filter_tiled_current_density,
     direct_J_from_tiled_particles,
@@ -107,7 +107,7 @@ class TestDirectDepositionTiled(unittest.TestCase):
         tiled_particles, species_config = self._centered_tiled_particles(particles, world, simulation_parameters)
         tile_shape = self._tile_shape(simulation_parameters)
 
-        J_reference = J_from_rhov(particles, self._empty_J(world), constants, world, filter="none")
+        J_reference = _J_from_rhov_flat(particles, self._empty_J(world), constants, world, filter="none")
         J_tiles = direct_J_from_tiled_particles(
             tiled_particles,
             species_config,
@@ -125,6 +125,33 @@ class TestDirectDepositionTiled(unittest.TestCase):
             self.assertEqual(tile_component.ndim, 6)
         for reference_component, tiled_component in zip(J_reference, J_from_tiles):
             self.assertTrue(jnp.allclose(tiled_component, reference_component, rtol=1.0e-12, atol=1.0e-12))
+
+    def test_public_J_from_rhov_rejects_flat_particles(self):
+        world = self._build_world()
+        constants = {"C": 3.0e8, "alpha": 1.0}
+        species = particle_species(
+            name="flat direct current",
+            N_particles=1,
+            charge=-1.0,
+            mass=1.0,
+            T=1.0,
+            x1=jnp.array([0.0]),
+            x2=jnp.array([0.0]),
+            x3=jnp.array([0.0]),
+            v1=jnp.array([0.0]),
+            v2=jnp.array([0.0]),
+            v3=jnp.array([0.0]),
+            xwind=world["x_wind"],
+            ywind=world["y_wind"],
+            zwind=world["z_wind"],
+            dx=world["dx"],
+            dy=world["dy"],
+            dz=world["dz"],
+            dt=world["dt"],
+        )
+
+        with self.assertRaisesRegex(ValueError, "TiledParticles"):
+            J_from_rhov([species], self._empty_J(world), constants, world, filter="none")
 
     def test_tiled_direct_deposition_matches_quadratic_with_two_guard_cells(self):
         world = self._build_world(Nx=8, Ny=6, Nz=4)
@@ -228,7 +255,7 @@ class TestDirectDepositionTiled(unittest.TestCase):
         tiled_particles, species_config = self._centered_tiled_particles([species], world, simulation_parameters)
         tile_shape = self._tile_shape(simulation_parameters)
 
-        J_reference = J_from_rhov([species], self._empty_J(world), constants, world, filter="bilinear")
+        J_reference = _J_from_rhov_flat([species], self._empty_J(world), constants, world, filter="bilinear")
         J_tiles = direct_J_from_tiled_particles(
             tiled_particles,
             species_config,
@@ -434,7 +461,7 @@ class TestDirectDepositionTiled(unittest.TestCase):
             tile_shape=tile_shape,
             g=int(world["guard_cells"]),
         )
-        J_reference = J_from_rhov([species], self._empty_J(world), constants, world, filter="none")
+        J_reference = _J_from_rhov_flat([species], self._empty_J(world), constants, world, filter="none")
         J_from_tiles = assemble_tiled_vector_field(J_tiles, world, tile_shape, num_guard_cells=int(world["guard_cells"]))
 
         for reference_component, tiled_component in zip(J_reference, J_from_tiles):
@@ -526,7 +553,7 @@ class TestDirectDepositionTiled(unittest.TestCase):
         )
         tiled_particles, species_config = self._centered_tiled_particles([species], world, simulation_parameters)
 
-        J_reference = J_from_rhov([species], self._empty_J(world), constants, world, filter="digital")
+        J_reference = _J_from_rhov_flat([species], self._empty_J(world), constants, world, filter="digital")
         J_tiles = J_from_rhov(
             tiled_particles,
             species_config,
@@ -581,7 +608,7 @@ class TestDirectDepositionTiled(unittest.TestCase):
         tiled_particles, species_config = self._centered_tiled_particles([species], world, simulation_parameters)
         tile_shape = self._tile_shape(simulation_parameters)
 
-        J_reference = J_from_rhov([species], self._empty_J(world), constants, world, filter="digital")
+        J_reference = _J_from_rhov_flat([species], self._empty_J(world), constants, world, filter="digital")
         J_tiles = direct_J_from_tiled_particles(
             tiled_particles,
             species_config,
@@ -629,7 +656,7 @@ class TestDirectDepositionTiled(unittest.TestCase):
         tiled_particles, species_config = self._centered_tiled_particles([species], world, simulation_parameters)
         tile_shape = self._tile_shape(simulation_parameters)
 
-        J_reference = J_from_rhov([species], self._empty_J(world), constants, world, filter="bilinear")
+        J_reference = _J_from_rhov_flat([species], self._empty_J(world), constants, world, filter="bilinear")
         J_tiles = direct_J_from_tiled_particles(
             tiled_particles,
             species_config,
