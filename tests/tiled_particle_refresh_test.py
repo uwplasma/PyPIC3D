@@ -7,6 +7,7 @@ from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
 from PyPIC3D.particles.tiled_particle_refresh import (
     _adjacent_tile_offset,
+    _tiles_need_repack,
     refresh_tiled_particle_tiles,
     update_tiled_particle_positions,
 )
@@ -103,6 +104,14 @@ class TestTiledParticleRefresh(unittest.TestCase):
         offset = _adjacent_tile_offset(dest, source, tile_count=2)
 
         self.assertTrue(jnp.array_equal(offset, jnp.array([0, 1, -1, 0])))
+
+    def test_tiles_need_repack_is_false_when_active_particles_stay_in_tile(self):
+        active = jnp.array([[[[[True, False]]], [[[True, False]]]]])
+        zero_offsets = jnp.zeros_like(active, dtype=int)
+
+        repack = _tiles_need_repack(zero_offsets, zero_offsets, zero_offsets, active)
+
+        self.assertTrue(jnp.array_equal(repack, jnp.zeros(active.shape[:-1], dtype=bool)))
 
     def test_refresh_moves_particles_to_neighbor_tiles_with_static_shape(self):
         world = self._build_world()

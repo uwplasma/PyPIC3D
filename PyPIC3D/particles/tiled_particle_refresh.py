@@ -100,7 +100,36 @@ def _adjacent_tile_offset(dest_tile, source_tile, tile_count):
     return offset
 
 
-def _compact_tile_candidates(candidate_x, candidate_u, candidate_active, n_slots):
+def _tiles_need_repack(offset_x, offset_y, offset_z, active):
+    moving = active & ((offset_x != 0) | (offset_y != 0) | (offset_z != 0))
+    outgoing = jnp.any(moving, axis=-1)
+    incoming = jnp.zeros_like(outgoing)
+
+    for ox in _movement_offsets(active.shape[0]):
+        for oy in _movement_offsets(active.shape[1]):
+            for oz in _movement_offsets(active.shape[2]):
+                if ox == 0 and oy == 0 and oz == 0:
+                    continue
+                stream_active = moving & (offset_x == ox) & (offset_y == oy) & (offset_z == oz)
+                incoming_stream = jnp.any(stream_active, axis=-1)
+                incoming_stream = jnp.roll(incoming_stream, shift=ox, axis=0)
+                incoming_stream = jnp.roll(incoming_stream, shift=oy, axis=1)
+                incoming_stream = jnp.roll(incoming_stream, shift=oz, axis=2)
+                incoming = incoming | incoming_stream
+
+    return outgoing | incoming
+
+
+def _compact_tile_candidates(
+    candidate_x,
+    candidate_u,
+    candidate_active,
+    n_slots,
+    fallback_x=None,
+    fallback_u=None,
+    fallback_active=None,
+    repack_mask=None,
+):
     """
     Repack fixed-size incoming streams into the destination tile slot axis.
     """
@@ -111,8 +140,18 @@ def _compact_tile_candidates(candidate_x, candidate_u, candidate_active, n_slots
     flat_x = candidate_x.reshape((-1, n_candidates, 3))
     flat_u = candidate_u.reshape((-1, n_candidates, 3))
     flat_active = candidate_active.reshape((-1, n_candidates))
+    if fallback_x is None:
+        flat_fallback_x = jnp.zeros((flat_x.shape[0], n_slots, 3), dtype=flat_x.dtype)
+        flat_fallback_u = jnp.zeros((flat_u.shape[0], n_slots, 3), dtype=flat_u.dtype)
+        flat_fallback_active = jnp.zeros((flat_active.shape[0], n_slots), dtype=flat_active.dtype)
+        flat_repack_mask = jnp.ones((flat_active.shape[0],), dtype=bool)
+    else:
+        flat_fallback_x = fallback_x.reshape((-1, n_slots, 3))
+        flat_fallback_u = fallback_u.reshape((-1, n_slots, 3))
+        flat_fallback_active = fallback_active.reshape((-1, n_slots))
+        flat_repack_mask = repack_mask.reshape((-1,))
 
-    def compact_one(local_x_in, local_u_in, local_active_in):
+    def compact_one(local_x_in, local_u_in, local_active_in, fallback_x_in, fallback_u_in, fallback_active_in, do_repack):
         rank = jnp.cumsum(local_active_in.astype(int)) - 1
         fits = local_active_in & (rank < n_slots)
         safe_rank = jnp.where(fits, rank, 0)
@@ -126,12 +165,19 @@ def _compact_tile_candidates(candidate_x, candidate_u, candidate_active, n_slots
         local_u = local_u.at[safe_rank].add(valid[:, None] * local_u_in)
         local_active_count = local_active_count.at[safe_rank].add(fits.astype(int))
 
-        return local_x, local_u, local_active_count > 0, jnp.sum(local_active_in) > n_slots
+        compacted = (local_x, local_u, local_active_count > 0, jnp.sum(local_active_in) > n_slots)
+        unchanged = (fallback_x_in, fallback_u_in, fallback_active_in, jnp.asarray(False))
+
+        return jax.lax.cond(do_repack, lambda _: compacted, lambda _: unchanged, operand=None)
 
     flat_new_x, flat_new_u, flat_new_active, flat_overflow = jax.vmap(compact_one)(
         flat_x,
         flat_u,
         flat_active,
+        flat_fallback_x,
+        flat_fallback_u,
+        flat_fallback_active,
+        flat_repack_mask,
     )
 
     new_x = flat_new_x.reshape(leading_shape + (n_slots, 3))
@@ -205,6 +251,7 @@ def refresh_tiled_particle_tiles(tiled_particles, world, tile_shape):
     offset_x = _adjacent_tile_offset(dest_tx, tx, ntx)
     offset_y = _adjacent_tile_offset(dest_ty, ty, nty)
     offset_z = _adjacent_tile_offset(dest_tz, tz, ntz)
+    repack_mask = _tiles_need_repack(offset_x, offset_y, offset_z, bounded_active)
 
     x_offsets = _movement_offsets(ntx)
     y_offsets = _movement_offsets(nty)
@@ -249,6 +296,10 @@ def refresh_tiled_particle_tiles(tiled_particles, world, tile_shape):
         candidate_u,
         candidate_active,
         n_slots,
+        fallback_x=bounded_x,
+        fallback_u=bounded_u,
+        fallback_active=bounded_active,
+        repack_mask=repack_mask,
     )
 
     refreshed = TiledParticles(

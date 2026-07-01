@@ -9,8 +9,13 @@ import numpy as np
 import toml
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
-from PyPIC3D.deposition.Esirkepov import Esirkepov_current
-from PyPIC3D.deposition.esirkepov_tiled import _active_stencil_indices, tiled_esirkepov_current
+from PyPIC3D.deposition.Esirkepov import Esirkepov_current, get_1D_esirkepov_weights, get_2D_esirkepov_weights
+from PyPIC3D.deposition.esirkepov_tiled import (
+    _active_stencil_indices,
+    _compact_1d_esirkepov_weights,
+    _compact_2d_esirkepov_weights,
+    tiled_esirkepov_current,
+)
 from PyPIC3D.deposition.rho_tiled import compute_tiled_rho_from_tiled_particles
 from PyPIC3D.diagnostics.output_adapters import fields_for_output
 from PyPIC3D.initialization import CURRENT_ESIRKEPOV, initialize_simulation
@@ -271,6 +276,36 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
     def test_reduced_axis_esirkepov_scatter_uses_only_collapsed_stencil_index(self):
         self.assertEqual(_active_stencil_indices(True), (0, 1, 2, 3, 4))
         self.assertEqual(_active_stencil_indices(False), (2,))
+
+    def test_compact_1d_esirkepov_weights_match_full_center_line(self):
+        xw = [jnp.array([0.0, 0.0]), jnp.array([0.2, 0.3]), jnp.array([0.6, 0.5]), jnp.array([0.2, 0.2]), jnp.array([0.0, 0.0])]
+        oxw = [jnp.array([0.0, 0.0]), jnp.array([0.1, 0.2]), jnp.array([0.7, 0.6]), jnp.array([0.2, 0.2]), jnp.array([0.0, 0.0])]
+        yw = [jnp.zeros(2), jnp.zeros(2), jnp.ones(2), jnp.zeros(2), jnp.zeros(2)]
+        zw = [jnp.zeros(2), jnp.zeros(2), jnp.ones(2), jnp.zeros(2), jnp.zeros(2)]
+        oyw = yw
+        ozw = zw
+
+        Wx_line, Wy_line, Wz_line = _compact_1d_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, dim=0)
+        Wx_full, Wy_full, Wz_full = get_1D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, N_particles=2, dim=0)
+
+        self.assertTrue(jnp.allclose(Wx_line, Wx_full[:, 2, 2, :]))
+        self.assertTrue(jnp.allclose(Wy_line, Wy_full[:, 2, 2, :]))
+        self.assertTrue(jnp.allclose(Wz_line, Wz_full[:, 2, 2, :]))
+
+    def test_compact_2d_esirkepov_weights_match_full_active_plane(self):
+        xw = [jnp.array([0.0, 0.0]), jnp.array([0.2, 0.3]), jnp.array([0.6, 0.5]), jnp.array([0.2, 0.2]), jnp.array([0.0, 0.0])]
+        oxw = [jnp.array([0.0, 0.0]), jnp.array([0.1, 0.2]), jnp.array([0.7, 0.6]), jnp.array([0.2, 0.2]), jnp.array([0.0, 0.0])]
+        yw = [jnp.array([0.0, 0.0]), jnp.array([0.3, 0.2]), jnp.array([0.4, 0.5]), jnp.array([0.3, 0.3]), jnp.array([0.0, 0.0])]
+        oyw = [jnp.array([0.0, 0.0]), jnp.array([0.2, 0.1]), jnp.array([0.5, 0.6]), jnp.array([0.3, 0.3]), jnp.array([0.0, 0.0])]
+        zw = [jnp.zeros(2), jnp.zeros(2), jnp.ones(2), jnp.zeros(2), jnp.zeros(2)]
+        ozw = zw
+
+        Wx_plane, Wy_plane, Wz_plane = _compact_2d_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, null_dim=2)
+        Wx_full, Wy_full, Wz_full = get_2D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, N_particles=2, null_dim=2)
+
+        self.assertTrue(jnp.allclose(Wx_plane, Wx_full[:, :, 2, :]))
+        self.assertTrue(jnp.allclose(Wy_plane, Wy_full[:, :, 2, :]))
+        self.assertTrue(jnp.allclose(Wz_plane, Wz_full[:, :, 2, :]))
 
     def test_tiled_esirkepov_matches_global_1d_periodic_current(self):
         world = self._build_world(Nx=8, Ny=1, Nz=1, dt=0.05)

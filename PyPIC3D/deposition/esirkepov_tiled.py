@@ -9,8 +9,6 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
 )
 from PyPIC3D.deposition.Esirkepov import (
     collapse_redundant_axis,
-    get_1D_esirkepov_weights,
-    get_2D_esirkepov_weights,
     get_3D_esirkepov_weights,
     shift_old_stencil,
 )
@@ -25,6 +23,82 @@ def _active_stencil_indices(axis_active):
     if axis_active:
         return (0, 1, 2, 3, 4)
     return (2,)
+
+
+def _compact_1d_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, dim=0):
+    if dim == 0:
+        Wx = jnp.stack([xw[i] - oxw[i] for i in range(5)], axis=0)
+        Wy = jnp.stack([(xw[i] + oxw[i]) / 2 for i in range(5)], axis=0)
+        Wz = jnp.stack([(xw[i] + oxw[i]) / 2 for i in range(5)], axis=0)
+    elif dim == 1:
+        Wy = jnp.stack([yw[j] - oyw[j] for j in range(5)], axis=0)
+        Wx = jnp.stack([(yw[j] + oyw[j]) / 2 for j in range(5)], axis=0)
+        Wz = jnp.stack([(yw[j] + oyw[j]) / 2 for j in range(5)], axis=0)
+    else:
+        Wz = jnp.stack([zw[k] - ozw[k] for k in range(5)], axis=0)
+        Wx = jnp.stack([(zw[k] + ozw[k]) / 2 for k in range(5)], axis=0)
+        Wy = jnp.stack([(zw[k] + ozw[k]) / 2 for k in range(5)], axis=0)
+
+    return Wx, Wy, Wz
+
+
+def _compact_2d_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, null_dim=2):
+    def stack_plane(rows):
+        return jnp.stack([jnp.stack(row, axis=0) for row in rows], axis=0)
+
+    if null_dim == 0:
+        Wx = stack_plane(
+            [
+                [
+                    1 / 3 * (yw[j] * zw[k] + oyw[j] * ozw[k])
+                    + 1 / 6 * (yw[j] * ozw[k] + oyw[j] * zw[k])
+                    for k in range(5)
+                ]
+                for j in range(5)
+            ]
+        )
+        Wy = stack_plane(
+            [[1 / 2 * (yw[j] - oyw[j]) * (zw[k] + ozw[k]) for k in range(5)] for j in range(5)]
+        )
+        Wz = stack_plane(
+            [[1 / 2 * (zw[k] - ozw[k]) * (yw[j] + oyw[j]) for k in range(5)] for j in range(5)]
+        )
+    elif null_dim == 1:
+        Wx = stack_plane(
+            [[1 / 2 * (xw[i] - oxw[i]) * (zw[k] + ozw[k]) for k in range(5)] for i in range(5)]
+        )
+        Wy = stack_plane(
+            [
+                [
+                    1 / 3 * (xw[i] * zw[k] + oxw[i] * ozw[k])
+                    + 1 / 6 * (xw[i] * ozw[k] + oxw[i] * zw[k])
+                    for k in range(5)
+                ]
+                for i in range(5)
+            ]
+        )
+        Wz = stack_plane(
+            [[1 / 2 * (zw[k] - ozw[k]) * (xw[i] + oxw[i]) for k in range(5)] for i in range(5)]
+        )
+    else:
+        Wx = stack_plane(
+            [[1 / 2 * (xw[i] - oxw[i]) * (yw[j] + oyw[j]) for j in range(5)] for i in range(5)]
+        )
+        Wy = stack_plane(
+            [[1 / 2 * (yw[j] - oyw[j]) * (xw[i] + oxw[i]) for j in range(5)] for i in range(5)]
+        )
+        Wz = stack_plane(
+            [
+                [
+                    1 / 3 * (xw[i] * yw[j] + oxw[i] * oyw[j])
+                    + 1 / 6 * (xw[i] * oyw[j] + oxw[i] * yw[j])
+                    for j in range(5)
+                ]
+                for i in range(5)
+            ]
+        )
+
+    return Wx, Wy, Wz
 
 
 def fold_tiled_esirkepov_ghost_cells(field_tiles, world, component_axis, num_guard_cells=2, tile_shape=None):
@@ -229,25 +303,6 @@ def tiled_esirkepov_current(tiled_particles, species_config, J_tiles, constants,
         ypts, yw, oyw = collapse_redundant_axis(ypts, yw, oyw, y_active, local_Ny)
         zpts, zw, ozw = collapse_redundant_axis(zpts, zw, ozw, z_active, local_Nz)
 
-        if x_active and y_active and z_active:
-            Wx_, Wy_, Wz_ = get_3D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, N_particles)
-        elif (x_active and y_active and (not z_active)) or (x_active and z_active and (not y_active)) or (
-            y_active and z_active and (not x_active)
-        ):
-            if not x_active:
-                null_dim = 0
-            elif not y_active:
-                null_dim = 1
-            else:
-                null_dim = 2
-            Wx_, Wy_, Wz_ = get_2D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, N_particles, null_dim=null_dim)
-        elif x_active and (not y_active) and (not z_active):
-            Wx_, Wy_, Wz_ = get_1D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, N_particles, dim=0)
-        elif y_active and (not x_active) and (not z_active):
-            Wx_, Wy_, Wz_ = get_1D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, N_particles, dim=1)
-        else:
-            Wx_, Wy_, Wz_ = get_1D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, N_particles, dim=2)
-
         dJx = jax.lax.cond(
             x_active,
             lambda _: active * (-(q / (dy * dz)) / dt),
@@ -267,39 +322,114 @@ def tiled_esirkepov_current(tiled_particles, species_config, J_tiles, constants,
             operand=None,
         )
 
-        Fx = dJx * Wx_
-        Fy = dJy * Wy_
-        Fz = dJz * Wz_
-        Jx_loc = jnp.cumsum(Fx, axis=0)
-        Jy_loc = jnp.cumsum(Fy, axis=1)
-        Jz_loc = jnp.cumsum(Fz, axis=2)
-
         tile_Jx = Jx_template
         tile_Jy = Jy_template
         tile_Jz = Jz_template
 
-        x_stencil_indices = _active_stencil_indices(x_active)
-        y_stencil_indices = _active_stencil_indices(y_active)
-        z_stencil_indices = _active_stencil_indices(z_active)
+        if x_active and y_active and z_active:
+            Wx_, Wy_, Wz_ = get_3D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, N_particles)
+            Fx = dJx * Wx_
+            Fy = dJy * Wy_
+            Fz = dJz * Wz_
+            Jx_loc = jnp.cumsum(Fx, axis=0)
+            Jy_loc = jnp.cumsum(Fy, axis=1)
+            Jz_loc = jnp.cumsum(Fz, axis=2)
 
-        for i in x_stencil_indices:
-            for j in y_stencil_indices:
-                for k in z_stencil_indices:
-                    ix = xpts[i, :]
-                    iy = ypts[j, :]
-                    iz = zpts[k, :]
-                    tile_Jx = tile_Jx.at[ix, iy, iz].add(
-                        jax.lax.cond(x_active, lambda _: Jx_loc[i, j, k, :], lambda _: Fx[i, j, k, :], operand=None),
-                        mode="drop",
-                    )
-                    tile_Jy = tile_Jy.at[ix, iy, iz].add(
-                        jax.lax.cond(y_active, lambda _: Jy_loc[i, j, k, :], lambda _: Fy[i, j, k, :], operand=None),
-                        mode="drop",
-                    )
-                    tile_Jz = tile_Jz.at[ix, iy, iz].add(
-                        jax.lax.cond(z_active, lambda _: Jz_loc[i, j, k, :], lambda _: Fz[i, j, k, :], operand=None),
-                        mode="drop",
-                    )
+            for i in range(5):
+                for j in range(5):
+                    for k in range(5):
+                        ix = xpts[i, :]
+                        iy = ypts[j, :]
+                        iz = zpts[k, :]
+                        tile_Jx = tile_Jx.at[ix, iy, iz].add(Jx_loc[i, j, k, :], mode="drop")
+                        tile_Jy = tile_Jy.at[ix, iy, iz].add(Jy_loc[i, j, k, :], mode="drop")
+                        tile_Jz = tile_Jz.at[ix, iy, iz].add(Jz_loc[i, j, k, :], mode="drop")
+        elif (x_active and y_active and (not z_active)) or (x_active and z_active and (not y_active)) or (
+            y_active and z_active and (not x_active)
+        ):
+            if not x_active:
+                null_dim = 0
+            elif not y_active:
+                null_dim = 1
+            else:
+                null_dim = 2
+            Wx_, Wy_, Wz_ = _compact_2d_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, null_dim=null_dim)
+            Fx = dJx * Wx_
+            Fy = dJy * Wy_
+            Fz = dJz * Wz_
+
+            if null_dim == 0:
+                Jy_loc = jnp.cumsum(Fy, axis=0)
+                Jz_loc = jnp.cumsum(Fz, axis=1)
+                for j in range(5):
+                    for k in range(5):
+                        ix = xpts[2, :]
+                        iy = ypts[j, :]
+                        iz = zpts[k, :]
+                        tile_Jx = tile_Jx.at[ix, iy, iz].add(Fx[j, k, :], mode="drop")
+                        tile_Jy = tile_Jy.at[ix, iy, iz].add(Jy_loc[j, k, :], mode="drop")
+                        tile_Jz = tile_Jz.at[ix, iy, iz].add(Jz_loc[j, k, :], mode="drop")
+            elif null_dim == 1:
+                Jx_loc = jnp.cumsum(Fx, axis=0)
+                Jz_loc = jnp.cumsum(Fz, axis=1)
+                for i in range(5):
+                    for k in range(5):
+                        ix = xpts[i, :]
+                        iy = ypts[2, :]
+                        iz = zpts[k, :]
+                        tile_Jx = tile_Jx.at[ix, iy, iz].add(Jx_loc[i, k, :], mode="drop")
+                        tile_Jy = tile_Jy.at[ix, iy, iz].add(Fy[i, k, :], mode="drop")
+                        tile_Jz = tile_Jz.at[ix, iy, iz].add(Jz_loc[i, k, :], mode="drop")
+            else:
+                Jx_loc = jnp.cumsum(Fx, axis=0)
+                Jy_loc = jnp.cumsum(Fy, axis=1)
+                for i in range(5):
+                    for j in range(5):
+                        ix = xpts[i, :]
+                        iy = ypts[j, :]
+                        iz = zpts[2, :]
+                        tile_Jx = tile_Jx.at[ix, iy, iz].add(Jx_loc[i, j, :], mode="drop")
+                        tile_Jy = tile_Jy.at[ix, iy, iz].add(Jy_loc[i, j, :], mode="drop")
+                        tile_Jz = tile_Jz.at[ix, iy, iz].add(Fz[i, j, :], mode="drop")
+        elif x_active and (not y_active) and (not z_active):
+            Wx_, Wy_, Wz_ = _compact_1d_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, dim=0)
+            Fx = dJx * Wx_
+            Fy = dJy * Wy_
+            Fz = dJz * Wz_
+            Jx_loc = jnp.cumsum(Fx, axis=0)
+            for i in range(5):
+                ix = xpts[i, :]
+                iy = ypts[2, :]
+                iz = zpts[2, :]
+                tile_Jx = tile_Jx.at[ix, iy, iz].add(Jx_loc[i, :], mode="drop")
+                tile_Jy = tile_Jy.at[ix, iy, iz].add(Fy[i, :], mode="drop")
+                tile_Jz = tile_Jz.at[ix, iy, iz].add(Fz[i, :], mode="drop")
+        elif y_active and (not x_active) and (not z_active):
+            Wx_, Wy_, Wz_ = _compact_1d_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, dim=1)
+            Fx = dJx * Wx_
+            Fy = dJy * Wy_
+            Fz = dJz * Wz_
+            Jy_loc = jnp.cumsum(Fy, axis=0)
+            for j in range(5):
+                ix = xpts[2, :]
+                iy = ypts[j, :]
+                iz = zpts[2, :]
+                tile_Jx = tile_Jx.at[ix, iy, iz].add(Fx[j, :], mode="drop")
+                tile_Jy = tile_Jy.at[ix, iy, iz].add(Jy_loc[j, :], mode="drop")
+                tile_Jz = tile_Jz.at[ix, iy, iz].add(Fz[j, :], mode="drop")
+        else:
+            Wx_, Wy_, Wz_ = _compact_1d_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, dim=2)
+            Fx = dJx * Wx_
+            Fy = dJy * Wy_
+            Fz = dJz * Wz_
+            Jz_loc = jnp.cumsum(Fz, axis=0)
+            for k in range(5):
+                ix = xpts[2, :]
+                iy = ypts[2, :]
+                iz = zpts[k, :]
+                tile_Jx = tile_Jx.at[ix, iy, iz].add(Fx[k, :], mode="drop")
+                tile_Jy = tile_Jy.at[ix, iy, iz].add(Fy[k, :], mode="drop")
+                tile_Jz = tile_Jz.at[ix, iy, iz].add(Jz_loc[k, :], mode="drop")
 
         return tile_Jx, tile_Jy, tile_Jz
 
