@@ -493,6 +493,62 @@ class TestDirectDepositionTiled(unittest.TestCase):
 
         self._compare_tiled_to_standard([electrons, ions], world, simulation_parameters)
 
+    def test_public_J_from_rhov_dispatches_tiled_particles_to_tile_local_current(self):
+        world = self._build_world()
+        world["guard_cells"] = 2
+        world["tile_shape"] = (2, 2, 2)
+        simulation_parameters = {
+            "particle_tile_nx": 2,
+            "particle_tile_ny": 2,
+            "particle_tile_nz": 2,
+        }
+        constants = {"C": 3.0e8, "alpha": 0.6}
+        species = particle_species(
+            name="public tiled direct current",
+            N_particles=4,
+            charge=-1.0,
+            mass=1.0,
+            weight=0.5,
+            T=1.0,
+            x1=jnp.array([-1.25, -0.25, 0.65, 1.45]),
+            x2=jnp.array([-1.0, -0.25, 0.35, 1.05]),
+            x3=jnp.array([-0.65, -0.15, 0.25, 0.75]),
+            v1=jnp.array([0.2, -0.1, 0.05, 0.3]),
+            v2=jnp.array([0.0, 0.15, -0.2, 0.1]),
+            v3=jnp.array([-0.05, 0.25, 0.1, -0.15]),
+            xwind=world["x_wind"],
+            ywind=world["y_wind"],
+            zwind=world["z_wind"],
+            dx=world["dx"],
+            dy=world["dy"],
+            dz=world["dz"],
+            dt=world["dt"],
+        )
+        tiled_particles, species_config = self._centered_tiled_particles([species], world, simulation_parameters)
+
+        J_reference = J_from_rhov([species], self._empty_J(world), constants, world, filter="digital")
+        J_tiles = J_from_rhov(
+            tiled_particles,
+            species_config,
+            self._empty_J_tiles(world, simulation_parameters),
+            constants,
+            world,
+            filter="digital",
+            tile_shape=world["tile_shape"],
+            g=int(world["guard_cells"]),
+        )
+        J_from_tiles = assemble_tiled_vector_field(
+            J_tiles,
+            world,
+            world["tile_shape"],
+            num_guard_cells=int(world["guard_cells"]),
+        )
+
+        for tile_component in J_tiles:
+            self.assertEqual(tile_component.ndim, 6)
+        for reference_component, tiled_component in zip(J_reference, J_from_tiles):
+            self.assertTrue(jnp.allclose(tiled_component, reference_component, rtol=1.0e-12, atol=1.0e-12))
+
     def test_tiled_direct_deposition_digital_filter_matches_J_from_rhov(self):
         world = self._build_world()
         simulation_parameters = {

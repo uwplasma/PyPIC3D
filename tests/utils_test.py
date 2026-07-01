@@ -7,6 +7,9 @@ import numpy as np
 import toml
 from PyPIC3D.initialization import initialize_fields
 from PyPIC3D.particles.tiled_particles import TiledParticles
+from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
+from PyPIC3D.diagnostics import plotting, vtk as vtk_diagnostics
+from PyPIC3D.solvers.yee_tiled import tile_vector_field
 from PyPIC3D.utils import (
     print_stats, build_yee_grid, build_collocated_grid, check_stability,
     particle_sanity_check, load_external_fields_from_toml, add_external_fields,
@@ -244,6 +247,173 @@ class TestUtilsFunctions(unittest.TestCase):
         self.assertEqual(config["particles"][1]["storage"], "tiled")
         self.assertEqual(config["particles"][1]["active_particles"], 1)
         self.assertEqual(config["particles"][0]["tile_shape"], [2, 1, 1])
+
+    def test_plot_positions_flattens_tiled_particles_and_preserves_species_names(self):
+        species = particle_species(
+            name="beam electrons",
+            N_particles=2,
+            charge=-1.0,
+            mass=1.0,
+            weight=2.0,
+            T=0.0,
+            x1=jnp.array([-0.25, 0.25]),
+            x2=jnp.array([0.0, 0.0]),
+            x3=jnp.array([0.0, 0.0]),
+            v1=jnp.array([0.1, 0.2]),
+            v2=jnp.array([0.0, 0.0]),
+            v3=jnp.array([0.0, 0.0]),
+            xwind=1.0,
+            ywind=1.0,
+            zwind=1.0,
+            dx=0.25,
+            dy=0.5,
+            dz=1.0,
+            dt=0.1,
+        )
+        world = {
+            "Nx": 4,
+            "Ny": 2,
+            "Nz": 1,
+            "dx": 0.25,
+            "dy": 0.5,
+            "dz": 1.0,
+            "dt": 0.1,
+            "x_wind": 1.0,
+            "y_wind": 1.0,
+            "z_wind": 1.0,
+            "particle_boundary_conditions": {"x": 0, "y": 0, "z": 0},
+        }
+        simulation_parameters = {
+            "particle_tile_nx": 2,
+            "particle_tile_ny": 1,
+            "particle_tile_nz": 1,
+        }
+        tiled_particles, species_config = to_tiled_particles([species], world, simulation_parameters)
+
+        class FakeFigure:
+            def __init__(self):
+                self.trace_names = []
+
+            def add_trace(self, trace):
+                self.trace_names.append(trace.name)
+
+            def update_layout(self, *args, **kwargs):
+                pass
+
+            def write_html(self, *args, **kwargs):
+                pass
+
+        figure = FakeFigure()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with unittest.mock.patch.object(plotting.go, "Figure", return_value=figure):
+                plotting.plot_positions(
+                    tiled_particles,
+                    0,
+                    world["x_wind"],
+                    world["y_wind"],
+                    world["z_wind"],
+                    tmpdir,
+                    species_config=species_config,
+                    species_names=("beam electrons",),
+                    world=world,
+                )
+
+        self.assertEqual(figure.trace_names, ["beam electrons"])
+
+    def test_particles_phase_space_flattens_tiled_particles(self):
+        species = particle_species(
+            name="electrons",
+            N_particles=1,
+            charge=-1.0,
+            mass=1.0,
+            weight=1.0,
+            T=0.0,
+            x1=jnp.array([0.0]),
+            x2=jnp.array([0.0]),
+            x3=jnp.array([0.0]),
+            v1=jnp.array([0.2]),
+            v2=jnp.array([0.0]),
+            v3=jnp.array([0.0]),
+            xwind=1.0,
+            ywind=1.0,
+            zwind=1.0,
+            dx=0.25,
+            dy=0.5,
+            dz=1.0,
+            dt=0.1,
+        )
+        world = {
+            "Nx": 4,
+            "Ny": 2,
+            "Nz": 1,
+            "dx": 0.25,
+            "dy": 0.5,
+            "dz": 1.0,
+            "dt": 0.1,
+            "x_wind": 1.0,
+            "y_wind": 1.0,
+            "z_wind": 1.0,
+            "particle_boundary_conditions": {"x": 0, "y": 0, "z": 0},
+        }
+        simulation_parameters = {
+            "particle_tile_nx": 2,
+            "particle_tile_ny": 1,
+            "particle_tile_nz": 1,
+        }
+        tiled_particles, species_config = to_tiled_particles([species], world, simulation_parameters)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.makedirs(os.path.join(tmpdir, "data/phase_space/x"))
+            os.makedirs(os.path.join(tmpdir, "data/phase_space/y"))
+            os.makedirs(os.path.join(tmpdir, "data/phase_space/z"))
+            with unittest.mock.patch.object(plotting.plt, "scatter") as scatter:
+                with unittest.mock.patch.object(plotting.plt, "savefig"):
+                    plotting.particles_phase_space(
+                        tiled_particles,
+                        world,
+                        0,
+                        "electrons",
+                        tmpdir,
+                        species_config=species_config,
+                        species_names=("electrons",),
+                    )
+
+        self.assertEqual(scatter.call_count, 3)
+
+    def test_vtk_plot_fields_assembles_tiled_components_at_output_boundary(self):
+        world = {
+            "Nx": 4,
+            "Ny": 2,
+            "Nz": 2,
+            "dx": 0.25,
+            "dy": 0.5,
+            "dz": 0.75,
+            "x_wind": 1.0,
+            "y_wind": 1.0,
+            "z_wind": 1.5,
+            "tile_shape": (2, 1, 1),
+            "guard_cells": 2,
+            "boundary_conditions": {"x": 0, "y": 0, "z": 0},
+        }
+        field = tuple(jnp.zeros((8, 6, 6)) + component for component in (1.0, 2.0, 3.0))
+        tiled_field = tile_vector_field(field, world, world["tile_shape"], num_guard_cells=world["guard_cells"])
+
+        with unittest.mock.patch.object(vtk_diagnostics, "gridToVTK") as grid_to_vtk:
+            vtk_diagnostics.plot_fields(
+                tiled_field[0],
+                tiled_field[1],
+                tiled_field[2],
+                0,
+                "E",
+                world["dx"],
+                world["dy"],
+                world["dz"],
+                world=world,
+            )
+
+        cell_data = grid_to_vtk.call_args.kwargs["cellData"]
+        self.assertEqual(cell_data["E_x"].shape, (6, 4, 4))
+        self.assertTrue(jnp.allclose(cell_data["E_y"], 2.0))
 
 if __name__ == '__main__':
     unittest.main()

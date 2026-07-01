@@ -41,11 +41,6 @@ from PyPIC3D.diagnostics.fluid_quantities import (
 )
 
 from PyPIC3D.deposition.rho import compute_rho
-from PyPIC3D.deposition.rho_tiled import (
-    compute_rho_from_tiled_particles,
-    compute_tiled_mass_density_from_tiled_particles,
-    compute_tiled_rho_from_tiled_particles,
-)
 from PyPIC3D.diagnostics.output_adapters import fields_for_output, scalar_field_for_output
 
 
@@ -75,7 +70,6 @@ def run_PyPIC3D(config_file):
 
     scalar_field_names = ["rho", "mass_density"]
     vector_field_names = ["E", "B", "J"]
-    tiled_run = True
     tile_shape = tuple(int(width) for width in world["tile_shape"])
     g = int(world["guard_cells"])
     particle_species_names = simulation_parameters.get("particle_species_names")
@@ -137,19 +131,12 @@ def run_PyPIC3D(config_file):
 
             if plotting_parameters['plot_vtk_scalars']:
                 if getattr(rho, "ndim", 0) == 6:
-                    rho = compute_tiled_rho_from_tiled_particles(
-                        particles, species_config, rho, world, constants, tile_shape=tile_shape, g=g
-                    )
-                    mass_density = compute_tiled_mass_density_from_tiled_particles(
-                        particles, species_config, rho, world, tile_shape=tile_shape, g=g
-                    )
+                    rho = compute_rho(particles, rho, world, constants, species_config=species_config)
+                    mass_density = compute_mass_density(particles, rho, world, species_config=species_config)
                     rho_output = scalar_field_for_output(rho, world)
                     mass_density_output = scalar_field_for_output(mass_density, world)
                 else:
-                    if tiled_run:
-                        rho = compute_rho_from_tiled_particles(particles, species_config, rho, world, constants)
-                    else:
-                        rho = compute_rho(particles, rho, world, constants)
+                    rho = compute_rho(particles, rho, world, constants, species_config=species_config)
                     # calculate the charge density based on the particle positions
                     mass_density = compute_mass_density(particles, rho, world, species_config=species_config)
                     # calculate the mass density based on the particle positions
@@ -186,10 +173,6 @@ def run_PyPIC3D(config_file):
             if plotting_parameters['plot_openpmd_fields']:
                 write_openpmd_fields(fields, world, os.path.join(output_dir, "data"), plot_num, t,  "fields", ".h5")
             # Write the fields in openPMD format
-
-            if not tiled_run:
-                fields = (E, B, J, rho, phi, external_fields, *rest)
-                # repack the fields for non-tiled diagnostics that updated rho
 
         particles, fields = jit_loop(
             particles,

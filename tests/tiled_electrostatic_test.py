@@ -11,7 +11,7 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
 from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.deposition.rho_tiled import compute_tiled_rho_from_tiled_particles
 from PyPIC3D.electrostatic_tiled import time_loop_electrostatic_tiled
-from PyPIC3D.evolve import time_loop_electrostatic
+from PyPIC3D.evolve import _time_loop_electrostatic_global_reference
 from PyPIC3D.initialization import initialize_simulation
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
@@ -372,7 +372,7 @@ class TestTiledElectrostatic(unittest.TestCase):
         constants = {"C": 10.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         E, B, J, rho, phi, external_fields = self._empty_fields(world)
 
-        reference_particles, reference_fields = time_loop_electrostatic(
+        reference_particles, reference_fields = _time_loop_electrostatic_global_reference(
             self._neutral_species(world),
             (E, B, J, rho, phi, external_fields),
             world,
@@ -454,7 +454,7 @@ class TestTiledElectrostatic(unittest.TestCase):
         )
 
         for step in range(1, Nt + 1):
-            reference_particles, reference_fields = time_loop_electrostatic(
+            reference_particles, reference_fields = _time_loop_electrostatic_global_reference(
                 reference_particles,
                 reference_fields,
                 world,

@@ -3,7 +3,14 @@ import unittest
 import jax
 import jax.numpy as jnp
 
-from PyPIC3D.evolve import time_loop_electrodynamic, time_loop_electrostatic
+from PyPIC3D.electrodynamic_tiled import time_loop_electrodynamic_tiled
+from PyPIC3D.electrostatic_tiled import time_loop_electrostatic_tiled
+from PyPIC3D.evolve import (
+    _time_loop_electrodynamic_global_reference,
+    _time_loop_electrostatic_global_reference,
+    time_loop_electrodynamic,
+    time_loop_electrostatic,
+)
 from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.initialization import initialize_fields
 from PyPIC3D.particles.species_class import particle_species
@@ -22,6 +29,13 @@ def unused_curl(Ex, Ey, Ez):
 
 
 class TestEvolveExternalFields(unittest.TestCase):
+    def test_public_loop_names_use_tiled_contracts(self):
+        electrodynamic_loop = time_loop_electrodynamic.func if hasattr(time_loop_electrodynamic, "func") else time_loop_electrodynamic
+        electrostatic_loop = time_loop_electrostatic.func if hasattr(time_loop_electrostatic, "func") else time_loop_electrostatic
+
+        self.assertIs(electrodynamic_loop, time_loop_electrodynamic_tiled)
+        self.assertIs(electrostatic_loop, time_loop_electrostatic_tiled)
+
     def _electrostatic_grid_order_species(self, world, charge):
         return particle_species(
             name=f"charge {charge}",
@@ -82,7 +96,7 @@ class TestEvolveExternalFields(unittest.TestCase):
             self._electrostatic_grid_order_species(world, -1.0),
         ]
 
-        pushed_particles, _ = time_loop_electrostatic(
+        pushed_particles, _ = _time_loop_electrostatic_global_reference(
             pushed_particles,
             (E, B, J, rho, phi, external_fields),
             world,
@@ -186,7 +200,7 @@ class TestEvolveExternalFields(unittest.TestCase):
             ),
         ]
 
-        particles, fields = time_loop_electrostatic(
+        particles, fields = _time_loop_electrostatic_global_reference(
             particles,
             (E, B, J, rho, phi, external_fields),
             world,
@@ -259,7 +273,7 @@ class TestEvolveExternalFields(unittest.TestCase):
         ]
         fields = (E, B, J, rho, phi, external_fields, None)
 
-        particles, fields = time_loop_electrodynamic(
+        particles, fields = _time_loop_electrodynamic_global_reference(
             particles,
             fields,
             world,
@@ -333,7 +347,7 @@ class TestEvolveExternalFields(unittest.TestCase):
         ]
         fields = (E, B, J, rho, phi, external_fields, None)
 
-        particles, _ = time_loop_electrodynamic(
+        particles, _ = _time_loop_electrodynamic_global_reference(
             particles,
             fields,
             world,

@@ -6,18 +6,22 @@ import jax.numpy as jnp
 from PyPIC3D.diagnostics import openPMD
 from PyPIC3D.diagnostics.openPMD import _ensure_openpmd_array
 from PyPIC3D.solvers.yee_tiled import tile_scalar_field, tile_vector_field
+from PyPIC3D.particles.species_class import particle_species
+from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
 
 
 class FakeRecord:
     def __init__(self):
         self.shape = None
         self.unit_SI = None
+        self.data = None
 
     def reset_dataset(self, dataset):
         pass
 
     def store_chunk(self, array, offset, extent):
         self.shape = tuple(extent)
+        self.data = jnp.asarray(array)
 
 
 class FakeMesh:
@@ -40,9 +44,34 @@ class FakeMeshes(dict):
         return dict.__getitem__(self, name)
 
 
+class FakeParticleRecord(dict):
+    def __getitem__(self, component):
+        if component not in self:
+            self[component] = FakeRecord()
+        return dict.__getitem__(self, component)
+
+
+class FakeParticleSpecies(dict):
+    def __getitem__(self, record_name):
+        if record_name not in self:
+            if record_name in ("position", "positionOffset", "momentum"):
+                self[record_name] = FakeParticleRecord()
+            else:
+                self[record_name] = FakeRecord()
+        return dict.__getitem__(self, record_name)
+
+
+class FakeParticles(dict):
+    def __getitem__(self, species_name):
+        if species_name not in self:
+            self[species_name] = FakeParticleSpecies()
+        return dict.__getitem__(self, species_name)
+
+
 class FakeIteration:
     def __init__(self):
         self.meshes = FakeMeshes()
+        self.particles = FakeParticles()
         self.time = None
         self.dt = None
         self.time_unit_SI = None
@@ -59,6 +88,9 @@ class FakeSeries:
     def __init__(self):
         self.iterations = FakeIterations()
 
+    def set_attribute(self, name, value):
+        pass
+
     def flush(self):
         pass
 
@@ -68,6 +100,59 @@ class FakeSeries:
 
 def _zero_field(shape):
     return tuple(jnp.zeros(shape) for _ in range(3))
+
+
+def _world():
+    return {
+        "dt": 0.2,
+        "dx": 1.0,
+        "dy": 1.0,
+        "dz": 1.0,
+        "x_wind": 4.0,
+        "y_wind": 2.0,
+        "z_wind": 1.0,
+        "Nx": 4,
+        "Ny": 2,
+        "Nz": 1,
+        "tile_shape": (2, 1, 1),
+        "guard_cells": 2,
+        "boundary_conditions": {"x": 0, "y": 0, "z": 0},
+        "particle_boundary_conditions": {"x": 0, "y": 0, "z": 0},
+    }
+
+
+def _simulation_parameters():
+    return {
+        "particle_tile_nx": 2,
+        "particle_tile_ny": 1,
+        "particle_tile_nz": 1,
+    }
+
+
+def _species(name, charge, mass, weight, x1):
+    world = _world()
+    return particle_species(
+        name=name,
+        N_particles=x1.shape[0],
+        charge=charge,
+        mass=mass,
+        weight=weight,
+        T=0.0,
+        x1=x1,
+        x2=jnp.zeros_like(x1),
+        x3=jnp.zeros_like(x1),
+        v1=jnp.ones_like(x1) * 0.1,
+        v2=jnp.zeros_like(x1),
+        v3=jnp.zeros_like(x1),
+        xwind=world["x_wind"],
+        ywind=world["y_wind"],
+        zwind=world["z_wind"],
+        dx=world["dx"],
+        dy=world["dy"],
+        dz=world["dz"],
+        active_mask=jnp.ones(x1.shape[0], dtype=bool),
+        dt=world["dt"],
+    )
 
 
 class OpenPMDDiagnosticsTests(unittest.TestCase):
@@ -152,6 +237,36 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
         rho_mesh = series.iterations[0].meshes["rho"]
         self.assertEqual(E_mesh.records["x"].shape, (4, 2, 2))
         self.assertEqual(rho_mesh.records[openPMD.io.Mesh_Record_Component.SCALAR].shape, (4, 2, 2))
+
+    def test_write_openpmd_initial_particles_flattens_tiled_particles_and_preserves_names(self):
+        world = _world()
+        species = [
+            _species("beam electrons", -1.0, 2.0, 3.0, jnp.array([-1.5, 0.5])),
+            _species("background ions", 1.0, 4.0, 5.0, jnp.array([1.5])),
+        ]
+        tiled_particles, species_config = to_tiled_particles(species, world, _simulation_parameters())
+        species_names = tuple(s.get_name() for s in species)
+        series = FakeSeries()
+
+        with patch.object(openPMD.io, "Series", return_value=series):
+            openPMD.write_openpmd_initial_particles(
+                tiled_particles,
+                world,
+                {"C": 10.0},
+                "/tmp",
+                species_config=species_config,
+                species_names=species_names,
+            )
+
+        iteration = series.iterations[0]
+        electron_group = iteration.particles["beam_electrons"]
+        ion_group = iteration.particles["background_ions"]
+        self.assertEqual(electron_group["position"]["x"].shape, (2,))
+        self.assertEqual(ion_group["position"]["x"].shape, (1,))
+        self.assertTrue(jnp.allclose(electron_group["weighting"].data, jnp.array([3.0, 3.0])))
+        self.assertTrue(jnp.allclose(ion_group["charge"].data, jnp.array([1.0])))
+        expected_gamma = 1.0 / jnp.sqrt(1.0 - 0.1**2 / 10.0**2)
+        self.assertTrue(jnp.allclose(electron_group["momentum"]["x"].data, jnp.ones(2) * 0.1 * 6.0 * expected_gamma))
 
 
 if __name__ == "__main__":

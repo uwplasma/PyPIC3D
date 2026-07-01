@@ -47,12 +47,9 @@ from PyPIC3D.solvers.yee_tiled import (
 )
 
 
-from PyPIC3D.electrodynamic_tiled import (
-    time_loop_electrodynamic_tiled
-)
-
-from PyPIC3D.electrostatic_tiled import (
-    time_loop_electrostatic_tiled
+from PyPIC3D.evolve import (
+    time_loop_electrodynamic,
+    time_loop_electrostatic,
 )
 
 from PyPIC3D.pusher.particle_push import validate_particle_pusher
@@ -60,8 +57,8 @@ from PyPIC3D.pusher.particle_push import validate_particle_pusher
 from PyPIC3D.deposition.current_methods import (
     encode_current_calculation,
 )
-from PyPIC3D.deposition.direct_deposition_tiled import direct_J_from_tiled_particles
-from PyPIC3D.deposition.esirkepov_tiled import tiled_esirkepov_current
+from PyPIC3D.deposition.Esirkepov import Esirkepov_current
+from PyPIC3D.deposition.J_from_rhov import J_from_rhov
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
@@ -489,18 +486,18 @@ def initialize_simulation(toml_file):
 
     if electrostatic:
         print("Using electrostatic solver")
-        evolve_loop = time_loop_electrostatic_tiled
+        evolve_loop = time_loop_electrostatic
     else:
         print("Using electrodynamic Yee solver")
-        evolve_loop = time_loop_electrodynamic_tiled
+        evolve_loop = time_loop_electrodynamic
     # set the evolve loop function based on the electrostatic flag
 
     if simulation_parameters['current_calculation'] == "esirkepov":
         print("Using Esirkepov current calculation method")
-        J_func = tiled_esirkepov_current
+        J_func = Esirkepov_current
     elif simulation_parameters['current_calculation'] == "j_from_rhov":
         print(f"Using J from rhov current calculation method with filter: {simulation_parameters['filter_j']}")
-        J_func = functools.partial(direct_J_from_tiled_particles, filter=simulation_parameters['filter_j'])
+        J_func = functools.partial(J_from_rhov, filter=simulation_parameters['filter_j'])
 
 
     species_config = None
@@ -524,10 +521,10 @@ def initialize_simulation(toml_file):
     B = tile_vector_field(B, world, tile_shape, num_guard_cells=guard_cells)
     if simulation_parameters["current_calculation"] == "esirkepov":
         J = empty_tiled_vector_field(world, tile_shape, num_guard_cells=guard_cells, dtype=E[0].dtype)
-        J_func = tiled_esirkepov_current
+        J_func = Esirkepov_current
     else:
         J = tile_vector_field(J, world, tile_shape, num_guard_cells=guard_cells)
-        J_func = functools.partial(direct_J_from_tiled_particles, filter=simulation_parameters['filter_j'])
+        J_func = functools.partial(J_from_rhov, filter=simulation_parameters['filter_j'])
     external_E, external_B = external_fields
     external_fields = (
         tile_vector_field(external_E, world, tile_shape, num_guard_cells=guard_cells),

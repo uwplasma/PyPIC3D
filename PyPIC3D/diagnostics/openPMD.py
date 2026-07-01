@@ -286,7 +286,7 @@ def write_openpmd_particles(particles, world, constants, output_dir, plot_t, t, 
 
 
 
-def write_openpmd_initial_particles(particles, world, constants, output_dir, filename="initial_particles.h5"):
+def write_openpmd_initial_particles(particles, world, constants, output_dir, filename="initial_particles.h5", species_config=None, species_names=None):
     """
     Write the initial particle states to separate openPMD files, one per species.
 
@@ -297,6 +297,10 @@ def write_openpmd_initial_particles(particles, world, constants, output_dir, fil
         output_dir (str): Base output directory for the simulation.
         filename (str): Base name of the openPMD output file (species name is prepended).
     """
+    particles = particles_for_output(particles, species_config=species_config, species_names=species_names, world=world)
+    # Initial particle dumps may receive tile-major runtime storage.  The
+    # openPMD file still contains ordinary per-species particle records.
+
     if not particles:
         return
     
@@ -341,8 +345,27 @@ def write_openpmd_initial_particles(particles, world, constants, output_dir, fil
         gamma = make_array_writable(gamma)
 
         num_particles = x.shape[0]
-        particle_mass = float(species.mass)
-        particle_charge = float(species.charge)
+        particle_mass = species.get_mass()
+        particle_charge = species.get_charge()
+        particle_weight = species.get_weight()
+
+        if jnp.ndim(particle_weight) == 0:
+            weights = np.full(num_particles, float(particle_weight), dtype=np.float64)
+        else:
+            weights = _ensure_openpmd_array(particle_weight, squeeze=True)
+
+        if jnp.ndim(particle_mass) == 0:
+            masses = np.full(num_particles, float(particle_mass), dtype=np.float64)
+        else:
+            masses = _ensure_openpmd_array(particle_mass, squeeze=True)
+
+        if jnp.ndim(particle_charge) == 0:
+            charges = np.full(num_particles, float(particle_charge), dtype=np.float64)
+        else:
+            charges = _ensure_openpmd_array(particle_charge, squeeze=True)
+
+        mass_per_weight = masses / weights
+        charge_per_weight = charges / weights
 
         position = species_group["position"]
         for component, data in zip(("x", "y", "z"), (x, y, z)):
@@ -364,25 +387,22 @@ def write_openpmd_initial_particles(particles, world, constants, output_dir, fil
         for component, data in zip(("x", "y", "z"), (vx, vy, vz)):
             record_component = momentum[component]
             record_component.reset_dataset(io.Dataset(data.dtype, [num_particles]))
-            record_component.store_chunk(data * particle_mass * gamma , [0], [num_particles])
+            record_component.store_chunk(data * masses * gamma, [0], [num_particles])
             record_component.unit_SI = 1.0
 
         weighting = species_group["weighting"]
-        weights = np.full(num_particles, float(species.weight), dtype=np.float64)
         weighting.reset_dataset(io.Dataset(weights.dtype, [num_particles]))
         weighting.store_chunk(weights, [0], [num_particles])
         weighting.unit_SI = 1.0
 
         charge = species_group["charge"]
-        charges = np.full(num_particles, particle_charge, dtype=np.float64)
         charge.reset_dataset(io.Dataset(charges.dtype, [num_particles]))
-        charge.store_chunk(charges, [0], [num_particles])
+        charge.store_chunk(charge_per_weight, [0], [num_particles])
         charge.unit_SI = 1.0
 
         mass = species_group["mass"]
-        masses = np.full(num_particles, particle_mass, dtype=np.float64)
         mass.reset_dataset(io.Dataset(masses.dtype, [num_particles]))
-        mass.store_chunk(masses, [0], [num_particles])
+        mass.store_chunk(mass_per_weight, [0], [num_particles])
         mass.unit_SI = 1.0
 
         series.flush()

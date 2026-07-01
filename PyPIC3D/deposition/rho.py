@@ -8,11 +8,35 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
 )
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, update_ghost_cells
+from PyPIC3D.deposition.rho_tiled import compute_rho_from_tiled_particles, compute_tiled_rho_from_tiled_particles
+from PyPIC3D.particles.tiled_particles import TiledParticles
 from PyPIC3D.utils import digital_filter
 
 
+def compute_rho(particles, rho, world, constants, species_config=None):
+    """Compute charge density for flat or tile-major particle storage."""
+    if isinstance(particles, TiledParticles):
+        if species_config is None:
+            species_config = world["species_config"]
+
+        if getattr(rho, "ndim", 0) == 6:
+            return compute_tiled_rho_from_tiled_particles(
+                particles,
+                species_config,
+                rho,
+                world,
+                constants,
+                tile_shape=tuple(int(width) for width in world["tile_shape"]),
+                g=int(world["guard_cells"]),
+            )
+
+        return compute_rho_from_tiled_particles(particles, species_config, rho, world, constants)
+
+    return _compute_rho_flat(particles, rho, world, constants)
+
+
 @jit
-def compute_rho(particles, rho, world, constants):
+def _compute_rho_flat(particles, rho, world, constants):
     """Compute the charge density (rho) on the vertex grid."""
     dx = world["dx"]
     dy = world["dy"]

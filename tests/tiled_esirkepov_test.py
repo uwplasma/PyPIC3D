@@ -16,9 +16,10 @@ from PyPIC3D.deposition.esirkepov_tiled import (
     _compact_2d_esirkepov_weights,
     tiled_esirkepov_current,
 )
+from PyPIC3D.deposition.current_methods import CURRENT_ESIRKEPOV
 from PyPIC3D.deposition.rho_tiled import compute_tiled_rho_from_tiled_particles
 from PyPIC3D.diagnostics.output_adapters import fields_for_output
-from PyPIC3D.initialization import CURRENT_ESIRKEPOV, initialize_simulation
+from PyPIC3D.initialization import initialize_simulation
 from PyPIC3D.particles.tiled_particle_refresh import (
     refresh_tiled_particle_tiles,
     update_tiled_particle_positions,
@@ -339,6 +340,72 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
             self.assertTrue(
                 jnp.allclose(tiled_component, reference_component, rtol=1.0e-12, atol=1.0e-12),
                 f"max diff {jnp.max(jnp.abs(tiled_component - reference_component))}",
+            )
+
+    def test_public_Esirkepov_current_dispatches_tiled_particles_to_tile_local_current(self):
+        world = self._build_world(Nx=8, Ny=1, Nz=1, dt=0.05, shape_factor=1)
+        world["guard_cells"] = 2
+        world["tile_shape"] = (2, 1, 1)
+        constants = {"C": 1.0, "eps": 1.0, "alpha": 1.0}
+        simulation_parameters = {
+            "particle_tile_nx": world["tile_shape"][0],
+            "particle_tile_ny": world["tile_shape"][1],
+            "particle_tile_nz": world["tile_shape"][2],
+        }
+        x_old = jnp.array([-1.10, -0.10, 1.05])
+        old_species = self._species(world, x_old)
+        x_new = x_old + old_species.v1 * world["dt"]
+        new_species = self._species(world, x_new)
+
+        tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
+        J_reference = Esirkepov_current([new_species], self._empty_J(world), constants, world)
+        J_tiles = Esirkepov_current(
+            tiled_particles,
+            species_config,
+            empty_tiled_vector_field(world, world["tile_shape"], num_guard_cells=int(world["guard_cells"])),
+            constants,
+            world,
+            tile_shape=world["tile_shape"],
+            g=int(world["guard_cells"]),
+        )
+        J_from_tiles = assemble_tiled_vector_field(
+            J_tiles,
+            world,
+            world["tile_shape"],
+            num_guard_cells=int(world["guard_cells"]),
+        )
+
+        for tile_component in J_tiles:
+            self.assertEqual(tile_component.ndim, 6)
+        for reference_component, tiled_component in zip(J_reference, J_from_tiles):
+            self.assertTrue(
+                jnp.allclose(tiled_component, reference_component, rtol=1.0e-12, atol=1.0e-12),
+                f"max diff {jnp.max(jnp.abs(tiled_component - reference_component))}",
+            )
+
+    def test_public_Esirkepov_current_rejects_tiled_filter_modes(self):
+        world = self._build_world(Nx=8, Ny=1, Nz=1, dt=0.05, shape_factor=1)
+        world["guard_cells"] = 2
+        tile_shape = (2, 1, 1)
+        constants = {"C": 1.0, "eps": 1.0, "alpha": 1.0}
+        simulation_parameters = {
+            "particle_tile_nx": tile_shape[0],
+            "particle_tile_ny": tile_shape[1],
+            "particle_tile_nz": tile_shape[2],
+        }
+        old_species = self._species(world, jnp.array([-1.10, -0.10, 1.05]))
+        tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
+
+        with self.assertRaisesRegex(ValueError, "Esirkepov current filtering is not supported"):
+            Esirkepov_current(
+                tiled_particles,
+                species_config,
+                empty_tiled_vector_field(world, tile_shape, num_guard_cells=int(world["guard_cells"])),
+                constants,
+                world,
+                filter="digital",
+                tile_shape=tile_shape,
+                g=int(world["guard_cells"]),
             )
 
     def test_tiled_esirkepov_matches_global_current_for_dimensions_and_shapes(self):

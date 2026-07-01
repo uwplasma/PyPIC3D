@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 import toml
 
-from PyPIC3D.evolve import time_loop_electrodynamic
+from PyPIC3D.evolve import _time_loop_electrodynamic_global_reference
 from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
 from PyPIC3D.deposition.current_methods import CURRENT_ESIRKEPOV, CURRENT_J_FROM_RHOV
@@ -317,7 +317,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         phi = seed
         external_fields = ((seed, seed, seed), (seed, seed, seed))
 
-        _, reference_fields = time_loop_electrodynamic(
+        _, reference_fields = _time_loop_electrodynamic_global_reference(
             [],
             (E, B, J, rho, phi, external_fields, None),
             world,
@@ -678,7 +678,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         reference_species = self._species(world)
         E, B, J, rho, phi, external_fields, pml_state = self._empty_fields(world)
 
-        reference_particles, reference_fields = time_loop_electrodynamic(
+        reference_particles, reference_fields = _time_loop_electrodynamic_global_reference(
             [reference_species],
             (E, B, J, rho, phi, external_fields, pml_state),
             world,
@@ -758,7 +758,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         reference_species = self._species(world)
         E, B, J, rho, phi, external_fields, pml_state = self._empty_fields(world)
 
-        _, reference_fields = time_loop_electrodynamic(
+        _, reference_fields = _time_loop_electrodynamic_global_reference(
             [reference_species],
             (E, B, J, rho, phi, external_fields, pml_state),
             world,
@@ -822,7 +822,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         reference_species = self._species(world)
         E, B, J, rho, phi, external_fields, pml_state = self._empty_fields(world)
 
-        _, reference_fields = time_loop_electrodynamic(
+        _, reference_fields = _time_loop_electrodynamic_global_reference(
             [reference_species],
             (E, B, J, rho, phi, external_fields, pml_state),
             world,
@@ -883,7 +883,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         reference_species = self._species(world)
         E, B, J, rho, phi, external_fields, pml_state = self._empty_fields(world)
 
-        _, reference_fields = time_loop_electrodynamic(
+        _, reference_fields = _time_loop_electrodynamic_global_reference(
             [reference_species],
             (E, B, J, rho, phi, external_fields, pml_state),
             world,
@@ -986,7 +986,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         )
         E, B, J, rho, phi, external_fields, pml_state = self._empty_fields(world)
 
-        _, reference_fields = time_loop_electrodynamic(
+        _, reference_fields = _time_loop_electrodynamic_global_reference(
             [reference_species],
             (E, B, J, rho, phi, external_fields, pml_state),
             world,
@@ -1059,7 +1059,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         )
 
         for t in range(Nt):
-            reference_particles, reference_fields = time_loop_electrodynamic(
+            reference_particles, reference_fields = _time_loop_electrodynamic_global_reference(
                 reference_particles,
                 reference_fields,
                 world,
@@ -1116,7 +1116,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         )
 
         for t in range(Nt):
-            reference_particles, reference_fields = time_loop_electrodynamic(
+            reference_particles, reference_fields = _time_loop_electrodynamic_global_reference(
                 reference_particles,
                 reference_fields,
                 world,

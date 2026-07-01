@@ -5,9 +5,9 @@ import os
 from pyevtk.hl import gridToVTK, pointsToVTK
 import jax.numpy as jnp
 
-from PyPIC3D.diagnostics.output_adapters import particles_for_output
+from PyPIC3D.diagnostics.output_adapters import particles_for_output, vector_field_for_output
 
-def plot_fields(fieldx, fieldy, fieldz, t, name, dx, dy, dz):
+def plot_fields(fieldx, fieldy, fieldz, t, name, dx, dy, dz, world=None):
     """
     Plot the fields in a 3D grid.
 
@@ -24,6 +24,10 @@ def plot_fields(fieldx, fieldy, fieldz, t, name, dx, dy, dz):
     Returns:
         None
     """
+    if world is not None:
+        fieldx, fieldy, fieldz = vector_field_for_output((fieldx, fieldy, fieldz), world)
+        # Tiled field storage is assembled only here, at the file-output boundary.
+
     Nx = fieldx.shape[0]
     Ny = fieldx.shape[1]
     Nz = fieldx.shape[2]

@@ -9,12 +9,58 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
     prepare_particle_axis_stencil,
 )
 from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, update_ghost_cells
+from PyPIC3D.deposition.direct_deposition_tiled import direct_J_from_tiled_particles
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
+from PyPIC3D.particles.tiled_particles import TiledParticles
 from PyPIC3D.utils import bilinear_filter, digital_filter
 
 
+def J_from_rhov(
+    particles,
+    J,
+    constants,
+    world,
+    grid=None,
+    filter="bilinear",
+    species_config=None,
+    tile_shape=None,
+    g=None,
+):
+    """Compute current density from velocity-weighted particle charge."""
+
+    if isinstance(particles, TiledParticles):
+        if species_config is None:
+            species_config = J
+            J = constants
+            constants = world
+            world = grid
+            grid = None
+        # Tiled runtime callers pass ``species_config`` as the second positional
+        # argument so the public current name can be used without global current
+        # assembly in the deposition path.
+
+        if tile_shape is None:
+            tile_shape = tuple(int(width) for width in world["tile_shape"])
+        if g is None:
+            g = int(world["guard_cells"])
+
+        return direct_J_from_tiled_particles(
+            particles,
+            species_config,
+            J,
+            constants,
+            world,
+            grid=grid,
+            filter=filter,
+            tile_shape=tile_shape,
+            g=int(g),
+        )
+
+    return _J_from_rhov_flat(particles, J, constants, world, grid=grid, filter=filter)
+
+
 @partial(jit, static_argnames=("filter",))
-def J_from_rhov(particles, J, constants, world, grid=None, filter="bilinear"):
+def _J_from_rhov_flat(particles, J, constants, world, grid=None, filter="bilinear"):
     """Compute current density (Jx,Jy,Jz) by depositing particle velocities."""
 
     if grid is None:

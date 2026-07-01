@@ -2,15 +2,22 @@
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.boundary_conditions.grid_and_stencil import collapse_axis_stencil, prepare_particle_axis_stencil
 from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, update_ghost_cells
-from PyPIC3D.deposition.rho_tiled import compute_mass_density_from_tiled_particles
+from PyPIC3D.deposition.rho_tiled import (
+    compute_mass_density_from_tiled_particles,
+    compute_pressure_field_from_tiled_particles,
+    compute_tiled_mass_density_from_tiled_particles,
+    compute_tiled_pressure_field_from_tiled_particles,
+    compute_tiled_velocity_field_from_tiled_particles,
+    compute_velocity_field_from_tiled_particles,
+)
 from PyPIC3D.particles.tiled_particles import TiledParticles
 
 import jax
 import jax.numpy as jnp
 from jax import jit
+from functools import partial
 
 
-@jit
 def compute_mass_density(particles, rho, world, species_config=None):
     """
     Compute the mass density (rho) for a given set of particles in a simulation world.
@@ -29,8 +36,22 @@ def compute_mass_density(particles, rho, world, species_config=None):
     ndarray: The updated charge density array.
     """
     if isinstance(particles, TiledParticles):
+        if getattr(rho, "ndim", 0) == 6:
+            return compute_tiled_mass_density_from_tiled_particles(
+                particles,
+                species_config,
+                rho,
+                world,
+                tile_shape=tuple(int(width) for width in world["tile_shape"]),
+                g=int(world["guard_cells"]),
+            )
         return compute_mass_density_from_tiled_particles(particles, species_config, rho, world)
 
+    return _compute_mass_density_flat(particles, rho, world)
+
+
+@jit
+def _compute_mass_density_flat(particles, rho, world):
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
@@ -94,8 +115,26 @@ def compute_mass_density(particles, rho, world, species_config=None):
     rho = update_ghost_cells(rho, bc_x, bc_y, bc_z)
     return rho
 
-@jit
-def compute_velocity_field(particles, field, direction, world):
+
+def compute_velocity_field(particles, field, direction, world, species_config=None):
+    if isinstance(particles, TiledParticles):
+        if getattr(field, "ndim", 0) == 6:
+            return compute_tiled_velocity_field_from_tiled_particles(
+                particles,
+                species_config,
+                field,
+                int(direction),
+                world,
+                tile_shape=tuple(int(width) for width in world["tile_shape"]),
+                g=int(world["guard_cells"]),
+            )
+        return compute_velocity_field_from_tiled_particles(particles, species_config, field, int(direction), world)
+
+    return _compute_velocity_field_flat(particles, field, direction, world)
+
+
+@partial(jit, static_argnames=("direction",))
+def _compute_velocity_field_flat(particles, field, direction, world):
     """
     Compute the velocity field (v) for a given set of particles in a simulation world.
     Parameters:
@@ -180,8 +219,33 @@ def compute_velocity_field(particles, field, direction, world):
 
 
 
-@jit
-def compute_pressure_field(particles, field, velocity_field, direction, world):
+def compute_pressure_field(particles, field, velocity_field, direction, world, species_config=None):
+    if isinstance(particles, TiledParticles):
+        if getattr(field, "ndim", 0) == 6:
+            return compute_tiled_pressure_field_from_tiled_particles(
+                particles,
+                species_config,
+                field,
+                velocity_field,
+                int(direction),
+                world,
+                tile_shape=tuple(int(width) for width in world["tile_shape"]),
+                g=int(world["guard_cells"]),
+            )
+        return compute_pressure_field_from_tiled_particles(
+            particles,
+            species_config,
+            field,
+            velocity_field,
+            int(direction),
+            world,
+        )
+
+    return _compute_pressure_field_flat(particles, field, velocity_field, direction, world)
+
+
+@partial(jit, static_argnames=("direction",))
+def _compute_pressure_field_flat(particles, field, velocity_field, direction, world):
 
     dx = world['dx']
     dy = world['dy']

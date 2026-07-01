@@ -10,11 +10,12 @@ from PyPIC3D.boundary_conditions.PML import (
     apply_pml_to_e_curl,
     update_ghost_cells_for_pml,
 )
+from PyPIC3D.solvers.yee_tiled import update_tiled_B, update_tiled_E
 # import internal libraries
 
 
 @partial(jit, static_argnames=("curl_func",))
-def update_E(E, B, J, world, constants, curl_func, pml_state=None):
+def _update_E_global(E, B, J, world, constants, curl_func, pml_state=None):
     """
     Update the electric field components (Ex, Ey, Ez) based on the given parameters.
 
@@ -120,7 +121,7 @@ def update_E(E, B, J, world, constants, curl_func, pml_state=None):
 
 
 @partial(jit, static_argnames=("curl_func",))
-def update_B(E, B, world, constants, curl_func, pml_state=None):
+def _update_B_global(E, B, world, constants, curl_func, pml_state=None):
     """
     Update the magnetic field components (Bx, By, Bz) using the curl of the electric field.
 
@@ -208,3 +209,41 @@ def update_B(E, B, world, constants, curl_func, pml_state=None):
     # fill ghost cells with the updated values
 
     return (Bx, By, Bz), pml_state
+
+
+def update_E(E, B, J, world, constants, curl_func, pml_state=None):
+    """
+    Update electric fields through the public Yee helper.
+
+    Tiled field/current arrays are routed to the tile-local Yee update using
+    the explicit ``world['tile_shape']`` and ``world['guard_cells']`` contract.
+    Ordinary global ghost-celled arrays keep the historical first-order Yee
+    update in ``_update_E_global``.
+    """
+
+    if E[0].ndim == 6:
+        tile_shape = tuple(world["tile_shape"])
+        g = int(world["guard_cells"])
+        if pml_state is None:
+            return update_tiled_E(E, B, J, world, constants, curl_func, tile_shape, g), None
+        return update_tiled_E(E, B, J, world, constants, curl_func, tile_shape, g, pml_state)
+
+    return _update_E_global(E, B, J, world, constants, curl_func, pml_state)
+
+
+def update_B(E, B, world, constants, curl_func, pml_state=None):
+    """
+    Update magnetic fields through the public Yee helper.
+
+    Tiled arrays follow the tile-local Yee path and ordinary global arrays
+    follow the original global ghost-cell implementation.
+    """
+
+    if E[0].ndim == 6:
+        tile_shape = tuple(world["tile_shape"])
+        g = int(world["guard_cells"])
+        if pml_state is None:
+            return update_tiled_B(E, B, world, constants, curl_func, tile_shape, g), None
+        return update_tiled_B(E, B, world, constants, curl_func, tile_shape, g, pml_state)
+
+    return _update_B_global(E, B, world, constants, curl_func, pml_state)

@@ -322,6 +322,26 @@ class TestYeeTiled(unittest.TestCase):
         for reference, tiled in zip(E_reference, E_from_tiles):
             self.assertTrue(jnp.allclose(tiled, reference, rtol=1.0e-12, atol=1.0e-12))
 
+    def test_first_order_yee_public_update_E_routes_tiled_arrays(self):
+        world = self._build_world()
+        constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
+        tile_shape = (2, 3, 2)
+        world["tile_shape"] = tile_shape
+        world["guard_cells"] = 2
+        E = self._deterministic_vector_field(world, scale=1.0)
+        B = self._deterministic_vector_field(world, scale=0.2)
+        J = self._deterministic_vector_field(world, scale=0.05)
+        E_tiles = tile_vector_field(E, world, tile_shape, num_guard_cells=2)
+        B_tiles = tile_vector_field(B, world, tile_shape, num_guard_cells=2)
+        J_tiles = tile_vector_field(J, world, tile_shape, num_guard_cells=2)
+
+        E_public, pml_state = update_E(E_tiles, B_tiles, J_tiles, world, constants, unused_curl)
+        E_reference = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, unused_curl, tile_shape, 2)
+
+        self.assertIsNone(pml_state)
+        for public, reference in zip(E_public, E_reference):
+            self.assertTrue(jnp.allclose(public, reference, rtol=1.0e-12, atol=1.0e-12))
+
     def test_update_tiled_E_matches_standard_yee_update_with_conducting_boundaries(self):
         world = self._conducting_world()
         constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
@@ -367,6 +387,24 @@ class TestYeeTiled(unittest.TestCase):
 
         for reference, tiled in zip(B_reference, B_from_tiles):
             self.assertTrue(jnp.allclose(tiled, reference, rtol=1.0e-12, atol=1.0e-12))
+
+    def test_first_order_yee_public_update_B_routes_tiled_arrays(self):
+        world = self._build_world()
+        constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
+        tile_shape = (2, 3, 2)
+        world["tile_shape"] = tile_shape
+        world["guard_cells"] = 2
+        E = self._deterministic_vector_field(world, scale=1.0)
+        B = self._deterministic_vector_field(world, scale=0.2)
+        E_tiles = tile_vector_field(E, world, tile_shape, num_guard_cells=2)
+        B_tiles = tile_vector_field(B, world, tile_shape, num_guard_cells=2)
+
+        B_public, pml_state = update_B(E_tiles, B_tiles, world, constants, unused_curl)
+        B_reference = update_tiled_B(E_tiles, B_tiles, world, constants, unused_curl, tile_shape, 2)
+
+        self.assertIsNone(pml_state)
+        for public, reference in zip(B_public, B_reference):
+            self.assertTrue(jnp.allclose(public, reference, rtol=1.0e-12, atol=1.0e-12))
 
     def test_update_tiled_B_matches_standard_yee_update_with_conducting_boundaries(self):
         world = self._conducting_world()

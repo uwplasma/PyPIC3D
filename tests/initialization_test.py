@@ -6,8 +6,7 @@ import toml
 import jax
 import jax.numpy as jnp
 from PyPIC3D.initialization import setup_write_dir, default_parameters, initialize_simulation, validate_field_solver
-from PyPIC3D.electrodynamic_tiled import time_loop_electrodynamic_tiled
-from PyPIC3D.electrostatic_tiled import time_loop_electrostatic_tiled
+from PyPIC3D.evolve import time_loop_electrodynamic, time_loop_electrostatic
 from PyPIC3D.particles.tiled_particles import TiledParticles
 
 jax.config.update("jax_enable_x64", True)
@@ -85,7 +84,7 @@ class TestInitializationFunctions(unittest.TestCase):
 
             loop, particles, fields, world, simulation_parameters, *_rest = initialize_simulation(toml.load(config_path))
 
-            self.assertIs(loop.func if hasattr(loop, "func") else loop, time_loop_electrodynamic_tiled)
+            self.assertIs(loop.func if hasattr(loop, "func") else loop, time_loop_electrodynamic)
             self.assertIsInstance(particles, TiledParticles)
             self.assertEqual(simulation_parameters["solver"], "electrodynamic_yee")
             self.assertEqual(tuple(world["tile_shape"]), (2, 1, 1))
@@ -179,7 +178,7 @@ class TestInitializationFunctions(unittest.TestCase):
 
             loop, particles, fields, world, *_ = initialize_simulation(config)
 
-            self.assertIs(loop, time_loop_electrostatic_tiled)
+            self.assertIs(loop, time_loop_electrostatic)
             self.assertIsInstance(particles, TiledParticles)
             self.assertEqual(fields[0][0].ndim, 6)
             for vertex_axis, center_axis in zip(world["grids"]["vertex"], world["grids"]["center"]):

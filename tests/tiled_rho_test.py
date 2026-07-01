@@ -239,6 +239,47 @@ class TestTiledRho(unittest.TestCase):
             )
         )
 
+    def test_compute_rho_dispatches_to_tile_major_deposition_for_tiled_particles(self):
+        world = self._build_world(shape_factor=2)
+        world["tile_shape"] = (
+            self._simulation_parameters()["particle_tile_nx"],
+            self._simulation_parameters()["particle_tile_ny"],
+            self._simulation_parameters()["particle_tile_nz"],
+        )
+        constants = {"alpha": 1.0}
+        particles = self._particles(world)
+        tiled_particles, species_config = self._tiled_with_noisy_inactive_slots(particles, world)
+        rho_tiles = tile_scalar_field(
+            self._empty_scalar(world),
+            world,
+            world["tile_shape"],
+            num_guard_cells=int(world["guard_cells"]),
+        )
+
+        rho_reference = compute_rho(particles, self._empty_scalar(world), world, constants)
+        rho_tiles = compute_rho(
+            tiled_particles,
+            rho_tiles,
+            world,
+            constants,
+            species_config=species_config,
+        )
+        rho_from_tiles = assemble_tiled_scalar_field(
+            rho_tiles,
+            world,
+            world["tile_shape"],
+            num_guard_cells=int(world["guard_cells"]),
+        )
+
+        self.assertTrue(
+            jnp.allclose(
+                rho_from_tiles[1:-1, 1:-1, 1:-1],
+                rho_reference[1:-1, 1:-1, 1:-1],
+                rtol=1.0e-12,
+                atol=1.0e-12,
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

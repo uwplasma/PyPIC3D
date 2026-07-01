@@ -9,7 +9,7 @@ from functools import partial
 
 from PyPIC3D.diagnostics.output_adapters import particles_for_output
 
-def plot_positions(particles, t, x_wind, y_wind, z_wind, path):
+def plot_positions(particles, t, x_wind, y_wind, z_wind, path, species_config=None, species_names=None, world=None):
     """
     Makes an interactive 3D plot of the positions of the particles using Plotly.
 
@@ -25,13 +25,17 @@ def plot_positions(particles, t, x_wind, y_wind, z_wind, path):
     """
     fig = go.Figure()
 
+    particles = particles_for_output(particles, species_config=species_config, species_names=species_names, world=world)
+    # Keep tiled fixed-capacity storage out of the plotting loop.  From here on
+    # the code sees the same species-like diagnostic objects as ordinary output.
+
     colors = ['red', 'blue', 'green', 'purple', 'orange', 'yellow', 'cyan']
     for idx, species in enumerate(particles):
         x, y, z = species.get_position()
         fig.add_trace(go.Scatter3d(
             x=x, y=y, z=z, mode='markers',
             marker=dict(size=2, color=colors[idx % len(colors)]),
-            name=f'Species {idx + 1}'
+            name=species.get_name()
         ))
 
     fig.update_layout(
@@ -89,7 +93,7 @@ def write_particles_phase_space(particles, t, path, species_config=None, species
         jnp.save(f"{path}/data/phase_space/z/{name}_phase_space.{t:09}.npy", z_phase_space)
     # write the phase space of the particles to a file
 
-def particles_phase_space(particles, world, t, name, path):
+def particles_phase_space(particles, world, t, name, path, species_config=None, species_names=None):
     """
     Plot the phase space of the particles.
 
@@ -109,6 +113,10 @@ def particles_phase_space(particles, world, t, name, path):
     colors = ['r', 'b', 'g', 'c', 'm', 'y', 'k']
     idx = 0
     order = 10
+    particles = particles_for_output(particles, species_config=species_config, species_names=species_names, world=world)
+    # Phase-space plots are an output boundary; tile-major storage is flattened
+    # once here rather than leaking into the plotting loops.
+
     for species in particles:
         x, y, z = species.get_position()
         vx, vy, vz = species.get_velocity()

@@ -12,6 +12,7 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
 )
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
+from PyPIC3D.particles.tiled_particles import TiledParticles
 
 
 def shift_old_stencil(old_w_list, shift):
@@ -206,8 +207,50 @@ def eliminate_esirkepov_ghost_cells(field):
     # remove one layer on each side, returning the solver's ordinary one-ghost current array.
     return field[tuple(slices)]
 
-def Esirkepov_current(particles, J, constants, world, grid=None, filter=None):
+def Esirkepov_current(
+    particles,
+    J,
+    constants,
+    world,
+    grid=None,
+    filter=None,
+    species_config=None,
+    tile_shape=None,
+    g=None,
+):
     """Esirkepov current deposition supporting 1D/2D/3D via inactive dims."""
+    if isinstance(particles, TiledParticles):
+        if filter not in (None, "none"):
+            raise ValueError("Esirkepov current filtering is not supported; use filter='none'.")
+
+        if species_config is None:
+            species_config = J
+            J = constants
+            constants = world
+            world = grid
+            grid = None
+        # Tiled Esirkepov stores old particle positions.  The tiled kernel
+        # predicts the new positions locally and leaves particle retile staging
+        # to the caller, matching the Task 0 old/new position contract.
+
+        if tile_shape is None:
+            tile_shape = tuple(int(width) for width in world["tile_shape"])
+        if g is None:
+            g = int(world["guard_cells"])
+
+        from PyPIC3D.deposition.esirkepov_tiled import tiled_esirkepov_current
+
+        return tiled_esirkepov_current(
+            particles,
+            species_config,
+            J,
+            constants,
+            world,
+            grid=grid,
+            tile_shape=tile_shape,
+            g=int(g),
+        )
+
     if grid is None:
         grid = world["grids"]["center"]
 
