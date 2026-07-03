@@ -6,7 +6,7 @@ from functools import partial
 from PyPIC3D.deposition.rho import _compute_rho_flat
 from PyPIC3D.deposition.rho_tiled import compute_tiled_rho_from_tiled_particles
 from PyPIC3D.solvers.fdtd import centered_finite_difference_gradient
-from PyPIC3D.utils import digital_filter
+from PyPIC3D.utilities.filters import digital_filter
 from PyPIC3D.boundary_conditions.boundaryconditions import (
     update_ghost_cells, apply_scalar_conducting_bc
 )

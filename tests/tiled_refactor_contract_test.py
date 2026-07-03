@@ -101,8 +101,14 @@ class TestTiledRefactorContracts(unittest.TestCase):
 
     def test_flat_current_and_electrodynamic_references_are_removed(self):
         self.assertFalse(hasattr(J_from_rhov, "_J_from_rhov_flat"))
+        self.assertFalse(hasattr(J_from_rhov, "_J_from_rhov_tiled"))
         self.assertFalse(hasattr(evolve, "_time_loop_electrodynamic_global_reference"))
         self.assertFalse(hasattr(evolve, "_time_loop_electrostatic_global_reference"))
+
+    def test_direct_current_api_reads_tile_metadata_from_world(self):
+        signature = inspect.signature(J_from_rhov.J_from_rhov)
+        self.assertNotIn("tile_shape", signature.parameters)
+        self.assertNotIn("g", signature.parameters)
 
 
 if __name__ == "__main__":

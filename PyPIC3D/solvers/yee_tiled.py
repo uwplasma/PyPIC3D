@@ -7,6 +7,7 @@ from PyPIC3D.boundary_conditions.PML import (
 )
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
+from PyPIC3D.utilities.filters import digital_filter_vector
 
 
 def _tile_axis_count(n_cells, cells_per_tile):
@@ -501,47 +502,6 @@ def apply_tiled_conducting_bc(E_tiles, world, num_guard_cells=2):
     return Ex, Ey, Ez
 
 
-def digital_filter_tiled_scalar(field_tiles, alpha, num_guard_cells=2):
-    """
-    Apply the standard six-neighbor digital filter to each tile interior.
-
-    Tile halos play the same role as global ghost cells in ``digital_filter``:
-    the filtered values replace only the physical tile interiors.
-    """
-
-    neighbor_weight = (1 - alpha) / 6
-    g = int(num_guard_cells)
-    active = _active_slice(g)
-    backward = _backward_slice(g)
-    forward = _forward_slice(g)
-
-    filtered = (
-        alpha * field_tiles[:, :, :, active, active, active]
-        + neighbor_weight * field_tiles[:, :, :, backward, active, active]
-        + neighbor_weight * field_tiles[:, :, :, forward, active, active]
-        + neighbor_weight * field_tiles[:, :, :, active, backward, active]
-        + neighbor_weight * field_tiles[:, :, :, active, forward, active]
-        + neighbor_weight * field_tiles[:, :, :, active, active, backward]
-        + neighbor_weight * field_tiles[:, :, :, active, active, forward]
-    )
-
-    return field_tiles.at[:, :, :, active, active, active].set(filtered)
-
-
-def digital_filter_tiled_vector(field_tiles, alpha, num_guard_cells=2):
-    """
-    Apply the standard field filter component-wise in tile-major storage.
-    """
-
-    stacked_tiles = stack_tiled_vector_field(field_tiles)
-    filtered = jax.vmap(
-        lambda component: digital_filter_tiled_scalar(component, alpha, num_guard_cells),
-        in_axes=0,
-        out_axes=0,
-    )(stacked_tiles)
-    return _restore_tiled_vector_layout(filtered, field_tiles)
-
-
 def fold_tiled_ghost_cells(field_tiles, world, num_guard_cells=2, tile_shape=None):
     """
     Add tile-ghost deposits into owning interiors, then clear ghosts.
@@ -772,7 +732,7 @@ def update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_
     # refresh tile halos before the digital field filter, matching the global
     # ghost-cell order in the standard Yee solver.
 
-    Ex, Ey, Ez = digital_filter_tiled_vector((Ex, Ey, Ez), constants.get("alpha", 1.0), g)
+    Ex, Ey, Ez = digital_filter_vector((Ex, Ey, Ez), constants.get("alpha", 1.0), num_guard_cells=g)
 
     Ex, Ey, Ez = apply_tiled_conducting_bc((Ex, Ey, Ez), world, num_guard_cells=g)
 
@@ -836,7 +796,7 @@ def update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape, g,
     # refresh tile halos before the digital field filter, matching the global
     # ghost-cell order in the standard Yee solver.
 
-    Bx, By, Bz = digital_filter_tiled_vector((Bx, By, Bz), constants.get("alpha", 1.0), g)
+    Bx, By, Bz = digital_filter_vector((Bx, By, Bz), constants.get("alpha", 1.0), num_guard_cells=g)
 
     if pml_state is None:
         return update_tiled_vector_ghost_cells((Bx, By, Bz), world, g, tile_shape)

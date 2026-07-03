@@ -3,7 +3,7 @@ from jax import jit
 from functools import partial
 # import external libraries
 
-from PyPIC3D.utils import digital_filter
+from PyPIC3D.utilities.filters import digital_filter
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells, apply_conducting_bc
 from PyPIC3D.boundary_conditions.PML import (
     apply_pml_to_b_curl,

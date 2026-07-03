@@ -10,7 +10,7 @@ from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_
 from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, update_ghost_cells
 from PyPIC3D.deposition.rho_tiled import compute_rho_from_tiled_particles, compute_tiled_rho_from_tiled_particles
 from PyPIC3D.particles.tiled_particles import TiledParticles
-from PyPIC3D.utils import digital_filter
+from PyPIC3D.utilities.filters import digital_filter
 
 
 def compute_rho(particles, rho, world, constants, species_config=None):

@@ -16,7 +16,7 @@ from PyPIC3D.utils import build_yee_grid
 jax.config.update("jax_enable_x64", True)
 
 
-def zero_current(particles, species_config, J, constants, world, tile_shape=None, g=None):
+def zero_current(particles, species_config, J, constants, world):
     return tuple(jnp.zeros_like(comp) for comp in J)
 
 

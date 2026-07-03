@@ -237,8 +237,6 @@ def _tiled_current_deposition_stage(case, particles, J_func):
             J_tiles,
             case.constants,
             case.world,
-            tile_shape=case.tile_shape,
-            g=case.g,
         )
 
 

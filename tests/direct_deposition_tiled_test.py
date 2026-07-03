@@ -6,8 +6,9 @@ import jax.numpy as jnp
 from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, update_ghost_cells
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
-from PyPIC3D.deposition.direct_deposition_tiled import (
-    digital_filter_tiled_current_density,
+from PyPIC3D.utilities.filters import (
+    digital_filter,
+    digital_filter_vector,
 )
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
@@ -16,9 +17,11 @@ from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
     fold_tiled_ghost_cells,
     fold_tiled_ghost_cells_periodic,
+    tile_grid_axes,
     tile_vector_field,
+    update_tiled_vector_ghost_cells,
 )
-from PyPIC3D.utils import build_yee_grid, digital_filter
+from PyPIC3D.utils import build_yee_grid
 
 
 jax.config.update("jax_enable_x64", True)
@@ -52,12 +55,8 @@ class TestDirectDepositionTiled(unittest.TestCase):
         shape = (world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2)
         return (jnp.zeros(shape), jnp.zeros(shape), jnp.zeros(shape))
 
-    def _empty_J_tiles(self, world, simulation_parameters):
-        tile_shape = (
-            simulation_parameters["particle_tile_nx"],
-            simulation_parameters["particle_tile_ny"],
-            simulation_parameters["particle_tile_nz"],
-        )
+    def _empty_J_tiles(self, world):
+        tile_shape = tuple(int(width) for width in world["tile_shape"])
         tile_nx, tile_ny, tile_nz = tile_shape
         g = int(world["guard_cells"])
         shape = (
@@ -76,6 +75,26 @@ class TestDirectDepositionTiled(unittest.TestCase):
             simulation_parameters["particle_tile_ny"],
             simulation_parameters["particle_tile_nz"],
         )
+
+    def _world_with_tiled_grids(self, world, tile_shape):
+        g = int(world["guard_cells"])
+        world = dict(world)
+        grids = dict(world["grids"])
+        world["tile_shape"] = tile_shape
+        grids["tiled_center_grid"] = tile_grid_axes(
+            grids["center"],
+            world,
+            tile_shape,
+            num_guard_cells=g,
+        )
+        grids["tiled_vertex_grid"] = tile_grid_axes(
+            grids["vertex"],
+            world,
+            tile_shape,
+            num_guard_cells=g,
+        )
+        world["grids"] = grids
+        return world
 
     def _one_tile_parameters(self, world):
         return {
@@ -109,18 +128,17 @@ class TestDirectDepositionTiled(unittest.TestCase):
         return centered_particles, species_config
 
     def _assembled_tiled_current(self, particles, world, simulation_parameters, constants, filter="none"):
-        tiled_particles, species_config = self._centered_tiled_particles(particles, world, simulation_parameters)
         tile_shape = self._tile_shape(simulation_parameters)
+        world = self._world_with_tiled_grids(world, tile_shape)
+        tiled_particles, species_config = self._centered_tiled_particles(particles, world, simulation_parameters)
 
         J_tiles = J_from_rhov(
             tiled_particles,
             species_config,
-            self._empty_J_tiles(world, simulation_parameters),
+            self._empty_J_tiles(world),
             constants,
             world,
             filter=filter,
-            tile_shape=tile_shape,
-            g=int(world["guard_cells"]),
         )
         g = int(world["guard_cells"])
         J_from_tiles = assemble_tiled_vector_field(J_tiles, world, tile_shape, num_guard_cells=g)
@@ -287,7 +305,8 @@ class TestDirectDepositionTiled(unittest.TestCase):
         J = tuple(update_ghost_cells(component, bc_x, bc_y, bc_z) for component in J)
 
         J_tiles = tile_vector_field(J, world, tile_shape)
-        filtered_tiles = digital_filter_tiled_current_density(J_tiles, alpha, world)
+        filtered_tiles = digital_filter_vector(J_tiles, alpha, num_guard_cells=1)
+        filtered_tiles = update_tiled_vector_ghost_cells(filtered_tiles, world, num_guard_cells=1, tile_shape=tile_shape)
         filtered_from_tiles = assemble_tiled_vector_field(filtered_tiles, world, tile_shape)
         filtered_reference = tuple(
             update_ghost_cells(digital_filter(component, alpha), bc_x, bc_y, bc_z)
@@ -447,16 +466,15 @@ class TestDirectDepositionTiled(unittest.TestCase):
         )
         tiled_particles, species_config = self._centered_tiled_particles([species], world, simulation_parameters)
         tile_shape = self._tile_shape(simulation_parameters)
+        world = self._world_with_tiled_grids(world, tile_shape)
 
         J_tiles = J_from_rhov(
             tiled_particles,
             species_config,
-            self._empty_J_tiles(world, simulation_parameters),
+            self._empty_J_tiles(world),
             constants,
             world,
             filter="none",
-            tile_shape=tile_shape,
-            g=int(world["guard_cells"]),
         )
         J_from_tiles = assemble_tiled_vector_field(J_tiles, world, tile_shape, num_guard_cells=int(world["guard_cells"]))
 
@@ -523,12 +541,13 @@ class TestDirectDepositionTiled(unittest.TestCase):
     def test_public_J_from_rhov_dispatches_tiled_particles_to_tile_local_current(self):
         world = self._build_world()
         world["guard_cells"] = 2
-        world["tile_shape"] = (2, 2, 2)
         simulation_parameters = {
             "particle_tile_nx": 2,
             "particle_tile_ny": 2,
             "particle_tile_nz": 2,
         }
+        tile_shape = self._tile_shape(simulation_parameters)
+        world = self._world_with_tiled_grids(world, tile_shape)
         constants = {"C": 3.0e8, "alpha": 0.6}
         species = particle_species(
             name="public tiled direct current",
@@ -556,17 +575,15 @@ class TestDirectDepositionTiled(unittest.TestCase):
         J_tiles = J_from_rhov(
             tiled_particles,
             species_config,
-            self._empty_J_tiles(world, simulation_parameters),
+            self._empty_J_tiles(world),
             constants,
             world,
             filter="digital",
-            tile_shape=world["tile_shape"],
-            g=int(world["guard_cells"]),
         )
         J_from_tiles = assemble_tiled_vector_field(
             J_tiles,
             world,
-            world["tile_shape"],
+            tile_shape,
             num_guard_cells=int(world["guard_cells"]),
         )
         _, J_reference = self._assembled_tiled_current(

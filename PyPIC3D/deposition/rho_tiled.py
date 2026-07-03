@@ -11,11 +11,10 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
 from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, update_ghost_cells
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.solvers.yee_tiled import (
-    digital_filter_tiled_scalar,
     tiled_grid_axes_from_world,
     update_tiled_ghost_cells,
 )
-from PyPIC3D.utils import digital_filter
+from PyPIC3D.utilities.filters import digital_filter
 
 
 def _species_scalar_to_slots(tiled_particles, species_value):
@@ -299,10 +298,10 @@ def _deposit_tiled_scalar_moment_to_tiles(
     return rho_tiles
 
 
-def _digital_filter_tiled_scalar(field_tiles, alpha, world, g, tile_shape):
+def _filter_tiled_scalar_with_halos(field_tiles, alpha, world, g, tile_shape):
     g = int(g)
     field_tiles = update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
-    return digital_filter_tiled_scalar(field_tiles, alpha, g)
+    return digital_filter(field_tiles, alpha, num_guard_cells=g)
 
 
 @jit
@@ -364,7 +363,7 @@ def compute_tiled_rho_from_tiled_particles(tiled_particles, species_config, rho_
     )
 
     alpha = constants["alpha"]
-    rho_tiles = _digital_filter_tiled_scalar(rho_tiles, alpha, world, g, tile_shape)
+    rho_tiles = _filter_tiled_scalar_with_halos(rho_tiles, alpha, world, g, tile_shape)
     rho_tiles = update_tiled_ghost_cells(rho_tiles, world, g, tile_shape)
 
     return rho_tiles

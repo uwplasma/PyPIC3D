@@ -8,6 +8,7 @@ import jax.numpy as jnp
 from jax import jit
 
 from PyPIC3D.deposition.current_methods import CURRENT_ESIRKEPOV, CURRENT_J_FROM_RHOV
+from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
 from PyPIC3D.particles.tiled_particle_refresh import (
     refresh_tiled_particle_tiles,
@@ -97,7 +98,7 @@ def time_loop_electrodynamic(
         # Esirkepov needs old and new particle positions. The deposition kernel
         # predicts the new positions locally, then the actual particle state is
         # advanced and retiled after the current has been computed.
-        J_tiles = current_deposition(particles, species_config, J_tiles, constants, world, tile_shape=tile_shape, g=g)
+        J_tiles = Esirkepov_current(particles, species_config, J_tiles, constants, world, tile_shape=tile_shape, g=g)
         particles = update_tiled_particle_positions(particles, species_config, world["dt"])
         particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)
         overflow = overflow_previous | overflow
@@ -111,7 +112,7 @@ def time_loop_electrodynamic(
         overflow = overflow_previous | overflow
         # wrap periodic particles and move them into their owning tiles.
 
-        J_tiles = current_deposition(particles, species_config, J_tiles, constants, world, tile_shape=tile_shape, g=g)
+        J_tiles = current_deposition(particles, species_config, J_tiles, constants, world)
         # deposit current directly into tile-local Yee current arrays
 
         particles = update_tiled_particle_positions(particles, species_config, world["dt"] / 2)
