@@ -10,7 +10,6 @@ import toml
 
 from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
-from PyPIC3D.deposition.current_methods import CURRENT_ESIRKEPOV, CURRENT_J_FROM_RHOV
 from PyPIC3D.evolve import time_loop_electrodynamic
 from PyPIC3D.initialization import initialize_simulation, validate_field_solver
 from PyPIC3D.particles.species_class import particle_species
@@ -114,7 +113,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         order = jnp.lexsort((x[:, 2], x[:, 1], x[:, 0]))
         return x[order], u[order]
 
-    def _long_two_stream_state(self, current_calculation=CURRENT_J_FROM_RHOV):
+    def _long_two_stream_state(self, use_esirkepov_current=False):
         world = {
             "Nx": 16,
             "Ny": 1,
@@ -128,7 +127,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
             "z_wind": 1.0,
             "shape_factor": 2,
             "guard_cells": 2,
-            "current_calculation": current_calculation,
+            "use_esirkepov_current": use_esirkepov_current,
             "boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},
             "particle_boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
@@ -190,7 +189,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         tiled_particles, species_config = to_tiled_particles(particles, tiled_world, simulation_parameters)
         tiled_particles = self._pad_tiled_particle_capacity(tiled_particles, min_slots=12)
         g = int(tiled_world["guard_cells"])
-        if current_calculation == CURRENT_ESIRKEPOV:
+        if use_esirkepov_current:
             J_tiles = empty_tiled_vector_field(tiled_world, tile_shape, num_guard_cells=g, dtype=E[0].dtype)
         else:
             J_tiles = tile_vector_field(J, tiled_world, tile_shape, num_guard_cells=g)
@@ -212,7 +211,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
             (E, B, J, rho, phi, external_fields, pml_state),
             reference_world,
             reference_tile_shape,
-            current_calculation,
+            use_esirkepov_current,
         )
         reference_particles = self._pad_tiled_particle_capacity(reference_particles, min_slots=12)
 
@@ -269,7 +268,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         order = jnp.lexsort((u[:, 0], x[:, 2], x[:, 1], x[:, 0]))
         return x[order], u[order]
 
-    def _build_tiled_state(self, particles, fields, world, tile_shape, current_calculation=CURRENT_J_FROM_RHOV):
+    def _build_tiled_state(self, particles, fields, world, tile_shape, use_esirkepov_current=False):
         simulation_parameters = {
             "particle_tile_nx": tile_shape[0],
             "particle_tile_ny": tile_shape[1],
@@ -278,7 +277,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         tiled_particles, species_config = to_tiled_particles(particles, world, simulation_parameters)
         E, B, J, rho, phi, external_fields, pml_state = fields
         g = int(world["guard_cells"])
-        if current_calculation == CURRENT_ESIRKEPOV:
+        if use_esirkepov_current:
             J_tiles = empty_tiled_vector_field(world, tile_shape, num_guard_cells=g, dtype=E[0].dtype)
         else:
             J_tiles = tile_vector_field(J, world, tile_shape, num_guard_cells=g)
@@ -1271,7 +1270,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
             constants,
             tile_shape,
             Nt,
-        ) = self._long_two_stream_state(CURRENT_J_FROM_RHOV)
+        ) = self._long_two_stream_state(False)
 
         reference_loop = self._jitted_electrodynamic_loop_with_static_world(reference_world, reference_tile_shape, None)
         tiled_loop = self._jitted_electrodynamic_loop_with_static_world(tiled_world, tile_shape, None)
@@ -1340,7 +1339,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
             constants,
             tile_shape,
             Nt,
-        ) = self._long_two_stream_state(CURRENT_ESIRKEPOV)
+        ) = self._long_two_stream_state(True)
 
         reference_loop = self._jitted_electrodynamic_loop_with_static_world(
             reference_world,

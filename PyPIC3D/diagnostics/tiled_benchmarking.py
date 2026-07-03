@@ -5,7 +5,6 @@ import jax
 import jax.numpy as jnp
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
-from PyPIC3D.deposition.current_methods import CURRENT_J_FROM_RHOV
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
 from PyPIC3D.diagnostics.output_adapters import particles_for_output, vector_field_for_output
 from PyPIC3D.evolve import time_loop_electrodynamic
@@ -109,7 +108,7 @@ def build_synthetic_tiled_yee_state(
         "y_wind": y_wind,
         "z_wind": z_wind,
         "shape_factor": shape,
-        "current_calculation": CURRENT_J_FROM_RHOV,
+        "use_esirkepov_current": False,
         "tile_shape": tile_shape,
         "guard_cells": g,
         "boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},

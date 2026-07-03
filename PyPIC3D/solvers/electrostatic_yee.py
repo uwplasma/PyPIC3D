@@ -3,8 +3,7 @@ from jax import jit
 from jax import lax
 from functools import partial
 
-from PyPIC3D.deposition.rho import _compute_rho_flat
-from PyPIC3D.deposition.rho_tiled import compute_tiled_rho_from_tiled_particles
+from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.solvers.fdtd import centered_finite_difference_gradient
 from PyPIC3D.utilities.filters import digital_filter
 from PyPIC3D.boundary_conditions.boundaryconditions import (
@@ -135,8 +134,6 @@ def calculate_electrostatic_fields(world, particles, constants, rho, phi, solver
     bc_y = world['boundary_conditions']['y']
     bc_z = world['boundary_conditions']['z']
 
-    rho = _compute_rho_flat(particles, rho, world, constants)
-
     phi = solve_poisson_with_conjugate_gradient(rho, phi, constants, world)
 
     phi = update_ghost_cells(phi, bc_x, bc_y, bc_z)
@@ -202,7 +199,7 @@ def _centered_tiled_electrostatic_gradient(phi_tiles, world, tile_shape, g):
     return update_tiled_vector_ghost_cells((Ex, Ey, Ez), world, g, tile_shape)
 
 
-def calculate_tiled_electrostatic_fields(world, particles, species_config, constants, rho_tiles, phi_tiles, solver, bc, tile_shape, g):
+def calculate_tiled_electrostatic_fields(world, particles, species_config, constants, rho_tiles, phi_tiles, solver, bc):
     """
     Compute electrostatic fields from tiled rho deposition and a global Poisson solve.
 
@@ -217,8 +214,9 @@ def calculate_tiled_electrostatic_fields(world, particles, species_config, const
     bc_y = world["boundary_conditions"]["y"]
     bc_z = world["boundary_conditions"]["z"]
 
-    g = int(g)
-    rho_tiles = compute_tiled_rho_from_tiled_particles(particles, species_config, rho_tiles, world, constants, tile_shape=tile_shape, g=g)
+    tile_shape = tuple(int(width) for width in world["tile_shape"])
+    g = int(world["guard_cells"])
+    rho_tiles = compute_rho(particles, species_config, rho_tiles, constants, world)
     rho = assemble_tiled_scalar_field(rho_tiles, world, tile_shape, num_guard_cells=g)
     phi = assemble_tiled_scalar_field(phi_tiles, world, tile_shape, num_guard_cells=g)
 

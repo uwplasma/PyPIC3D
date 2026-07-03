@@ -17,8 +17,7 @@ from PyPIC3D.deposition.Esirkepov import (
     get_1D_esirkepov_weights,
     get_2D_esirkepov_weights,
 )
-from PyPIC3D.deposition.current_methods import CURRENT_ESIRKEPOV
-from PyPIC3D.deposition.rho_tiled import compute_tiled_rho_from_tiled_particles
+from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.diagnostics.output_adapters import fields_for_output
 from PyPIC3D.initialization import initialize_simulation
 from PyPIC3D.particles.tiled_particle_refresh import (
@@ -72,7 +71,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
             "shape_factor": shape_factor,
             "boundary_conditions": boundary_conditions,
             "particle_boundary_conditions": particle_boundary_conditions,
-            "current_calculation": CURRENT_ESIRKEPOV,
+            "use_esirkepov_current": True,
             "guard_cells": 1,
         }
         center_grid = (
@@ -545,7 +544,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         g = int(world["guard_cells"])
         rho_tiles = empty_tiled_scalar_field(world, tile_shape, num_guard_cells=g)
 
-        rho_old = compute_tiled_rho_from_tiled_particles(tiled_particles, species_config, rho_tiles, world, constants, tile_shape=tile_shape, g=g)
+        rho_old = compute_rho(tiled_particles, species_config, rho_tiles, constants, world)
         J_tiles = Esirkepov_current(
             tiled_particles,
             species_config,
@@ -555,7 +554,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         )
         new_particles = update_tiled_particle_positions(tiled_particles, species_config, world["dt"])
         new_particles, overflow = refresh_tiled_particle_tiles(new_particles, world, tile_shape)
-        rho_new = compute_tiled_rho_from_tiled_particles(new_particles, species_config, rho_tiles, world, constants, tile_shape=tile_shape, g=g)
+        rho_new = compute_rho(new_particles, species_config, rho_tiles, constants, world)
 
         self.assertFalse(bool(overflow))
         drhodt = (rho_new[:, :, :, g:-g, g:-g, g:-g] - rho_old[:, :, :, g:-g, g:-g, g:-g]) / world["dt"]
@@ -625,7 +624,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
             self.assertEqual(J_tiles[0].shape[-3:], (6, 5, 5))
             self.assertEqual(int(world["guard_cells"]), 2)
             self.assertNotIn("current_guard_cells", world)
-            self.assertEqual(int(world["current_calculation"]), CURRENT_ESIRKEPOV)
+            self.assertTrue(bool(world["use_esirkepov_current"]))
 
     def test_initialize_rejects_filtered_esirkepov_current(self):
         with tempfile.TemporaryDirectory() as tmpdir:

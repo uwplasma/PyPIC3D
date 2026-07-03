@@ -3,11 +3,11 @@
 
 from functools import partial
 
-import jax
 import jax.numpy as jnp
 from jax import jit
 
-from PyPIC3D.deposition.current_methods import CURRENT_ESIRKEPOV, CURRENT_J_FROM_RHOV
+import jax
+
 from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
 from PyPIC3D.particles.tiled_particle_refresh import (
@@ -122,9 +122,9 @@ def time_loop_electrodynamic(
         # refresh tile ownership after the full position update.
         return particles, J_tiles, overflow
 
-    current_calculation = world.get("current_calculation", CURRENT_J_FROM_RHOV)
+    use_esirkepov_current = world.get("use_esirkepov_current", False)
     particles, J_tiles, overflow = jax.lax.cond(
-        current_calculation == CURRENT_ESIRKEPOV,
+        use_esirkepov_current,
         esirkepov_step,
         direct_current_step,
         (particles, J_tiles, overflow_previous),
@@ -222,8 +222,6 @@ def time_loop_electrostatic(
         phi_tiles,
         solver,
         "periodic",
-        tile_shape,
-        g,
     )
     # solve electrostatic fields from tiled charge density
 

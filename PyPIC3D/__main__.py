@@ -158,17 +158,12 @@ def run_PyPIC3D(config_file):
 
             if plotting_parameters['plot_vtk_scalars']:
                 if getattr(rho, "ndim", 0) == 6:
-                    rho = compute_rho(particles, rho, world, constants, species_config=species_config)
+                    rho = compute_rho(particles, species_config, rho, constants, world)
                     mass_density = compute_mass_density(particles, rho, world, species_config=species_config)
                     rho_output = scalar_field_for_output(rho, world)
                     mass_density_output = scalar_field_for_output(mass_density, world)
                 else:
-                    rho = compute_rho(particles, rho, world, constants, species_config=species_config)
-                    # calculate the charge density based on the particle positions
-                    mass_density = compute_mass_density(particles, rho, world, species_config=species_config)
-                    # calculate the mass density based on the particle positions
-                    rho_output = rho
-                    mass_density_output = mass_density
+                    raise ValueError("Runtime scalar diagnostics require tiled rho storage.")
 
                 y_mid = world['Ny']//2 + 1
                 # midplane index shifted by 1 for ghost cells

@@ -12,12 +12,45 @@ from PyPIC3D.particles.particle_initialization import (
 
 from PyPIC3D.particles.species_class import particle_species
 
-from PyPIC3D.deposition.rho import _compute_rho_flat
+from PyPIC3D.deposition.rho import compute_rho
+from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
+from PyPIC3D.solvers.yee_tiled import assemble_tiled_scalar_field, tile_grid_axes, tile_scalar_field
 from PyPIC3D.utils import build_yee_grid
 
 
 
 jax.config.update("jax_enable_x64", True)
+
+
+def _compute_rho_one_tile(particles, rho, world, constants):
+    world = dict(world)
+    world["guard_cells"] = int(world.get("guard_cells", 2))
+    world["tile_shape"] = (world["Nx"], world["Ny"], world["Nz"])
+    grids = dict(world["grids"])
+    grids["tiled_vertex_grid"] = tile_grid_axes(
+        grids["vertex"],
+        world,
+        world["tile_shape"],
+        num_guard_cells=int(world["guard_cells"]),
+    )
+    grids["tiled_center_grid"] = tile_grid_axes(
+        grids["center"],
+        world,
+        world["tile_shape"],
+        num_guard_cells=int(world["guard_cells"]),
+    )
+    world["grids"] = grids
+
+    simulation_parameters = {
+        "particle_tile_nx": world["Nx"],
+        "particle_tile_ny": world["Ny"],
+        "particle_tile_nz": world["Nz"],
+    }
+    tiled_particles, species_config = to_tiled_particles(particles, world, simulation_parameters)
+    rho_tiles = tile_scalar_field(rho, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))
+    rho_tiles = compute_rho(tiled_particles, species_config, rho_tiles, constants, world)
+    return assemble_tiled_scalar_field(rho_tiles, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))
+
 
 class TestParticleMethods(unittest.TestCase):
     def setUp(self):
@@ -498,7 +531,7 @@ class TestParticleMethods(unittest.TestCase):
         species.boundary_conditions({"particle_boundary_conditions": {"x": 2, "y": 0, "z": 0}})
 
         constants = {"C": 3e8, "alpha": 1.0}
-        rho = _compute_rho_flat([species], jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), world, constants)
+        rho = _compute_rho_one_tile([species], jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), world, constants)
 
         self.assertAlmostEqual(float(jnp.sum(rho[1:-1, 1:-1, 1:-1]) * dx * dy * dz), 0.0)
 
@@ -561,7 +594,7 @@ class TestParticleMethods(unittest.TestCase):
 
         constants = {'C': 3e8, 'alpha' : 1.0}
 
-        num_rho = _compute_rho_flat([species], num_rho, world, constants)
+        num_rho = _compute_rho_one_tile([species], num_rho, world, constants)
         # compute rho
 
         self.assertTrue(jnp.allclose(num_rho, exp_rho))
@@ -609,7 +642,7 @@ class TestParticleMethods(unittest.TestCase):
             zwind=self.z_wind,
         )
 
-        rho = _compute_rho_flat([species], jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), world, {"C": 3e8, "alpha": 1.0})
+        rho = _compute_rho_one_tile([species], jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), world, {"C": 3e8, "alpha": 1.0})
         interior = rho[1:-1, 1:-1, 1:-1]
         cell_charge = interior * dx * dy * dz
 
@@ -660,7 +693,7 @@ class TestParticleMethods(unittest.TestCase):
             zwind=self.z_wind,
         )
 
-        rho = _compute_rho_flat([species], jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), world, {"C": 3e8, "alpha": 1.0})
+        rho = _compute_rho_one_tile([species], jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), world, {"C": 3e8, "alpha": 1.0})
         interior = rho[1:-1, 1:-1, 1:-1] * dx * dy * dz
 
         self.assertAlmostEqual(float(jnp.sum(interior)), 1.0)
@@ -712,7 +745,7 @@ class TestParticleMethods(unittest.TestCase):
             zwind=z_wind,
         )
 
-        rho = _compute_rho_flat([species], jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), world, {"C": 3e8, "alpha": 1.0})
+        rho = _compute_rho_one_tile([species], jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), world, {"C": 3e8, "alpha": 1.0})
         interior = rho[1:-1, 1:-1, 1:-1]
 
         self.assertEqual(interior.shape, (Nx, 1, 1))
@@ -760,7 +793,7 @@ class TestParticleMethods(unittest.TestCase):
             zwind=self.z_wind,
         )
 
-        rho = _compute_rho_flat([species], jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), world, {"C": 3e8, "alpha": 0.5})
+        rho = _compute_rho_one_tile([species], jnp.zeros((Nx + 2, Ny + 2, Nz + 2)), world, {"C": 3e8, "alpha": 0.5})
         interior = rho[1:-1, 1:-1, 1:-1]
 
         self.assertAlmostEqual(float(jnp.sum(interior) * dx * dy * dz), 1.0)

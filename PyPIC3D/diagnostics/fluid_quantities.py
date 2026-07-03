@@ -2,7 +2,7 @@
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.boundary_conditions.grid_and_stencil import collapse_axis_stencil, prepare_particle_axis_stencil
 from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, update_ghost_cells
-from PyPIC3D.deposition.rho_tiled import (
+from PyPIC3D.deposition.rho import (
     compute_mass_density_from_tiled_particles,
     compute_pressure_field_from_tiled_particles,
     compute_tiled_mass_density_from_tiled_particles,

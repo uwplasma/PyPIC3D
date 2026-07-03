@@ -9,7 +9,6 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.particles.tiled_particles import SpeciesConfig, TiledParticles
 from PyPIC3D.solvers.yee_tiled import update_tiled_vector_ghost_cells
-from PyPIC3D.utilities.filters import bilinear_filter_vector, digital_filter_vector
 
 
 def shift_old_stencil(old_w_list, shift):
@@ -384,6 +383,10 @@ def Esirkepov_current(
     the caller after deposition.
     """
 
+    if not isinstance(particles, TiledParticles):
+        raise ValueError("Public Esirkepov_current requires TiledParticles.")
+    if filter not in (None, "none"):
+        raise ValueError("Esirkepov current filtering is not supported; use filter='none'.")
 
     tile_shape = tuple(int(width) for width in world["tile_shape"])
     # get the tile shape

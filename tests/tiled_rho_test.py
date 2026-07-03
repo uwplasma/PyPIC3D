@@ -4,11 +4,10 @@ import jax
 import jax.numpy as jnp
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
-from PyPIC3D.deposition.rho import compute_rho, _compute_rho_flat
-from PyPIC3D.deposition.rho_tiled import compute_rho_from_tiled_particles, compute_tiled_rho_from_tiled_particles
+from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
-from PyPIC3D.solvers.yee_tiled import assemble_tiled_scalar_field, tile_scalar_field
+from PyPIC3D.solvers.yee_tiled import assemble_tiled_scalar_field, tile_grid_axes, tile_scalar_field
 from PyPIC3D.utils import build_yee_grid
 
 
@@ -37,6 +36,31 @@ class TestTiledRho(unittest.TestCase):
         world["grids"] = {"vertex": vertex_grid, "center": center_grid}
         return world
 
+    def _world_with_tiled_grids(self, world, simulation_parameters):
+        tile_shape = (
+            simulation_parameters["particle_tile_nx"],
+            simulation_parameters["particle_tile_ny"],
+            simulation_parameters["particle_tile_nz"],
+        )
+        g = int(world["guard_cells"])
+        world = dict(world)
+        grids = dict(world["grids"])
+        world["tile_shape"] = tile_shape
+        grids["tiled_vertex_grid"] = tile_grid_axes(
+            grids["vertex"],
+            world,
+            tile_shape,
+            num_guard_cells=g,
+        )
+        grids["tiled_center_grid"] = tile_grid_axes(
+            grids["center"],
+            world,
+            tile_shape,
+            num_guard_cells=g,
+        )
+        world["grids"] = grids
+        return world
+
     def _empty_scalar(self, world):
         return jnp.zeros((world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2))
 
@@ -45,6 +69,13 @@ class TestTiledRho(unittest.TestCase):
             "particle_tile_nx": 2,
             "particle_tile_ny": 2,
             "particle_tile_nz": 2,
+        }
+
+    def _one_tile_parameters(self, world):
+        return {
+            "particle_tile_nx": world["Nx"],
+            "particle_tile_ny": world["Ny"],
+            "particle_tile_nz": world["Nz"],
         }
 
     def _particles(self, world):
@@ -114,24 +145,34 @@ class TestTiledRho(unittest.TestCase):
     def _zero_tiled_velocities(self, tiled_particles):
         return tiled_particles._replace(u=jnp.zeros_like(tiled_particles.u))
 
+    def _deposit_and_assemble(self, particles, world, simulation_parameters, constants):
+        world = self._world_with_tiled_grids(world, simulation_parameters)
+        tiled_particles, species_config = self._tiled_with_noisy_inactive_slots(particles, world)
+        rho_tiles = tile_scalar_field(
+            self._empty_scalar(world),
+            world,
+            world["tile_shape"],
+            num_guard_cells=int(world["guard_cells"]),
+        )
+        rho_tiles = compute_rho(tiled_particles, species_config, rho_tiles, constants, world)
+        rho = assemble_tiled_scalar_field(
+            rho_tiles,
+            world,
+            world["tile_shape"],
+            num_guard_cells=int(world["guard_cells"]),
+        )
+        return rho_tiles, rho
+
     def _compare_tiled_to_standard(self, shape_factor, alpha):
         world = self._build_world(shape_factor)
         constants = {"alpha": alpha}
         particles = self._particles(world)
-        tiled_particles, species_config = self._tiled_with_noisy_inactive_slots(particles, world)
-
-        rho_reference = _compute_rho_flat(particles, self._empty_scalar(world), world, constants)
-        rho_tiled = compute_rho_from_tiled_particles(
-            tiled_particles,
-            species_config,
-            self._empty_scalar(world),
-            world,
-            constants,
-        )
+        _, rho_from_tiles = self._deposit_and_assemble(particles, world, self._simulation_parameters(), constants)
+        _, rho_reference = self._deposit_and_assemble(particles, world, self._one_tile_parameters(world), constants)
 
         self.assertTrue(
             jnp.allclose(
-                rho_tiled[1:-1, 1:-1, 1:-1],
+                rho_from_tiles[1:-1, 1:-1, 1:-1],
                 rho_reference[1:-1, 1:-1, 1:-1],
                 rtol=1.0e-12,
                 atol=1.0e-12,
@@ -153,8 +194,8 @@ class TestTiledRho(unittest.TestCase):
         particles = self._particles(world)
         zero_velocity_particles = self._zero_species_velocities(self._particles(world))
 
-        rho_with_velocity = _compute_rho_flat(particles, self._empty_scalar(world), world, constants)
-        rho_with_zero_velocity = _compute_rho_flat(zero_velocity_particles, self._empty_scalar(world), world, constants)
+        _, rho_with_velocity = self._deposit_and_assemble(particles, world, self._one_tile_parameters(world), constants)
+        _, rho_with_zero_velocity = self._deposit_and_assemble(zero_velocity_particles, world, self._one_tile_parameters(world), constants)
 
         self.assertTrue(
             jnp.allclose(
@@ -169,23 +210,15 @@ class TestTiledRho(unittest.TestCase):
         world = self._build_world(shape_factor=2)
         constants = {"alpha": 1.0}
         particles = self._particles(world)
+        world = self._world_with_tiled_grids(world, self._simulation_parameters())
         tiled_particles, species_config = self._tiled_with_noisy_inactive_slots(particles, world)
         zero_velocity_tiled_particles = self._zero_tiled_velocities(tiled_particles)
+        rho_tiles = tile_scalar_field(self._empty_scalar(world), world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))
 
-        rho_with_velocity = compute_rho_from_tiled_particles(
-            tiled_particles,
-            species_config,
-            self._empty_scalar(world),
-            world,
-            constants,
-        )
-        rho_with_zero_velocity = compute_rho_from_tiled_particles(
-            zero_velocity_tiled_particles,
-            species_config,
-            self._empty_scalar(world),
-            world,
-            constants,
-        )
+        rho_with_velocity_tiles = compute_rho(tiled_particles, species_config, rho_tiles, constants, world)
+        rho_with_zero_velocity_tiles = compute_rho(zero_velocity_tiled_particles, species_config, rho_tiles, constants, world)
+        rho_with_velocity = assemble_tiled_scalar_field(rho_with_velocity_tiles, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))
+        rho_with_zero_velocity = assemble_tiled_scalar_field(rho_with_zero_velocity_tiles, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))
 
         self.assertTrue(
             jnp.allclose(
@@ -198,34 +231,26 @@ class TestTiledRho(unittest.TestCase):
 
     def test_tile_major_rho_uses_current_positions_not_half_step_back_positions(self):
         world = self._build_world(shape_factor=2)
-        world["tile_shape"] = (
-            self._simulation_parameters()["particle_tile_nx"],
-            self._simulation_parameters()["particle_tile_ny"],
-            self._simulation_parameters()["particle_tile_nz"],
-        )
+        world = self._world_with_tiled_grids(world, self._simulation_parameters())
         constants = {"alpha": 1.0}
         particles = self._particles(world)
         tiled_particles, species_config = self._tiled_with_noisy_inactive_slots(particles, world)
         zero_velocity_tiled_particles = self._zero_tiled_velocities(tiled_particles)
         rho_tiles = tile_scalar_field(self._empty_scalar(world), world, world["tile_shape"])
 
-        rho_tiles_with_velocity = compute_tiled_rho_from_tiled_particles(
+        rho_tiles_with_velocity = compute_rho(
             tiled_particles,
             species_config,
             rho_tiles,
-            world,
             constants,
-            tile_shape=world["tile_shape"],
-            g=int(world["guard_cells"]),
+            world,
         )
-        rho_tiles_with_zero_velocity = compute_tiled_rho_from_tiled_particles(
+        rho_tiles_with_zero_velocity = compute_rho(
             zero_velocity_tiled_particles,
             species_config,
             rho_tiles,
-            world,
             constants,
-            tile_shape=world["tile_shape"],
-            g=int(world["guard_cells"]),
+            world,
         )
         rho_with_velocity = assemble_tiled_scalar_field(rho_tiles_with_velocity, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))
         rho_with_zero_velocity = assemble_tiled_scalar_field(rho_tiles_with_zero_velocity, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))
@@ -241,11 +266,7 @@ class TestTiledRho(unittest.TestCase):
 
     def test_compute_rho_dispatches_to_tile_major_deposition_for_tiled_particles(self):
         world = self._build_world(shape_factor=2)
-        world["tile_shape"] = (
-            self._simulation_parameters()["particle_tile_nx"],
-            self._simulation_parameters()["particle_tile_ny"],
-            self._simulation_parameters()["particle_tile_nz"],
-        )
+        world = self._world_with_tiled_grids(world, self._simulation_parameters())
         constants = {"alpha": 1.0}
         particles = self._particles(world)
         tiled_particles, species_config = self._tiled_with_noisy_inactive_slots(particles, world)
@@ -256,13 +277,12 @@ class TestTiledRho(unittest.TestCase):
             num_guard_cells=int(world["guard_cells"]),
         )
 
-        rho_reference = _compute_rho_flat(particles, self._empty_scalar(world), world, constants)
         rho_tiles = compute_rho(
             tiled_particles,
+            species_config,
             rho_tiles,
-            world,
             constants,
-            species_config=species_config,
+            world,
         )
         rho_from_tiles = assemble_tiled_scalar_field(
             rho_tiles,
@@ -270,6 +290,7 @@ class TestTiledRho(unittest.TestCase):
             world["tile_shape"],
             num_guard_cells=int(world["guard_cells"]),
         )
+        _, rho_reference = self._deposit_and_assemble(particles, self._build_world(shape_factor=2), self._one_tile_parameters(world), constants)
 
         self.assertTrue(
             jnp.allclose(
@@ -285,7 +306,7 @@ class TestTiledRho(unittest.TestCase):
         constants = {"alpha": 1.0}
 
         with self.assertRaisesRegex(ValueError, "TiledParticles"):
-            compute_rho(self._particles(world), self._empty_scalar(world), world, constants)
+            compute_rho(self._particles(world), None, self._empty_scalar(world), constants, world)
 
 
 if __name__ == "__main__":

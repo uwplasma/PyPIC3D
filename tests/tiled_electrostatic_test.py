@@ -8,8 +8,7 @@ import numpy as np
 import toml
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
-from PyPIC3D.deposition.rho import _compute_rho_flat
-from PyPIC3D.deposition.rho_tiled import compute_tiled_rho_from_tiled_particles
+from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.evolve import time_loop_electrostatic
 from PyPIC3D.initialization import initialize_simulation
 from PyPIC3D.particles.species_class import particle_species
@@ -18,6 +17,7 @@ from PyPIC3D.particles.tiled_particles import TiledParticles
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_scalar_field,
     assemble_tiled_vector_field,
+    tile_grid_axes,
     tile_scalar_field,
     tile_vector_field,
 )
@@ -54,6 +54,27 @@ class TestTiledElectrostatic(unittest.TestCase):
         vertex_grid, center_grid = build_yee_grid(world)
         world["grids"] = {"vertex": vertex_grid, "center": center_grid}
         world["tile_shape"] = (2, 1, 1)
+        world = self._world_with_tiled_grids(world, world["tile_shape"])
+        return world
+
+    def _world_with_tiled_grids(self, world, tile_shape):
+        g = int(world["guard_cells"])
+        world = dict(world)
+        grids = dict(world["grids"])
+        world["tile_shape"] = tile_shape
+        grids["tiled_vertex_grid"] = tile_grid_axes(
+            grids["vertex"],
+            world,
+            tile_shape,
+            num_guard_cells=g,
+        )
+        grids["tiled_center_grid"] = tile_grid_axes(
+            grids["center"],
+            world,
+            tile_shape,
+            num_guard_cells=g,
+        )
+        world["grids"] = grids
         return world
 
     def _simulation_parameters(self):
@@ -223,6 +244,7 @@ class TestTiledElectrostatic(unittest.TestCase):
             "y_wind": 1.0,
             "z_wind": 1.0,
             "shape_factor": 1,
+            "guard_cells": 2,
             "boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},
             "particle_boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
@@ -391,17 +413,35 @@ class TestTiledElectrostatic(unittest.TestCase):
         _, _, _, rho, _, _ = self._empty_fields(world)
         rho_tiles = tile_scalar_field(rho, world, world["tile_shape"])
 
-        reference_rho = _compute_rho_flat([self._species(world)], rho, world, constants)
-        tiled_rho = compute_tiled_rho_from_tiled_particles(
+        tiled_rho = compute_rho(
             tiled_particles,
             species_config,
             rho_tiles,
-            world,
             constants,
-            tile_shape=world["tile_shape"],
-            g=int(world["guard_cells"]),
+            world,
         )
         assembled_rho = assemble_tiled_scalar_field(tiled_rho, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))
+
+        reference_world = self._world_with_tiled_grids(world, self._one_tile_shape(world))
+        reference_particles, reference_species_config = to_tiled_particles(
+            [self._species(reference_world)],
+            reference_world,
+            self._simulation_parameters_for_tile_shape(reference_world["tile_shape"]),
+        )
+        reference_rho_tiles = tile_scalar_field(rho, reference_world, reference_world["tile_shape"], num_guard_cells=int(reference_world["guard_cells"]))
+        reference_rho_tiles = compute_rho(
+            reference_particles,
+            reference_species_config,
+            reference_rho_tiles,
+            constants,
+            reference_world,
+        )
+        reference_rho = assemble_tiled_scalar_field(
+            reference_rho_tiles,
+            reference_world,
+            reference_world["tile_shape"],
+            num_guard_cells=int(reference_world["guard_cells"]),
+        )
 
         self.assertTrue(
             jnp.allclose(
@@ -418,31 +458,33 @@ class TestTiledElectrostatic(unittest.TestCase):
         E, B, J, rho, phi, external_fields = self._empty_fields(world)
         fields = (E, B, J, rho, phi, external_fields)
         reference_tile_shape = self._one_tile_shape(world)
+        reference_world = self._world_with_tiled_grids(world, reference_tile_shape)
+        tiled_world = self._world_with_tiled_grids(world, world["tile_shape"])
 
         reference_particles, reference_species_config, reference_fields = self._build_tiled_state(
-            self._neutral_species(world),
+            self._neutral_species(reference_world),
             fields,
-            world,
+            reference_world,
             reference_tile_shape,
         )
         tiled_particles, species_config, tiled_fields = self._build_tiled_state(
-            self._neutral_species(world),
+            self._neutral_species(tiled_world),
             fields,
-            world,
-            world["tile_shape"],
+            tiled_world,
+            tiled_world["tile_shape"],
         )
 
         reference_particles, reference_fields = time_loop_electrostatic(
             reference_particles,
             reference_species_config,
             reference_fields,
-            world,
+            reference_world,
             constants,
             unused_curl,
             J_func=None,
             solver="electrostatic",
             tile_shape=reference_tile_shape,
-            g=int(world["guard_cells"]),
+            g=int(reference_world["guard_cells"]),
             relativistic=False,
             particle_pusher="boris",
         )
@@ -450,13 +492,13 @@ class TestTiledElectrostatic(unittest.TestCase):
             tiled_particles,
             species_config,
             tiled_fields,
-            world,
+            tiled_world,
             constants,
             unused_curl,
             J_func=None,
             solver="electrostatic",
-            tile_shape=world["tile_shape"],
-            g=int(world["guard_cells"]),
+            tile_shape=tiled_world["tile_shape"],
+            g=int(tiled_world["guard_cells"]),
             relativistic=False,
             particle_pusher="boris",
         )
@@ -467,8 +509,8 @@ class TestTiledElectrostatic(unittest.TestCase):
             reference_tile_shape,
             tiled_particles,
             tiled_fields,
-            world,
-            world["tile_shape"],
+            tiled_world,
+            tiled_world["tile_shape"],
             step=1,
         )
 

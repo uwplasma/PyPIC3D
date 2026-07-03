@@ -7,6 +7,7 @@ import jax.numpy as jnp
 from PyPIC3D import evolve
 from PyPIC3D.deposition import Esirkepov
 from PyPIC3D.deposition import J_from_rhov
+from PyPIC3D.deposition import rho
 from PyPIC3D.solvers import electrostatic_yee
 from PyPIC3D.solvers import yee_tiled
 from PyPIC3D.utils import build_yee_grid
@@ -119,6 +120,18 @@ class TestTiledRefactorContracts(unittest.TestCase):
 
     def test_tiled_esirkepov_module_is_removed(self):
         self.assertIsNone(importlib.util.find_spec("PyPIC3D.deposition.esirkepov_tiled"))
+
+    def test_rho_api_reads_tile_metadata_from_world(self):
+        signature = inspect.signature(rho.compute_rho)
+        self.assertNotIn("tile_shape", signature.parameters)
+        self.assertNotIn("g", signature.parameters)
+
+    def test_flat_rho_and_tiled_rho_module_are_removed(self):
+        self.assertFalse(hasattr(rho, "_compute_rho_flat"))
+        self.assertIsNone(importlib.util.find_spec("PyPIC3D.deposition.rho_tiled"))
+
+    def test_current_methods_module_is_removed(self):
+        self.assertIsNone(importlib.util.find_spec("PyPIC3D.deposition.current_methods"))
 
 
 if __name__ == "__main__":

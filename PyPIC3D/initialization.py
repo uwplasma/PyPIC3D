@@ -54,9 +54,6 @@ from PyPIC3D.evolve import (
 
 from PyPIC3D.pusher.particle_push import validate_particle_pusher
 
-from PyPIC3D.deposition.current_methods import (
-    encode_current_calculation,
-)
 from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
 
@@ -117,7 +114,9 @@ def _tile_shape_from_parameters(simulation_parameters):
 
 
 def _encode_current_calculation(current_calculation):
-    return encode_current_calculation(current_calculation)
+    if current_calculation not in ("j_from_rhov", "esirkepov"):
+        raise ValueError("Unsupported current_calculation. Use 'j_from_rhov' or 'esirkepov'.")
+    return current_calculation == "esirkepov"
 
 
 def _validate_current_filter_contract(simulation_parameters):
@@ -345,7 +344,7 @@ def initialize_simulation(toml_file):
         'z_wind': z_wind,
         'shape_factor': simulation_parameters['shape_factor'],
         'guard_cells': guard_cells,
-        'current_calculation': _encode_current_calculation(simulation_parameters['current_calculation']),
+        'use_esirkepov_current': _encode_current_calculation(simulation_parameters['current_calculation']),
         'boundary_conditions': {
             'x': _encode_field_bc(simulation_parameters['x_bc']),
             'y': _encode_field_bc(simulation_parameters['y_bc']),
