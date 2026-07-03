@@ -98,7 +98,7 @@ def time_loop_electrodynamic(
         # Esirkepov needs old and new particle positions. The deposition kernel
         # predicts the new positions locally, then the actual particle state is
         # advanced and retiled after the current has been computed.
-        J_tiles = Esirkepov_current(particles, species_config, J_tiles, constants, world, tile_shape=tile_shape, g=g)
+        J_tiles = Esirkepov_current(particles, species_config, J_tiles, constants, world)
         particles = update_tiled_particle_positions(particles, species_config, world["dt"])
         particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)
         overflow = overflow_previous | overflow
