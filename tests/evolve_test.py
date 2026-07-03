@@ -10,7 +10,7 @@ from PyPIC3D.evolve import (
 from PyPIC3D.initialization import initialize_fields
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
-from PyPIC3D.solvers.yee_tiled import tile_vector_field
+from PyPIC3D.solvers.yee_tiled import tile_grid_axes, tile_vector_field
 from PyPIC3D.utils import build_yee_grid
 
 jax.config.update("jax_enable_x64", True)
@@ -22,6 +22,23 @@ def zero_current(particles, species_config, J, constants, world):
 
 def unused_curl(Ex, Ey, Ez):
     return None
+
+
+def add_tiled_grids_to_world(world, tile_shape):
+    g = int(world["guard_cells"])
+    world["tile_shape"] = tile_shape
+    world["grids"]["tiled_center_grid"] = tile_grid_axes(
+        world["grids"]["center"],
+        world,
+        tile_shape,
+        num_guard_cells=g,
+    )
+    world["grids"]["tiled_vertex_grid"] = tile_grid_axes(
+        world["grids"]["vertex"],
+        world,
+        tile_shape,
+        num_guard_cells=g,
+    )
 
 
 class TestEvolveExternalFields(unittest.TestCase):
@@ -84,6 +101,7 @@ class TestEvolveExternalFields(unittest.TestCase):
             "particle_tile_nz": tile_shape[2],
         }
         world["guard_cells"] = 2
+        add_tiled_grids_to_world(world, tile_shape)
         tiled_particles, species_config = to_tiled_particles(particles, world, simulation_parameters)
         external_E_tiles = tile_vector_field(external_fields[0], world, tile_shape, num_guard_cells=int(world["guard_cells"]))
         external_B_tiles = tile_vector_field(external_fields[1], world, tile_shape, num_guard_cells=int(world["guard_cells"]))
@@ -182,6 +200,7 @@ class TestEvolveExternalFields(unittest.TestCase):
             "particle_tile_nz": tile_shape[2],
         }
         world["guard_cells"] = 2
+        add_tiled_grids_to_world(world, tile_shape)
         tiled_particles, species_config = to_tiled_particles(particles, world, simulation_parameters)
         fields = (
             tile_vector_field(E, world, tile_shape, num_guard_cells=int(world["guard_cells"])),

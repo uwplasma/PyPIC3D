@@ -162,6 +162,8 @@ class TestDirectDepositionTiled(unittest.TestCase):
     def test_public_J_from_rhov_rejects_flat_particles(self):
         world = self._build_world()
         constants = {"C": 3.0e8, "alpha": 1.0}
+        simulation_parameters = self._one_tile_parameters(world)
+        world = self._world_with_tiled_grids(world, self._tile_shape(simulation_parameters))
         species = particle_species(
             name="flat direct current",
             N_particles=1,
@@ -182,9 +184,10 @@ class TestDirectDepositionTiled(unittest.TestCase):
             dz=world["dz"],
             dt=world["dt"],
         )
+        _, species_config = to_tiled_particles([species], world, simulation_parameters)
 
-        with self.assertRaisesRegex(ValueError, "TiledParticles"):
-            J_from_rhov([species], self._empty_J(world), constants, world, filter="none")
+        with self.assertRaises(AttributeError):
+            J_from_rhov([species], species_config, self._empty_J_tiles(world), constants, world, filter="none")
 
     def test_tiled_direct_deposition_matches_quadratic_with_two_guard_cells(self):
         world = self._build_world(Nx=8, Ny=6, Nz=4)

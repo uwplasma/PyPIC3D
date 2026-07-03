@@ -9,11 +9,13 @@ import numpy as np
 import toml
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
-from PyPIC3D.deposition.Esirkepov import Esirkepov_current, get_1D_esirkepov_weights, get_2D_esirkepov_weights
-from PyPIC3D.deposition.esirkepov_tiled import (
+from PyPIC3D.deposition.Esirkepov import (
     _active_stencil_indices,
     _compact_1d_esirkepov_weights,
     _compact_2d_esirkepov_weights,
+    Esirkepov_current,
+    get_1D_esirkepov_weights,
+    get_2D_esirkepov_weights,
 )
 from PyPIC3D.deposition.current_methods import CURRENT_ESIRKEPOV
 from PyPIC3D.deposition.rho_tiled import compute_tiled_rho_from_tiled_particles
@@ -30,6 +32,7 @@ from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
     empty_tiled_scalar_field,
     empty_tiled_vector_field,
+    tile_grid_axes,
     tile_vector_field,
     update_tiled_E,
 )
@@ -141,7 +144,28 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
     def _one_tile_shape_for_world(self, world):
         return (int(world["Nx"]), int(world["Ny"]), int(world["Nz"]))
 
+    def _world_with_tiled_grids(self, world, tile_shape):
+        g = int(world["guard_cells"])
+        world = dict(world)
+        grids = dict(world["grids"])
+        world["tile_shape"] = tile_shape
+        grids["tiled_center_grid"] = tile_grid_axes(
+            grids["center"],
+            world,
+            tile_shape,
+            num_guard_cells=g,
+        )
+        grids["tiled_vertex_grid"] = tile_grid_axes(
+            grids["vertex"],
+            world,
+            tile_shape,
+            num_guard_cells=g,
+        )
+        world["grids"] = grids
+        return world
+
     def _assembled_esirkepov_current(self, world, old_species, constants, tile_shape):
+        world = self._world_with_tiled_grids(world, tile_shape)
         simulation_parameters = {
             "particle_tile_nx": tile_shape[0],
             "particle_tile_ny": tile_shape[1],
@@ -155,8 +179,6 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
             empty_tiled_vector_field(world, tile_shape, num_guard_cells=g),
             constants,
             world,
-            tile_shape=tile_shape,
-            g=g,
         )
         J_from_tiles = assemble_tiled_vector_field(J_tiles, world, tile_shape, num_guard_cells=g)
 
@@ -322,6 +344,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         world = self._build_world(Nx=8, Ny=1, Nz=1, dt=0.05)
         constants = {"C": 1.0, "eps": 1.0, "alpha": 1.0}
         tile_shape = (2, 1, 1)
+        world = self._world_with_tiled_grids(world, tile_shape)
         simulation_parameters = {
             "particle_tile_nx": tile_shape[0],
             "particle_tile_ny": tile_shape[1],
@@ -338,8 +361,6 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
             empty_tiled_vector_field(world, tile_shape, num_guard_cells=g),
             constants,
             world,
-            tile_shape=tile_shape,
-            g=g,
         )
         J_from_tiles = assemble_tiled_vector_field(J_tiles, world, tile_shape, num_guard_cells=g)
         _, J_reference = self._assembled_esirkepov_current(
@@ -358,7 +379,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
     def test_public_Esirkepov_current_dispatches_tiled_particles_to_tile_local_current(self):
         world = self._build_world(Nx=8, Ny=1, Nz=1, dt=0.05, shape_factor=1)
         world["guard_cells"] = 2
-        world["tile_shape"] = (2, 1, 1)
+        world = self._world_with_tiled_grids(world, (2, 1, 1))
         constants = {"C": 1.0, "eps": 1.0, "alpha": 1.0}
         simulation_parameters = {
             "particle_tile_nx": world["tile_shape"][0],
@@ -375,8 +396,6 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
             empty_tiled_vector_field(world, world["tile_shape"], num_guard_cells=int(world["guard_cells"])),
             constants,
             world,
-            tile_shape=world["tile_shape"],
-            g=int(world["guard_cells"]),
         )
         J_from_tiles = assemble_tiled_vector_field(
             J_tiles,
@@ -403,6 +422,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         world = self._build_world(Nx=8, Ny=1, Nz=1, dt=0.05, shape_factor=1)
         world["guard_cells"] = 2
         tile_shape = (2, 1, 1)
+        world = self._world_with_tiled_grids(world, tile_shape)
         constants = {"C": 1.0, "eps": 1.0, "alpha": 1.0}
         simulation_parameters = {
             "particle_tile_nx": tile_shape[0],
@@ -420,8 +440,6 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
                 constants,
                 world,
                 filter="digital",
-                tile_shape=tile_shape,
-                g=int(world["guard_cells"]),
             )
 
     def test_tiled_esirkepov_matches_global_current_for_dimensions_and_shapes(self):
@@ -501,6 +519,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         world = self._build_world(Nx=8, Ny=1, Nz=1, dt=0.05, shape_factor=1)
         constants = {"C": 1.0, "eps": 1.0, "alpha": 1.0}
         tile_shape = (2, 1, 1)
+        world = self._world_with_tiled_grids(world, tile_shape)
         simulation_parameters = {
             "particle_tile_nx": tile_shape[0],
             "particle_tile_ny": tile_shape[1],
@@ -533,8 +552,6 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
             empty_tiled_vector_field(world, tile_shape, num_guard_cells=g),
             constants,
             world,
-            tile_shape=tile_shape,
-            g=g,
         )
         new_particles = update_tiled_particle_positions(tiled_particles, species_config, world["dt"])
         new_particles, overflow = refresh_tiled_particle_tiles(new_particles, world, tile_shape)

@@ -1,9 +1,11 @@
 import inspect
+import importlib.util
 import unittest
 
 import jax.numpy as jnp
 
 from PyPIC3D import evolve
+from PyPIC3D.deposition import Esirkepov
 from PyPIC3D.deposition import J_from_rhov
 from PyPIC3D.solvers import electrostatic_yee
 from PyPIC3D.solvers import yee_tiled
@@ -109,6 +111,14 @@ class TestTiledRefactorContracts(unittest.TestCase):
         signature = inspect.signature(J_from_rhov.J_from_rhov)
         self.assertNotIn("tile_shape", signature.parameters)
         self.assertNotIn("g", signature.parameters)
+
+    def test_esirkepov_api_reads_tile_metadata_from_world(self):
+        signature = inspect.signature(Esirkepov.Esirkepov_current)
+        self.assertNotIn("tile_shape", signature.parameters)
+        self.assertNotIn("g", signature.parameters)
+
+    def test_tiled_esirkepov_module_is_removed(self):
+        self.assertIsNone(importlib.util.find_spec("PyPIC3D.deposition.esirkepov_tiled"))
 
 
 if __name__ == "__main__":
