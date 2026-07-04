@@ -3,7 +3,6 @@ import math
 import jax
 import jax.numpy as jnp
 
-from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 
 
@@ -157,11 +156,18 @@ def _tile_scalar_profile(profile, tile_shape, num_guard_cells=2):
         for tx in range(ntx):
             for ty in range(nty):
                 for tz in range(ntz):
-                    ix = 1 + tx * tile_nx
-                    iy = 1 + ty * tile_ny
-                    iz = 1 + tz * tile_nz
-                    interior = profile[ix:ix + tile_nx, iy:iy + tile_ny, iz:iz + tile_nz]
-                    profile_tiles = profile_tiles.at[tx, ty, tz, g:-g, g:-g, g:-g].set(interior)
+                    ix = tx * tile_nx
+                    iy = ty * tile_ny
+                    iz = tz * tile_nz
+                    tile_with_one_guard = profile[ix:ix + tile_nx + 2, iy:iy + tile_ny + 2, iz:iz + tile_nz + 2]
+                    profile_tiles = profile_tiles.at[
+                        tx,
+                        ty,
+                        tz,
+                        g - 1:g + tile_nx + 1,
+                        g - 1:g + tile_ny + 1,
+                        g - 1:g + tile_nz + 1,
+                    ].set(tile_with_one_guard)
         return profile_tiles
 
     def tile_at(tx, ty, tz):
@@ -431,23 +437,3 @@ def apply_tiled_pml_to_b_curl(derivatives, world, pml_state):
     )
 
     return (curl_x, curl_y, curl_z), (e_memory, b_memory, tiled_profiles)
-
-
-def update_ghost_cells_for_pml(field, world):
-    """
-    Fill ghost cells without periodically wrapping across a PML wall.
-
-    The PML damping happens in the stretched derivatives above.  This ghost-cell
-    rule only prevents a periodic stencil from feeding a wave back through the
-    opposite side of a PML-active axis.
-    """
-    bc_x = world["boundary_conditions"]["x"]
-    bc_y = world["boundary_conditions"]["y"]
-    bc_z = world["boundary_conditions"]["z"]
-    _, pml_x, pml_y, pml_z, _ = world["pml"]
-
-    bc_x = jnp.where((pml_x) & (bc_x == BC_PERIODIC), BC_CONDUCTING, bc_x)
-    bc_y = jnp.where((pml_y) & (bc_y == BC_PERIODIC), BC_CONDUCTING, bc_y)
-    bc_z = jnp.where((pml_z) & (bc_z == BC_PERIODIC), BC_CONDUCTING, bc_z)
-
-    return update_ghost_cells(field, bc_x, bc_y, bc_z)

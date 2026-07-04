@@ -6,7 +6,7 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
 )
 
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
-from PyPIC3D.solvers.yee_tiled import (
+from PyPIC3D.boundary_conditions.ghost_cells import (
     fold_tiled_vector_ghost_cells,
     update_tiled_vector_ghost_cells,
 )

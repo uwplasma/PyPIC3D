@@ -6,13 +6,11 @@ import jax.numpy as jnp
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
     tile_scalar_field,
-    update_tiled_ghost_cells,
-    update_tiled_vector_ghost_cells,
     update_B,
     update_E,
 )
+from PyPIC3D.boundary_conditions import ghost_cells
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
-from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 
 
@@ -21,6 +19,28 @@ jax.config.update("jax_enable_x64", True)
 
 def tile_vector_field(field, world, tile_shape, num_guard_cells=2):
     return tuple(tile_scalar_field(component, world, tile_shape, num_guard_cells) for component in field)
+
+
+def _update_ghost_cells(field, bc_x, bc_y, bc_z):
+    field = jax.lax.cond(
+        bc_x == BC_PERIODIC,
+        lambda f: f.at[0, :, :].set(f[-2, :, :]).at[-1, :, :].set(f[1, :, :]),
+        lambda f: f.at[0, :, :].set(0.0).at[-1, :, :].set(0.0),
+        operand=field,
+    )
+    field = jax.lax.cond(
+        bc_y == BC_PERIODIC,
+        lambda f: f.at[:, 0, :].set(f[:, -2, :]).at[:, -1, :].set(f[:, 1, :]),
+        lambda f: f.at[:, 0, :].set(0.0).at[:, -1, :].set(0.0),
+        operand=field,
+    )
+    field = jax.lax.cond(
+        bc_z == BC_PERIODIC,
+        lambda f: f.at[:, :, 0].set(f[:, :, -2]).at[:, :, -1].set(f[:, :, 1]),
+        lambda f: f.at[:, :, 0].set(0.0).at[:, :, -1].set(0.0),
+        operand=field,
+    )
+    return field
 
 
 class TestYeeTiled(unittest.TestCase):
@@ -65,7 +85,7 @@ class TestYeeTiled(unittest.TestCase):
         bc_x = world["boundary_conditions"]["x"]
         bc_y = world["boundary_conditions"]["y"]
         bc_z = world["boundary_conditions"]["z"]
-        return update_ghost_cells(field, bc_x, bc_y, bc_z)
+        return _update_ghost_cells(field, bc_x, bc_y, bc_z)
 
     def _deterministic_vector_field(self, world, scale):
         Nx, Ny, Nz = world["Nx"], world["Ny"], world["Nz"]
@@ -238,7 +258,7 @@ class TestYeeTiled(unittest.TestCase):
         stale_tiles = stale_tiles.at[:, :, :, :, :, 0].set(-500.0)
         stale_tiles = stale_tiles.at[:, :, :, :, :, -1].set(-600.0)
 
-        refreshed = update_tiled_ghost_cells(stale_tiles, world, num_guard_cells=2, tile_shape=tile_shape)
+        refreshed = ghost_cells.update_tiled_ghost_cells(stale_tiles, world, num_guard_cells=2, tile_shape=tile_shape)
 
         self.assertTrue(jnp.allclose(refreshed, tiles, rtol=1.0e-12, atol=1.0e-12))
 
@@ -250,7 +270,7 @@ class TestYeeTiled(unittest.TestCase):
         E_tiles = tile_vector_field(E, world, tile_shape)
 
         stale_tiles = tuple(component.at[:, :, :, 0, :, :].set(-10.0 * (i + 1)) for i, component in enumerate(E_tiles))
-        refreshed = update_tiled_vector_ghost_cells(stale_tiles, world, num_guard_cells=2, tile_shape=tile_shape)
+        refreshed = ghost_cells.update_tiled_vector_ghost_cells(stale_tiles, world, num_guard_cells=2, tile_shape=tile_shape)
 
         for original_tiles, refreshed_component in zip(E_tiles, refreshed):
             self.assertTrue(jnp.allclose(refreshed_component, original_tiles, rtol=1.0e-12, atol=1.0e-12))
@@ -269,8 +289,8 @@ class TestYeeTiled(unittest.TestCase):
         stale_tiles = stale_tiles.at[:, :, :, :, :, 0].set(-500.0)
         stale_tiles = stale_tiles.at[:, :, :, :, :, -1].set(-600.0)
 
-        refreshed = update_tiled_ghost_cells(stale_tiles, world)
-        reference = update_ghost_cells(
+        refreshed = ghost_cells.update_tiled_ghost_cells(stale_tiles, world)
+        reference = _update_ghost_cells(
             field,
             world["boundary_conditions"]["x"],
             world["boundary_conditions"]["y"],
@@ -294,8 +314,8 @@ class TestYeeTiled(unittest.TestCase):
         stale_tiles = stale_tiles.at[:, :, :, :, :, 0].set(-500.0)
         stale_tiles = stale_tiles.at[:, :, :, :, :, -1].set(-600.0)
 
-        refreshed = update_tiled_ghost_cells(stale_tiles, world)
-        reference = update_ghost_cells(
+        refreshed = ghost_cells.update_tiled_ghost_cells(stale_tiles, world)
+        reference = _update_ghost_cells(
             field,
             world["boundary_conditions"]["x"],
             world["boundary_conditions"]["y"],
@@ -328,7 +348,7 @@ class TestYeeTiled(unittest.TestCase):
         stale_tiles = stale_tiles.at[:, :, :, :, :, :num_guard_cells].set(-500.0)
         stale_tiles = stale_tiles.at[:, :, :, :, :, -num_guard_cells:].set(-600.0)
 
-        refreshed = update_tiled_ghost_cells(stale_tiles, world, num_guard_cells)
+        refreshed = ghost_cells.update_tiled_ghost_cells(stale_tiles, world, num_guard_cells)
 
         self.assertTrue(jnp.allclose(refreshed, tiles, rtol=1.0e-12, atol=1.0e-12))
 
@@ -340,10 +360,10 @@ class TestYeeTiled(unittest.TestCase):
         E_tiles = tile_vector_field(E, world, tile_shape)
 
         stale_tiles = tuple(component.at[:, :, :, 0, :, :].set(-10.0 * (i + 1)) for i, component in enumerate(E_tiles))
-        refreshed = update_tiled_vector_ghost_cells(stale_tiles, world)
+        refreshed = ghost_cells.update_tiled_vector_ghost_cells(stale_tiles, world)
 
         for original, refreshed_component in zip(E, refreshed):
-            reference = update_ghost_cells(
+            reference = _update_ghost_cells(
                 original,
                 world["boundary_conditions"]["x"],
                 world["boundary_conditions"]["y"],

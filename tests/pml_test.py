@@ -11,8 +11,8 @@ from PyPIC3D.boundary_conditions.PML import (
     initialize_tiled_pml_state,
     load_pml_from_toml,
     tile_pml_profiles,
-    update_ghost_cells_for_pml,
 )
+from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 from PyPIC3D.initialization import initialize_simulation
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
@@ -28,6 +28,41 @@ jax.config.update("jax_enable_x64", True)
 
 def tile_vector_field(field, world, tile_shape, num_guard_cells=2):
     return tuple(tile_scalar_field(component, world, tile_shape, num_guard_cells) for component in field)
+
+
+def _update_ghost_cells(field, bc_x, bc_y, bc_z):
+    field = jax.lax.cond(
+        bc_x == BC_PERIODIC,
+        lambda f: f.at[0, :, :].set(f[-2, :, :]).at[-1, :, :].set(f[1, :, :]),
+        lambda f: f.at[0, :, :].set(0.0).at[-1, :, :].set(0.0),
+        operand=field,
+    )
+    field = jax.lax.cond(
+        bc_y == BC_PERIODIC,
+        lambda f: f.at[:, 0, :].set(f[:, -2, :]).at[:, -1, :].set(f[:, 1, :]),
+        lambda f: f.at[:, 0, :].set(0.0).at[:, -1, :].set(0.0),
+        operand=field,
+    )
+    field = jax.lax.cond(
+        bc_z == BC_PERIODIC,
+        lambda f: f.at[:, :, 0].set(f[:, :, -2]).at[:, :, -1].set(f[:, :, 1]),
+        lambda f: f.at[:, :, 0].set(0.0).at[:, :, -1].set(0.0),
+        operand=field,
+    )
+    return field
+
+
+def _update_ghost_cells_for_pml(field, world):
+    bc_x = world["boundary_conditions"]["x"]
+    bc_y = world["boundary_conditions"]["y"]
+    bc_z = world["boundary_conditions"]["z"]
+    _, pml_x, pml_y, pml_z, _ = world["pml"]
+
+    bc_x = jnp.where((pml_x) & (bc_x == BC_PERIODIC), BC_CONDUCTING, bc_x)
+    bc_y = jnp.where((pml_y) & (bc_y == BC_PERIODIC), BC_CONDUCTING, bc_y)
+    bc_z = jnp.where((pml_z) & (bc_z == BC_PERIODIC), BC_CONDUCTING, bc_z)
+
+    return _update_ghost_cells(field, bc_x, bc_y, bc_z)
 
 
 def _empty_global_fields(world):
@@ -326,8 +361,8 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         E = (Ex, Ey, Ez)
         B = (Bx, By, Bz)
         J = (Jx, Jy, Jz)
-        E = tuple(update_ghost_cells_for_pml(component, world) for component in E)
-        B = tuple(update_ghost_cells_for_pml(component, world) for component in B)
+        E = tuple(_update_ghost_cells_for_pml(component, world) for component in E)
+        B = tuple(_update_ghost_cells_for_pml(component, world) for component in B)
 
         reference_tile_shape = (world["Nx"], world["Ny"], world["Nz"])
         world["tile_shape"] = reference_tile_shape

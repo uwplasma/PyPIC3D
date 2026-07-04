@@ -7,8 +7,8 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
     particle_axis_offset,
 )
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
+from PyPIC3D.boundary_conditions.ghost_cells import update_tiled_vector_ghost_cells
 from PyPIC3D.particles.tiled_particles import SpeciesConfig, TiledParticles
-from PyPIC3D.solvers.yee_tiled import update_tiled_vector_ghost_cells
 
 
 def shift_old_stencil(old_w_list, shift):

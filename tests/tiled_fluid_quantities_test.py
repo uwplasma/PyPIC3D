@@ -10,11 +10,12 @@ from PyPIC3D.diagnostics.fluid_quantities import (
     compute_mass_density,
     compute_pressure_field,
     compute_velocity_field,
-    _compute_mass_density_flat,
-    _compute_pressure_field_flat,
-    _compute_velocity_field_flat,
 )
-from PyPIC3D.deposition.rho import compute_tiled_mass_density_from_tiled_particles
+from PyPIC3D.deposition.rho import (
+    compute_tiled_mass_density_from_tiled_particles,
+    compute_tiled_pressure_field_from_tiled_particles,
+    compute_tiled_velocity_field_from_tiled_particles,
+)
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
 from PyPIC3D.solvers.yee_tiled import assemble_tiled_scalar_field, tile_scalar_field
@@ -46,12 +47,13 @@ class TestTiledFluidQuantities(unittest.TestCase):
         world["grids"] = {"vertex": vertex_grid, "center": center_grid}
         return world
 
-    def _world_with_tiled_grids(self, world):
-        tile_shape = (
-            self._simulation_parameters()["particle_tile_nx"],
-            self._simulation_parameters()["particle_tile_ny"],
-            self._simulation_parameters()["particle_tile_nz"],
-        )
+    def _world_with_tiled_grids(self, world, tile_shape=None):
+        if tile_shape is None:
+            tile_shape = (
+                self._simulation_parameters()["particle_tile_nx"],
+                self._simulation_parameters()["particle_tile_ny"],
+                self._simulation_parameters()["particle_tile_nz"],
+            )
         g = int(world["guard_cells"])
         world = dict(world)
         grids = dict(world["grids"])
@@ -61,6 +63,83 @@ class TestTiledFluidQuantities(unittest.TestCase):
         grids["tiled_center_grid"] = tiled_center_grid
         world["grids"] = grids
         return world
+
+    def _scalar_tiles(self, world):
+        return tile_scalar_field(
+            self._empty_scalar(world),
+            world,
+            world["tile_shape"],
+            num_guard_cells=int(world["guard_cells"]),
+        )
+
+    def _single_tile_world(self, world):
+        return self._world_with_tiled_grids(
+            self._build_world(shape_factor=world["shape_factor"]),
+            tile_shape=(world["Nx"], world["Ny"], world["Nz"]),
+        )
+
+    def _assembled_mass_density(self, particles, world):
+        tiled_particles, species_config = to_tiled_particles(particles, world, self._simulation_parameters())
+        rho_tiles = compute_tiled_mass_density_from_tiled_particles(
+            tiled_particles,
+            species_config,
+            self._scalar_tiles(world),
+            world,
+            tile_shape=world["tile_shape"],
+            g=int(world["guard_cells"]),
+        )
+        return assemble_tiled_scalar_field(
+            rho_tiles,
+            world,
+            world["tile_shape"],
+            num_guard_cells=int(world["guard_cells"]),
+        )
+
+    def _assembled_velocity_field(self, particles, world, direction):
+        tiled_particles, species_config = to_tiled_particles(particles, world, self._simulation_parameters())
+        field_tiles = compute_tiled_velocity_field_from_tiled_particles(
+            tiled_particles,
+            species_config,
+            self._scalar_tiles(world),
+            int(direction),
+            world,
+            tile_shape=world["tile_shape"],
+            g=int(world["guard_cells"]),
+        )
+        return assemble_tiled_scalar_field(
+            field_tiles,
+            world,
+            world["tile_shape"],
+            num_guard_cells=int(world["guard_cells"]),
+        )
+
+    def _assembled_pressure_field(self, particles, world, direction):
+        tiled_particles, species_config = to_tiled_particles(particles, world, self._simulation_parameters())
+        velocity_tiles = compute_tiled_velocity_field_from_tiled_particles(
+            tiled_particles,
+            species_config,
+            self._scalar_tiles(world),
+            int(direction),
+            world,
+            tile_shape=world["tile_shape"],
+            g=int(world["guard_cells"]),
+        )
+        pressure_tiles = compute_tiled_pressure_field_from_tiled_particles(
+            tiled_particles,
+            species_config,
+            self._scalar_tiles(world),
+            velocity_tiles,
+            int(direction),
+            world,
+            tile_shape=world["tile_shape"],
+            g=int(world["guard_cells"]),
+        )
+        return assemble_tiled_scalar_field(
+            pressure_tiles,
+            world,
+            world["tile_shape"],
+            num_guard_cells=int(world["guard_cells"]),
+        )
 
     def _empty_scalar(self, world):
         return jnp.zeros((world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2))
@@ -118,46 +197,25 @@ class TestTiledFluidQuantities(unittest.TestCase):
         )
         return [electrons, ions]
 
-    def test_tiled_mass_density_matches_compute_mass_density_on_interior(self):
+    def test_tiled_particles_require_tile_major_mass_storage(self):
         world = self._build_world(shape_factor=2)
         particles = self._particles(world)
         tiled_particles, species_config = to_tiled_particles(particles, world, self._simulation_parameters())
 
-        inactive = ~tiled_particles.active
-        x = tiled_particles.x.at[inactive, 0].set(0.10)
-        x = x.at[inactive, 1].set(0.20)
-        x = x.at[inactive, 2].set(-0.30)
-        tiled_particles = tiled_particles._replace(x=x)
-
-        mass_reference = _compute_mass_density_flat(particles, self._empty_scalar(world), world)
-        mass_tiled = compute_mass_density(tiled_particles, self._empty_scalar(world), world, species_config=species_config)
-
-        self.assertTrue(
-            jnp.allclose(
-                mass_tiled[1:-1, 1:-1, 1:-1],
-                mass_reference[1:-1, 1:-1, 1:-1],
-                rtol=1.0e-12,
-                atol=1.0e-12,
-            )
-        )
+        with self.assertRaisesRegex(ValueError, "tile-major scalar field storage"):
+            compute_mass_density(tiled_particles, self._empty_scalar(world), world, species_config=species_config)
 
     def test_tile_major_mass_density_assembles_to_global_mass_density(self):
         world = self._build_world(shape_factor=2)
         world = self._world_with_tiled_grids(world)
         particles = self._particles(world)
         tiled_particles, species_config = to_tiled_particles(particles, world, self._simulation_parameters())
-        rho_tiles = tile_scalar_field(
-            self._empty_scalar(world),
-            world,
-            world["tile_shape"],
-            num_guard_cells=int(world["guard_cells"]),
-        )
-
-        mass_reference = _compute_mass_density_flat(particles, self._empty_scalar(world), world)
+        reference_world = self._single_tile_world(world)
+        mass_reference = self._assembled_mass_density(self._particles(reference_world), reference_world)
         mass_tiles = compute_tiled_mass_density_from_tiled_particles(
             tiled_particles,
             species_config,
-            rho_tiles,
+            self._scalar_tiles(world),
             world,
             tile_shape=world["tile_shape"],
             g=int(world["guard_cells"]),
@@ -183,14 +241,9 @@ class TestTiledFluidQuantities(unittest.TestCase):
         world = self._world_with_tiled_grids(world)
         particles = self._particles(world)
         tiled_particles, species_config = to_tiled_particles(particles, world, self._simulation_parameters())
-        rho_tiles = tile_scalar_field(
-            self._empty_scalar(world),
-            world,
-            world["tile_shape"],
-            num_guard_cells=int(world["guard_cells"]),
-        )
-
-        mass_reference = _compute_mass_density_flat(particles, self._empty_scalar(world), world)
+        reference_world = self._single_tile_world(world)
+        mass_reference = self._assembled_mass_density(self._particles(reference_world), reference_world)
+        rho_tiles = self._scalar_tiles(world)
         mass_tiles = compute_mass_density(tiled_particles, rho_tiles, world, species_config=species_config)
         mass_from_tiles = assemble_tiled_scalar_field(
             mass_tiles,
@@ -214,17 +267,11 @@ class TestTiledFluidQuantities(unittest.TestCase):
         world = self._world_with_tiled_grids(world)
         particles = self._particles(world)
         tiled_particles, species_config = to_tiled_particles(particles, world, self._simulation_parameters())
-        field_tiles = tile_scalar_field(
-            self._empty_scalar(world),
-            world,
-            world["tile_shape"],
-            num_guard_cells=int(world["guard_cells"]),
-        )
-
-        velocity_reference = _compute_velocity_field_flat(particles, self._empty_scalar(world), 0, world)
+        reference_world = self._single_tile_world(world)
+        velocity_reference = self._assembled_velocity_field(self._particles(reference_world), reference_world, 0)
         velocity_tiles = compute_velocity_field(
             tiled_particles,
-            field_tiles,
+            self._scalar_tiles(world),
             0,
             world,
             species_config=species_config,
@@ -250,21 +297,9 @@ class TestTiledFluidQuantities(unittest.TestCase):
         world = self._world_with_tiled_grids(world)
         particles = self._particles(world)
         tiled_particles, species_config = to_tiled_particles(particles, world, self._simulation_parameters())
-        field_tiles = tile_scalar_field(
-            self._empty_scalar(world),
-            world,
-            world["tile_shape"],
-            num_guard_cells=int(world["guard_cells"]),
-        )
-
-        velocity_reference = _compute_velocity_field_flat(particles, self._empty_scalar(world), 0, world)
-        pressure_reference = _compute_pressure_field_flat(
-            particles,
-            self._empty_scalar(world),
-            velocity_reference,
-            0,
-            world,
-        )
+        reference_world = self._single_tile_world(world)
+        pressure_reference = self._assembled_pressure_field(self._particles(reference_world), reference_world, 0)
+        field_tiles = self._scalar_tiles(world)
         velocity_tiles = compute_velocity_field(
             tiled_particles,
             field_tiles,

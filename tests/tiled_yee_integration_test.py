@@ -21,7 +21,6 @@ from PyPIC3D.solvers.yee_tiled import (
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 from PyPIC3D.utils import compute_energy
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
-from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 
 
 jax.config.update("jax_enable_x64", True)
@@ -32,6 +31,28 @@ ROUND_OFF_ATOL = 1.0e-11
 
 def tile_vector_field(field, world, tile_shape, num_guard_cells=2):
     return tuple(tile_scalar_field(component, world, tile_shape, num_guard_cells) for component in field)
+
+
+def _update_ghost_cells(field, bc_x, bc_y, bc_z):
+    field = jax.lax.cond(
+        bc_x == BC_PERIODIC,
+        lambda f: f.at[0, :, :].set(f[-2, :, :]).at[-1, :, :].set(f[1, :, :]),
+        lambda f: f.at[0, :, :].set(0.0).at[-1, :, :].set(0.0),
+        operand=field,
+    )
+    field = jax.lax.cond(
+        bc_y == BC_PERIODIC,
+        lambda f: f.at[:, 0, :].set(f[:, -2, :]).at[:, -1, :].set(f[:, 1, :]),
+        lambda f: f.at[:, 0, :].set(0.0).at[:, -1, :].set(0.0),
+        operand=field,
+    )
+    field = jax.lax.cond(
+        bc_z == BC_PERIODIC,
+        lambda f: f.at[:, :, 0].set(f[:, :, -2]).at[:, :, -1].set(f[:, :, 1]),
+        lambda f: f.at[:, :, 0].set(0.0).at[:, :, -1].set(0.0),
+        operand=field,
+    )
+    return field
 
 
 class TestTiledYeeIntegration(unittest.TestCase):
@@ -432,12 +453,12 @@ class TestTiledYeeIntegration(unittest.TestCase):
 
         x = jnp.arange(world["Nx"], dtype=jnp.float64)[:, None, None]
         seed = jnp.zeros(shape)
-        Ex = update_ghost_cells(seed.at[interior].set(0.1 + 0.03 * x), BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
-        Ey = update_ghost_cells(seed.at[interior].set(0.2 - 0.02 * x), BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
-        Ez = update_ghost_cells(seed.at[interior].set(0.05 * jnp.sin(x + 1.0)), BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
-        Bx = update_ghost_cells(seed.at[interior].set(0.07 * jnp.cos(x + 0.5)), BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
-        By = update_ghost_cells(seed.at[interior].set(0.04 + 0.01 * x), BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
-        Bz = update_ghost_cells(seed.at[interior].set(0.03 * jnp.sin(2.0 * x)), BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
+        Ex = _update_ghost_cells(seed.at[interior].set(0.1 + 0.03 * x), BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
+        Ey = _update_ghost_cells(seed.at[interior].set(0.2 - 0.02 * x), BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
+        Ez = _update_ghost_cells(seed.at[interior].set(0.05 * jnp.sin(x + 1.0)), BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
+        Bx = _update_ghost_cells(seed.at[interior].set(0.07 * jnp.cos(x + 0.5)), BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
+        By = _update_ghost_cells(seed.at[interior].set(0.04 + 0.01 * x), BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
+        Bz = _update_ghost_cells(seed.at[interior].set(0.03 * jnp.sin(2.0 * x)), BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
         E = (Ex, Ey, Ez)
         B = (Bx, By, Bz)
         J = (seed, seed, seed)

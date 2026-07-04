@@ -9,8 +9,8 @@ from PyPIC3D.solvers.electrostatic_yee import (
     calculate_electrostatic_fields,
 )
 from PyPIC3D.solvers.fdtd import centered_finite_difference_gradient
-from PyPIC3D.utilities.grids import build_yee_grid
-from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
+from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
+from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
 
 jax.config.update("jax_enable_x64", True)
 
@@ -20,6 +20,28 @@ def apply_negative_laplacian(field, dx, dy, dz):
     laplacian_y = (jnp.roll(field, shift=1, axis=1) + jnp.roll(field, shift=-1, axis=1) - 2.0 * field) / (dy * dy)
     laplacian_z = (jnp.roll(field, shift=1, axis=2) + jnp.roll(field, shift=-1, axis=2) - 2.0 * field) / (dz * dz)
     return -(laplacian_x + laplacian_y + laplacian_z)
+
+
+def _update_ghost_cells(field, bc_x, bc_y, bc_z):
+    field = jax.lax.cond(
+        bc_x == BC_PERIODIC,
+        lambda f: f.at[0, :, :].set(f[-2, :, :]).at[-1, :, :].set(f[1, :, :]),
+        lambda f: f.at[0, :, :].set(0.0).at[-1, :, :].set(0.0),
+        operand=field,
+    )
+    field = jax.lax.cond(
+        bc_y == BC_PERIODIC,
+        lambda f: f.at[:, 0, :].set(f[:, -2, :]).at[:, -1, :].set(f[:, 1, :]),
+        lambda f: f.at[:, 0, :].set(0.0).at[:, -1, :].set(0.0),
+        operand=field,
+    )
+    field = jax.lax.cond(
+        bc_z == BC_PERIODIC,
+        lambda f: f.at[:, :, 0].set(f[:, :, -2]).at[:, :, -1].set(f[:, :, 1]),
+        lambda f: f.at[:, :, 0].set(0.0).at[:, :, -1].set(0.0),
+        operand=field,
+    )
+    return field
 
 
 class TestElectrostaticYeeMethods(unittest.TestCase):
@@ -55,13 +77,18 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
             "y_wind": self.y_wind,
             "z_wind": self.z_wind,
             "shape_factor": 1,
-            "boundary_conditions": {"x": 0, "y": 0, "z": 0},
+            "guard_cells": 2,
+            "tile_shape": (8, 8, 8),
+            "boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},
         }
         vertex_grid, center_grid = build_yee_grid(self.world)
         self.world["grids"] = {
             "vertex": vertex_grid,
             "center": center_grid,
         }
+        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(self.world, self.world["tile_shape"], self.world["guard_cells"])
+        self.world["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
+        self.world["grids"]["tiled_center_grid"] = tiled_center_grid
 
         # Ghost-celled initial fields: shape (Nx+2, Ny+2, Nz+2)
         self.initial_rho = jnp.zeros((self.Nx + 2, self.Ny + 2, self.Nz + 2))
@@ -102,7 +129,7 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
         # Place rho into ghost-celled array
         rho = jnp.zeros((self.Nx + 2, self.Ny + 2, self.Nz + 2))
         rho = rho.at[1:-1, 1:-1, 1:-1].set(rho_interior)
-        rho = update_ghost_cells(rho, 0, 0, 0)
+        rho = _update_ghost_cells(rho, BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
 
         phi = solve_poisson_with_conjugate_gradient(
             rho,

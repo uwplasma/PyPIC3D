@@ -8,6 +8,8 @@ from PyPIC3D import evolve
 from PyPIC3D.deposition import Esirkepov
 from PyPIC3D.deposition import J_from_rhov
 from PyPIC3D.deposition import rho
+from PyPIC3D.boundary_conditions import boundaryconditions
+from PyPIC3D.boundary_conditions import ghost_cells
 from PyPIC3D.initialization import build_tiled_array, initialize_fields
 from PyPIC3D.solvers import electrostatic_yee
 from PyPIC3D.solvers import yee_tiled
@@ -56,7 +58,7 @@ class TestTiledRefactorContracts(unittest.TestCase):
         E = tuple(self._field(world, scale) for scale in (1.0, -0.5, 0.25))
         E_tiles = tuple(yee_tiled.tile_scalar_field(component, world, tile_shape) for component in E)
 
-        refreshed = yee_tiled.update_tiled_vector_ghost_cells(E_tiles, world, num_guard_cells=2, tile_shape=tile_shape)
+        refreshed = ghost_cells.update_tiled_vector_ghost_cells(E_tiles, world, num_guard_cells=2, tile_shape=tile_shape)
         self.assertEqual(len(refreshed), 3)
         for component in refreshed:
             self.assertEqual(component.shape, (4, 2, 2, 6, 7, 6))
@@ -82,12 +84,39 @@ class TestTiledRefactorContracts(unittest.TestCase):
         self.assertFalse(hasattr(yee_tiled, "tile_vector_field"))
         self.assertFalse(hasattr(yee_tiled, "stack_tiled_vector_field"))
         self.assertFalse(hasattr(yee_tiled, "unstack_tiled_vector_field"))
+        self.assertFalse(hasattr(yee_tiled, "update_tiled_ghost_cells"))
+        self.assertFalse(hasattr(yee_tiled, "update_tiled_vector_ghost_cells"))
+        self.assertFalse(hasattr(yee_tiled, "update_tiled_ghost_cells_for_pml"))
+        self.assertFalse(hasattr(yee_tiled, "update_tiled_vector_ghost_cells_for_pml"))
+        self.assertFalse(hasattr(yee_tiled, "fold_tiled_ghost_cells"))
+        self.assertFalse(hasattr(yee_tiled, "fold_tiled_vector_ghost_cells"))
+        self.assertFalse(hasattr(yee_tiled, "apply_tiled_conducting_bc"))
         self.assertFalse(hasattr(yee_tiled, "update_tiled_ghost_cells_periodic"))
         self.assertFalse(hasattr(yee_tiled, "update_tiled_vector_ghost_cells_periodic"))
         self.assertFalse(hasattr(yee_tiled, "fold_tiled_ghost_cells_periodic"))
         self.assertFalse(hasattr(yee_tiled, "fold_tiled_vector_ghost_cells_periodic"))
         self.assertFalse(hasattr(yee_tiled, "empty_tiled_scalar_field"))
         self.assertFalse(hasattr(yee_tiled, "empty_tiled_vector_field"))
+
+    def test_ghost_cell_logic_lives_in_boundary_conditions_ghost_cells(self):
+        for name in (
+            "update_tiled_ghost_cells",
+            "update_tiled_vector_ghost_cells",
+            "update_tiled_ghost_cells_for_pml",
+            "update_tiled_vector_ghost_cells_for_pml",
+            "fold_tiled_ghost_cells",
+            "fold_tiled_vector_ghost_cells",
+            "apply_tiled_conducting_bc",
+        ):
+            self.assertTrue(hasattr(ghost_cells, name))
+
+        for name in (
+            "update_ghost_cells",
+            "fold_ghost_cells",
+            "apply_conducting_bc",
+            "apply_scalar_conducting_bc",
+        ):
+            self.assertFalse(hasattr(boundaryconditions, name))
 
     def test_tiled_array_initialization_lives_in_initialization(self):
         world = self._world()

@@ -38,7 +38,7 @@ from PyPIC3D.particles.tiled_particle_initialization import (
     to_tiled_particles
 )
 
-from PyPIC3D.solvers.yee_tiled import (
+from PyPIC3D.boundary_conditions.ghost_cells import (
     update_tiled_vector_ghost_cells,
     update_tiled_vector_ghost_cells_for_pml,
 )

@@ -3,7 +3,7 @@ import unittest
 import jax
 import jax.numpy as jnp
 
-from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, update_ghost_cells
+from PyPIC3D.boundary_conditions import ghost_cells
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
 from PyPIC3D.utilities.filters import (
@@ -15,9 +15,7 @@ from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
 from PyPIC3D.particles.tiled_particle_refresh import refresh_tiled_particle_tiles
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
-    fold_tiled_ghost_cells,
     tile_scalar_field,
-    update_tiled_vector_ghost_cells,
 )
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 
@@ -27,6 +25,53 @@ jax.config.update("jax_enable_x64", True)
 
 def tile_vector_field(field, world, tile_shape, num_guard_cells=2):
     return tuple(tile_scalar_field(component, world, tile_shape, num_guard_cells) for component in field)
+
+
+def _update_ghost_cells(field, bc_x, bc_y, bc_z):
+    field = jax.lax.cond(
+        bc_x == BC_PERIODIC,
+        lambda f: f.at[0, :, :].set(f[-2, :, :]).at[-1, :, :].set(f[1, :, :]),
+        lambda f: f.at[0, :, :].set(0.0).at[-1, :, :].set(0.0),
+        operand=field,
+    )
+    field = jax.lax.cond(
+        bc_y == BC_PERIODIC,
+        lambda f: f.at[:, 0, :].set(f[:, -2, :]).at[:, -1, :].set(f[:, 1, :]),
+        lambda f: f.at[:, 0, :].set(0.0).at[:, -1, :].set(0.0),
+        operand=field,
+    )
+    field = jax.lax.cond(
+        bc_z == BC_PERIODIC,
+        lambda f: f.at[:, :, 0].set(f[:, :, -2]).at[:, :, -1].set(f[:, :, 1]),
+        lambda f: f.at[:, :, 0].set(0.0).at[:, :, -1].set(0.0),
+        operand=field,
+    )
+    return field
+
+
+def _fold_ghost_cells(field, bc_x, bc_y, bc_z):
+    field = jax.lax.cond(
+        bc_x == BC_PERIODIC,
+        lambda f: f.at[1, :, :].add(f[-1, :, :]).at[-2, :, :].add(f[0, :, :]),
+        lambda f: f.at[1, :, :].add(-f[0, :, :]).at[-2, :, :].add(-f[-1, :, :]),
+        operand=field,
+    )
+    field = field.at[0, :, :].set(0.0).at[-1, :, :].set(0.0)
+    field = jax.lax.cond(
+        bc_y == BC_PERIODIC,
+        lambda f: f.at[:, 1, :].add(f[:, -1, :]).at[:, -2, :].add(f[:, 0, :]),
+        lambda f: f.at[:, 1, :].add(-f[:, 0, :]).at[:, -2, :].add(-f[:, -1, :]),
+        operand=field,
+    )
+    field = field.at[:, 0, :].set(0.0).at[:, -1, :].set(0.0)
+    field = jax.lax.cond(
+        bc_z == BC_PERIODIC,
+        lambda f: f.at[:, :, 1].add(f[:, :, -1]).at[:, :, -2].add(f[:, :, 0]),
+        lambda f: f.at[:, :, 1].add(-f[:, :, 0]).at[:, :, -2].add(-f[:, :, -1]),
+        operand=field,
+    )
+    field = field.at[:, :, 0].set(0.0).at[:, :, -1].set(0.0)
+    return field
 
 
 class TestDirectDepositionTiled(unittest.TestCase):
@@ -292,20 +337,20 @@ class TestDirectDepositionTiled(unittest.TestCase):
         bc_z = world["boundary_conditions"]["z"]
 
         base = jnp.arange(jnp.prod(jnp.asarray(shape)), dtype=jnp.float64).reshape(shape)
-        base = update_ghost_cells(base, bc_x, bc_y, bc_z)
+        base = _update_ghost_cells(base, bc_x, bc_y, bc_z)
         J = (
             base / 17.0,
             -0.5 * base + 0.25,
             jnp.sin(base / 11.0),
         )
-        J = tuple(update_ghost_cells(component, bc_x, bc_y, bc_z) for component in J)
+        J = tuple(_update_ghost_cells(component, bc_x, bc_y, bc_z) for component in J)
 
         J_tiles = tile_vector_field(J, world, tile_shape)
         filtered_tiles = digital_filter_vector(J_tiles, alpha, num_guard_cells=1)
-        filtered_tiles = update_tiled_vector_ghost_cells(filtered_tiles, world, num_guard_cells=1, tile_shape=tile_shape)
+        filtered_tiles = ghost_cells.update_tiled_vector_ghost_cells(filtered_tiles, world, num_guard_cells=1, tile_shape=tile_shape)
         filtered_from_tiles = assemble_tiled_vector_field(filtered_tiles, world, tile_shape)
         filtered_reference = tuple(
-            update_ghost_cells(digital_filter(component, alpha), bc_x, bc_y, bc_z)
+            _update_ghost_cells(digital_filter(component, alpha), bc_x, bc_y, bc_z)
             for component in J
         )
 
@@ -319,7 +364,7 @@ class TestDirectDepositionTiled(unittest.TestCase):
         tiles = tiles.at[0, 0, 0, -1, 1, 1].set(2.0)
         tiles = tiles.at[1, 0, 0, 0, 1, 1].set(3.0)
 
-        folded = fold_tiled_ghost_cells(tiles, world, num_guard_cells=1, tile_shape=world["tile_shape"])
+        folded = ghost_cells.fold_tiled_ghost_cells(tiles, world, num_guard_cells=1, tile_shape=world["tile_shape"])
 
         self.assertEqual(float(folded[1, 0, 0, 1, 1, 1]), 2.0)
         self.assertEqual(float(folded[0, 0, 0, -2, 1, 1]), 3.0)
@@ -338,7 +383,7 @@ class TestDirectDepositionTiled(unittest.TestCase):
         tiles = tiles.at[0, 0, 0, -2, 2, 2].set(5.0)
         tiles = tiles.at[0, 0, 0, -1, 2, 2].set(7.0)
 
-        folded = fold_tiled_ghost_cells(tiles, world, num_guard_cells, tile_shape=world["tile_shape"])
+        folded = ghost_cells.fold_tiled_ghost_cells(tiles, world, num_guard_cells, tile_shape=world["tile_shape"])
 
         self.assertEqual(float(folded[0, 0, 0, 4, 2, 2]), 2.0)
         self.assertEqual(float(folded[0, 0, 0, 5, 2, 2]), 3.0)
@@ -360,7 +405,7 @@ class TestDirectDepositionTiled(unittest.TestCase):
         tiles = tiles.at[0, 0, 0, 2, 3, 2].set(3.0)
         tiles = tiles.at[0, 0, 0, 2, 4, 2].set(4.0)
 
-        folded = fold_tiled_ghost_cells(tiles, world, num_guard_cells, tile_shape=tile_shape)
+        folded = ghost_cells.fold_tiled_ghost_cells(tiles, world, num_guard_cells, tile_shape=tile_shape)
 
         self.assertEqual(float(folded[0, 0, 0, 2, 2, 2]), 10.0)
         self.assertTrue(jnp.allclose(folded[:, :, :, :, :num_guard_cells, :], 0.0))
@@ -380,7 +425,7 @@ class TestDirectDepositionTiled(unittest.TestCase):
         tiles = tiles.at[0, 0, 0, -1, 1, 1].set(2.0)
         tiles = tiles.at[1, 0, 0, 0, 1, 1].set(3.0)
 
-        folded = fold_tiled_ghost_cells(tiles, world, num_guard_cells=1, tile_shape=world["tile_shape"])
+        folded = ghost_cells.fold_tiled_ghost_cells(tiles, world, num_guard_cells=1, tile_shape=world["tile_shape"])
 
         self.assertEqual(float(folded[0, 0, 0, 1, 1, 1]), -4.0)
         self.assertEqual(float(folded[-1, 0, 0, -2, 1, 1]), -7.0)
@@ -419,10 +464,11 @@ class TestDirectDepositionTiled(unittest.TestCase):
         field = field.at[3, 3, -1].set(5.0)
         tiles = tiles.at[1, 1, -1, 1, 1, -1].set(5.0)
 
-        folded_tiles = fold_tiled_ghost_cells(tiles, world, num_guard_cells=1, tile_shape=tile_shape)
+        folded_tiles = ghost_cells.fold_tiled_ghost_cells(tiles, world, num_guard_cells=1, tile_shape=tile_shape)
+        folded_tiles = ghost_cells.update_tiled_ghost_cells(folded_tiles, world, num_guard_cells=1, tile_shape=tile_shape)
         folded_from_tiles = assemble_tiled_vector_field((folded_tiles, folded_tiles, folded_tiles), world, tile_shape, num_guard_cells=1)[0]
-        folded_reference = update_ghost_cells(
-            fold_ghost_cells(
+        folded_reference = _update_ghost_cells(
+            _fold_ghost_cells(
                 field,
                 world["boundary_conditions"]["x"],
                 world["boundary_conditions"]["y"],

@@ -1,23 +1,16 @@
 import jax.numpy as jnp
-from jax import jit
 from jax import lax
-from functools import partial
 
 from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.solvers.fdtd import centered_finite_difference_gradient
 from PyPIC3D.utilities.filters import digital_filter
-from PyPIC3D.boundary_conditions.boundaryconditions import (
-    update_ghost_cells, apply_scalar_conducting_bc
-)
+from PyPIC3D.boundary_conditions import ghost_cells
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_scalar_field,
     tile_scalar_field,
-    update_tiled_ghost_cells,
-    update_tiled_vector_ghost_cells,
 )
 
 
-@partial(jit, static_argnames=("tol", "max_iter"))
 def solve_poisson_with_conjugate_gradient(rho, phi, constants, world, tol=1e-12, max_iter=5000):
     """
     Solve Poisson's equation using matrix-free conjugate gradient.
@@ -40,10 +33,9 @@ def solve_poisson_with_conjugate_gradient(rho, phi, constants, world, tol=1e-12,
     dz = world['dz']
     eps = constants['eps']
 
-    bc_x = world['boundary_conditions']['x']
-    bc_y = world['boundary_conditions']['y']
-    bc_z = world['boundary_conditions']['z']
-    # get the boundary condition codes for each axis
+    tile_shape = tuple(int(width) for width in world["tile_shape"])
+    g = int(world["guard_cells"])
+    # get the tiled layout from the world contract
 
     def lapl(field):
         # Laplacian using ghost-cell neighbors instead of jnp.roll
@@ -54,10 +46,11 @@ def solve_poisson_with_conjugate_gradient(rho, phi, constants, world, tol=1e-12,
     # compute the laplacian on the interior using ghost cell neighbors
 
     def apply_bc(field):
-        field = apply_scalar_conducting_bc(field, bc_x, bc_y, bc_z)
-        field = update_ghost_cells(field, bc_x, bc_y, bc_z)
-        return field
-    # apply boundary conditions and update ghost cells
+        field_tiles = tile_scalar_field(field, world, tile_shape, num_guard_cells=g)
+        field_tiles = ghost_cells.apply_tiled_scalar_conducting_bc(field_tiles, world, num_guard_cells=g)
+        field_tiles = ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
+        return assemble_tiled_scalar_field(field_tiles, world, tile_shape, num_guard_cells=g)
+    # apply scalar conducting boundaries and refresh ghost cells through the tiled halo path
 
     def body_fun(state):
         phi, r, p, k = state
@@ -108,7 +101,6 @@ def solve_poisson_with_conjugate_gradient(rho, phi, constants, world, tol=1e-12,
     return apply_bc(phi)
 
 
-@partial(jit, static_argnames=("solver", "bc"))
 def calculate_electrostatic_fields(world, particles, constants, rho, phi, solver, bc):
     """
     Compute electrostatic fields from charge deposition and Poisson solve.
@@ -130,19 +122,22 @@ def calculate_electrostatic_fields(world, particles, constants, rho, phi, solver
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
-    bc_x = world['boundary_conditions']['x']
-    bc_y = world['boundary_conditions']['y']
-    bc_z = world['boundary_conditions']['z']
+    tile_shape = tuple(int(width) for width in world["tile_shape"])
+    g = int(world["guard_cells"])
 
     phi = solve_poisson_with_conjugate_gradient(rho, phi, constants, world)
 
-    phi = update_ghost_cells(phi, bc_x, bc_y, bc_z)
+    phi_tiles = tile_scalar_field(phi, world, tile_shape, num_guard_cells=g)
+    phi_tiles = ghost_cells.update_tiled_ghost_cells(phi_tiles, world, g, tile_shape)
+    phi = assemble_tiled_scalar_field(phi_tiles, world, tile_shape, num_guard_cells=g)
     # refresh ghost cells before any stencil-based post-processing
 
     alpha = constants['alpha']
     phi = digital_filter(phi, alpha)
-    phi = apply_scalar_conducting_bc(phi, bc_x, bc_y, bc_z)
-    phi = update_ghost_cells(phi, bc_x, bc_y, bc_z)
+    phi_tiles = tile_scalar_field(phi, world, tile_shape, num_guard_cells=g)
+    phi_tiles = ghost_cells.apply_tiled_scalar_conducting_bc(phi_tiles, world, num_guard_cells=g)
+    phi_tiles = ghost_cells.update_tiled_ghost_cells(phi_tiles, world, g, tile_shape)
+    phi = assemble_tiled_scalar_field(phi_tiles, world, tile_shape, num_guard_cells=g)
     # update ghost cells after filtering
 
     Ex, Ey, Ez = centered_finite_difference_gradient(-1 * phi[1:-1, 1:-1, 1:-1], dx, dy, dz, bc)
@@ -155,9 +150,19 @@ def calculate_electrostatic_fields(world, particles, constants, rho, phi, solver
     Ex_full = Ex_full.at[1:-1, 1:-1, 1:-1].set(Ex)
     Ey_full = Ey_full.at[1:-1, 1:-1, 1:-1].set(Ey)
     Ez_full = Ez_full.at[1:-1, 1:-1, 1:-1].set(Ez)
-    Ex_full = update_ghost_cells(Ex_full, bc_x, bc_y, bc_z)
-    Ey_full = update_ghost_cells(Ey_full, bc_x, bc_y, bc_z)
-    Ez_full = update_ghost_cells(Ez_full, bc_x, bc_y, bc_z)
+    E_tiles = tuple(
+        ghost_cells.update_tiled_ghost_cells(
+            tile_scalar_field(component, world, tile_shape, num_guard_cells=g),
+            world,
+            g,
+            tile_shape,
+        )
+        for component in (Ex_full, Ey_full, Ez_full)
+    )
+    Ex_full, Ey_full, Ez_full = tuple(
+        assemble_tiled_scalar_field(component, world, tile_shape, num_guard_cells=g)
+        for component in E_tiles
+    )
 
     return (Ex_full, Ey_full, Ez_full), phi, rho
 
@@ -180,7 +185,7 @@ def _centered_tiled_electrostatic_gradient(phi_tiles, world, tile_shape, g):
     forward = slice(g + 1, None if g == 1 else -g + 1)
     backward = slice(g - 1, -g - 1)
 
-    phi_tiles = update_tiled_ghost_cells(phi_tiles, world, g, tile_shape)
+    phi_tiles = ghost_cells.update_tiled_ghost_cells(phi_tiles, world, g, tile_shape)
 
     Ex = jnp.zeros_like(phi_tiles)
     Ey = jnp.zeros_like(phi_tiles)
@@ -196,7 +201,7 @@ def _centered_tiled_electrostatic_gradient(phi_tiles, world, tile_shape, g):
         -1.0 * (phi_tiles[:, :, :, active, active, forward] - phi_tiles[:, :, :, active, active, backward]) / (2.0 * dz)
     )
 
-    return update_tiled_vector_ghost_cells((Ex, Ey, Ez), world, g, tile_shape)
+    return ghost_cells.update_tiled_vector_ghost_cells((Ex, Ey, Ez), world, g, tile_shape)
 
 
 def calculate_tiled_electrostatic_fields(world, particles, species_config, constants, rho_tiles, phi_tiles, solver, bc):
@@ -210,10 +215,6 @@ def calculate_tiled_electrostatic_fields(world, particles, species_config, const
 
     del bc
 
-    bc_x = world["boundary_conditions"]["x"]
-    bc_y = world["boundary_conditions"]["y"]
-    bc_z = world["boundary_conditions"]["z"]
-
     tile_shape = tuple(int(width) for width in world["tile_shape"])
     g = int(world["guard_cells"])
     rho_tiles = compute_rho(particles, species_config, rho_tiles, constants, world)
@@ -222,13 +223,17 @@ def calculate_tiled_electrostatic_fields(world, particles, species_config, const
 
     phi = solve_poisson_with_conjugate_gradient(rho, phi, constants, world)
 
-    phi = update_ghost_cells(phi, bc_x, bc_y, bc_z)
+    phi_tiles = tile_scalar_field(phi, world, tile_shape, num_guard_cells=g)
+    phi_tiles = ghost_cells.update_tiled_ghost_cells(phi_tiles, world, g, tile_shape)
+    phi = assemble_tiled_scalar_field(phi_tiles, world, tile_shape, num_guard_cells=g)
     # refresh ghost cells before filtering and tiled differentiation
 
     alpha = constants["alpha"]
     phi = digital_filter(phi, alpha)
-    phi = apply_scalar_conducting_bc(phi, bc_x, bc_y, bc_z)
-    phi = update_ghost_cells(phi, bc_x, bc_y, bc_z)
+    phi_tiles = tile_scalar_field(phi, world, tile_shape, num_guard_cells=g)
+    phi_tiles = ghost_cells.apply_tiled_scalar_conducting_bc(phi_tiles, world, num_guard_cells=g)
+    phi_tiles = ghost_cells.update_tiled_ghost_cells(phi_tiles, world, g, tile_shape)
+    phi = assemble_tiled_scalar_field(phi_tiles, world, tile_shape, num_guard_cells=g)
     # keep the same global phi post-processing order as the untiled solver
 
     phi_tiles = tile_scalar_field(phi, world, tile_shape, num_guard_cells=g)
