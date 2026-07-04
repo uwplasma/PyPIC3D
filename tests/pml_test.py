@@ -21,7 +21,8 @@ from PyPIC3D.solvers.yee_tiled import (
     update_B,
     update_E,
 )
-from PyPIC3D.utils import build_yee_grid, compute_energy
+from PyPIC3D.utilities.grids import build_yee_grid
+from PyPIC3D.utils import compute_energy
 
 jax.config.update("jax_enable_x64", True)
 

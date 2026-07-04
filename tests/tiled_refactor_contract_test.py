@@ -10,7 +10,7 @@ from PyPIC3D.deposition import J_from_rhov
 from PyPIC3D.deposition import rho
 from PyPIC3D.solvers import electrostatic_yee
 from PyPIC3D.solvers import yee_tiled
-from PyPIC3D.utils import build_yee_grid
+from PyPIC3D.utilities.grids import build_yee_grid
 
 
 class TestTiledRefactorContracts(unittest.TestCase):
@@ -64,33 +64,6 @@ class TestTiledRefactorContracts(unittest.TestCase):
         for reference, candidate in zip(refreshed, refreshed_from_stack):
             self.assertTrue(jnp.allclose(reference, candidate, rtol=1.0e-12, atol=1.0e-12))
 
-    def test_tiled_benchmark_stage_specs_expose_tiled_hot_paths(self):
-        from PyPIC3D.diagnostics import tiled_benchmarking
-
-        case = tiled_benchmarking.build_synthetic_tiled_yee_state(
-            nx=4,
-            ny=4,
-            nz=4,
-            particles_per_species=8,
-            species_count=1,
-            tile_shape=(2, 2, 2),
-            slots_per_tile=8,
-        )
-        stage_specs = tiled_benchmarking.build_tiled_stage_specs(case)
-
-        expected = {
-            "tiled_pic_step",
-            "tiled_particle_push",
-            "tiled_particle_retile",
-            "tiled_current_deposition",
-            "tiled_field_update",
-            "tiled_diagnostics",
-            "tiled_output_bridge",
-        }
-        self.assertTrue(expected.issubset(stage_specs))
-        self.assertEqual(stage_specs["tiled_pic_step"].static_argnames, ("relativistic", "particle_pusher"))
-        self.assertEqual(stage_specs["tiled_current_deposition"].static_argnames, ())
-
     def test_evolve_loops_read_runtime_controls_from_world(self):
         electrodynamic_signature = inspect.signature(evolve.time_loop_electrodynamic)
         electrostatic_signature = inspect.signature(evolve.time_loop_electrostatic)
@@ -108,6 +81,21 @@ class TestTiledRefactorContracts(unittest.TestCase):
         self.assertFalse(hasattr(yee_tiled, "update_tiled_E"))
         self.assertFalse(hasattr(yee_tiled, "update_tiled_B"))
         self.assertFalse(hasattr(yee_tiled, "tiled_grid_axes_from_world"))
+        self.assertFalse(hasattr(yee_tiled, "tile_grid_axes"))
+
+    def test_grid_builders_live_in_utilities(self):
+        from PyPIC3D import utils
+        from PyPIC3D.utilities import grids
+
+        self.assertFalse(hasattr(utils, "build_yee_grid"))
+        self.assertFalse(hasattr(utils, "build_collocated_grid"))
+        self.assertTrue(hasattr(grids, "build_yee_grid"))
+        self.assertTrue(hasattr(grids, "build_collocated_grid"))
+        self.assertTrue(hasattr(grids, "tile_grid_axes"))
+        self.assertTrue(hasattr(grids, "build_tiled_yee_grids"))
+
+    def test_tiled_benchmarking_module_is_removed(self):
+        self.assertIsNone(importlib.util.find_spec("PyPIC3D.diagnostics.tiled_benchmarking"))
 
     def test_tiled_pusher_reads_tiled_grids_from_world(self):
         from PyPIC3D.pusher import tiled_pusher

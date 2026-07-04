@@ -10,8 +10,9 @@ from PyPIC3D.particles.tiled_particles import TiledParticles
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
 from PyPIC3D.diagnostics import plotting, vtk as vtk_diagnostics
 from PyPIC3D.solvers.yee_tiled import tile_vector_field
+from PyPIC3D.utilities.grids import build_collocated_grid, build_yee_grid
 from PyPIC3D.utils import (
-    print_stats, build_yee_grid, build_collocated_grid, check_stability,
+    print_stats, check_stability,
     particle_sanity_check, load_external_fields_from_toml, add_external_fields,
     compute_energy, dump_parameters_to_toml,
 )

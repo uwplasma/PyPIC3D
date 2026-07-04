@@ -17,11 +17,10 @@ from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
     fold_tiled_ghost_cells,
     fold_tiled_ghost_cells_periodic,
-    tile_grid_axes,
     tile_vector_field,
     update_tiled_vector_ghost_cells,
 )
-from PyPIC3D.utils import build_yee_grid
+from PyPIC3D.utilities.grids import build_yee_grid, tile_grid_axes
 
 
 jax.config.update("jax_enable_x64", True)

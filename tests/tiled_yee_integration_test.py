@@ -15,12 +15,12 @@ from PyPIC3D.particles.tiled_particles import TiledParticles
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
     empty_tiled_vector_field,
-    tile_grid_axes,
     tile_vector_field,
     update_B,
     update_E,
 )
-from PyPIC3D.utils import build_yee_grid, compute_energy
+from PyPIC3D.utilities.grids import build_yee_grid, tile_grid_axes
+from PyPIC3D.utils import compute_energy
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 

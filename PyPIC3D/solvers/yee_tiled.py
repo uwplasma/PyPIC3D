@@ -108,55 +108,6 @@ def _restore_tiled_vector_layout(stacked_tiles, original_tiles):
     return unstack_tiled_vector_field(stacked_tiles)
 
 
-def _tile_grid_axis(global_axis_grid, world, tile_shape, tile_counts, axis_index, num_guard_cells):
-    tile_width = int(tile_shape[axis_index])
-    tile_count = int(tile_counts[axis_index])
-    g = int(num_guard_cells)
-
-    if axis_index == 0:
-        d = world["dx"]
-    elif axis_index == 1:
-        d = world["dy"]
-    else:
-        d = world["dz"]
-
-    offsets = jnp.arange(tile_width + 2 * g, dtype=global_axis_grid.dtype)
-    tile_indices = jnp.arange(tile_count, dtype=global_axis_grid.dtype)
-    axis_lines = global_axis_grid[0] + (offsets[jnp.newaxis, :] + tile_indices[:, jnp.newaxis] * tile_width - (g - 1)) * d
-
-    axis_shape = [1, 1, 1, tile_width + 2 * g]
-    axis_shape[axis_index] = tile_count
-    tiled_shape = tuple(tile_counts) + (tile_width + 2 * g,)
-
-    return jnp.broadcast_to(axis_lines.reshape(axis_shape), tiled_shape)
-
-
-def tile_grid_axes(grid, world, tile_shape, num_guard_cells=2):
-    """
-    Build tile-local coordinate lines for a center or vertex grid.
-
-    Each returned axis has leading tile indices followed by the local
-    ghost-celled coordinate line for that axis.  These arrays carry the same
-    coordinate convention previously rebuilt inside tiled interpolation and
-    deposition kernels.
-    """
-
-    tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
-    Nx = int(grid[0].shape[0]) - 2
-    Ny = int(grid[1].shape[0]) - 2
-    Nz = int(grid[2].shape[0]) - 2
-    tile_counts = (
-        _tile_axis_count(Nx, tile_nx),
-        _tile_axis_count(Ny, tile_ny),
-        _tile_axis_count(Nz, tile_nz),
-    )
-
-    return tuple(
-        _tile_grid_axis(grid[axis], world, tile_shape, tile_counts, axis, num_guard_cells)
-        for axis in range(3)
-    )
-
-
 def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
     """
     Split a ghost-celled field into compact tiles using the shared tile shape.

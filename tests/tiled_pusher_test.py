@@ -7,8 +7,8 @@ from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
 from PyPIC3D.pusher.particle_push import particle_push
 from PyPIC3D.pusher.tiled_pusher import tiled_particle_push
-from PyPIC3D.solvers.yee_tiled import tile_grid_axes, tile_vector_field
-from PyPIC3D.utils import build_yee_grid
+from PyPIC3D.solvers.yee_tiled import tile_vector_field
+from PyPIC3D.utilities.grids import build_yee_grid, tile_grid_axes
 
 
 jax.config.update("jax_enable_x64", True)

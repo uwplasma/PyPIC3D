@@ -15,10 +15,15 @@ from PyPIC3D.particles.particle_initialization import (
 
 from PyPIC3D.utils import (
     courant_condition,
-    update_parameters_from_toml, build_collocated_grid,
-    build_yee_grid, convert_to_jax_compatible, load_external_fields_from_toml,
+    update_parameters_from_toml,
+    convert_to_jax_compatible, load_external_fields_from_toml,
     print_stats, particle_sanity_check, build_plasma_parameters_dict,
     make_dir, compute_energy, add_external_fields
+)
+from PyPIC3D.utilities.grids import (
+    build_collocated_grid,
+    build_tiled_yee_grids,
+    build_yee_grid,
 )
 
 from PyPIC3D.diagnostics.plotting import (
@@ -35,7 +40,6 @@ from PyPIC3D.particles.tiled_particle_initialization import (
 
 from PyPIC3D.solvers.yee_tiled import (
     empty_tiled_vector_field,
-    tile_grid_axes,
     tile_scalar_field,
     tile_vector_field,
 )
@@ -491,18 +495,9 @@ def initialize_simulation(toml_file):
     tile_shape = _tile_shape_from_parameters(simulation_parameters)
     world["tile_shape"] = tile_shape
     guard_cells = int(world["guard_cells"])
-    world["grids"]["tiled_center_grid"] = tile_grid_axes(
-        world["grids"]["center"],
-        world,
-        tile_shape,
-        num_guard_cells=guard_cells,
-    )
-    world["grids"]["tiled_vertex_grid"] = tile_grid_axes(
-        world["grids"]["vertex"],
-        world,
-        tile_shape,
-        num_guard_cells=guard_cells,
-    )
+    tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world, tile_shape, guard_cells)
+    world["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
+    world["grids"]["tiled_center_grid"] = tiled_center_grid
     particles, species_config = to_tiled_particles(particles, world, simulation_parameters)
     E = tile_vector_field(E, world, tile_shape, num_guard_cells=guard_cells)
     B = tile_vector_field(B, world, tile_shape, num_guard_cells=guard_cells)

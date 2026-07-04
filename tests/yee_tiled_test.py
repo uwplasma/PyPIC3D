@@ -6,7 +6,6 @@ import jax.numpy as jnp
 from PyPIC3D.initialization import initialize_fields
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
-    tile_grid_axes,
     tile_vector_field,
     update_tiled_ghost_cells,
     update_tiled_ghost_cells_periodic,
@@ -15,7 +14,7 @@ from PyPIC3D.solvers.yee_tiled import (
     update_B,
     update_E,
 )
-from PyPIC3D.utils import build_yee_grid
+from PyPIC3D.utilities.grids import build_yee_grid, tile_grid_axes
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 

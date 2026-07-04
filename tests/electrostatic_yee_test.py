@@ -9,7 +9,7 @@ from PyPIC3D.solvers.electrostatic_yee import (
     calculate_electrostatic_fields,
 )
 from PyPIC3D.solvers.fdtd import centered_finite_difference_gradient
-from PyPIC3D.utils import build_yee_grid
+from PyPIC3D.utilities.grids import build_yee_grid
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 
 jax.config.update("jax_enable_x64", True)

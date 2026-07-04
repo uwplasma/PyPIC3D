@@ -17,11 +17,10 @@ from PyPIC3D.particles.tiled_particles import TiledParticles
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_scalar_field,
     assemble_tiled_vector_field,
-    tile_grid_axes,
     tile_scalar_field,
     tile_vector_field,
 )
-from PyPIC3D.utils import build_collocated_grid, build_yee_grid
+from PyPIC3D.utilities.grids import build_collocated_grid, build_yee_grid, tile_grid_axes
 
 
 jax.config.update("jax_enable_x64", True)

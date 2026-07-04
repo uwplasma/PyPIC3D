@@ -7,8 +7,8 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
 from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
-from PyPIC3D.solvers.yee_tiled import assemble_tiled_scalar_field, tile_grid_axes, tile_scalar_field
-from PyPIC3D.utils import build_yee_grid
+from PyPIC3D.solvers.yee_tiled import assemble_tiled_scalar_field, tile_scalar_field
+from PyPIC3D.utilities.grids import build_yee_grid, tile_grid_axes
 
 
 jax.config.update("jax_enable_x64", True)

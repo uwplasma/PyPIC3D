@@ -30,10 +30,10 @@ from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
     empty_tiled_scalar_field,
     empty_tiled_vector_field,
-    tile_grid_axes,
     tile_vector_field,
     update_E,
 )
+from PyPIC3D.utilities.grids import tile_grid_axes
 
 jax.config.update("jax_enable_x64", True)
 

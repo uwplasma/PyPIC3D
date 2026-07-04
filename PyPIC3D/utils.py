@@ -13,7 +13,6 @@ from jax.tree_util import tree_map
 from datetime import datetime
 import importlib.metadata
 from scipy import stats
-from PyPIC3D.boundary_conditions.grid_and_stencil import build_collocated_axis, build_staggered_axis
 # import external libraries
 
 def setup_pmd_files(file_path, name, extension=".bp"):
@@ -467,91 +466,6 @@ def convert_to_jax_compatible(data):
     """
     return tree_map(lambda x: jnp.array(x) if isinstance(x, (int, float, list, tuple)) else x, data)
 
-
-def build_collocated_grid(world):
-    """
-    Builds a co-allocated grid including ghost cell positions.
-
-    The returned grid has Nx+2 points per axis (1 ghost cell on each side).
-
-    Args:
-        world (dict): A dictionary containing the following keys:
-            - 'dx' (float): The grid spacing in the x-direction.
-            - 'dy' (float): The grid spacing in the y-direction.
-            - 'dz' (float): The grid spacing in the z-direction.
-            - 'x_wind' (float): The extent of the grid in the x-direction.
-            - 'y_wind' (float): The extent of the grid in the y-direction.
-            - 'z_wind' (float): The extent of the grid in the z-direction.
-
-    Returns:
-        tuple: A tuple containing two elements:
-            - grid (tuple): A tuple of three arrays representing the grid points including ghost positions.
-            - grid (tuple): A duplicate of the first grid tuple.
-    """
-
-    dx = world['dx']
-    dy = world['dy']
-    dz = world['dz']
-    x_wind = world['x_wind']
-    y_wind = world['y_wind']
-    z_wind = world['z_wind']
-    Nx = world['Nx']
-    Ny = world['Ny']
-    Nz = world['Nz']
-    # get the grid parameters
-    grid = (
-        build_collocated_axis(-x_wind / 2, dx, Nx),
-        build_collocated_axis(-y_wind / 2, dy, Ny),
-        build_collocated_axis(-z_wind / 2, dz, Nz),
-    )
-    # create the grid space with ghost cell positions
-    return grid, grid
-
-def build_yee_grid(world):
-    """
-    Builds a Yee grid and a staggered Yee grid including ghost cell positions.
-
-    The returned grids have Nx+2 points per axis (1 ghost cell on each side).
-    The physical interior corresponds to indices [1:-1].
-
-    Args:
-        world (dict): A dictionary containing the following keys:
-            - 'dx' (float): Grid spacing in the x-direction.
-            - 'dy' (float): Grid spacing in the y-direction.
-            - 'dz' (float): Grid spacing in the z-direction.
-            - 'x_wind' (float): Extent of the grid in the x-direction.
-            - 'y_wind' (float): Extent of the grid in the y-direction.
-            - 'z_wind' (float): Extent of the grid in the z-direction.
-
-    Returns:
-        tuple: A tuple containing two elements:
-            - grid (tuple of jnp.ndarray): The Yee vertex grid with Nx+2 points including ghost positions.
-            - staggered_grid (tuple of jnp.ndarray): The staggered Yee grid with Nx+2 points including ghost positions.
-    """
-
-    dx = world['dx']
-    dy = world['dy']
-    dz = world['dz']
-    x_wind = world['x_wind']
-    y_wind = world['y_wind']
-    z_wind = world['z_wind']
-    Nx = world['Nx']
-    Ny = world['Ny']
-    Nz = world['Nz']
-    # get the grid parameters
-
-    grid = (
-        build_collocated_axis(-x_wind / 2, dx, Nx),
-        build_collocated_axis(-y_wind / 2, dy, Ny),
-        build_collocated_axis(-z_wind / 2, dz, Nz),
-    )
-    staggered_grid = (
-        build_staggered_axis(-x_wind / 2, dx, Nx),
-        build_staggered_axis(-y_wind / 2, dy, Ny),
-        build_staggered_axis(-z_wind / 2, dz, Nz),
-    )
-    # create the grid space with ghost cell positions on each side
-    return grid, staggered_grid
 
 def precondition(NN, phi, rho, model=None):
     """
