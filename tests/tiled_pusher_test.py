@@ -7,7 +7,7 @@ from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
 from PyPIC3D.pusher.particle_push import particle_push
 from PyPIC3D.pusher.tiled_pusher import tiled_particle_push
-from PyPIC3D.solvers.yee_tiled import tile_vector_field
+from PyPIC3D.solvers.yee_tiled import tile_grid_axes, tile_vector_field
 from PyPIC3D.utils import build_yee_grid
 
 
@@ -32,6 +32,23 @@ class TestTiledParticlePusher(unittest.TestCase):
         }
         vertex_grid, center_grid = build_yee_grid(world)
         world["grids"] = {"vertex": vertex_grid, "center": center_grid}
+        return world
+
+    def _with_tiled_grids(self, world, tile_shape, g=1):
+        world["tile_shape"] = tuple(int(width) for width in tile_shape)
+        world["guard_cells"] = int(g)
+        world["grids"]["tiled_center_grid"] = tile_grid_axes(
+            world["grids"]["center"],
+            world,
+            tile_shape,
+            num_guard_cells=g,
+        )
+        world["grids"]["tiled_vertex_grid"] = tile_grid_axes(
+            world["grids"]["vertex"],
+            world,
+            tile_shape,
+            num_guard_cells=g,
+        )
         return world
 
     def _deterministic_vector_field(self, world, scale):
@@ -90,6 +107,7 @@ class TestTiledParticlePusher(unittest.TestCase):
         world = self._build_world()
         constants = {"C": 10.0}
         tile_shape = (2, 3, 2)
+        world = self._with_tiled_grids(world, tile_shape)
         simulation_parameters = {
             "particle_tile_nx": tile_shape[0],
             "particle_tile_ny": tile_shape[1],
@@ -136,6 +154,7 @@ class TestTiledParticlePusher(unittest.TestCase):
         world = self._build_world()
         constants = {"C": 10.0}
         tile_shape = (2, 3, 2)
+        world = self._with_tiled_grids(world, tile_shape)
         simulation_parameters = {
             "particle_tile_nx": tile_shape[0],
             "particle_tile_ny": tile_shape[1],
@@ -204,6 +223,7 @@ class TestTiledParticlePusher(unittest.TestCase):
         world = self._build_world()
         constants = {"C": 10.0}
         tile_shape = (2, 3, 2)
+        world = self._with_tiled_grids(world, tile_shape)
         simulation_parameters = {
             "particle_tile_nx": tile_shape[0],
             "particle_tile_ny": tile_shape[1],
@@ -240,6 +260,7 @@ class TestTiledParticlePusher(unittest.TestCase):
         world = self._build_world(Nx=8, Ny=1, Nz=1)
         constants = {"C": 10.0}
         tile_shape = (2, 1, 1)
+        world = self._with_tiled_grids(world, tile_shape)
         simulation_parameters = {
             "particle_tile_nx": tile_shape[0],
             "particle_tile_ny": tile_shape[1],
@@ -309,6 +330,7 @@ class TestTiledParticlePusher(unittest.TestCase):
         constants = {"C": 10.0}
         tile_shape = (2, 1, 1)
         g = 2
+        world = self._with_tiled_grids(world, tile_shape, g=g)
         simulation_parameters = {
             "particle_tile_nx": tile_shape[0],
             "particle_tile_ny": tile_shape[1],

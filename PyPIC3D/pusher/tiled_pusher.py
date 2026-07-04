@@ -10,7 +10,6 @@ from PyPIC3D.pusher.boris import (
     relativistic_boris_single_particle,
 )
 from PyPIC3D.pusher.higuera_cary import higuera_cary_single_particle
-from PyPIC3D.solvers.yee_tiled import tiled_grid_axes_from_world
 
 
 @partial(jit, static_argnames=("tile_shape", "g", "relativistic", "particle_pusher"))
@@ -27,22 +26,8 @@ def tiled_particle_push(tiled_particles, species_config, E_tiles, B_tiles, world
     dt = world["dt"]
     shape_factor = world["shape_factor"]
 
-    center_grid = world["grids"]["center"]
-    vertex_grid = world["grids"]["vertex"]
-    tiled_center_grid = tiled_grid_axes_from_world(
-        world,
-        center_grid,
-        "tiled_center_grid",
-        tile_shape,
-        g,
-    )
-    tiled_vertex_grid = tiled_grid_axes_from_world(
-        world,
-        vertex_grid,
-        "tiled_vertex_grid",
-        tile_shape,
-        g,
-    )
+    tiled_center_grid = world["grids"]["tiled_center_grid"]
+    tiled_vertex_grid = world["grids"]["tiled_vertex_grid"]
 
     Ex_tiles, Ey_tiles, Ez_tiles = E_tiles
     Bx_tiles, By_tiles, Bz_tiles = B_tiles

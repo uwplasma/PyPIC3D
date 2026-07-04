@@ -157,22 +157,6 @@ def tile_grid_axes(grid, world, tile_shape, num_guard_cells=2):
     )
 
 
-def tiled_grid_axes_from_world(world, grid, tiled_grid_key, tile_shape, num_guard_cells=2):
-    """
-    Read precomputed tile-local grid axes, with a construction fallback.
-
-    Initialization stores the tiled grids in ``world['grids']`` for production
-    tiled runs.  The fallback keeps focused tests and older call sites that
-    construct small worlds by hand on the same numerical convention.
-    """
-
-    grids = world["grids"]
-    if tiled_grid_key in grids:
-        return grids[tiled_grid_key]
-
-    return tile_grid_axes(grid, world, tile_shape, num_guard_cells)
-
-
 def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
     """
     Split a ghost-celled field into compact tiles using the shared tile shape.
