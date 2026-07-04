@@ -10,8 +10,7 @@ from PyPIC3D.evolve import (
 from PyPIC3D.initialization import initialize_fields
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
-from PyPIC3D.solvers.yee_tiled import tile_vector_field
-from PyPIC3D.utilities.grids import build_yee_grid, tile_grid_axes
+from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 
 jax.config.update("jax_enable_x64", True)
 
@@ -19,18 +18,9 @@ jax.config.update("jax_enable_x64", True)
 def add_tiled_grids_to_world(world, tile_shape):
     g = int(world["guard_cells"])
     world["tile_shape"] = tile_shape
-    world["grids"]["tiled_center_grid"] = tile_grid_axes(
-        world["grids"]["center"],
-        world,
-        tile_shape,
-        num_guard_cells=g,
-    )
-    world["grids"]["tiled_vertex_grid"] = tile_grid_axes(
-        world["grids"]["vertex"],
-        world,
-        tile_shape,
-        num_guard_cells=g,
-    )
+    tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world, tile_shape, g)
+    world["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
+    world["grids"]["tiled_center_grid"] = tiled_center_grid
 
 
 class TestEvolveExternalFields(unittest.TestCase):
@@ -60,6 +50,9 @@ class TestEvolveExternalFields(unittest.TestCase):
         world["grids"] = {"center": center_grid, "vertex": vertex_grid}
         constants = {"C": 10.0, "eps": 1.0, "mu": 1.0, "alpha": 0.0}
 
+        tile_shape = (world["Nx"], world["Ny"], world["Nz"])
+        world["guard_cells"] = 2
+        add_tiled_grids_to_world(world, tile_shape)
         E, B, J, phi, rho = initialize_fields(world)
         external_E = tuple(jnp.zeros_like(comp) for comp in E)
         external_B = tuple(jnp.zeros_like(comp) for comp in B)
@@ -88,24 +81,19 @@ class TestEvolveExternalFields(unittest.TestCase):
                 dt=world["dt"],
             )
         ]
-        tile_shape = (world["Nx"], world["Ny"], world["Nz"])
         simulation_parameters = {
             "particle_tile_nx": tile_shape[0],
             "particle_tile_ny": tile_shape[1],
             "particle_tile_nz": tile_shape[2],
         }
-        world["guard_cells"] = 2
-        add_tiled_grids_to_world(world, tile_shape)
         tiled_particles, species_config = to_tiled_particles(particles, world, simulation_parameters)
-        external_E_tiles = tile_vector_field(external_fields[0], world, tile_shape, num_guard_cells=int(world["guard_cells"]))
-        external_B_tiles = tile_vector_field(external_fields[1], world, tile_shape, num_guard_cells=int(world["guard_cells"]))
         fields = (
-            tile_vector_field(E, world, tile_shape, num_guard_cells=int(world["guard_cells"])),
-            tile_vector_field(B, world, tile_shape, num_guard_cells=int(world["guard_cells"])),
-            tile_vector_field(J, world, tile_shape, num_guard_cells=int(world["guard_cells"])),
+            E,
+            B,
+            J,
             rho,
             phi,
-            (external_E_tiles, external_B_tiles),
+            external_fields,
             None,
             jnp.asarray(False),
         )
@@ -130,7 +118,7 @@ class TestEvolveExternalFields(unittest.TestCase):
         self.assertGreater(float(vx[0]), 0.0)
         self.assertTrue(jnp.allclose(vy, 0.0))
         self.assertTrue(jnp.allclose(vz, 0.0))
-        self.assertTrue(jnp.allclose(external_after[0][0], external_E_tiles[0]))
+        self.assertTrue(jnp.allclose(external_after[0][0], external_fields[0][0]))
 
     def test_absorbing_particle_mask_survives_jitted_electrodynamic_step(self):
         world = {
@@ -154,6 +142,9 @@ class TestEvolveExternalFields(unittest.TestCase):
         world["grids"] = {"center": center_grid, "vertex": vertex_grid}
         constants = {"C": 10.0, "eps": 1.0, "mu": 1.0, "alpha": 0.0}
 
+        tile_shape = (world["Nx"], world["Ny"], world["Nz"])
+        world["guard_cells"] = 2
+        add_tiled_grids_to_world(world, tile_shape)
         E, B, J, phi, rho = initialize_fields(world)
         external_fields = (
             tuple(jnp.zeros_like(comp) for comp in E),
@@ -183,25 +174,19 @@ class TestEvolveExternalFields(unittest.TestCase):
                 dt=world["dt"],
             )
         ]
-        tile_shape = (world["Nx"], world["Ny"], world["Nz"])
         simulation_parameters = {
             "particle_tile_nx": tile_shape[0],
             "particle_tile_ny": tile_shape[1],
             "particle_tile_nz": tile_shape[2],
         }
-        world["guard_cells"] = 2
-        add_tiled_grids_to_world(world, tile_shape)
         tiled_particles, species_config = to_tiled_particles(particles, world, simulation_parameters)
         fields = (
-            tile_vector_field(E, world, tile_shape, num_guard_cells=int(world["guard_cells"])),
-            tile_vector_field(B, world, tile_shape, num_guard_cells=int(world["guard_cells"])),
-            tile_vector_field(J, world, tile_shape, num_guard_cells=int(world["guard_cells"])),
+            E,
+            B,
+            J,
             rho,
             phi,
-            (
-                tile_vector_field(external_fields[0], world, tile_shape, num_guard_cells=int(world["guard_cells"])),
-                tile_vector_field(external_fields[1], world, tile_shape, num_guard_cells=int(world["guard_cells"])),
-            ),
+            external_fields,
             None,
             jnp.asarray(False),
         )

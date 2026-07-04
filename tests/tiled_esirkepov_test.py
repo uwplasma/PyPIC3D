@@ -28,12 +28,16 @@ from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
 from PyPIC3D.particles.tiled_particles import TiledParticles
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
-    tile_vector_field,
+    tile_scalar_field,
     update_E,
 )
-from PyPIC3D.utilities.grids import tile_grid_axes
+from PyPIC3D.utilities.grids import build_tiled_yee_grids
 
 jax.config.update("jax_enable_x64", True)
+
+
+def tile_vector_field(field, world, tile_shape, num_guard_cells=2):
+    return tuple(tile_scalar_field(component, world, tile_shape, num_guard_cells) for component in field)
 
 
 class TestTiledEsirkepovCurrent(unittest.TestCase):
@@ -146,18 +150,9 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         world = dict(world)
         grids = dict(world["grids"])
         world["tile_shape"] = tile_shape
-        grids["tiled_center_grid"] = tile_grid_axes(
-            grids["center"],
-            world,
-            tile_shape,
-            num_guard_cells=g,
-        )
-        grids["tiled_vertex_grid"] = tile_grid_axes(
-            grids["vertex"],
-            world,
-            tile_shape,
-            num_guard_cells=g,
-        )
+        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world, tile_shape, g)
+        grids["tiled_vertex_grid"] = tiled_vertex_grid
+        grids["tiled_center_grid"] = tiled_center_grid
         world["grids"] = grids
         return world
 
@@ -170,7 +165,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         }
         g = int(world["guard_cells"])
         tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
-        _, _, J_template, _, _ = initialize_fields(world, tiled=True)
+        _, _, J_template, _, _ = initialize_fields(world)
         J_tiles = Esirkepov_current(
             tiled_particles,
             species_config,
@@ -238,7 +233,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         tile_shape = (2, 1, 1)
         world["tile_shape"] = tile_shape
 
-        _, _, J_tiles, _, _ = initialize_fields(world, tiled=True)
+        _, _, J_tiles, _, _ = initialize_fields(world)
 
         self.assertEqual(J_tiles[0].shape, (4, 1, 1, 6, 5, 5))
         self.assertTrue(jnp.allclose(J_tiles[0], 0.0))
@@ -256,7 +251,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         tile_shape = (2, 1, 1)
         world["tile_shape"] = tile_shape
         g = int(world["guard_cells"])
-        _, _, J_tiles, _, _ = initialize_fields(world, tiled=True)
+        _, _, J_tiles, _, _ = initialize_fields(world)
         Jx, Jy, Jz = J_tiles
         Jx = Jx.at[1, 0, 0, 2, 2, 2].set(3.0)
 
@@ -275,7 +270,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         g = int(world["guard_cells"])
         E_tiles = tile_vector_field(zeros, world, tile_shape, num_guard_cells=g)
         B_tiles = tile_vector_field(zeros, world, tile_shape, num_guard_cells=g)
-        _, _, J_tiles, _, _ = initialize_fields(world, tiled=True)
+        _, _, J_tiles, _, _ = initialize_fields(world)
         Jx, Jy, Jz = J_tiles
         Jx = Jx.at[1, 0, 0, 2, 2, 2].set(7.0)
         rho = jnp.zeros(shape)
@@ -299,7 +294,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         E_tiles = tile_vector_field(zeros, world, tile_shape, num_guard_cells=g)
         B_tiles = tile_vector_field(zeros, world, tile_shape, num_guard_cells=g)
         world["tile_shape"] = tile_shape
-        _, _, J_tiles, _, _ = initialize_fields(world, tiled=True)
+        _, _, J_tiles, _, _ = initialize_fields(world)
         Jx, Jy, Jz = J_tiles
         Jx = Jx.at[:, :, :, 2:-2, 2:-2, 2:-2].set(4.0)
 
@@ -358,7 +353,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
 
         tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
         g = int(world["guard_cells"])
-        _, _, J_template, _, _ = initialize_fields(world, tiled=True)
+        _, _, J_template, _, _ = initialize_fields(world)
         J_tiles = Esirkepov_current(
             tiled_particles,
             species_config,
@@ -394,7 +389,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         old_species = self._species(world, x_old)
 
         tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
-        _, _, J_template, _, _ = initialize_fields(world, tiled=True)
+        _, _, J_template, _, _ = initialize_fields(world)
         J_tiles = Esirkepov_current(
             tiled_particles,
             species_config,
@@ -438,7 +433,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
 
         with self.assertRaisesRegex(ValueError, "Esirkepov current filtering is not supported"):
-            _, _, J_template, _, _ = initialize_fields(world, tiled=True)
+            _, _, J_template, _, _ = initialize_fields(world)
             Esirkepov_current(
                 tiled_particles,
                 species_config,
@@ -552,7 +547,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         rho_tiles = build_tiled_array(world)
 
         rho_old = compute_rho(tiled_particles, species_config, rho_tiles, constants, world)
-        _, _, J_template, _, _ = initialize_fields(world, tiled=True)
+        _, _, J_template, _, _ = initialize_fields(world)
         J_tiles = Esirkepov_current(
             tiled_particles,
             species_config,

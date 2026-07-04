@@ -90,7 +90,7 @@ def _tile_grid_axis(global_axis_grid, world, tile_shape, tile_counts, axis_index
     return jnp.broadcast_to(axis_lines.reshape(axis_shape), tiled_shape)
 
 
-def tile_grid_axes(grid, world, tile_shape, num_guard_cells=2):
+def _tile_grid_axes(grid, world, tile_shape, num_guard_cells=2):
     """
     Build tile-local coordinate lines for a center or vertex grid.
     """
@@ -121,13 +121,13 @@ def build_tiled_yee_grids(world, tile_shape=None, num_guard_cells=None):
     if num_guard_cells is None:
         num_guard_cells = int(world["guard_cells"])
 
-    tiled_vertex_grid = tile_grid_axes(
+    tiled_vertex_grid = _tile_grid_axes(
         world["grids"]["vertex"],
         world,
         tile_shape,
         num_guard_cells=num_guard_cells,
     )
-    tiled_center_grid = tile_grid_axes(
+    tiled_center_grid = _tile_grid_axes(
         world["grids"]["center"],
         world,
         tile_shape,

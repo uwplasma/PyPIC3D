@@ -15,7 +15,7 @@ from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
 from PyPIC3D.solvers.yee_tiled import assemble_tiled_scalar_field, tile_scalar_field
-from PyPIC3D.utilities.grids import build_yee_grid, tile_grid_axes
+from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 
 
 
@@ -27,18 +27,13 @@ def _compute_rho_one_tile(particles, rho, world, constants):
     world["guard_cells"] = int(world.get("guard_cells", 2))
     world["tile_shape"] = (world["Nx"], world["Ny"], world["Nz"])
     grids = dict(world["grids"])
-    grids["tiled_vertex_grid"] = tile_grid_axes(
-        grids["vertex"],
+    tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(
         world,
         world["tile_shape"],
-        num_guard_cells=int(world["guard_cells"]),
+        int(world["guard_cells"]),
     )
-    grids["tiled_center_grid"] = tile_grid_axes(
-        grids["center"],
-        world,
-        world["tile_shape"],
-        num_guard_cells=int(world["guard_cells"]),
-    )
+    grids["tiled_vertex_grid"] = tiled_vertex_grid
+    grids["tiled_center_grid"] = tiled_center_grid
     world["grids"] = grids
 
     simulation_parameters = {

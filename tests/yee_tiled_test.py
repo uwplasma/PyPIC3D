@@ -3,23 +3,24 @@ import unittest
 import jax
 import jax.numpy as jnp
 
-from PyPIC3D.initialization import initialize_fields
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
-    tile_vector_field,
+    tile_scalar_field,
     update_tiled_ghost_cells,
-    update_tiled_ghost_cells_periodic,
     update_tiled_vector_ghost_cells,
-    update_tiled_vector_ghost_cells_periodic,
     update_B,
     update_E,
 )
-from PyPIC3D.utilities.grids import build_yee_grid, tile_grid_axes
+from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 
 
 jax.config.update("jax_enable_x64", True)
+
+
+def tile_vector_field(field, world, tile_shape, num_guard_cells=2):
+    return tuple(tile_scalar_field(component, world, tile_shape, num_guard_cells) for component in field)
 
 
 class TestYeeTiled(unittest.TestCase):
@@ -50,6 +51,9 @@ class TestYeeTiled(unittest.TestCase):
     def _with_tile_metadata(self, world, tile_shape, g=2):
         world["tile_shape"] = tuple(int(width) for width in tile_shape)
         world["guard_cells"] = int(g)
+        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world, tile_shape, g)
+        world["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
+        world["grids"]["tiled_center_grid"] = tiled_center_grid
         return world
 
     def _mixed_bc_world(self):
@@ -200,8 +204,8 @@ class TestYeeTiled(unittest.TestCase):
         world = self._build_world()
         tile_shape = (2, 3, 2)
         g = 2
-        tiled_center_grid = tile_grid_axes(world["grids"]["center"], world, tile_shape, num_guard_cells=g)
-        tiled_vertex_grid = tile_grid_axes(world["grids"]["vertex"], world, tile_shape, num_guard_cells=g)
+        world = self._with_tile_metadata(world, tile_shape, g)
+        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world)
 
         self.assertEqual(tiled_center_grid[0].shape, (4, 2, 2, tile_shape[0] + 2 * g))
         self.assertEqual(tiled_center_grid[1].shape, (4, 2, 2, tile_shape[1] + 2 * g))
@@ -223,6 +227,7 @@ class TestYeeTiled(unittest.TestCase):
     def test_update_tiled_ghost_cells_periodic_refreshes_neighbor_halos(self):
         world = self._build_world()
         tile_shape = (2, 3, 2)
+        world = self._with_tile_metadata(world, tile_shape, g=2)
         field = self._deterministic_vector_field(world, scale=1.0)[0]
         tiles = tile_vector_field((field,), world, tile_shape)[0]
 
@@ -233,18 +238,19 @@ class TestYeeTiled(unittest.TestCase):
         stale_tiles = stale_tiles.at[:, :, :, :, :, 0].set(-500.0)
         stale_tiles = stale_tiles.at[:, :, :, :, :, -1].set(-600.0)
 
-        refreshed = update_tiled_ghost_cells_periodic(stale_tiles)
+        refreshed = update_tiled_ghost_cells(stale_tiles, world, num_guard_cells=2, tile_shape=tile_shape)
 
         self.assertTrue(jnp.allclose(refreshed, tiles, rtol=1.0e-12, atol=1.0e-12))
 
     def test_update_tiled_vector_ghost_cells_periodic_refreshes_each_component(self):
         world = self._build_world()
         tile_shape = (2, 3, 2)
+        world = self._with_tile_metadata(world, tile_shape, g=2)
         E = self._deterministic_vector_field(world, scale=1.0)
         E_tiles = tile_vector_field(E, world, tile_shape)
 
         stale_tiles = tuple(component.at[:, :, :, 0, :, :].set(-10.0 * (i + 1)) for i, component in enumerate(E_tiles))
-        refreshed = update_tiled_vector_ghost_cells_periodic(stale_tiles)
+        refreshed = update_tiled_vector_ghost_cells(stale_tiles, world, num_guard_cells=2, tile_shape=tile_shape)
 
         for original_tiles, refreshed_component in zip(E_tiles, refreshed):
             self.assertTrue(jnp.allclose(refreshed_component, original_tiles, rtol=1.0e-12, atol=1.0e-12))
@@ -252,6 +258,7 @@ class TestYeeTiled(unittest.TestCase):
     def test_update_tiled_ghost_cells_conducting_matches_global_ghost_cells(self):
         world = self._conducting_world()
         tile_shape = (2, 3, 2)
+        world = self._with_tile_metadata(world, tile_shape, g=2)
         field = self._deterministic_vector_field(world, scale=1.0)[0]
         tiles = tile_vector_field((field,), world, tile_shape)[0]
 
@@ -276,6 +283,7 @@ class TestYeeTiled(unittest.TestCase):
     def test_update_tiled_ghost_cells_mixed_matches_global_ghost_cells(self):
         world = self._mixed_bc_world()
         tile_shape = (2, 3, 2)
+        world = self._with_tile_metadata(world, tile_shape, g=2)
         field = self._deterministic_vector_field(world, scale=1.0)[0]
         tiles = tile_vector_field((field,), world, tile_shape)[0]
 
@@ -301,6 +309,7 @@ class TestYeeTiled(unittest.TestCase):
         world = self._mixed_bc_world()
         tile_shape = (2, 3, 2)
         num_guard_cells = 2
+        world = self._with_tile_metadata(world, tile_shape, g=num_guard_cells)
         Nx, Ny, Nz = world["Nx"], world["Ny"], world["Nz"]
         shape = (
             Nx + 2 * num_guard_cells,
@@ -326,6 +335,7 @@ class TestYeeTiled(unittest.TestCase):
     def test_update_tiled_vector_ghost_cells_conducting_refreshes_each_component(self):
         world = self._conducting_world()
         tile_shape = (2, 3, 2)
+        world = self._with_tile_metadata(world, tile_shape, g=2)
         E = self._deterministic_vector_field(world, scale=1.0)
         E_tiles = tile_vector_field(E, world, tile_shape)
 

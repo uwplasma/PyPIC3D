@@ -39,8 +39,8 @@ from PyPIC3D.particles.tiled_particle_initialization import (
 )
 
 from PyPIC3D.solvers.yee_tiled import (
-    tile_scalar_field,
-    tile_vector_field,
+    update_tiled_vector_ghost_cells,
+    update_tiled_vector_ghost_cells_for_pml,
 )
 
 
@@ -52,11 +52,9 @@ from PyPIC3D.evolve import (
 from PyPIC3D.pusher.particle_push import validate_particle_pusher
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
-from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 from PyPIC3D.boundary_conditions.PML import (
     initialize_tiled_pml_state,
     load_pml_from_toml,
-    update_ghost_cells_for_pml,
 )
 
 
@@ -382,6 +380,13 @@ def initialize_simulation(toml_file):
         'center': B_grid,
     }
     # set the grids in the world parameters
+    tile_shape = _tile_shape_from_parameters(simulation_parameters)
+    world["tile_shape"] = tile_shape
+    tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world, tile_shape, guard_cells)
+    world["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
+    world["grids"]["tiled_center_grid"] = tiled_center_grid
+    simulation_parameters["tile_shape"] = tile_shape
+    # set the shared tiled field/particle geometry before allocating fields
 
     if not os.path.exists(f"{simulation_parameters['output_dir']}/data"):
         os.makedirs(f"{simulation_parameters['output_dir']}/data")
@@ -428,30 +433,25 @@ def initialize_simulation(toml_file):
     # load any external fields
     fields = [component for field in [E, B, J] for component in field]
     # convert the E, B, and J tuples into one big list
-    fields, external_fields = load_external_fields_from_toml(fields, external_fields, toml_file)
+    fields, external_fields = load_external_fields_from_toml(fields, external_fields, toml_file, world)
     # route configured fields into either evolved fields or external-only fields
     E, B, J = fields[:3], fields[3:6], fields[6:9]
     # convert the fields list back into tuples
 
-    bc_x = world['boundary_conditions']['x']
-    bc_y = world['boundary_conditions']['y']
-    bc_z = world['boundary_conditions']['z']
-    # get the boundary condition codes
-
     if pml_active:
-        E = tuple(update_ghost_cells_for_pml(comp, world) for comp in E)
-        B = tuple(update_ghost_cells_for_pml(comp, world) for comp in B)
+        E = update_tiled_vector_ghost_cells_for_pml(E, world, num_guard_cells=guard_cells, tile_shape=tile_shape)
+        B = update_tiled_vector_ghost_cells_for_pml(B, world, num_guard_cells=guard_cells, tile_shape=tile_shape)
     else:
-        E = tuple(update_ghost_cells(comp, bc_x, bc_y, bc_z) for comp in E)
-        B = tuple(update_ghost_cells(comp, bc_x, bc_y, bc_z) for comp in B)
+        E = update_tiled_vector_ghost_cells(E, world, num_guard_cells=guard_cells, tile_shape=tile_shape)
+        B = update_tiled_vector_ghost_cells(B, world, num_guard_cells=guard_cells, tile_shape=tile_shape)
     # fill ghost cells for the initial E and B fields
     external_E, external_B = external_fields
     if pml_active:
-        external_E = tuple(update_ghost_cells_for_pml(comp, world) for comp in external_E)
-        external_B = tuple(update_ghost_cells_for_pml(comp, world) for comp in external_B)
+        external_E = update_tiled_vector_ghost_cells_for_pml(external_E, world, num_guard_cells=guard_cells, tile_shape=tile_shape)
+        external_B = update_tiled_vector_ghost_cells_for_pml(external_B, world, num_guard_cells=guard_cells, tile_shape=tile_shape)
     else:
-        external_E = tuple(update_ghost_cells(comp, bc_x, bc_y, bc_z) for comp in external_E)
-        external_B = tuple(update_ghost_cells(comp, bc_x, bc_y, bc_z) for comp in external_B)
+        external_E = update_tiled_vector_ghost_cells(external_E, world, num_guard_cells=guard_cells, tile_shape=tile_shape)
+        external_B = update_tiled_vector_ghost_cells(external_B, world, num_guard_cells=guard_cells, tile_shape=tile_shape)
     external_fields = (external_E, external_B)
     # fill ghost cells for external fields before they are interpolated to particles
 
@@ -488,30 +488,15 @@ def initialize_simulation(toml_file):
 
 
     species_config = None
-    tile_shape = _tile_shape_from_parameters(simulation_parameters)
-    world["tile_shape"] = tile_shape
-    guard_cells = int(world["guard_cells"])
-    tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world, tile_shape, guard_cells)
-    world["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
-    world["grids"]["tiled_center_grid"] = tiled_center_grid
     particles, species_config = to_tiled_particles(particles, world, simulation_parameters)
     # convert the particles to tiled storage and get the species configuration
 
-
-
-
     external_E, external_B = external_fields
-    external_fields = (
-        tile_vector_field(external_E, world, tile_shape, num_guard_cells=guard_cells),
-        tile_vector_field(external_B, world, tile_shape, num_guard_cells=guard_cells),
-    )
-    simulation_parameters["tile_shape"] = tile_shape
+    external_fields = (external_E, external_B)
     print(f"Using tiled Yee storage with tile shape: {tile_shape}")
 
     overflow = jnp.asarray(False)
     if electrostatic:
-        rho = tile_scalar_field(rho, world, tile_shape, num_guard_cells=guard_cells)
-        phi = tile_scalar_field(phi, world, tile_shape, num_guard_cells=guard_cells)
         fields = (E, B, J, rho, phi, external_fields, None, overflow)
         # define the fields tuple for the electrostatic solver
     else:
@@ -540,16 +525,9 @@ def initialize_simulation(toml_file):
         solver, electrostatic, verbose, GPUs, Nt, relativistic, particle_pusher, species_config
 
 
-def initialize_fields(world):
+def build_tiled_array(world, dtype=jnp.float64):
     """
-    Initializes the electric and magnetic field arrays, as well as the electric potential and charge density arrays.
-
-    Untiled arrays include one ghost cell on each side and have shape
-    (Nx+2, Ny+2, Nz+2). Tiled arrays use the startup tile shape and guard
-    depth stored in world.
-
-    Returns:
-        E, B, J, phi, rho initialized to zero in either global or tiled storage.
+    Build one zero-filled tiled field component from the geometry in world.
     """
 
     tile_nx, tile_ny, tile_nz = [int(width) for width in world["tile_shape"]]
@@ -560,24 +538,35 @@ def initialize_fields(world):
     ntx = Nx // tile_nx
     nty = Ny // tile_ny
     ntz = Nz // tile_nz
-    # get the grid and tile dimensions
-
     tiled_shape = (ntx, nty, ntz, tile_nx + 2 * g, tile_ny + 2 * g, tile_nz + 2 * g)
+    return jnp.zeros(shape=tiled_shape, dtype=dtype)
 
-    Ex = jnp.zeros(shape=tiled_shape, dtype=jnp.float64)
-    Ey = jnp.zeros(shape=tiled_shape, dtype=jnp.float64)
-    Ez = jnp.zeros(shape=tiled_shape, dtype=jnp.float64)
+
+def initialize_fields(world):
+    """
+    Initializes the electric and magnetic field arrays, as well as the electric potential and charge density arrays.
+
+    The field state is tiled. The tile shape and guard-cell depth are stored in
+    world and are shared by E, B, J, phi, and rho.
+
+    Returns:
+        E, B, J, phi, rho initialized to zero in tiled storage.
+    """
+
+    Ex = build_tiled_array(world)
+    Ey = build_tiled_array(world)
+    Ez = build_tiled_array(world)
     # initialize the electric field arrays as 0
-    Bx = jnp.zeros(shape=tiled_shape, dtype=jnp.float64)
-    By = jnp.zeros(shape=tiled_shape, dtype=jnp.float64)
-    Bz = jnp.zeros(shape=tiled_shape, dtype=jnp.float64)
+    Bx = build_tiled_array(world)
+    By = build_tiled_array(world)
+    Bz = build_tiled_array(world)
     # initialize the magnetic field arrays as 0
-    Jx = jnp.zeros(shape=tiled_shape, dtype=jnp.float64)
-    Jy = jnp.zeros(shape=tiled_shape, dtype=jnp.float64)
-    Jz = jnp.zeros(shape=tiled_shape, dtype=jnp.float64)
+    Jx = build_tiled_array(world)
+    Jy = build_tiled_array(world)
+    Jz = build_tiled_array(world)
     # initialize the current density arrays as 0
-    phi = jnp.zeros(shape=tiled_shape, dtype=jnp.float64)
-    rho = jnp.zeros(shape=tiled_shape, dtype=jnp.float64)
+    phi = build_tiled_array(world)
+    rho = build_tiled_array(world)
     # initialize the electric potential and charge density arrays as 0
 
     return (Ex, Ey, Ez), (Bx, By, Bz), (Jx, Jy, Jz), phi, rho

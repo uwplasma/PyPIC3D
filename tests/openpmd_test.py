@@ -5,9 +5,13 @@ import jax.numpy as jnp
 
 from PyPIC3D.diagnostics import openPMD
 from PyPIC3D.diagnostics.openPMD import _ensure_openpmd_array
-from PyPIC3D.solvers.yee_tiled import tile_scalar_field, tile_vector_field
+from PyPIC3D.solvers.yee_tiled import tile_scalar_field
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
+
+
+def tile_vector_field(field, world, tile_shape, num_guard_cells=2):
+    return tuple(tile_scalar_field(component, world, tile_shape, num_guard_cells) for component in field)
 
 
 class FakeRecord:

@@ -537,7 +537,39 @@ def grab_field_keys(config):
             field_keys.append(key)
     return field_keys
 
-def load_external_fields_from_toml(fields, external_fields, config):
+def _add_external_field_to_tiled_component(component, external_field, world, field_name):
+    """
+    Add one physical field array into the active interiors of a tiled component.
+    """
+
+    tile_nx, tile_ny, tile_nz = [int(width) for width in world["tile_shape"]]
+    g = int(world["guard_cells"])
+    ntx, nty, ntz = component.shape[:3]
+    interior_shape = (int(world["Nx"]), int(world["Ny"]), int(world["Nz"]))
+    if external_field.shape != interior_shape:
+        raise ValueError(
+            f"Shape mismatch for field '{field_name}': external field shape {external_field.shape} "
+            f"does not match expected interior shape {interior_shape}"
+        )
+
+    for tx in range(ntx):
+        for ty in range(nty):
+            for tz in range(ntz):
+                ix = tx * tile_nx
+                iy = ty * tile_ny
+                iz = tz * tile_nz
+                block = external_field[ix:ix + tile_nx, iy:iy + tile_ny, iz:iz + tile_nz]
+                component = component.at[
+                    tx, ty, tz,
+                    g:g + tile_nx,
+                    g:g + tile_ny,
+                    g:g + tile_nz,
+                ].add(block)
+
+    return component
+
+
+def load_external_fields_from_toml(fields, external_fields, config, world):
     """
     Load external fields from a TOML file.
 
@@ -545,6 +577,7 @@ def load_external_fields_from_toml(fields, external_fields, config):
         fields (list): Flattened list of evolved E, B, and J field components.
         external_fields (tuple): External-only E and B field tuples.
         config (dict): Dictionary containing the configuration values.
+        world (dict): Simulation world with tiled field geometry.
 
     Returns:
         tuple: Updated evolved fields list and external field tuple.
@@ -562,31 +595,39 @@ def load_external_fields_from_toml(fields, external_fields, config):
 
         external_field = jnp.load(field_path)
 
-        # External fields are (Nx, Ny, Nz), add them to the interior of the ghost-celled arrays
-        interior = (slice(1, -1), slice(1, -1), slice(1, -1))
         if not evolve and (field_type < 0 or field_type > 5):
             raise ValueError("External-only fields must be electric or magnetic field components with type 0 through 5")
-
-        destination = fields[field_type] if evolve else (external_E + external_B)[field_type]
-        interior_shape = destination[interior].shape
-        if external_field.shape != interior_shape:
-            raise ValueError(f"Shape mismatch for field '{field_name}': external field shape {external_field.shape} does not match expected interior shape {interior_shape}")
 
         if evolve:
             # Evolved fields are part of the self-consistent Maxwell solve.
             # This is the original behavior and remains the default.
-            fields[field_type] = fields[field_type].at[interior].add(external_field)
+            fields[field_type] = _add_external_field_to_tiled_component(
+                fields[field_type],
+                external_field,
+                world,
+                field_name,
+            )
         else:
             # External-only E/B fields are invisible to Maxwell's equations.
             # They are added back only for particle pushes and diagnostics.
             if field_type < 3:
                 external_E = list(external_E)
-                external_E[field_type] = external_E[field_type].at[interior].add(external_field)
+                external_E[field_type] = _add_external_field_to_tiled_component(
+                    external_E[field_type],
+                    external_field,
+                    world,
+                    field_name,
+                )
                 external_E = tuple(external_E)
             else:
                 external_B = list(external_B)
                 b_index = field_type - 3
-                external_B[b_index] = external_B[b_index].at[interior].add(external_field)
+                external_B[b_index] = _add_external_field_to_tiled_component(
+                    external_B[b_index],
+                    external_field,
+                    world,
+                    field_name,
+                )
                 external_B = tuple(external_B)
 
         print(f"Field loaded successfully: {field_name}")

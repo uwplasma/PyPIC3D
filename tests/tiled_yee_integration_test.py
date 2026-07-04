@@ -8,17 +8,17 @@ import numpy as np
 import toml
 
 from PyPIC3D.evolve import time_loop_electrodynamic
-from PyPIC3D.initialization import initialize_fields, initialize_simulation, validate_field_solver
+from PyPIC3D.initialization import initialize_simulation, validate_field_solver
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
 from PyPIC3D.particles.tiled_particles import TiledParticles
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
-    tile_vector_field,
+    tile_scalar_field,
     update_B,
     update_E,
 )
-from PyPIC3D.utilities.grids import build_yee_grid, tile_grid_axes
+from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 from PyPIC3D.utils import compute_energy
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
@@ -28,6 +28,10 @@ jax.config.update("jax_enable_x64", True)
 
 ROUND_OFF_RTOL = 1.0e-11
 ROUND_OFF_ATOL = 1.0e-11
+
+
+def tile_vector_field(field, world, tile_shape, num_guard_cells=2):
+    return tuple(tile_scalar_field(component, world, tile_shape, num_guard_cells) for component in field)
 
 
 class TestTiledYeeIntegration(unittest.TestCase):
@@ -60,23 +64,19 @@ class TestTiledYeeIntegration(unittest.TestCase):
         world = dict(world)
         grids = dict(world["grids"])
         world["tile_shape"] = tile_shape
-        grids["tiled_center_grid"] = tile_grid_axes(
-            grids["center"],
-            world,
-            tile_shape,
-            num_guard_cells=g,
-        )
-        grids["tiled_vertex_grid"] = tile_grid_axes(
-            grids["vertex"],
-            world,
-            tile_shape,
-            num_guard_cells=g,
-        )
+        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world, tile_shape, g)
+        grids["tiled_vertex_grid"] = tiled_vertex_grid
+        grids["tiled_center_grid"] = tiled_center_grid
         world["grids"] = grids
         return world
 
     def _empty_fields(self, world):
-        E, B, J, phi, rho = initialize_fields(world)
+        shape = (world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2)
+        E = (jnp.zeros(shape), jnp.zeros(shape), jnp.zeros(shape))
+        B = (jnp.zeros(shape), jnp.zeros(shape), jnp.zeros(shape))
+        J = (jnp.zeros(shape), jnp.zeros(shape), jnp.zeros(shape))
+        phi = jnp.zeros(shape)
+        rho = jnp.zeros(shape)
         external_fields = (E, B)
         return E, B, J, rho, phi, external_fields, None
 
@@ -188,7 +188,8 @@ class TestTiledYeeIntegration(unittest.TestCase):
         tiled_particles = self._pad_tiled_particle_capacity(tiled_particles, min_slots=12)
         g = int(tiled_world["guard_cells"])
         if current_deposition == "esirkepov":
-            _, _, J_tiles, _, _ = initialize_fields(tiled_world, tiled=True, dtype=E[0].dtype)
+            J_template = tile_vector_field(J, tiled_world, tile_shape, num_guard_cells=g)
+            J_tiles = tuple(jnp.zeros_like(component) for component in J_template)
         else:
             J_tiles = tile_vector_field(J, tiled_world, tile_shape, num_guard_cells=g)
 
@@ -277,7 +278,8 @@ class TestTiledYeeIntegration(unittest.TestCase):
         E, B, J, rho, phi, external_fields, pml_state = fields
         g = int(world["guard_cells"])
         if current_deposition == "esirkepov":
-            _, _, J_tiles, _, _ = initialize_fields(world, tiled=True, dtype=E[0].dtype)
+            J_template = tile_vector_field(J, world, tile_shape, num_guard_cells=g)
+            J_tiles = tuple(jnp.zeros_like(component) for component in J_template)
         else:
             J_tiles = tile_vector_field(J, world, tile_shape, num_guard_cells=g)
         tiled_fields = (

@@ -8,7 +8,7 @@ from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
 from PyPIC3D.solvers.yee_tiled import assemble_tiled_scalar_field, tile_scalar_field
-from PyPIC3D.utilities.grids import build_yee_grid, tile_grid_axes
+from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 
 
 jax.config.update("jax_enable_x64", True)
@@ -46,18 +46,9 @@ class TestTiledRho(unittest.TestCase):
         world = dict(world)
         grids = dict(world["grids"])
         world["tile_shape"] = tile_shape
-        grids["tiled_vertex_grid"] = tile_grid_axes(
-            grids["vertex"],
-            world,
-            tile_shape,
-            num_guard_cells=g,
-        )
-        grids["tiled_center_grid"] = tile_grid_axes(
-            grids["center"],
-            world,
-            tile_shape,
-            num_guard_cells=g,
-        )
+        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world, tile_shape, g)
+        grids["tiled_vertex_grid"] = tiled_vertex_grid
+        grids["tiled_center_grid"] = tiled_center_grid
         world["grids"] = grids
         return world
 

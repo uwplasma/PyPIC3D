@@ -7,11 +7,15 @@ from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
 from PyPIC3D.pusher.particle_push import particle_push
 from PyPIC3D.pusher.tiled_pusher import tiled_particle_push
-from PyPIC3D.solvers.yee_tiled import tile_vector_field
-from PyPIC3D.utilities.grids import build_yee_grid, tile_grid_axes
+from PyPIC3D.solvers.yee_tiled import tile_scalar_field
+from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 
 
 jax.config.update("jax_enable_x64", True)
+
+
+def tile_vector_field(field, world, tile_shape, num_guard_cells=2):
+    return tuple(tile_scalar_field(component, world, tile_shape, num_guard_cells) for component in field)
 
 
 class TestTiledParticlePusher(unittest.TestCase):
@@ -37,18 +41,9 @@ class TestTiledParticlePusher(unittest.TestCase):
     def _with_tiled_grids(self, world, tile_shape, g=1):
         world["tile_shape"] = tuple(int(width) for width in tile_shape)
         world["guard_cells"] = int(g)
-        world["grids"]["tiled_center_grid"] = tile_grid_axes(
-            world["grids"]["center"],
-            world,
-            tile_shape,
-            num_guard_cells=g,
-        )
-        world["grids"]["tiled_vertex_grid"] = tile_grid_axes(
-            world["grids"]["vertex"],
-            world,
-            tile_shape,
-            num_guard_cells=g,
-        )
+        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world, tile_shape, g)
+        world["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
+        world["grids"]["tiled_center_grid"] = tiled_center_grid
         return world
 
     def _deterministic_vector_field(self, world, scale):

@@ -11,7 +11,7 @@ from PyPIC3D.deposition import rho
 from PyPIC3D.initialization import build_tiled_array, initialize_fields
 from PyPIC3D.solvers import electrostatic_yee
 from PyPIC3D.solvers import yee_tiled
-from PyPIC3D.utilities.grids import build_yee_grid
+from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 
 
 class TestTiledRefactorContracts(unittest.TestCase):
@@ -29,9 +29,14 @@ class TestTiledRefactorContracts(unittest.TestCase):
             "z_wind": 2.0,
             "shape_factor": 1,
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
+            "tile_shape": (2, 3, 2),
+            "guard_cells": 2,
         }
         vertex_grid, center_grid = build_yee_grid(world)
         world["grids"] = {"vertex": vertex_grid, "center": center_grid}
+        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world)
+        world["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
+        world["grids"]["tiled_center_grid"] = tiled_center_grid
         return world
 
     def _field(self, world, scale):
@@ -45,25 +50,16 @@ class TestTiledRefactorContracts(unittest.TestCase):
         shape = (Nx + 2, Ny + 2, Nz + 2)
         return jnp.zeros(shape).at[1:-1, 1:-1, 1:-1].set(scale * (ii + 2.0 * jj - kk))
 
-    def test_tiled_vector_field_stack_roundtrips_and_refreshes_halos(self):
+    def test_tiled_vector_ghost_refresh_accepts_tuple_field_state(self):
         world = self._world()
         tile_shape = (2, 3, 2)
         E = tuple(self._field(world, scale) for scale in (1.0, -0.5, 0.25))
-        E_tiles = yee_tiled.tile_vector_field(E, world, tile_shape)
+        E_tiles = tuple(yee_tiled.tile_scalar_field(component, world, tile_shape) for component in E)
 
-        stacked = yee_tiled.stack_tiled_vector_field(E_tiles)
-        self.assertEqual(stacked.shape[0], 3)
-
-        unstacked = yee_tiled.unstack_tiled_vector_field(stacked)
-        for original, recovered in zip(E_tiles, unstacked):
-            self.assertTrue(jnp.allclose(original, recovered, rtol=1.0e-12, atol=1.0e-12))
-
-        refreshed = yee_tiled.update_tiled_vector_ghost_cells(E_tiles, world, num_guard_cells=1, tile_shape=tile_shape)
-        refreshed_from_stack = yee_tiled.unstack_tiled_vector_field(
-            yee_tiled.update_tiled_vector_ghost_cells(stacked, world, num_guard_cells=1, tile_shape=tile_shape)
-        )
-        for reference, candidate in zip(refreshed, refreshed_from_stack):
-            self.assertTrue(jnp.allclose(reference, candidate, rtol=1.0e-12, atol=1.0e-12))
+        refreshed = yee_tiled.update_tiled_vector_ghost_cells(E_tiles, world, num_guard_cells=2, tile_shape=tile_shape)
+        self.assertEqual(len(refreshed), 3)
+        for component in refreshed:
+            self.assertEqual(component.shape, (4, 2, 2, 6, 7, 6))
 
     def test_evolve_loops_read_runtime_controls_from_world(self):
         electrodynamic_signature = inspect.signature(evolve.time_loop_electrodynamic)
@@ -83,6 +79,13 @@ class TestTiledRefactorContracts(unittest.TestCase):
         self.assertFalse(hasattr(yee_tiled, "update_tiled_B"))
         self.assertFalse(hasattr(yee_tiled, "tiled_grid_axes_from_world"))
         self.assertFalse(hasattr(yee_tiled, "tile_grid_axes"))
+        self.assertFalse(hasattr(yee_tiled, "tile_vector_field"))
+        self.assertFalse(hasattr(yee_tiled, "stack_tiled_vector_field"))
+        self.assertFalse(hasattr(yee_tiled, "unstack_tiled_vector_field"))
+        self.assertFalse(hasattr(yee_tiled, "update_tiled_ghost_cells_periodic"))
+        self.assertFalse(hasattr(yee_tiled, "update_tiled_vector_ghost_cells_periodic"))
+        self.assertFalse(hasattr(yee_tiled, "fold_tiled_ghost_cells_periodic"))
+        self.assertFalse(hasattr(yee_tiled, "fold_tiled_vector_ghost_cells_periodic"))
         self.assertFalse(hasattr(yee_tiled, "empty_tiled_scalar_field"))
         self.assertFalse(hasattr(yee_tiled, "empty_tiled_vector_field"))
 
@@ -101,16 +104,16 @@ class TestTiledRefactorContracts(unittest.TestCase):
         world["tile_shape"] = (2, 3, 2)
         world["guard_cells"] = 2
 
-        E, B, J, phi, rho_tiles = initialize_fields(world, tiled=True, dtype=jnp.float32)
+        E, B, J, phi, rho_tiles = initialize_fields(world)
         for vector_field in (E, B, J):
             self.assertEqual(len(vector_field), 3)
             for component in vector_field:
                 self.assertEqual(component.shape, (4, 2, 2, 6, 7, 6))
-                self.assertEqual(component.dtype, jnp.float32)
+                self.assertEqual(component.dtype, jnp.float64)
                 self.assertTrue(jnp.all(component == 0.0))
         for scalar_field in (phi, rho_tiles):
             self.assertEqual(scalar_field.shape, (4, 2, 2, 6, 7, 6))
-            self.assertEqual(scalar_field.dtype, jnp.float32)
+            self.assertEqual(scalar_field.dtype, jnp.float64)
             self.assertTrue(jnp.all(scalar_field == 0.0))
 
     def test_grid_builders_live_in_utilities(self):
@@ -121,7 +124,7 @@ class TestTiledRefactorContracts(unittest.TestCase):
         self.assertFalse(hasattr(utils, "build_collocated_grid"))
         self.assertTrue(hasattr(grids, "build_yee_grid"))
         self.assertTrue(hasattr(grids, "build_collocated_grid"))
-        self.assertTrue(hasattr(grids, "tile_grid_axes"))
+        self.assertFalse(hasattr(grids, "tile_grid_axes"))
         self.assertTrue(hasattr(grids, "build_tiled_yee_grids"))
 
     def test_tiled_benchmarking_module_is_removed(self):

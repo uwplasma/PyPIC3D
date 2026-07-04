@@ -29,8 +29,6 @@ def _backward_slice(g):
 
 
 def _reduced_tiled_axes(field_tiles, tile_shape, g):
-    if tile_shape is None:
-        tile_shape = tuple(int(width) - 2 * int(g) for width in field_tiles.shape[3:])
     tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
     ntx, nty, ntz = field_tiles.shape[:3]
     return (
@@ -44,7 +42,7 @@ def _is_stacked_tiled_vector_field(field_tiles):
     return hasattr(field_tiles, "ndim") and field_tiles.ndim == 7 and int(field_tiles.shape[0]) == 3
 
 
-def stack_tiled_vector_field(field_tiles):
+def _stack_tiled_vector_field(field_tiles):
     """
     Stack tiled vector components onto one leading component axis.
 
@@ -58,7 +56,7 @@ def stack_tiled_vector_field(field_tiles):
     return jnp.stack(field_tiles, axis=0)
 
 
-def unstack_tiled_vector_field(field_tiles):
+def _unstack_tiled_vector_field(field_tiles):
     """
     Return a tiled vector field as the existing ``(Fx, Fy, Fz)`` tuple.
     """
@@ -71,7 +69,7 @@ def unstack_tiled_vector_field(field_tiles):
 def _restore_tiled_vector_layout(stacked_tiles, original_tiles):
     if _is_stacked_tiled_vector_field(original_tiles):
         return stacked_tiles
-    return unstack_tiled_vector_field(stacked_tiles)
+    return _unstack_tiled_vector_field(stacked_tiles)
 
 
 def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
@@ -130,22 +128,6 @@ def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
     )
 
 
-def _tile_scalar_field(field, tile_shape):
-    return tile_scalar_field(field, None, tile_shape)
-
-
-def tile_vector_field(field, world, tile_shape, num_guard_cells=2):
-    """
-    Split ``(Fx, Fy, Fz)`` into compact ghost-celled tiles.
-
-    Each scalar component gets leading tile axes ``(ntx, nty, ntz)`` followed by
-    the tile-local ghost-celled field shape
-    ``(tile_nx + 2, tile_ny + 2, tile_nz + 2)``.
-    """
-
-    return tuple(tile_scalar_field(component, world, tile_shape, num_guard_cells) for component in field)
-
-
 def assemble_tiled_scalar_field(field_tiles, world, tile_shape, num_guard_cells=2):
     """
     Assemble compact field tiles back into one global ghost-celled field.
@@ -183,10 +165,6 @@ def assemble_tiled_vector_field(field_tiles, world, tile_shape, num_guard_cells=
     return tuple(assemble_tiled_scalar_field(component, world, tile_shape, num_guard_cells) for component in field_tiles)
 
 
-def _assemble_scalar_tiles(field_tiles, world, tile_shape):
-    return assemble_tiled_scalar_field(field_tiles, world, tile_shape)
-
-
 def update_tiled_ghost_cells(field_tiles, world, num_guard_cells=2, tile_shape=None):
     """
     Refresh tile halos using the field boundary conditions.
@@ -199,6 +177,8 @@ def update_tiled_ghost_cells(field_tiles, world, num_guard_cells=2, tile_shape=N
     """
 
     g = int(num_guard_cells)
+    if tile_shape is None:
+        tile_shape = tuple(int(width) for width in world["tile_shape"])
     reduced_x, reduced_y, reduced_z = _reduced_tiled_axes(field_tiles, tile_shape, g)
     bc_x = world["boundary_conditions"]["x"]
     bc_y = world["boundary_conditions"]["y"]
@@ -288,38 +268,15 @@ def update_tiled_ghost_cells(field_tiles, world, num_guard_cells=2, tile_shape=N
     return field_tiles
 
 
-def update_tiled_ghost_cells_periodic(field_tiles, num_guard_cells=2):
-    """
-    Refresh tile halos with all-periodic boundary conditions.
-    """
-
-    world = {"boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC}}
-    return update_tiled_ghost_cells(field_tiles, world, num_guard_cells)
-
-
 def update_tiled_vector_ghost_cells(field_tiles, world, num_guard_cells=2, tile_shape=None):
     """
     Refresh tile halos for a tiled vector field.
     """
 
 
-    stacked_tiles = stack_tiled_vector_field(field_tiles)
+    stacked_tiles = _stack_tiled_vector_field(field_tiles)
     refreshed = jax.vmap(
         lambda component: update_tiled_ghost_cells(component, world, num_guard_cells, tile_shape),
-        in_axes=0,
-        out_axes=0,
-    )(stacked_tiles)
-    return _restore_tiled_vector_layout(refreshed, field_tiles)
-
-
-def update_tiled_vector_ghost_cells_periodic(field_tiles, num_guard_cells=2):
-    """
-    Refresh periodic tile halos for each component of a vector field.
-    """
-
-    stacked_tiles = stack_tiled_vector_field(field_tiles)
-    refreshed = jax.vmap(
-        lambda component: update_tiled_ghost_cells_periodic(component, num_guard_cells),
         in_axes=0,
         out_axes=0,
     )(stacked_tiles)
@@ -340,7 +297,10 @@ def update_tiled_ghost_cells_for_pml(field_tiles, world, num_guard_cells=2, tile
     bc_y = jnp.where((pml_y) & (bc_y == BC_PERIODIC), BC_CONDUCTING, bc_y)
     bc_z = jnp.where((pml_z) & (bc_z == BC_PERIODIC), BC_CONDUCTING, bc_z)
 
-    pml_world = {"boundary_conditions": {"x": bc_x, "y": bc_y, "z": bc_z}}
+    pml_world = {
+        "boundary_conditions": {"x": bc_x, "y": bc_y, "z": bc_z},
+        "tile_shape": world["tile_shape"],
+    }
     return update_tiled_ghost_cells(field_tiles, pml_world, num_guard_cells, tile_shape)
 
 
@@ -349,7 +309,7 @@ def update_tiled_vector_ghost_cells_for_pml(field_tiles, world, num_guard_cells=
     Refresh tile halos for a vector field with PML-active exterior walls.
     """
 
-    stacked_tiles = stack_tiled_vector_field(field_tiles)
+    stacked_tiles = _stack_tiled_vector_field(field_tiles)
     refreshed = jax.vmap(
         lambda component: update_tiled_ghost_cells_for_pml(component, world, num_guard_cells, tile_shape),
         in_axes=0,
@@ -426,6 +386,8 @@ def fold_tiled_ghost_cells(field_tiles, world, num_guard_cells=2, tile_shape=Non
     """
 
     g = int(num_guard_cells)
+    if tile_shape is None:
+        tile_shape = tuple(int(width) for width in world["tile_shape"])
     reduced_x, reduced_y, reduced_z = _reduced_tiled_axes(field_tiles, tile_shape, g)
     bc_x = world["boundary_conditions"]["x"]
     bc_y = world["boundary_conditions"]["y"]
@@ -539,37 +501,14 @@ def fold_tiled_ghost_cells(field_tiles, world, num_guard_cells=2, tile_shape=Non
     return field_tiles
 
 
-def fold_tiled_ghost_cells_periodic(field_tiles, num_guard_cells=2):
-    """
-    Fold all-periodic tile-ghost deposits for one scalar component.
-    """
-
-    world = {"boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC}}
-    return fold_tiled_ghost_cells(field_tiles, world, num_guard_cells)
-
-
 def fold_tiled_vector_ghost_cells(field_tiles, world, num_guard_cells=2, tile_shape=None):
     """
     Fold tile-ghost deposits for a tiled vector field.
     """
 
-    stacked_tiles = stack_tiled_vector_field(field_tiles)
+    stacked_tiles = _stack_tiled_vector_field(field_tiles)
     folded = jax.vmap(
         lambda component: fold_tiled_ghost_cells(component, world, num_guard_cells, tile_shape),
-        in_axes=0,
-        out_axes=0,
-    )(stacked_tiles)
-    return _restore_tiled_vector_layout(folded, field_tiles)
-
-
-def fold_tiled_vector_ghost_cells_periodic(field_tiles, num_guard_cells=2):
-    """
-    Fold all-periodic tile-ghost deposits for each vector component.
-    """
-
-    stacked_tiles = stack_tiled_vector_field(field_tiles)
-    folded = jax.vmap(
-        lambda component: fold_tiled_ghost_cells_periodic(component, num_guard_cells),
         in_axes=0,
         out_axes=0,
     )(stacked_tiles)

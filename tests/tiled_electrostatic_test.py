@@ -18,15 +18,18 @@ from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_scalar_field,
     assemble_tiled_vector_field,
     tile_scalar_field,
-    tile_vector_field,
 )
-from PyPIC3D.utilities.grids import build_collocated_grid, build_yee_grid, tile_grid_axes
+from PyPIC3D.utilities.grids import build_collocated_grid, build_tiled_yee_grids, build_yee_grid
 
 
 jax.config.update("jax_enable_x64", True)
 
 ROUND_OFF_RTOL = 1.0e-11
 ROUND_OFF_ATOL = 1.0e-11
+
+
+def tile_vector_field(field, world, tile_shape, num_guard_cells=2):
+    return tuple(tile_scalar_field(component, world, tile_shape, num_guard_cells) for component in field)
 
 
 class TestTiledElectrostatic(unittest.TestCase):
@@ -57,18 +60,9 @@ class TestTiledElectrostatic(unittest.TestCase):
         world = dict(world)
         grids = dict(world["grids"])
         world["tile_shape"] = tile_shape
-        grids["tiled_vertex_grid"] = tile_grid_axes(
-            grids["vertex"],
-            world,
-            tile_shape,
-            num_guard_cells=g,
-        )
-        grids["tiled_center_grid"] = tile_grid_axes(
-            grids["center"],
-            world,
-            tile_shape,
-            num_guard_cells=g,
-        )
+        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world, tile_shape, g)
+        grids["tiled_vertex_grid"] = tiled_vertex_grid
+        grids["tiled_center_grid"] = tiled_center_grid
         world["grids"] = grids
         return world
 

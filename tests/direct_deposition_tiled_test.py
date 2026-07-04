@@ -16,14 +16,17 @@ from PyPIC3D.particles.tiled_particle_refresh import refresh_tiled_particle_tile
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
     fold_tiled_ghost_cells,
-    fold_tiled_ghost_cells_periodic,
-    tile_vector_field,
+    tile_scalar_field,
     update_tiled_vector_ghost_cells,
 )
-from PyPIC3D.utilities.grids import build_yee_grid, tile_grid_axes
+from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 
 
 jax.config.update("jax_enable_x64", True)
+
+
+def tile_vector_field(field, world, tile_shape, num_guard_cells=2):
+    return tuple(tile_scalar_field(component, world, tile_shape, num_guard_cells) for component in field)
 
 
 class TestDirectDepositionTiled(unittest.TestCase):
@@ -80,18 +83,9 @@ class TestDirectDepositionTiled(unittest.TestCase):
         world = dict(world)
         grids = dict(world["grids"])
         world["tile_shape"] = tile_shape
-        grids["tiled_center_grid"] = tile_grid_axes(
-            grids["center"],
-            world,
-            tile_shape,
-            num_guard_cells=g,
-        )
-        grids["tiled_vertex_grid"] = tile_grid_axes(
-            grids["vertex"],
-            world,
-            tile_shape,
-            num_guard_cells=g,
-        )
+        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world, tile_shape, g)
+        grids["tiled_vertex_grid"] = tiled_vertex_grid
+        grids["tiled_center_grid"] = tiled_center_grid
         world["grids"] = grids
         return world
 
@@ -320,23 +314,23 @@ class TestDirectDepositionTiled(unittest.TestCase):
 
     def test_fold_tiled_ghost_cells_periodic_adds_current_deposits_to_neighbors(self):
         world = self._build_world(Nx=4, Ny=1, Nz=1)
+        world = self._world_with_tiled_grids(world, (2, 1, 1))
         tiles = jnp.zeros((2, 1, 1, 4, 3, 3))
         tiles = tiles.at[0, 0, 0, -1, 1, 1].set(2.0)
         tiles = tiles.at[1, 0, 0, 0, 1, 1].set(3.0)
 
-        folded = fold_tiled_ghost_cells(tiles, world, num_guard_cells=1)
+        folded = fold_tiled_ghost_cells(tiles, world, num_guard_cells=1, tile_shape=world["tile_shape"])
 
         self.assertEqual(float(folded[1, 0, 0, 1, 1, 1]), 2.0)
         self.assertEqual(float(folded[0, 0, 0, -2, 1, 1]), 3.0)
         self.assertTrue(jnp.allclose(folded[:, :, :, 0, :, :], 0.0))
         self.assertTrue(jnp.allclose(folded[:, :, :, -1, :, :], 0.0))
 
-        legacy_folded = fold_tiled_ghost_cells_periodic(tiles, num_guard_cells=1)
-        self.assertTrue(jnp.allclose(folded, legacy_folded, rtol=1.0e-12, atol=1.0e-12))
-
     def test_fold_tiled_ghost_cells_two_guard_layers_adds_deposits_to_neighbors(self):
         world = self._build_world(Nx=8, Ny=4, Nz=4)
         num_guard_cells = 2
+        world["guard_cells"] = num_guard_cells
+        world = self._world_with_tiled_grids(world, (4, 4, 4))
         tiles = jnp.zeros((2, 1, 1, 8, 8, 8))
 
         tiles = tiles.at[1, 0, 0, 0, 2, 2].set(2.0)
@@ -344,7 +338,7 @@ class TestDirectDepositionTiled(unittest.TestCase):
         tiles = tiles.at[0, 0, 0, -2, 2, 2].set(5.0)
         tiles = tiles.at[0, 0, 0, -1, 2, 2].set(7.0)
 
-        folded = fold_tiled_ghost_cells(tiles, world, num_guard_cells)
+        folded = fold_tiled_ghost_cells(tiles, world, num_guard_cells, tile_shape=world["tile_shape"])
 
         self.assertEqual(float(folded[0, 0, 0, 4, 2, 2]), 2.0)
         self.assertEqual(float(folded[0, 0, 0, 5, 2, 2]), 3.0)
@@ -357,6 +351,8 @@ class TestDirectDepositionTiled(unittest.TestCase):
         world = self._build_world(Nx=8, Ny=1, Nz=1)
         num_guard_cells = 2
         tile_shape = (4, 1, 1)
+        world["guard_cells"] = num_guard_cells
+        world = self._world_with_tiled_grids(world, tile_shape)
         tiles = jnp.zeros((2, 1, 1, 8, 5, 5))
 
         tiles = tiles.at[0, 0, 0, 2, 0, 2].set(1.0)
@@ -377,13 +373,14 @@ class TestDirectDepositionTiled(unittest.TestCase):
             Nz=1,
             boundary_conditions={"x": BC_CONDUCTING, "y": BC_PERIODIC, "z": BC_PERIODIC},
         )
+        world = self._world_with_tiled_grids(world, (2, 1, 1))
         tiles = jnp.zeros((2, 1, 1, 4, 3, 3))
         tiles = tiles.at[0, 0, 0, 0, 1, 1].set(4.0)
         tiles = tiles.at[-1, 0, 0, -1, 1, 1].set(7.0)
         tiles = tiles.at[0, 0, 0, -1, 1, 1].set(2.0)
         tiles = tiles.at[1, 0, 0, 0, 1, 1].set(3.0)
 
-        folded = fold_tiled_ghost_cells(tiles, world, num_guard_cells=1)
+        folded = fold_tiled_ghost_cells(tiles, world, num_guard_cells=1, tile_shape=world["tile_shape"])
 
         self.assertEqual(float(folded[0, 0, 0, 1, 1, 1]), -4.0)
         self.assertEqual(float(folded[-1, 0, 0, -2, 1, 1]), -7.0)
@@ -400,6 +397,7 @@ class TestDirectDepositionTiled(unittest.TestCase):
             boundary_conditions={"x": BC_PERIODIC, "y": BC_CONDUCTING, "z": BC_PERIODIC},
         )
         tile_shape = (2, 2, 1)
+        world = self._world_with_tiled_grids(world, tile_shape)
         field = jnp.zeros((world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2))
         tiles = jnp.zeros((2, 2, 2, 4, 4, 3))
 
@@ -421,7 +419,7 @@ class TestDirectDepositionTiled(unittest.TestCase):
         field = field.at[3, 3, -1].set(5.0)
         tiles = tiles.at[1, 1, -1, 1, 1, -1].set(5.0)
 
-        folded_tiles = fold_tiled_ghost_cells(tiles, world, num_guard_cells=1)
+        folded_tiles = fold_tiled_ghost_cells(tiles, world, num_guard_cells=1, tile_shape=tile_shape)
         folded_from_tiles = assemble_tiled_vector_field((folded_tiles, folded_tiles, folded_tiles), world, tile_shape, num_guard_cells=1)[0]
         folded_reference = update_ghost_cells(
             fold_ghost_cells(

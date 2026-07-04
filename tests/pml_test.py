@@ -13,10 +13,10 @@ from PyPIC3D.boundary_conditions.PML import (
     tile_pml_profiles,
     update_ghost_cells_for_pml,
 )
-from PyPIC3D.initialization import initialize_fields, initialize_simulation
+from PyPIC3D.initialization import initialize_simulation
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
-    tile_vector_field,
+    tile_scalar_field,
     update_B,
     update_E,
 )
@@ -24,6 +24,18 @@ from PyPIC3D.utilities.grids import build_yee_grid
 from PyPIC3D.utils import compute_energy
 
 jax.config.update("jax_enable_x64", True)
+
+
+def tile_vector_field(field, world, tile_shape, num_guard_cells=2):
+    return tuple(tile_scalar_field(component, world, tile_shape, num_guard_cells) for component in field)
+
+
+def _empty_global_fields(world):
+    shape = (world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2)
+    E = (jnp.zeros(shape), jnp.zeros(shape), jnp.zeros(shape))
+    B = (jnp.zeros(shape), jnp.zeros(shape), jnp.zeros(shape))
+    J = (jnp.zeros(shape), jnp.zeros(shape), jnp.zeros(shape))
+    return E, B, J
 
 
 def _base_world(nx=24, ny=1, nz=1):
@@ -270,7 +282,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         constants = {"C": 2.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         tile_shape = (2, 2, 2)
         world["tile_shape"] = tile_shape
-        E, B, J, _, _ = initialize_fields(world)
+        E, B, J = _empty_global_fields(world)
         B = (B[0], B[1], B[2].at[1:-1, 1:-1, 1:-1].set(1.0))
 
         E_tiles = tile_vector_field(E, world, tile_shape)
@@ -295,7 +307,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
             constants,
         )
         tile_shape = (2, 2, 1)
-        E, B, J, _, _ = initialize_fields(world)
+        E, B, J = _empty_global_fields(world)
 
         x = world["grids"]["vertex"][0][1:-1]
         y = world["grids"]["vertex"][1][1:-1]
@@ -389,7 +401,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         tile_shape = (4, 1, 1)
         world["tile_shape"] = tile_shape
         tiled_pml_state = initialize_tiled_pml_state(world, tile_shape)
-        E, B, J, _, _ = initialize_fields(world)
+        E, B, J = _empty_global_fields(world)
 
         x = world["grids"]["vertex"][0][1:-1]
         pulse = jnp.exp(-((x + 0.30) / 0.04) ** 2)
@@ -425,7 +437,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         )
         tile_shape = (2, 1, 1)
         world["tile_shape"] = tile_shape
-        E, B, J, _, _ = initialize_fields(world)
+        E, B, J = _empty_global_fields(world)
         Ex, Ey, Ez = E
         Bx, By, Bz = B
         Ey = Ey.at[1:-1, 1, 1].set(jnp.linspace(0.0, 0.3, world["Nx"]))
