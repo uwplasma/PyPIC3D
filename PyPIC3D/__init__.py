@@ -14,7 +14,6 @@ from . import pusher
 from . import evolve
 
 from .solvers import fdtd
-from .solvers import first_order_yee
 from .solvers import electrostatic_yee
 
 from .particles import particle_initialization

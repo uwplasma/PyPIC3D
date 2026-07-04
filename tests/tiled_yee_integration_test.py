@@ -17,8 +17,8 @@ from PyPIC3D.solvers.yee_tiled import (
     empty_tiled_vector_field,
     tile_grid_axes,
     tile_vector_field,
-    update_tiled_B,
-    update_tiled_E,
+    update_B,
+    update_E,
 )
 from PyPIC3D.utils import build_yee_grid, compute_energy
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
@@ -463,14 +463,14 @@ class TestTiledYeeIntegration(unittest.TestCase):
             None,
             jnp.asarray(False),
         )
-        reference_E, reference_pml_state = update_tiled_E(
+        reference_E, reference_pml_state = update_E(
             reference_fields[0],
             reference_fields[1],
             reference_fields[2],
             reference_world,
             constants,
         )
-        reference_B, reference_pml_state = update_tiled_B(
+        reference_B, reference_pml_state = update_B(
             reference_E,
             reference_fields[1],
             reference_world,
@@ -492,8 +492,8 @@ class TestTiledYeeIntegration(unittest.TestCase):
             None,
             jnp.asarray(False),
         )
-        tiled_E, tiled_pml_state = update_tiled_E(tiled_fields[0], tiled_fields[1], tiled_fields[2], tiled_world, constants)
-        tiled_B, tiled_pml_state = update_tiled_B(tiled_E, tiled_fields[1], tiled_world, constants, tiled_pml_state)
+        tiled_E, tiled_pml_state = update_E(tiled_fields[0], tiled_fields[1], tiled_fields[2], tiled_world, constants)
+        tiled_B, tiled_pml_state = update_B(tiled_E, tiled_fields[1], tiled_world, constants, tiled_pml_state)
         tiled_fields = (tiled_E, tiled_B, *tiled_fields[2:])
 
         reference_E, reference_B, *_ = reference_fields

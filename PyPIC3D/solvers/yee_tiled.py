@@ -664,7 +664,7 @@ def fold_tiled_vector_ghost_cells_periodic(field_tiles, num_guard_cells=2):
     return _restore_tiled_vector_layout(folded, field_tiles)
 
 
-def update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, pml_state=None):
+def update_E(E_tiles, B_tiles, J_tiles, world, constants, pml_state=None):
     """
     Update compact tiled electric fields without assembling a global field.
 
@@ -742,7 +742,7 @@ def update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, pml_state=None):
     return update_tiled_vector_ghost_cells_for_pml((Ex, Ey, Ez), world, g, tile_shape), pml_state
 
 
-def update_tiled_B(E_tiles, B_tiles, world, constants, pml_state=None):
+def update_B(E_tiles, B_tiles, world, constants, pml_state=None):
     """
     Update compact tiled magnetic fields without assembling a global field.
 

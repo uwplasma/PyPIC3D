@@ -15,7 +15,7 @@ from PyPIC3D.particles.tiled_particle_refresh import (
 )
 from PyPIC3D.pusher.tiled_pusher import tiled_particle_push
 from PyPIC3D.solvers.electrostatic_yee import calculate_tiled_electrostatic_fields
-from PyPIC3D.solvers.yee_tiled import update_tiled_B, update_tiled_E
+from PyPIC3D.solvers.yee_tiled import update_B, update_E
 from PyPIC3D.utils import add_external_fields
 
 
@@ -112,13 +112,13 @@ def time_loop_electrodynamic(
     )
     # deposit current into the tiled J arrays using the selected deposition method
 
-    E, pml_state = update_tiled_E(E, B, J, world, constants, pml_state)
+    E, pml_state = update_E(E, B, J, world, constants, pml_state)
     # update electric field from B and the supplied current
-    # for no pml, the pml_state is None, and the update_tiled_E function returns None for the pml_state
+    # for no pml, the pml_state is None, and the update_E function returns None for the pml_state
 
-    B, pml_state = update_tiled_B(E, B, world, constants, pml_state)
+    B, pml_state = update_B(E, B, world, constants, pml_state)
     # update magnetic field from the newly updated electric field
-    # for no pml, the pml_state is None, and the update_tiled_B function returns None for the pml_state
+    # for no pml, the pml_state is None, and the update_B function returns None for the pml_state
 
     fields = (E, B, J, rho, phi, external_fields, pml_state, overflow)
     # pack the tiled field state

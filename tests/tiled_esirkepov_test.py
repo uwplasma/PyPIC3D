@@ -32,7 +32,7 @@ from PyPIC3D.solvers.yee_tiled import (
     empty_tiled_vector_field,
     tile_grid_axes,
     tile_vector_field,
-    update_tiled_E,
+    update_E,
 )
 
 jax.config.update("jax_enable_x64", True)
@@ -287,7 +287,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         self.assertEqual(float(output_fields[2][0][3, 1, 1]), 7.0)
         self.assertEqual(fields[2][0].shape[-3:], (6, 5, 5))
 
-    def test_update_tiled_E_reads_two_guard_current_interior(self):
+    def test_update_E_reads_two_guard_current_interior(self):
         world = self._build_world(Nx=4, Ny=1, Nz=1, dt=0.25)
         constants = {"C": 1.0, "eps": 2.0}
         tile_shape = (2, 1, 1)
@@ -302,7 +302,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         Jx = Jx.at[:, :, :, 2:-2, 2:-2, 2:-2].set(4.0)
 
         world["tile_shape"] = tile_shape
-        E_after, pml_state = update_tiled_E(E_tiles, B_tiles, (Jx, Jy, Jz), world, constants)
+        E_after, pml_state = update_E(E_tiles, B_tiles, (Jx, Jy, Jz), world, constants)
 
         self.assertIsNone(pml_state)
         self.assertTrue(jnp.allclose(E_after[0][:, :, :, g:-g, g:-g, g:-g], -0.5))

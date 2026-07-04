@@ -20,8 +20,8 @@ from PyPIC3D.solvers.yee_tiled import (
     empty_tiled_vector_field,
     tile_grid_axes,
     tile_vector_field,
-    update_tiled_B,
-    update_tiled_E,
+    update_B,
+    update_E,
 )
 from PyPIC3D.utils import add_external_fields, build_yee_grid, compute_energy
 
@@ -252,8 +252,8 @@ def _tiled_current_deposition_stage(case, particles):
 def _tiled_field_update_stage(case, J_tiles):
     E_tiles, B_tiles, *_ = case.fields
     with jax.named_scope("tiled_field_update"):
-        E_tiles, pml_state = update_tiled_E(E_tiles, B_tiles, J_tiles, case.world, case.constants)
-        B_tiles, _pml_state = update_tiled_B(E_tiles, B_tiles, case.world, case.constants, pml_state)
+        E_tiles, pml_state = update_E(E_tiles, B_tiles, J_tiles, case.world, case.constants)
+        B_tiles, _pml_state = update_B(E_tiles, B_tiles, case.world, case.constants, pml_state)
     return E_tiles, B_tiles
 
 

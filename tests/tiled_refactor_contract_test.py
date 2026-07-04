@@ -100,11 +100,13 @@ class TestTiledRefactorContracts(unittest.TestCase):
             self.assertNotIn(name, electrostatic_signature.parameters)
 
     def test_tiled_yee_updates_read_tile_metadata_from_world(self):
-        update_E_signature = inspect.signature(yee_tiled.update_tiled_E)
-        update_B_signature = inspect.signature(yee_tiled.update_tiled_B)
+        update_E_signature = inspect.signature(yee_tiled.update_E)
+        update_B_signature = inspect.signature(yee_tiled.update_B)
         for name in ("curl_func", "tile_shape", "g"):
             self.assertNotIn(name, update_E_signature.parameters)
             self.assertNotIn(name, update_B_signature.parameters)
+        self.assertFalse(hasattr(yee_tiled, "update_tiled_E"))
+        self.assertFalse(hasattr(yee_tiled, "update_tiled_B"))
 
     def test_electrodynamic_hot_step_does_not_assemble_global_fields(self):
         source = inspect.getsource(evolve.time_loop_electrodynamic)
