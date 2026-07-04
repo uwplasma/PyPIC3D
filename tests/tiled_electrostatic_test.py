@@ -30,10 +30,6 @@ ROUND_OFF_RTOL = 1.0e-11
 ROUND_OFF_ATOL = 1.0e-11
 
 
-def unused_curl(Ex, Ey, Ez):
-    return None
-
-
 class TestTiledElectrostatic(unittest.TestCase):
     def _build_world(self, shape_factor=1):
         world = {
@@ -192,6 +188,7 @@ class TestTiledElectrostatic(unittest.TestCase):
                 tile_vector_field(external_fields[1], world, tile_shape, num_guard_cells=g),
             ),
             None,
+            jnp.asarray(False),
         )
 
         return tiled_particles, species_config, tiled_fields
@@ -254,21 +251,22 @@ class TestTiledElectrostatic(unittest.TestCase):
         constants = {"C": 10.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         tile_shape = (4, 1, 1)
         reference_tile_shape = self._one_tile_shape(world)
-        world["tile_shape"] = tile_shape
+        reference_world = self._world_with_tiled_grids(world, reference_tile_shape)
+        tiled_world = self._world_with_tiled_grids(world, tile_shape)
         Nt = 1500
 
         E, B, J, rho, phi, external_fields = self._empty_fields(world)
         fields = (E, B, J, rho, phi, external_fields)
         reference_particles, reference_species_config, reference_fields = self._build_tiled_state(
-            self._long_two_stream_species(world),
+            self._long_two_stream_species(reference_world),
             fields,
-            world,
+            reference_world,
             reference_tile_shape,
         )
         tiled_particles, species_config, tiled_fields = self._build_tiled_state(
-            self._long_two_stream_species(world),
+            self._long_two_stream_species(tiled_world),
             fields,
-            world,
+            tiled_world,
             tile_shape,
             min_slots=12,
         )
@@ -279,7 +277,7 @@ class TestTiledElectrostatic(unittest.TestCase):
             reference_tile_shape,
             tiled_particles,
             tiled_fields,
-            world,
+            tiled_world,
             tile_shape,
             step=0,
         )
@@ -292,7 +290,8 @@ class TestTiledElectrostatic(unittest.TestCase):
             tiled_particles,
             species_config,
             tiled_fields,
-            world,
+            reference_world,
+            tiled_world,
             constants,
             tile_shape,
             Nt,
@@ -480,11 +479,7 @@ class TestTiledElectrostatic(unittest.TestCase):
             reference_fields,
             reference_world,
             constants,
-            unused_curl,
-            J_func=None,
             solver="electrostatic",
-            tile_shape=reference_tile_shape,
-            g=int(reference_world["guard_cells"]),
             relativistic=False,
             particle_pusher="boris",
         )
@@ -494,11 +489,7 @@ class TestTiledElectrostatic(unittest.TestCase):
             tiled_fields,
             tiled_world,
             constants,
-            unused_curl,
-            J_func=None,
             solver="electrostatic",
-            tile_shape=tiled_world["tile_shape"],
-            g=int(tiled_world["guard_cells"]),
             relativistic=False,
             particle_pusher="boris",
         )
@@ -527,7 +518,8 @@ class TestTiledElectrostatic(unittest.TestCase):
             tiled_particles,
             species_config,
             tiled_fields,
-            world,
+            reference_world,
+            tiled_world,
             constants,
             tile_shape,
             Nt,
@@ -535,7 +527,7 @@ class TestTiledElectrostatic(unittest.TestCase):
 
         tiled_loop = jax.jit(
             time_loop_electrostatic,
-            static_argnames=("curl_func", "J_func", "solver", "tile_shape", "g", "relativistic", "particle_pusher"),
+            static_argnames=("solver", "relativistic", "particle_pusher"),
         )
 
         for step in range(1, Nt + 1):
@@ -543,13 +535,9 @@ class TestTiledElectrostatic(unittest.TestCase):
                 reference_particles,
                 reference_species_config,
                 reference_fields,
-                world,
+                reference_world,
                 constants,
-                unused_curl,
-                J_func=None,
                 solver="electrostatic",
-                tile_shape=reference_tile_shape,
-                g=int(world["guard_cells"]),
                 relativistic=False,
                 particle_pusher="boris",
             )
@@ -557,13 +545,9 @@ class TestTiledElectrostatic(unittest.TestCase):
                 tiled_particles,
                 species_config,
                 tiled_fields,
-                world,
+                tiled_world,
                 constants,
-                unused_curl,
-                J_func=None,
                 solver="electrostatic",
-                tile_shape=tile_shape,
-                g=int(world["guard_cells"]),
                 relativistic=False,
                 particle_pusher="boris",
             )
@@ -574,7 +558,7 @@ class TestTiledElectrostatic(unittest.TestCase):
                 reference_tile_shape,
                 tiled_particles,
                 tiled_fields,
-                world,
+                tiled_world,
                 tile_shape,
                 step,
             )

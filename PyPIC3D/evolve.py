@@ -3,7 +3,6 @@
 
 from functools import partial
 
-import jax.numpy as jnp
 from jax import jit
 
 import jax
@@ -23,17 +22,19 @@ from PyPIC3D.utils import add_external_fields
 __all__ = ["time_loop_electrodynamic", "time_loop_electrostatic"]
 
 
+def _particle_kernel_world(world):
+    kernel_world = dict(world)
+    kernel_world.pop("current_deposition", None)
+    kernel_world.pop("current_filter", None)
+    return kernel_world
+
+
 def time_loop_electrodynamic(
     particles,
     species_config,
     fields,
     world,
     constants,
-    curl_func,
-    J_func,
-    solver,
-    tile_shape=None,
-    g=None,
     relativistic=True,
     particle_pusher="boris",
 ):
@@ -41,45 +42,23 @@ def time_loop_electrodynamic(
     Advance a tiled electrodynamic PIC system by one time step.
     """
 
-    del solver
+    E, B, J, rho, phi, external_fields, pml_state, overflow_previous = fields
+    # unpack the tiled field state
 
-    if len(fields) == 7:
-        E_tiles, B_tiles, J_tiles, rho, phi, external_fields, pml_state = fields
-        overflow_previous = jnp.asarray(False)
-    else:
-        E_tiles, B_tiles, J_tiles, rho, phi, external_fields, pml_state, overflow_previous = fields
-    # unpack the tile-major field state. ``overflow_previous`` carries the
-    # particle-retile overflow diagnostic out to the Python driver.
+    tile_shape = tuple(int(width) for width in world["tile_shape"])
+    g = int(world["guard_cells"])
+    particle_world = _particle_kernel_world(world)
+    # get tiled layout information from the world contract
 
-    if tile_shape is None or g is None:
-        raise ValueError("tiled electrodynamic updates require explicit tile_shape and g.")
-    g = int(g)
-
-    if not hasattr(particles, "active"):
-        if pml_state is None:
-            E_tiles = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape, g)
-            B_tiles = update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape, g)
-        else:
-            E_tiles, pml_state = update_tiled_E(
-                E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape, g, pml_state
-            )
-            B_tiles, pml_state = update_tiled_B(
-                E_tiles, B_tiles, world, constants, curl_func, tile_shape, g, pml_state
-            )
-        fields = (E_tiles, B_tiles, J_tiles, rho, phi, external_fields, pml_state)
-        return particles, fields
-    # keep field-only helper behavior for standalone Maxwell equivalence checks.
-
-    push_E_tiles, push_B_tiles = add_external_fields(E_tiles, B_tiles, external_fields)
-    # particles see evolved fields plus external-only fields, as in the standard
-    # electrodynamic path.
+    push_E, push_B = add_external_fields(E, B, external_fields)
+    # particles see evolved fields plus external-only fields
 
     particles = tiled_particle_push(
         particles,
         species_config,
-        push_E_tiles,
-        push_B_tiles,
-        world,
+        push_E,
+        push_B,
+        particle_world,
         constants,
         tile_shape,
         g,
@@ -88,63 +67,60 @@ def time_loop_electrodynamic(
     )
     # use the selected tiled pusher for particle velocities
 
-    if J_func is None:
-        current_deposition = partial(J_from_rhov, filter="none")
-    else:
-        current_deposition = J_func
-
-    def esirkepov_step(state):
-        particles, J_tiles, overflow_previous = state
-        # Esirkepov needs old and new particle positions. The deposition kernel
-        # predicts the new positions locally, then the actual particle state is
-        # advanced and retiled after the current has been computed.
-        J_tiles = Esirkepov_current(particles, species_config, J_tiles, constants, world)
-        particles = update_tiled_particle_positions(particles, species_config, world["dt"])
-        particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)
-        overflow = overflow_previous | overflow
-        return particles, J_tiles, overflow
-
-    def direct_current_step(state):
+    def direct_deposition_step(state):
         particles, J_tiles, overflow_previous = state
         particles = update_tiled_particle_positions(particles, species_config, world["dt"] / 2)
         # update particle positions to the centered direct-current deposition time
         particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)
+        # wrap particles and move them into their owning tiles.
         overflow = overflow_previous | overflow
-        # wrap periodic particles and move them into their owning tiles.
-
-        J_tiles = current_deposition(particles, species_config, J_tiles, constants, world)
+        # keep fixed-capacity tile overflow visible to the Python driver
+        J_tiles = J_from_rhov(
+            particles,
+            species_config,
+            J_tiles,
+            constants,
+            world,
+            filter=world["current_filter"],
+        )
         # deposit current directly into tile-local Yee current arrays
-
         particles = update_tiled_particle_positions(particles, species_config, world["dt"] / 2)
         # complete the full particle position update
         particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)
-        overflow = overflow_previous | overflow
         # refresh tile ownership after the full position update.
+        overflow = overflow_previous | overflow
         return particles, J_tiles, overflow
+    # if the direct deposition method is selected, first refresh the particle tiles, then deposit current directly into the tiled J arrays
 
-    use_esirkepov_current = world.get("use_esirkepov_current", False)
-    particles, J_tiles, overflow = jax.lax.cond(
-        use_esirkepov_current,
-        esirkepov_step,
-        direct_current_step,
-        (particles, J_tiles, overflow_previous),
+    def esirkepov_deposition_step(state):
+        particles, J_tiles, overflow_previous = state
+        J_tiles = Esirkepov_current(particles, species_config, J_tiles, constants, world)
+        # deposit current into the tiled J arrays using the Esirkepov method, which requires old and new particle positions
+        particles = update_tiled_particle_positions(particles, species_config, world["dt"])
+        # update particle positions to the new time step
+        particles, overflow = refresh_tiled_particle_tiles(particles, world, tile_shape)
+        # refresh tile ownership after the full position update
+        overflow = overflow_previous | overflow
+        return particles, J_tiles, overflow
+    # if the Esirkepov deposition method is selected, first deposit current into the tiled J arrays, then refresh the particle tiles
+
+    particles, J, overflow = jax.lax.cond(
+        world["current_deposition"] == "esirkepov",
+        esirkepov_deposition_step,
+        direct_deposition_step,
+        (particles, J, overflow_previous),
     )
+    # deposit current into the tiled J arrays using the selected deposition method
 
-    if pml_state is None:
-        E_tiles = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape, g)
-    else:
-        E_tiles, pml_state = update_tiled_E(
-            E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape, g, pml_state
-        )
-    # update electric field from B and the supplied tiled current
+    E, pml_state = update_tiled_E(E, B, J, world, constants, pml_state)
+    # update electric field from B and the supplied current
+    # for no pml, the pml_state is None, and the update_tiled_E function returns None for the pml_state
 
-    if pml_state is None:
-        B_tiles = update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape, g)
-    else:
-        B_tiles, pml_state = update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape, g, pml_state)
+    B, pml_state = update_tiled_B(E, B, world, constants, pml_state)
     # update magnetic field from the newly updated electric field
+    # for no pml, the pml_state is None, and the update_tiled_B function returns None for the pml_state
 
-    fields = (E_tiles, B_tiles, J_tiles, rho, phi, external_fields, pml_state, overflow)
+    fields = (E, B, J, rho, phi, external_fields, pml_state, overflow)
     # pack the tiled field state
 
     return particles, fields
@@ -156,11 +132,7 @@ def time_loop_electrostatic(
     fields,
     world,
     constants,
-    curl_func,
-    J_func,
     solver,
-    tile_shape=None,
-    g=None,
     relativistic=True,
     particle_pusher="boris",
 ):
@@ -173,21 +145,13 @@ def time_loop_electrostatic(
     tile-local electrostatic E.
     """
 
-    del curl_func, J_func
+    E_tiles, B_tiles, J_tiles, rho_tiles, phi_tiles, external_fields, pml_state, overflow_previous = fields
+    # unpack the tiled field state
 
-    if len(fields) == 6:
-        E_tiles, B_tiles, J_tiles, rho_tiles, phi_tiles, external_fields = fields
-        pml_state = None
-        overflow_previous = jnp.asarray(False)
-    elif len(fields) == 7:
-        E_tiles, B_tiles, J_tiles, rho_tiles, phi_tiles, external_fields, pml_state = fields
-        overflow_previous = jnp.asarray(False)
-    else:
-        E_tiles, B_tiles, J_tiles, rho_tiles, phi_tiles, external_fields, pml_state, overflow_previous = fields
-
-    if tile_shape is None or g is None:
-        raise ValueError("tiled electrostatic updates require explicit tile_shape and g.")
-    g = int(g)
+    tile_shape = tuple(int(width) for width in world["tile_shape"])
+    g = int(world["guard_cells"])
+    particle_world = _particle_kernel_world(world)
+    # get tiled layout information from the world contract
 
     push_E_tiles, push_B_tiles = add_external_fields(E_tiles, B_tiles, external_fields)
     # particles see evolved fields plus prescribed external fields
@@ -197,7 +161,7 @@ def time_loop_electrostatic(
         species_config,
         push_E_tiles,
         push_B_tiles,
-        world,
+        particle_world,
         constants,
         tile_shape,
         g,

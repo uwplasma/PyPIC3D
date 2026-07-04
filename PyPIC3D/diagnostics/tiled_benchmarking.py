@@ -1,10 +1,9 @@
 from dataclasses import dataclass
-from functools import partial
-
 import jax
 import jax.numpy as jnp
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
+from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
 from PyPIC3D.diagnostics.output_adapters import particles_for_output, vector_field_for_output
 from PyPIC3D.evolve import time_loop_electrodynamic
@@ -49,6 +48,13 @@ class SyntheticTiledYeeState:
 
 def unused_curl(Ex, Ey, Ez):
     return None
+
+
+def _particle_kernel_world(world):
+    kernel_world = dict(world)
+    kernel_world.pop("current_deposition", None)
+    kernel_world.pop("current_filter", None)
+    return kernel_world
 
 
 def _pad_tiled_particle_capacity(tiled_particles, slots_per_tile):
@@ -108,7 +114,8 @@ def build_synthetic_tiled_yee_state(
         "y_wind": y_wind,
         "z_wind": z_wind,
         "shape_factor": shape,
-        "use_esirkepov_current": False,
+        "current_deposition": "direct",
+        "current_filter": "none",
         "tile_shape": tile_shape,
         "guard_cells": g,
         "boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},
@@ -190,7 +197,7 @@ def build_synthetic_tiled_yee_state(
         tuple(jnp.zeros_like(component) for component in E_tiles),
         tuple(jnp.zeros_like(component) for component in B_tiles),
     )
-    fields = (E_tiles, B_tiles, J_tiles, rho_tiles, phi_tiles, external_fields, None)
+    fields = (E_tiles, B_tiles, J_tiles, rho_tiles, phi_tiles, external_fields, None, jnp.asarray(False))
 
     return SyntheticTiledYeeState(
         particles=tiled_particles,
@@ -212,7 +219,7 @@ def _tiled_particle_push_stage(case, relativistic=True, particle_pusher="boris")
             case.species_config,
             push_E_tiles,
             push_B_tiles,
-            case.world,
+            _particle_kernel_world(case.world),
             case.constants,
             case.tile_shape,
             case.g,
@@ -227,23 +234,26 @@ def _tiled_particle_retile_stage(case):
         return refresh_tiled_particle_tiles(moved, case.world, case.tile_shape)
 
 
-def _tiled_current_deposition_stage(case, particles, J_func):
+def _tiled_current_deposition_stage(case, particles):
     _, _, J_tiles, *_ = case.fields
     with jax.named_scope("tiled_current_deposition"):
-        return J_func(
+        if case.world["current_deposition"] == "esirkepov":
+            return Esirkepov_current(particles, case.species_config, J_tiles, case.constants, case.world)
+        return J_from_rhov(
             particles,
             case.species_config,
             J_tiles,
             case.constants,
             case.world,
+            filter=case.world["current_filter"],
         )
 
 
 def _tiled_field_update_stage(case, J_tiles):
     E_tiles, B_tiles, *_ = case.fields
     with jax.named_scope("tiled_field_update"):
-        E_tiles = update_tiled_E(E_tiles, B_tiles, J_tiles, case.world, case.constants, unused_curl, case.tile_shape, case.g)
-        B_tiles = update_tiled_B(E_tiles, B_tiles, case.world, case.constants, unused_curl, case.tile_shape, case.g)
+        E_tiles, pml_state = update_tiled_E(E_tiles, B_tiles, J_tiles, case.world, case.constants)
+        B_tiles, _pml_state = update_tiled_B(E_tiles, B_tiles, case.world, case.constants, pml_state)
     return E_tiles, B_tiles
 
 
@@ -269,7 +279,7 @@ def _tiled_output_bridge_stage(case):
     return E, B, particles
 
 
-def benchmark_tiled_pic_step(case, J_func, relativistic=True, particle_pusher="boris"):
+def benchmark_tiled_pic_step(case, relativistic=True, particle_pusher="boris"):
     with jax.named_scope("tiled_pic_step"):
         return time_loop_electrodynamic(
             case.particles,
@@ -277,17 +287,12 @@ def benchmark_tiled_pic_step(case, J_func, relativistic=True, particle_pusher="b
             case.fields,
             case.world,
             case.constants,
-            unused_curl,
-            J_func,
-            "electrodynamic_yee",
-            tile_shape=case.tile_shape,
-            g=case.g,
             relativistic=relativistic,
             particle_pusher=particle_pusher,
         )
 
 
-def build_tiled_stage_specs(case, J_func=None, relativistic=True, particle_pusher="boris"):
+def build_tiled_stage_specs(case, relativistic=True, particle_pusher="boris"):
     """
     Return independently timed tiled Yee stage specs.
 
@@ -296,19 +301,16 @@ def build_tiled_stage_specs(case, J_func=None, relativistic=True, particle_pushe
     the current global output bridge.
     """
 
-    if J_func is None:
-        J_func = partial(J_from_rhov, filter="none")
-
     pushed_particles = _tiled_particle_push_stage(case, relativistic=relativistic, particle_pusher=particle_pusher)
-    deposited_J = _tiled_current_deposition_stage(case, pushed_particles, J_func)
+    deposited_J = _tiled_current_deposition_stage(case, pushed_particles)
 
     return {
         "tiled_pic_step": StageSpec(
             "tiled_pic_step",
             benchmark_tiled_pic_step,
-            (case, J_func),
+            (case,),
             {"relativistic": relativistic, "particle_pusher": particle_pusher},
-            ("J_func", "relativistic", "particle_pusher"),
+            ("relativistic", "particle_pusher"),
         ),
         "tiled_particle_push": StageSpec(
             "tiled_particle_push",
@@ -327,9 +329,9 @@ def build_tiled_stage_specs(case, J_func=None, relativistic=True, particle_pushe
         "tiled_current_deposition": StageSpec(
             "tiled_current_deposition",
             _tiled_current_deposition_stage,
-            (case, pushed_particles, J_func),
+            (case, pushed_particles),
             {},
-            ("J_func",),
+            (),
         ),
         "tiled_field_update": StageSpec(
             "tiled_field_update",

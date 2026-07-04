@@ -60,7 +60,7 @@ def _raise_if_tiled_particles_overflowed(fields, simulation_parameters):
 def run_PyPIC3D(config_file):
     ##################################### INITIALIZE SIMULATION ################################################
 
-    loop, particles, fields, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, solver, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic, particle_pusher, species_config = initialize_simulation(config_file)
+    loop, particles, fields, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, solver, electrostatic, verbose, GPUs, Nt, relativistic, particle_pusher, species_config = initialize_simulation(config_file)
     # initialize the simulation
 
     dt = world['dt']
@@ -79,30 +79,34 @@ def run_PyPIC3D(config_file):
         species_config,
         fields,
         constants,
-        curl_func,
-        J_func,
         solver,
         relativistic=True,
         particle_pusher="boris",
     ):
+        if electrostatic:
+            return loop(
+                particles,
+                species_config,
+                fields,
+                world,
+                constants,
+                solver,
+                relativistic=relativistic,
+                particle_pusher=particle_pusher,
+            )
         return loop(
             particles,
             species_config,
             fields,
             world,
             constants,
-            curl_func,
-            J_func,
-            solver,
-            tile_shape=tile_shape,
-            g=g,
             relativistic=relativistic,
             particle_pusher=particle_pusher,
         )
 
     jit_loop = jax.jit(
         loop_with_static_world,
-        static_argnames=('curl_func', 'J_func', 'solver', 'relativistic', 'particle_pusher'),
+        static_argnames=('solver', 'relativistic', 'particle_pusher'),
     )
 
     E, B, J, rho, phi, external_fields, *rest = fields
@@ -201,8 +205,6 @@ def run_PyPIC3D(config_file):
             species_config,
             fields,
             constants,
-            curl_func,
-            J_func,
             solver,
             relativistic=relativistic,
             particle_pusher=particle_pusher,

@@ -212,7 +212,7 @@ class TestPMLInitialization(unittest.TestCase):
         fields = result[2]
         world = result[3]
         active, pml_x, pml_y, pml_z, _ = world["pml"]
-        self.assertEqual(len(fields), 7)
+        self.assertEqual(len(fields), 8)
         self.assertIn("pml", world)
         self.assertTrue(active)
         self.assertTrue(pml_x)
@@ -236,10 +236,12 @@ class TestPMLInitialization(unittest.TestCase):
 
         fields = result[2]
         world = result[3]
-        pml_state = fields[-1]
+        pml_state = fields[6]
+        overflow = fields[-1]
         e_memory, b_memory, tiled_profiles = pml_state
 
-        self.assertEqual(len(fields), 7)
+        self.assertEqual(len(fields), 8)
+        self.assertFalse(bool(overflow))
         self.assertEqual(tuple(world["tile_shape"]), (2, 1, 1))
         self.assertEqual(e_memory[0].shape, (4, 1, 1, 2, 1, 1))
         self.assertEqual(b_memory[0].shape, (4, 1, 1, 2, 1, 1))
@@ -254,8 +256,9 @@ class TestPMLInitialization(unittest.TestCase):
         world = result[3]
         active, pml_x, pml_y, pml_z, _ = world["pml"]
 
-        self.assertEqual(len(fields), 7)
-        self.assertIsNone(fields[-1])
+        self.assertEqual(len(fields), 8)
+        self.assertIsNone(fields[6])
+        self.assertFalse(bool(fields[-1]))
         self.assertFalse(active)
         self.assertFalse(pml_x)
         self.assertFalse(pml_y)
@@ -346,6 +349,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         E_reference, pml_state = _update_E_global(E, B, J, world, constants, lambda *args: None, pml_state)
         B_reference, pml_state = _update_B_global(E_reference, B, world, constants, lambda *args: None, pml_state)
 
+        world["tile_shape"] = tile_shape
         tiled_pml_state = initialize_tiled_pml_state(world, tile_shape)
         E_tiles, tiled_pml_state = update_tiled_E(
             tile_vector_field(E, world, tile_shape),
@@ -353,9 +357,6 @@ class TestPMLFDTDBehavior(unittest.TestCase):
             tile_vector_field(J, world, tile_shape),
             world,
             constants,
-            lambda *args: None,
-            tile_shape,
-            int(world["guard_cells"]),
             tiled_pml_state,
         )
         B_tiles, tiled_pml_state = update_tiled_B(
@@ -363,9 +364,6 @@ class TestPMLFDTDBehavior(unittest.TestCase):
             tile_vector_field(B, world, tile_shape),
             world,
             constants,
-            lambda *args: None,
-            tile_shape,
-            int(world["guard_cells"]),
             tiled_pml_state,
         )
 
@@ -390,6 +388,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
             constants,
         )
         tile_shape = (4, 1, 1)
+        world["tile_shape"] = tile_shape
         tiled_pml_state = initialize_tiled_pml_state(world, tile_shape)
         E, B, J, _, _ = initialize_fields(world["Nx"], world["Ny"], world["Nz"])
 
@@ -405,12 +404,8 @@ class TestPMLFDTDBehavior(unittest.TestCase):
 
         initial_energy = sum(compute_energy([], E_tiles, B_tiles, world, constants)[:2])
         def step(E_tiles, B_tiles, tiled_pml_state):
-            E_tiles, tiled_pml_state = update_tiled_E(
-                E_tiles, B_tiles, J_tiles, world, constants, lambda *args: None, tile_shape, int(world["guard_cells"]), tiled_pml_state
-            )
-            B_tiles, tiled_pml_state = update_tiled_B(
-                E_tiles, B_tiles, world, constants, lambda *args: None, tile_shape, int(world["guard_cells"]), tiled_pml_state
-            )
+            E_tiles, tiled_pml_state = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, tiled_pml_state)
+            B_tiles, tiled_pml_state = update_tiled_B(E_tiles, B_tiles, world, constants, tiled_pml_state)
             return E_tiles, B_tiles, tiled_pml_state
 
         step = jax.jit(step)
@@ -430,6 +425,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
             constants,
         )
         tile_shape = (2, 1, 1)
+        world["tile_shape"] = tile_shape
         E, B, J, _, _ = initialize_fields(world["Nx"], world["Ny"], world["Nz"])
         Ex, Ey, Ez = E
         Bx, By, Bz = B
@@ -445,12 +441,8 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         J_tiles = (Jx, Jy, Jz)
 
         pml_state = initialize_tiled_pml_state(world, tile_shape)
-        E_after, pml_state = update_tiled_E(
-            E_tiles, B_tiles, J_tiles, world, constants, lambda *args: None, tile_shape, g, pml_state
-        )
-        B_after, pml_state = update_tiled_B(
-            E_after, B_tiles, world, constants, lambda *args: None, tile_shape, g, pml_state
-        )
+        E_after, pml_state = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, pml_state)
+        B_after, pml_state = update_tiled_B(E_after, B_tiles, world, constants, pml_state)
 
         for component in E_after + B_after:
             self.assertTrue(jnp.all(jnp.isfinite(component)))

@@ -2,7 +2,6 @@ import jax
 from jax.experimental import mesh_utils
 from jax.sharding import Mesh, PartitionSpec, NamedSharding
 import os
-import functools
 from functools import partial
 import toml
 import matplotlib.pyplot as plt
@@ -21,11 +20,6 @@ from PyPIC3D.utils import (
     print_stats, particle_sanity_check, build_plasma_parameters_dict,
     make_dir, compute_energy, add_external_fields
 )
-
-from PyPIC3D.solvers.fdtd import (
-    centered_finite_difference_curl
-)
-
 
 from PyPIC3D.diagnostics.plotting import (
     plot_initial_histograms
@@ -53,9 +47,6 @@ from PyPIC3D.evolve import (
 )
 
 from PyPIC3D.pusher.particle_push import validate_particle_pusher
-
-from PyPIC3D.deposition.Esirkepov import Esirkepov_current
-from PyPIC3D.deposition.J_from_rhov import J_from_rhov
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
@@ -116,7 +107,9 @@ def _tile_shape_from_parameters(simulation_parameters):
 def _encode_current_calculation(current_calculation):
     if current_calculation not in ("j_from_rhov", "esirkepov"):
         raise ValueError("Unsupported current_calculation. Use 'j_from_rhov' or 'esirkepov'.")
-    return current_calculation == "esirkepov"
+    if current_calculation == "esirkepov":
+        return "esirkepov"
+    return "direct"
 
 
 def _validate_current_filter_contract(simulation_parameters):
@@ -267,7 +260,6 @@ def initialize_simulation(toml_file):
             GPUs (int): Number of GPUs to use.
             start (float): Start time of the simulation initialization.
             Nt (int): Number of time steps.
-            curl_func (function): Function to compute the curl of the fields.
             pecs (list): List of perfectly electrical conductor boundaries.
             lasers (list): List of laser objects initialized from the configuration file.
             surfaces (list): List of material surfaces initialized from the configuration file.
@@ -344,7 +336,8 @@ def initialize_simulation(toml_file):
         'z_wind': z_wind,
         'shape_factor': simulation_parameters['shape_factor'],
         'guard_cells': guard_cells,
-        'use_esirkepov_current': _encode_current_calculation(simulation_parameters['current_calculation']),
+        'current_deposition': _encode_current_calculation(simulation_parameters['current_calculation']),
+        'current_filter': simulation_parameters['filter_j'],
         'boundary_conditions': {
             'x': _encode_field_bc(simulation_parameters['x_bc']),
             'y': _encode_field_bc(simulation_parameters['y_bc']),
@@ -462,9 +455,6 @@ def initialize_simulation(toml_file):
     external_fields = (external_E, external_B)
     # fill ghost cells for external fields before they are interpolated to particles
 
-    curl_func = functools.partial(centered_finite_difference_curl, dx=dx, dy=dy, dz=dz, bc="periodic")
-
-
     ######################### COMPUTE INITIAL ENERGY ########################################################
     total_E, total_B = add_external_fields(E, B, external_fields)
     # energy diagnostics use the same total fields that the particle pusher sees
@@ -493,10 +483,8 @@ def initialize_simulation(toml_file):
 
     if simulation_parameters['current_calculation'] == "esirkepov":
         print("Using Esirkepov current calculation method")
-        J_func = Esirkepov_current
     elif simulation_parameters['current_calculation'] == "j_from_rhov":
         print(f"Using J from rhov current calculation method with filter: {simulation_parameters['filter_j']}")
-        J_func = functools.partial(J_from_rhov, filter=simulation_parameters['filter_j'])
 
 
     species_config = None
@@ -520,10 +508,8 @@ def initialize_simulation(toml_file):
     B = tile_vector_field(B, world, tile_shape, num_guard_cells=guard_cells)
     if simulation_parameters["current_calculation"] == "esirkepov":
         J = empty_tiled_vector_field(world, tile_shape, num_guard_cells=guard_cells, dtype=E[0].dtype)
-        J_func = Esirkepov_current
     else:
         J = tile_vector_field(J, world, tile_shape, num_guard_cells=guard_cells)
-        J_func = functools.partial(J_from_rhov, filter=simulation_parameters['filter_j'])
     external_E, external_B = external_fields
     external_fields = (
         tile_vector_field(external_E, world, tile_shape, num_guard_cells=guard_cells),
@@ -532,10 +518,11 @@ def initialize_simulation(toml_file):
     simulation_parameters["tile_shape"] = tile_shape
     print(f"Using tiled Yee storage with tile shape: {tile_shape}")
 
+    overflow = jnp.asarray(False)
     if electrostatic:
         rho = tile_scalar_field(rho, world, tile_shape, num_guard_cells=guard_cells)
         phi = tile_scalar_field(phi, world, tile_shape, num_guard_cells=guard_cells)
-        fields = (E, B, J, rho, phi, external_fields)
+        fields = (E, B, J, rho, phi, external_fields, None, overflow)
         # define the fields tuple for the electrostatic solver
     else:
         pml_state = None
@@ -543,7 +530,7 @@ def initialize_simulation(toml_file):
         # ordinary, unstretched Yee derivatives.
         if pml_active:
             pml_state = initialize_tiled_pml_state(world, tile_shape)
-        fields = (E, B, J, rho, phi, external_fields, pml_state)
+        fields = (E, B, J, rho, phi, external_fields, pml_state, overflow)
         # define the fields tuple for the electrodynamic Yee solver
 
     if plotting_parameters['dump_fields']:
@@ -560,7 +547,7 @@ def initialize_simulation(toml_file):
 
 
     return evolve_loop, particles, fields, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, \
-        solver, electrostatic, verbose, GPUs, Nt, curl_func, J_func, relativistic, particle_pusher, species_config
+        solver, electrostatic, verbose, GPUs, Nt, relativistic, particle_pusher, species_config
 
 
 

@@ -211,7 +211,7 @@ def _update_B_global(E, B, world, constants, curl_func, pml_state=None):
     return (Bx, By, Bz), pml_state
 
 
-def update_E(E, B, J, world, constants, curl_func, pml_state=None):
+def update_E(E, B, J, world, constants, pml_state=None):
     """
     Update electric fields through the public Yee helper.
 
@@ -222,16 +222,12 @@ def update_E(E, B, J, world, constants, curl_func, pml_state=None):
     """
 
     if E[0].ndim == 6:
-        tile_shape = tuple(world["tile_shape"])
-        g = int(world["guard_cells"])
-        if pml_state is None:
-            return update_tiled_E(E, B, J, world, constants, curl_func, tile_shape, g), None
-        return update_tiled_E(E, B, J, world, constants, curl_func, tile_shape, g, pml_state)
+        return update_tiled_E(E, B, J, world, constants, pml_state)
 
     raise ValueError("Public update_E requires tiled field arrays; use _update_E_global for flat reference tests.")
 
 
-def update_B(E, B, world, constants, curl_func, pml_state=None):
+def update_B(E, B, world, constants, pml_state=None):
     """
     Update magnetic fields through the public Yee helper.
 
@@ -240,10 +236,6 @@ def update_B(E, B, world, constants, curl_func, pml_state=None):
     """
 
     if E[0].ndim == 6:
-        tile_shape = tuple(world["tile_shape"])
-        g = int(world["guard_cells"])
-        if pml_state is None:
-            return update_tiled_B(E, B, world, constants, curl_func, tile_shape, g), None
-        return update_tiled_B(E, B, world, constants, curl_func, tile_shape, g, pml_state)
+        return update_tiled_B(E, B, world, constants, pml_state)
 
     raise ValueError("Public update_B requires tiled field arrays; use _update_B_global for flat reference tests.")

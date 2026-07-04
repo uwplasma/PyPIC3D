@@ -4,7 +4,6 @@ import jax
 import jax.numpy as jnp
 
 from PyPIC3D.initialization import initialize_fields
-from PyPIC3D.evolve import time_loop_electrodynamic
 from PyPIC3D.solvers.first_order_yee import _update_B_global, _update_E_global, update_B, update_E
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
@@ -52,6 +51,11 @@ class TestYeeTiled(unittest.TestCase):
     def _conducting_world(self):
         world = self._build_world()
         world["boundary_conditions"] = {"x": BC_CONDUCTING, "y": BC_CONDUCTING, "z": BC_CONDUCTING}
+        return world
+
+    def _with_tile_metadata(self, world, tile_shape, g=2):
+        world["tile_shape"] = tuple(int(width) for width in tile_shape)
+        world["guard_cells"] = int(g)
         return world
 
     def _mixed_bc_world(self):
@@ -302,21 +306,20 @@ class TestYeeTiled(unittest.TestCase):
         world = self._build_world()
         constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         tile_shape = (2, 3, 2)
+        world = self._with_tile_metadata(world, tile_shape)
         E = self._deterministic_vector_field(world, scale=1.0)
         B = self._deterministic_vector_field(world, scale=0.2)
         J = self._deterministic_vector_field(world, scale=0.05)
 
         E_reference, _ = _update_E_global(E, B, J, world, constants, unused_curl)
-        E_tiled = update_tiled_E(
+        E_tiled, pml_state = update_tiled_E(
             tile_vector_field(E, world, tile_shape),
             tile_vector_field(B, world, tile_shape),
             tile_vector_field(J, world, tile_shape),
             world,
             constants,
-            unused_curl,
-            tile_shape,
-            2,
         )
+        self.assertIsNone(pml_state)
         E_from_tiles = assemble_tiled_vector_field(E_tiled, world, tile_shape)
 
         for reference, tiled in zip(E_reference, E_from_tiles):
@@ -326,8 +329,7 @@ class TestYeeTiled(unittest.TestCase):
         world = self._build_world()
         constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         tile_shape = (2, 3, 2)
-        world["tile_shape"] = tile_shape
-        world["guard_cells"] = 2
+        world = self._with_tile_metadata(world, tile_shape)
         E = self._deterministic_vector_field(world, scale=1.0)
         B = self._deterministic_vector_field(world, scale=0.2)
         J = self._deterministic_vector_field(world, scale=0.05)
@@ -335,10 +337,11 @@ class TestYeeTiled(unittest.TestCase):
         B_tiles = tile_vector_field(B, world, tile_shape, num_guard_cells=2)
         J_tiles = tile_vector_field(J, world, tile_shape, num_guard_cells=2)
 
-        E_public, pml_state = update_E(E_tiles, B_tiles, J_tiles, world, constants, unused_curl)
-        E_reference = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, unused_curl, tile_shape, 2)
+        E_public, pml_state = update_E(E_tiles, B_tiles, J_tiles, world, constants)
+        E_reference, reference_pml_state = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants)
 
         self.assertIsNone(pml_state)
+        self.assertIsNone(reference_pml_state)
         for public, reference in zip(E_public, E_reference):
             self.assertTrue(jnp.allclose(public, reference, rtol=1.0e-12, atol=1.0e-12))
 
@@ -350,29 +353,28 @@ class TestYeeTiled(unittest.TestCase):
         J = self._deterministic_vector_field(world, scale=0.05)
 
         with self.assertRaisesRegex(ValueError, "tiled field arrays"):
-            update_E(E, B, J, world, constants, unused_curl)
+            update_E(E, B, J, world, constants)
         with self.assertRaisesRegex(ValueError, "tiled field arrays"):
-            update_B(E, B, world, constants, unused_curl)
+            update_B(E, B, world, constants)
 
     def test_update_tiled_E_matches_standard_yee_update_with_conducting_boundaries(self):
         world = self._conducting_world()
         constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         tile_shape = (2, 3, 2)
+        world = self._with_tile_metadata(world, tile_shape)
         E = self._deterministic_vector_field(world, scale=1.0)
         B = self._deterministic_vector_field(world, scale=0.2)
         J = self._deterministic_vector_field(world, scale=0.05)
 
         E_reference, _ = _update_E_global(E, B, J, world, constants, unused_curl)
-        E_tiled = update_tiled_E(
+        E_tiled, pml_state = update_tiled_E(
             tile_vector_field(E, world, tile_shape),
             tile_vector_field(B, world, tile_shape),
             tile_vector_field(J, world, tile_shape),
             world,
             constants,
-            unused_curl,
-            tile_shape,
-            2,
         )
+        self.assertIsNone(pml_state)
         E_from_tiles = assemble_tiled_vector_field(E_tiled, world, tile_shape)
 
         for reference, tiled in zip(E_reference, E_from_tiles):
@@ -382,19 +384,18 @@ class TestYeeTiled(unittest.TestCase):
         world = self._build_world()
         constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         tile_shape = (2, 3, 2)
+        world = self._with_tile_metadata(world, tile_shape)
         E = self._deterministic_vector_field(world, scale=1.0)
         B = self._deterministic_vector_field(world, scale=0.2)
 
         B_reference, _ = _update_B_global(E, B, world, constants, unused_curl)
-        B_tiled = update_tiled_B(
+        B_tiled, pml_state = update_tiled_B(
             tile_vector_field(E, world, tile_shape),
             tile_vector_field(B, world, tile_shape),
             world,
             constants,
-            unused_curl,
-            tile_shape,
-            2,
         )
+        self.assertIsNone(pml_state)
         B_from_tiles = assemble_tiled_vector_field(B_tiled, world, tile_shape)
 
         for reference, tiled in zip(B_reference, B_from_tiles):
@@ -404,17 +405,17 @@ class TestYeeTiled(unittest.TestCase):
         world = self._build_world()
         constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         tile_shape = (2, 3, 2)
-        world["tile_shape"] = tile_shape
-        world["guard_cells"] = 2
+        world = self._with_tile_metadata(world, tile_shape)
         E = self._deterministic_vector_field(world, scale=1.0)
         B = self._deterministic_vector_field(world, scale=0.2)
         E_tiles = tile_vector_field(E, world, tile_shape, num_guard_cells=2)
         B_tiles = tile_vector_field(B, world, tile_shape, num_guard_cells=2)
 
-        B_public, pml_state = update_B(E_tiles, B_tiles, world, constants, unused_curl)
-        B_reference = update_tiled_B(E_tiles, B_tiles, world, constants, unused_curl, tile_shape, 2)
+        B_public, pml_state = update_B(E_tiles, B_tiles, world, constants)
+        B_reference, reference_pml_state = update_tiled_B(E_tiles, B_tiles, world, constants)
 
         self.assertIsNone(pml_state)
+        self.assertIsNone(reference_pml_state)
         for public, reference in zip(B_public, B_reference):
             self.assertTrue(jnp.allclose(public, reference, rtol=1.0e-12, atol=1.0e-12))
 
@@ -422,19 +423,18 @@ class TestYeeTiled(unittest.TestCase):
         world = self._conducting_world()
         constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         tile_shape = (2, 3, 2)
+        world = self._with_tile_metadata(world, tile_shape)
         E = self._deterministic_vector_field(world, scale=1.0)
         B = self._deterministic_vector_field(world, scale=0.2)
 
         B_reference, _ = _update_B_global(E, B, world, constants, unused_curl)
-        B_tiled = update_tiled_B(
+        B_tiled, pml_state = update_tiled_B(
             tile_vector_field(E, world, tile_shape),
             tile_vector_field(B, world, tile_shape),
             world,
             constants,
-            unused_curl,
-            tile_shape,
-            2,
         )
+        self.assertIsNone(pml_state)
         B_from_tiles = assemble_tiled_vector_field(B_tiled, world, tile_shape)
 
         for reference, tiled in zip(B_reference, B_from_tiles):
@@ -444,6 +444,7 @@ class TestYeeTiled(unittest.TestCase):
         world = self._build_world()
         constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         tile_shape = (2, 3, 2)
+        world = self._with_tile_metadata(world, tile_shape)
         E = self._deterministic_vector_field(world, scale=1.0)
         B = self._deterministic_vector_field(world, scale=0.2)
         J = self._deterministic_vector_field(world, scale=0.05)
@@ -454,8 +455,9 @@ class TestYeeTiled(unittest.TestCase):
         E_tiles = tile_vector_field(E, world, tile_shape)
         B_tiles = tile_vector_field(B, world, tile_shape)
         J_tiles = tile_vector_field(J, world, tile_shape)
-        E_tiles = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, unused_curl, tile_shape, 2)
-        B_tiles = update_tiled_B(E_tiles, B_tiles, world, constants, unused_curl, tile_shape, 2)
+        E_tiles, pml_state = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants)
+        B_tiles, pml_state = update_tiled_B(E_tiles, B_tiles, world, constants, pml_state)
+        self.assertIsNone(pml_state)
 
         E_from_tiles = assemble_tiled_vector_field(E_tiles, world, tile_shape)
         B_from_tiles = assemble_tiled_vector_field(B_tiles, world, tile_shape)
@@ -469,6 +471,7 @@ class TestYeeTiled(unittest.TestCase):
         world = self._conducting_world()
         constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         tile_shape = (2, 3, 2)
+        world = self._with_tile_metadata(world, tile_shape)
         E = self._deterministic_vector_field(world, scale=1.0)
         B = self._deterministic_vector_field(world, scale=0.2)
         J = self._deterministic_vector_field(world, scale=0.05)
@@ -479,8 +482,9 @@ class TestYeeTiled(unittest.TestCase):
         E_tiles = tile_vector_field(E, world, tile_shape)
         B_tiles = tile_vector_field(B, world, tile_shape)
         J_tiles = tile_vector_field(J, world, tile_shape)
-        E_tiles = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, unused_curl, tile_shape, 2)
-        B_tiles = update_tiled_B(E_tiles, B_tiles, world, constants, unused_curl, tile_shape, 2)
+        E_tiles, pml_state = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants)
+        B_tiles, pml_state = update_tiled_B(E_tiles, B_tiles, world, constants, pml_state)
+        self.assertIsNone(pml_state)
 
         E_from_tiles = assemble_tiled_vector_field(E_tiles, world, tile_shape)
         B_from_tiles = assemble_tiled_vector_field(B_tiles, world, tile_shape)
@@ -494,54 +498,28 @@ class TestYeeTiled(unittest.TestCase):
         world = self._build_world()
         constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         tile_shape = (2, 3, 2)
+        world = self._with_tile_metadata(world, tile_shape)
         E = self._deterministic_vector_field(world, scale=1.0)
         B = self._deterministic_vector_field(world, scale=0.2)
         J = self._deterministic_vector_field(world, scale=0.05)
 
         E_reference, _ = _update_E_global(E, B, J, world, constants, unused_curl)
         B_reference, _ = _update_B_global(E_reference, B, world, constants, unused_curl)
-        particles = object()
-        external_fields = (
-            tuple(jnp.zeros_like(component) for component in E),
-            tuple(jnp.zeros_like(component) for component in B),
-        )
-        fields = (
-            tile_vector_field(E, world, tile_shape),
-            tile_vector_field(B, world, tile_shape),
-            tile_vector_field(J, world, tile_shape),
-            jnp.zeros_like(E[0]),
-            jnp.zeros_like(E[0]),
-            external_fields,
-            None,
-        )
+        E_tiles = tile_vector_field(E, world, tile_shape)
+        B_tiles = tile_vector_field(B, world, tile_shape)
+        J_tiles = tile_vector_field(J, world, tile_shape)
+        E_tiles, pml_state = update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants)
+        B_tiles, pml_state = update_tiled_B(E_tiles, B_tiles, world, constants, pml_state)
 
-        particles_after, fields_after = time_loop_electrodynamic(
-            particles,
-            None,
-            fields,
-            world,
-            constants,
-            unused_curl,
-            J_func=None,
-            solver="fdtd",
-            tile_shape=tile_shape,
-            g=1,
-            relativistic=False,
-            particle_pusher="boris",
-        )
-
-        E_tiles, B_tiles, J_tiles, rho, phi, external_after, pml_state = fields_after
         E_from_tiles = assemble_tiled_vector_field(E_tiles, world, tile_shape)
         B_from_tiles = assemble_tiled_vector_field(B_tiles, world, tile_shape)
 
-        self.assertIs(particles_after, particles)
         self.assertIsNone(pml_state)
-        self.assertIs(external_after, external_fields)
         for reference, tiled in zip(E_reference, E_from_tiles):
             self.assertTrue(jnp.allclose(tiled, reference, rtol=1.0e-12, atol=1.0e-12))
         for reference, tiled in zip(B_reference, B_from_tiles):
             self.assertTrue(jnp.allclose(tiled, reference, rtol=1.0e-12, atol=1.0e-12))
-        for original, after in zip(fields[2], J_tiles):
+        for original, after in zip(tile_vector_field(J, world, tile_shape), J_tiles):
             self.assertTrue(jnp.allclose(after, original, rtol=1.0e-12, atol=1.0e-12))
 
 

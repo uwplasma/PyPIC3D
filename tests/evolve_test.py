@@ -16,14 +16,6 @@ from PyPIC3D.utils import build_yee_grid
 jax.config.update("jax_enable_x64", True)
 
 
-def zero_current(particles, species_config, J, constants, world):
-    return tuple(jnp.zeros_like(comp) for comp in J)
-
-
-def unused_curl(Ex, Ey, Ez):
-    return None
-
-
 def add_tiled_grids_to_world(world, tile_shape):
     g = int(world["guard_cells"])
     world["tile_shape"] = tile_shape
@@ -59,6 +51,8 @@ class TestEvolveExternalFields(unittest.TestCase):
             "y_wind": 1.0,
             "z_wind": 1.0,
             "shape_factor": 1,
+            "current_deposition": "direct",
+            "current_filter": "none",
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
             "particle_boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
@@ -113,6 +107,7 @@ class TestEvolveExternalFields(unittest.TestCase):
             phi,
             (external_E_tiles, external_B_tiles),
             None,
+            jnp.asarray(False),
         )
 
         tiled_particles, fields = time_loop_electrodynamic(
@@ -121,11 +116,6 @@ class TestEvolveExternalFields(unittest.TestCase):
             fields,
             world,
             constants,
-            unused_curl,
-            zero_current,
-            solver="electrodynamic_yee",
-            tile_shape=tile_shape,
-            g=int(world["guard_cells"]),
             relativistic=False,
             particle_pusher="boris",
         )
@@ -140,8 +130,6 @@ class TestEvolveExternalFields(unittest.TestCase):
         self.assertGreater(float(vx[0]), 0.0)
         self.assertTrue(jnp.allclose(vy, 0.0))
         self.assertTrue(jnp.allclose(vz, 0.0))
-        self.assertTrue(jnp.allclose(E_after[0], 0.0))
-        self.assertTrue(jnp.allclose(B_after[0], 0.0))
         self.assertTrue(jnp.allclose(external_after[0][0], external_E_tiles[0]))
 
     def test_absorbing_particle_mask_survives_jitted_electrodynamic_step(self):
@@ -157,6 +145,8 @@ class TestEvolveExternalFields(unittest.TestCase):
             "y_wind": 1.0,
             "z_wind": 1.0,
             "shape_factor": 1,
+            "current_deposition": "direct",
+            "current_filter": "none",
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
             "particle_boundary_conditions": {"x": 2, "y": 0, "z": 0},
         }
@@ -213,6 +203,7 @@ class TestEvolveExternalFields(unittest.TestCase):
                 tile_vector_field(external_fields[1], world, tile_shape, num_guard_cells=int(world["guard_cells"])),
             ),
             None,
+            jnp.asarray(False),
         )
 
         tiled_particles, _ = time_loop_electrodynamic(
@@ -221,11 +212,6 @@ class TestEvolveExternalFields(unittest.TestCase):
             fields,
             world,
             constants,
-            unused_curl,
-            zero_current,
-            solver="electrodynamic_yee",
-            tile_shape=tile_shape,
-            g=int(world["guard_cells"]),
             relativistic=False,
             particle_pusher="boris",
         )

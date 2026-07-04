@@ -90,10 +90,12 @@ class TestInitializationFunctions(unittest.TestCase):
             self.assertEqual(tuple(world["tile_shape"]), (2, 1, 1))
             self.assertIn("tiled_center_grid", world["grids"])
             self.assertIn("tiled_vertex_grid", world["grids"])
-            E, B, J, rho, phi, external_fields, pml_state = fields
+            E, B, J, rho, phi, external_fields, pml_state, overflow = fields
             self.assertEqual(E[0].ndim, 6)
             self.assertEqual(B[0].ndim, 6)
             self.assertEqual(J[0].ndim, 6)
+            self.assertIsNone(pml_state)
+            self.assertFalse(bool(overflow))
 
     def test_initialize_simulation_encodes_global_particle_boundary_conditions(self):
         with tempfile.TemporaryDirectory() as tmpdir:

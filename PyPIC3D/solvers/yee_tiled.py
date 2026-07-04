@@ -664,7 +664,7 @@ def fold_tiled_vector_ghost_cells_periodic(field_tiles, num_guard_cells=2):
     return _restore_tiled_vector_layout(folded, field_tiles)
 
 
-def update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_shape, g, pml_state=None):
+def update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, pml_state=None):
     """
     Update compact tiled electric fields without assembling a global field.
 
@@ -672,10 +672,10 @@ def update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_
     have been refreshed from neighbor tiles or field boundary conditions.
     """
 
-    del curl_func
-
     Ex, Ey, Ez = E_tiles
+    tile_shape = tuple(int(width) for width in world["tile_shape"])
     tile_nx, tile_ny, tile_nz = tile_shape
+    g = int(world["guard_cells"])
     g = int(g)
     active = _active_slice(g)
     forward = _forward_slice(g)
@@ -737,12 +737,12 @@ def update_tiled_E(E_tiles, B_tiles, J_tiles, world, constants, curl_func, tile_
     Ex, Ey, Ez = apply_tiled_conducting_bc((Ex, Ey, Ez), world, num_guard_cells=g)
 
     if pml_state is None:
-        return update_tiled_vector_ghost_cells((Ex, Ey, Ez), world, g, tile_shape)
+        return update_tiled_vector_ghost_cells((Ex, Ey, Ez), world, g, tile_shape), None
 
     return update_tiled_vector_ghost_cells_for_pml((Ex, Ey, Ez), world, g, tile_shape), pml_state
 
 
-def update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape, g, pml_state=None):
+def update_tiled_B(E_tiles, B_tiles, world, constants, pml_state=None):
     """
     Update compact tiled magnetic fields without assembling a global field.
 
@@ -750,10 +750,10 @@ def update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape, g,
     have been refreshed from neighbor tiles or field boundary conditions.
     """
 
-    del curl_func
-
     Bx, By, Bz = B_tiles
+    tile_shape = tuple(int(width) for width in world["tile_shape"])
     tile_nx, tile_ny, tile_nz = tile_shape
+    g = int(world["guard_cells"])
     g = int(g)
     active = _active_slice(g)
     backward = _backward_slice(g)
@@ -799,6 +799,6 @@ def update_tiled_B(E_tiles, B_tiles, world, constants, curl_func, tile_shape, g,
     Bx, By, Bz = digital_filter_vector((Bx, By, Bz), constants.get("alpha", 1.0), num_guard_cells=g)
 
     if pml_state is None:
-        return update_tiled_vector_ghost_cells((Bx, By, Bz), world, g, tile_shape)
+        return update_tiled_vector_ghost_cells((Bx, By, Bz), world, g, tile_shape), None
 
     return update_tiled_vector_ghost_cells_for_pml((Bx, By, Bz), world, g, tile_shape), pml_state

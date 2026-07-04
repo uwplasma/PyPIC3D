@@ -1,4 +1,3 @@
-import functools
 import os
 import tempfile
 import unittest
@@ -8,14 +7,19 @@ import jax.numpy as jnp
 import numpy as np
 import toml
 
-from PyPIC3D.deposition.Esirkepov import Esirkepov_current
-from PyPIC3D.deposition.J_from_rhov import J_from_rhov
 from PyPIC3D.evolve import time_loop_electrodynamic
 from PyPIC3D.initialization import initialize_simulation, validate_field_solver
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
 from PyPIC3D.particles.tiled_particles import TiledParticles
-from PyPIC3D.solvers.yee_tiled import assemble_tiled_vector_field, empty_tiled_vector_field, tile_grid_axes, tile_vector_field
+from PyPIC3D.solvers.yee_tiled import (
+    assemble_tiled_vector_field,
+    empty_tiled_vector_field,
+    tile_grid_axes,
+    tile_vector_field,
+    update_tiled_B,
+    update_tiled_E,
+)
 from PyPIC3D.utils import build_yee_grid, compute_energy
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
@@ -25,10 +29,6 @@ jax.config.update("jax_enable_x64", True)
 
 ROUND_OFF_RTOL = 1.0e-11
 ROUND_OFF_ATOL = 1.0e-11
-
-
-def unused_curl(Ex, Ey, Ez):
-    return None
 
 
 class TestTiledYeeIntegration(unittest.TestCase):
@@ -48,6 +48,8 @@ class TestTiledYeeIntegration(unittest.TestCase):
             "z_wind": 1.0,
             "shape_factor": 1,
             "guard_cells": 2,
+            "current_deposition": "direct",
+            "current_filter": "none",
             "boundary_conditions": boundary_conditions,
         }
         vertex_grid, center_grid = build_yee_grid(world)
@@ -113,7 +115,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         order = jnp.lexsort((x[:, 2], x[:, 1], x[:, 0]))
         return x[order], u[order]
 
-    def _long_two_stream_state(self, use_esirkepov_current=False):
+    def _long_two_stream_state(self, current_deposition="direct", current_filter="none"):
         world = {
             "Nx": 16,
             "Ny": 1,
@@ -127,7 +129,8 @@ class TestTiledYeeIntegration(unittest.TestCase):
             "z_wind": 1.0,
             "shape_factor": 2,
             "guard_cells": 2,
-            "use_esirkepov_current": use_esirkepov_current,
+            "current_deposition": current_deposition,
+            "current_filter": current_filter,
             "boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},
             "particle_boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
@@ -189,7 +192,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         tiled_particles, species_config = to_tiled_particles(particles, tiled_world, simulation_parameters)
         tiled_particles = self._pad_tiled_particle_capacity(tiled_particles, min_slots=12)
         g = int(tiled_world["guard_cells"])
-        if use_esirkepov_current:
+        if current_deposition == "esirkepov":
             J_tiles = empty_tiled_vector_field(tiled_world, tile_shape, num_guard_cells=g, dtype=E[0].dtype)
         else:
             J_tiles = tile_vector_field(J, tiled_world, tile_shape, num_guard_cells=g)
@@ -205,13 +208,14 @@ class TestTiledYeeIntegration(unittest.TestCase):
                 tile_vector_field(external_fields[1], tiled_world, tile_shape, num_guard_cells=g),
             ),
             None,
+            jnp.asarray(False),
         )
         reference_particles, reference_species_config, reference_fields = self._build_tiled_state(
             reference_species,
             (E, B, J, rho, phi, external_fields, pml_state),
             reference_world,
             reference_tile_shape,
-            use_esirkepov_current,
+            current_deposition,
         )
         reference_particles = self._pad_tiled_particle_capacity(reference_particles, min_slots=12)
 
@@ -268,7 +272,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         order = jnp.lexsort((u[:, 0], x[:, 2], x[:, 1], x[:, 0]))
         return x[order], u[order]
 
-    def _build_tiled_state(self, particles, fields, world, tile_shape, use_esirkepov_current=False):
+    def _build_tiled_state(self, particles, fields, world, tile_shape, current_deposition="direct"):
         simulation_parameters = {
             "particle_tile_nx": tile_shape[0],
             "particle_tile_ny": tile_shape[1],
@@ -277,7 +281,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         tiled_particles, species_config = to_tiled_particles(particles, world, simulation_parameters)
         E, B, J, rho, phi, external_fields, pml_state = fields
         g = int(world["guard_cells"])
-        if use_esirkepov_current:
+        if current_deposition == "esirkepov":
             J_tiles = empty_tiled_vector_field(world, tile_shape, num_guard_cells=g, dtype=E[0].dtype)
         else:
             J_tiles = tile_vector_field(J, world, tile_shape, num_guard_cells=g)
@@ -292,19 +296,16 @@ class TestTiledYeeIntegration(unittest.TestCase):
                 tile_vector_field(external_fields[1], world, tile_shape, num_guard_cells=g),
             ),
             pml_state,
+            jnp.asarray(False),
         )
         return tiled_particles, species_config, tiled_fields
 
-    def _jitted_electrodynamic_loop_with_static_world(self, world, tile_shape, J_func):
-        g = int(world["guard_cells"])
-
+    def _jitted_electrodynamic_loop_with_static_world(self, world):
         def loop_with_static_world(
             particles,
             species_config,
             fields,
             constants,
-            curl_func,
-            solver,
             relativistic=True,
             particle_pusher="boris",
         ):
@@ -314,18 +315,13 @@ class TestTiledYeeIntegration(unittest.TestCase):
                 fields,
                 world,
                 constants,
-                curl_func,
-                J_func=J_func,
-                solver=solver,
-                tile_shape=tile_shape,
-                g=g,
                 relativistic=relativistic,
                 particle_pusher=particle_pusher,
             )
 
         return jax.jit(
             loop_with_static_world,
-            static_argnames=("curl_func", "solver", "relativistic", "particle_pusher"),
+            static_argnames=("relativistic", "particle_pusher"),
         )
 
     def _assert_vector_fields_close(self, reference_field, tiled_field, step, name):
@@ -452,71 +448,65 @@ class TestTiledYeeIntegration(unittest.TestCase):
         phi = seed
         external_fields = ((seed, seed, seed), (seed, seed, seed))
         reference_tile_shape = (world["Nx"], world["Ny"], world["Nz"])
+        reference_world = self._world_with_tiled_grids(world, reference_tile_shape)
+        tiled_world = self._world_with_tiled_grids(world, tile_shape)
         reference_fields = (
-            tile_vector_field(E, world, reference_tile_shape),
-            tile_vector_field(B, world, reference_tile_shape),
-            tile_vector_field(J, world, reference_tile_shape),
+            tile_vector_field(E, reference_world, reference_tile_shape),
+            tile_vector_field(B, reference_world, reference_tile_shape),
+            tile_vector_field(J, reference_world, reference_tile_shape),
             rho,
             phi,
             (
-                tile_vector_field(external_fields[0], world, reference_tile_shape),
-                tile_vector_field(external_fields[1], world, reference_tile_shape),
+                tile_vector_field(external_fields[0], reference_world, reference_tile_shape),
+                tile_vector_field(external_fields[1], reference_world, reference_tile_shape),
             ),
             None,
+            jnp.asarray(False),
         )
-        _, reference_fields = time_loop_electrodynamic(
-            [],
-            None,
-            reference_fields,
-            world,
+        reference_E, reference_pml_state = update_tiled_E(
+            reference_fields[0],
+            reference_fields[1],
+            reference_fields[2],
+            reference_world,
             constants,
-            unused_curl,
-            J_func=lambda particles, species_config, J, constants, world: J,
-            solver="electrodynamic_yee",
-            tile_shape=reference_tile_shape,
-            g=int(world["guard_cells"]),
-            relativistic=False,
-            particle_pusher="boris",
         )
+        reference_B, reference_pml_state = update_tiled_B(
+            reference_E,
+            reference_fields[1],
+            reference_world,
+            constants,
+            reference_pml_state,
+        )
+        reference_fields = (reference_E, reference_B, *reference_fields[2:])
 
         tiled_fields = (
-            tile_vector_field(E, world, tile_shape),
-            tile_vector_field(B, world, tile_shape),
-            tile_vector_field(J, world, tile_shape),
+            tile_vector_field(E, tiled_world, tile_shape),
+            tile_vector_field(B, tiled_world, tile_shape),
+            tile_vector_field(J, tiled_world, tile_shape),
             rho,
             phi,
             (
-                tile_vector_field(external_fields[0], world, tile_shape),
-                tile_vector_field(external_fields[1], world, tile_shape),
+                tile_vector_field(external_fields[0], tiled_world, tile_shape),
+                tile_vector_field(external_fields[1], tiled_world, tile_shape),
             ),
             None,
+            jnp.asarray(False),
         )
-        tiled_particles, tiled_fields = time_loop_electrodynamic(
-            [],
-            None,
-            tiled_fields,
-            world,
-            constants,
-            unused_curl,
-            J_func=lambda particles, species_config, J, constants, world: J,
-            solver="electrodynamic_yee",
-            tile_shape=tile_shape,
-            g=int(world["guard_cells"]),
-            relativistic=False,
-            particle_pusher="boris",
-        )
+        tiled_E, tiled_pml_state = update_tiled_E(tiled_fields[0], tiled_fields[1], tiled_fields[2], tiled_world, constants)
+        tiled_B, tiled_pml_state = update_tiled_B(tiled_E, tiled_fields[1], tiled_world, constants, tiled_pml_state)
+        tiled_fields = (tiled_E, tiled_B, *tiled_fields[2:])
 
         reference_E, reference_B, *_ = reference_fields
         E_tiles, B_tiles, *_ = tiled_fields
         self._assert_vector_fields_close(
-            assemble_tiled_vector_field(reference_E, world, reference_tile_shape),
-            assemble_tiled_vector_field(E_tiles, world, tile_shape),
+            assemble_tiled_vector_field(reference_E, reference_world, reference_tile_shape),
+            assemble_tiled_vector_field(E_tiles, tiled_world, tile_shape),
             1,
             "E",
         )
         self._assert_vector_fields_close(
-            assemble_tiled_vector_field(reference_B, world, reference_tile_shape),
-            assemble_tiled_vector_field(B_tiles, world, tile_shape),
+            assemble_tiled_vector_field(reference_B, reference_world, reference_tile_shape),
+            assemble_tiled_vector_field(B_tiles, tiled_world, tile_shape),
             1,
             "B",
         )
@@ -849,6 +839,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
                 tile_vector_field(external_fields[1], tiled_world, tile_shape),
             ),
             None,
+            jnp.asarray(False),
         )
         reference_particles, reference_fields = time_loop_electrodynamic(
             reference_particles,
@@ -856,11 +847,6 @@ class TestTiledYeeIntegration(unittest.TestCase):
             reference_fields,
             reference_world,
             constants,
-            unused_curl,
-            J_func=None,
-            solver="electrodynamic_yee",
-            tile_shape=reference_tile_shape,
-            g=int(world["guard_cells"]),
             relativistic=False,
             particle_pusher="boris",
         )
@@ -870,11 +856,6 @@ class TestTiledYeeIntegration(unittest.TestCase):
             tiled_fields,
             tiled_world,
             constants,
-            unused_curl,
-            J_func=None,
-            solver="electrodynamic_yee",
-            tile_shape=tile_shape,
-            g=int(world["guard_cells"]),
             relativistic=False,
             particle_pusher="boris",
         )
@@ -940,6 +921,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
                 tile_vector_field(external_fields[1], tiled_world, tile_shape),
             ),
             None,
+            jnp.asarray(False),
         )
         reference_particles, reference_fields = time_loop_electrodynamic(
             reference_particles,
@@ -947,11 +929,6 @@ class TestTiledYeeIntegration(unittest.TestCase):
             reference_fields,
             reference_world,
             constants,
-            unused_curl,
-            J_func=None,
-            solver="electrodynamic_yee",
-            tile_shape=reference_tile_shape,
-            g=int(world["guard_cells"]),
             relativistic=False,
             particle_pusher="boris",
         )
@@ -961,11 +938,6 @@ class TestTiledYeeIntegration(unittest.TestCase):
             tiled_fields,
             tiled_world,
             constants,
-            unused_curl,
-            J_func=None,
-            solver="electrodynamic_yee",
-            tile_shape=tile_shape,
-            g=int(world["guard_cells"]),
             relativistic=False,
             particle_pusher="boris",
         )
@@ -983,6 +955,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
 
     def test_tiled_yee_step_uses_digital_filtered_current(self):
         world = self._build_world()
+        world["current_filter"] = "digital"
         constants = {"C": 10.0, "eps": 1.0, "mu": 1.0, "alpha": 0.6}
         tile_shape = (2, 1, 1)
         reference_tile_shape = (world["Nx"], world["Ny"], world["Nz"])
@@ -1016,6 +989,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
                 tile_vector_field(external_fields[1], tiled_world, tile_shape),
             ),
             None,
+            jnp.asarray(False),
         )
         reference_particles, reference_fields = time_loop_electrodynamic(
             reference_particles,
@@ -1023,11 +997,6 @@ class TestTiledYeeIntegration(unittest.TestCase):
             reference_fields,
             reference_world,
             constants,
-            unused_curl,
-            J_func=functools.partial(J_from_rhov, filter="digital"),
-            solver="electrodynamic_yee",
-            tile_shape=reference_tile_shape,
-            g=int(world["guard_cells"]),
             relativistic=False,
             particle_pusher="boris",
         )
@@ -1037,11 +1006,6 @@ class TestTiledYeeIntegration(unittest.TestCase):
             tiled_fields,
             tiled_world,
             constants,
-            unused_curl,
-            J_func=functools.partial(J_from_rhov, filter="digital"),
-            solver="electrodynamic_yee",
-            tile_shape=tile_shape,
-            g=int(world["guard_cells"]),
             relativistic=False,
             particle_pusher="boris",
         )
@@ -1059,6 +1023,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
 
     def test_tiled_yee_step_uses_bilinear_filtered_current(self):
         world = self._build_world()
+        world["current_filter"] = "bilinear"
         constants = {"C": 10.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         tile_shape = (2, 1, 1)
         reference_tile_shape = (world["Nx"], world["Ny"], world["Nz"])
@@ -1092,6 +1057,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
                 tile_vector_field(external_fields[1], tiled_world, tile_shape),
             ),
             None,
+            jnp.asarray(False),
         )
         reference_particles, reference_fields = time_loop_electrodynamic(
             reference_particles,
@@ -1099,11 +1065,6 @@ class TestTiledYeeIntegration(unittest.TestCase):
             reference_fields,
             reference_world,
             constants,
-            unused_curl,
-            J_func=functools.partial(J_from_rhov, filter="bilinear"),
-            solver="electrodynamic_yee",
-            tile_shape=reference_tile_shape,
-            g=int(world["guard_cells"]),
             relativistic=False,
             particle_pusher="boris",
         )
@@ -1113,11 +1074,6 @@ class TestTiledYeeIntegration(unittest.TestCase):
             tiled_fields,
             tiled_world,
             constants,
-            unused_curl,
-            J_func=functools.partial(J_from_rhov, filter="bilinear"),
-            solver="electrodynamic_yee",
-            tile_shape=tile_shape,
-            g=int(world["guard_cells"]),
             relativistic=False,
             particle_pusher="boris",
         )
@@ -1137,6 +1093,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         world = self._build_world()
         world["shape_factor"] = 2
         world["guard_cells"] = 2
+        world["current_filter"] = "bilinear"
         constants = {"C": 10.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         tile_shape = (2, 1, 1)
         reference_tile_shape = (world["Nx"], world["Ny"], world["Nz"])
@@ -1211,6 +1168,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
                 tile_vector_field(external_fields[1], tiled_world, tile_shape, num_guard_cells=int(world["guard_cells"])),
             ),
             None,
+            jnp.asarray(False),
         )
         reference_particles, reference_fields = time_loop_electrodynamic(
             reference_particles,
@@ -1218,11 +1176,6 @@ class TestTiledYeeIntegration(unittest.TestCase):
             reference_fields,
             reference_world,
             constants,
-            unused_curl,
-            J_func=functools.partial(J_from_rhov, filter="bilinear"),
-            solver="electrodynamic_yee",
-            tile_shape=reference_tile_shape,
-            g=int(world["guard_cells"]),
             relativistic=False,
             particle_pusher="boris",
         )
@@ -1232,11 +1185,6 @@ class TestTiledYeeIntegration(unittest.TestCase):
             tiled_fields,
             tiled_world,
             constants,
-            unused_curl,
-            J_func=functools.partial(J_from_rhov, filter="bilinear"),
-            solver="electrodynamic_yee",
-            tile_shape=tile_shape,
-            g=int(world["guard_cells"]),
             relativistic=False,
             particle_pusher="boris",
         )
@@ -1270,10 +1218,10 @@ class TestTiledYeeIntegration(unittest.TestCase):
             constants,
             tile_shape,
             Nt,
-        ) = self._long_two_stream_state(False)
+        ) = self._long_two_stream_state("direct", "none")
 
-        reference_loop = self._jitted_electrodynamic_loop_with_static_world(reference_world, reference_tile_shape, None)
-        tiled_loop = self._jitted_electrodynamic_loop_with_static_world(tiled_world, tile_shape, None)
+        reference_loop = self._jitted_electrodynamic_loop_with_static_world(reference_world)
+        tiled_loop = self._jitted_electrodynamic_loop_with_static_world(tiled_world)
 
         for t in range(Nt):
             reference_particles, reference_fields = reference_loop(
@@ -1281,8 +1229,6 @@ class TestTiledYeeIntegration(unittest.TestCase):
                 reference_species_config,
                 reference_fields,
                 constants,
-                unused_curl,
-                solver="electrodynamic_yee",
                 relativistic=False,
                 particle_pusher="boris",
             )
@@ -1291,8 +1237,6 @@ class TestTiledYeeIntegration(unittest.TestCase):
                 species_config,
                 tiled_fields,
                 constants,
-                unused_curl,
-                solver="electrodynamic_yee",
                 relativistic=False,
                 particle_pusher="boris",
             )
@@ -1339,14 +1283,10 @@ class TestTiledYeeIntegration(unittest.TestCase):
             constants,
             tile_shape,
             Nt,
-        ) = self._long_two_stream_state(True)
+        ) = self._long_two_stream_state("esirkepov", "none")
 
-        reference_loop = self._jitted_electrodynamic_loop_with_static_world(
-            reference_world,
-            reference_tile_shape,
-            Esirkepov_current,
-        )
-        tiled_loop = self._jitted_electrodynamic_loop_with_static_world(tiled_world, tile_shape, Esirkepov_current)
+        reference_loop = self._jitted_electrodynamic_loop_with_static_world(reference_world)
+        tiled_loop = self._jitted_electrodynamic_loop_with_static_world(tiled_world)
 
         for t in range(Nt):
             reference_particles, reference_fields = reference_loop(
@@ -1354,8 +1294,6 @@ class TestTiledYeeIntegration(unittest.TestCase):
                 reference_species_config,
                 reference_fields,
                 constants,
-                unused_curl,
-                solver="electrodynamic_yee",
                 relativistic=False,
                 particle_pusher="boris",
             )
@@ -1364,8 +1302,6 @@ class TestTiledYeeIntegration(unittest.TestCase):
                 species_config,
                 tiled_fields,
                 constants,
-                unused_curl,
-                solver="electrodynamic_yee",
                 relativistic=False,
                 particle_pusher="boris",
             )

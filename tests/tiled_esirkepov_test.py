@@ -1,7 +1,6 @@
 import os
 import tempfile
 import unittest
-import functools
 
 import jax
 import jax.numpy as jnp
@@ -71,7 +70,8 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
             "shape_factor": shape_factor,
             "boundary_conditions": boundary_conditions,
             "particle_boundary_conditions": particle_boundary_conditions,
-            "use_esirkepov_current": True,
+            "current_deposition": "esirkepov",
+            "current_filter": "none",
             "guard_cells": 1,
         }
         center_grid = (
@@ -301,8 +301,10 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         Jx, Jy, Jz = J_tiles
         Jx = Jx.at[:, :, :, 2:-2, 2:-2, 2:-2].set(4.0)
 
-        E_after = update_tiled_E(E_tiles, B_tiles, (Jx, Jy, Jz), world, constants, None, tile_shape, g)
+        world["tile_shape"] = tile_shape
+        E_after, pml_state = update_tiled_E(E_tiles, B_tiles, (Jx, Jy, Jz), world, constants)
 
+        self.assertIsNone(pml_state)
         self.assertTrue(jnp.allclose(E_after[0][:, :, :, g:-g, g:-g, g:-g], -0.5))
 
     def test_reduced_axis_esirkepov_scatter_uses_only_collapsed_stencil_index(self):
@@ -624,7 +626,8 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
             self.assertEqual(J_tiles[0].shape[-3:], (6, 5, 5))
             self.assertEqual(int(world["guard_cells"]), 2)
             self.assertNotIn("current_guard_cells", world)
-            self.assertTrue(bool(world["use_esirkepov_current"]))
+            self.assertEqual(world["current_deposition"], "esirkepov")
+            self.assertEqual(world["current_filter"], "none")
 
     def test_initialize_rejects_filtered_esirkepov_current(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -731,7 +734,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
                 toml.dump(config, f)
 
             loop, particles, fields, world, _simulation_parameters, constants, _plotting_parameters, _plasma_parameters, \
-                solver, _electrostatic, _verbose, _GPUs, _Nt, curl_func, J_func, relativistic, particle_pusher, species_config = initialize_simulation(toml.load(config_path))
+                solver, _electrostatic, _verbose, _GPUs, _Nt, relativistic, particle_pusher, species_config = initialize_simulation(toml.load(config_path))
 
             particles, fields = loop(
                 particles,
@@ -739,11 +742,6 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
                 fields,
                 world,
                 constants,
-                curl_func,
-                J_func,
-                solver,
-                tile_shape=tuple(int(width) for width in world["tile_shape"]),
-                g=int(world["guard_cells"]),
                 relativistic=relativistic,
                 particle_pusher=particle_pusher,
             )
@@ -806,19 +804,14 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
             }
 
             loop, particles, fields, world, _simulation_parameters, constants, _plotting_parameters, _plasma_parameters, \
-                solver, _electrostatic, _verbose, _GPUs, _Nt, curl_func, _J_func, relativistic, particle_pusher, species_config = initialize_simulation(config)
-            alias_J_func = functools.partial(Esirkepov_current)
+                solver, _electrostatic, _verbose, _GPUs, _Nt, relativistic, particle_pusher, species_config = initialize_simulation(config)
+            self.assertEqual(world["current_deposition"], "esirkepov")
             particles, fields = loop(
                 particles,
                 species_config,
                 fields,
                 world,
                 constants,
-                curl_func,
-                alias_J_func,
-                solver,
-                tile_shape=tuple(int(width) for width in world["tile_shape"]),
-                g=int(world["guard_cells"]),
                 relativistic=relativistic,
                 particle_pusher=particle_pusher,
             )

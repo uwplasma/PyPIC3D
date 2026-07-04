@@ -88,8 +88,23 @@ class TestTiledRefactorContracts(unittest.TestCase):
             "tiled_output_bridge",
         }
         self.assertTrue(expected.issubset(stage_specs))
-        self.assertEqual(stage_specs["tiled_pic_step"].static_argnames, ("J_func", "relativistic", "particle_pusher"))
-        self.assertEqual(stage_specs["tiled_current_deposition"].static_argnames, ("J_func",))
+        self.assertEqual(stage_specs["tiled_pic_step"].static_argnames, ("relativistic", "particle_pusher"))
+        self.assertEqual(stage_specs["tiled_current_deposition"].static_argnames, ())
+
+    def test_evolve_loops_read_runtime_controls_from_world(self):
+        electrodynamic_signature = inspect.signature(evolve.time_loop_electrodynamic)
+        electrostatic_signature = inspect.signature(evolve.time_loop_electrostatic)
+        for name in ("curl_func", "J_func", "tile_shape", "g", "current_deposition"):
+            self.assertNotIn(name, electrodynamic_signature.parameters)
+        for name in ("curl_func", "J_func", "tile_shape", "g"):
+            self.assertNotIn(name, electrostatic_signature.parameters)
+
+    def test_tiled_yee_updates_read_tile_metadata_from_world(self):
+        update_E_signature = inspect.signature(yee_tiled.update_tiled_E)
+        update_B_signature = inspect.signature(yee_tiled.update_tiled_B)
+        for name in ("curl_func", "tile_shape", "g"):
+            self.assertNotIn(name, update_E_signature.parameters)
+            self.assertNotIn(name, update_B_signature.parameters)
 
     def test_electrodynamic_hot_step_does_not_assemble_global_fields(self):
         source = inspect.getsource(evolve.time_loop_electrodynamic)
