@@ -60,7 +60,7 @@ class TestEvolveExternalFields(unittest.TestCase):
         world["grids"] = {"center": center_grid, "vertex": vertex_grid}
         constants = {"C": 10.0, "eps": 1.0, "mu": 1.0, "alpha": 0.0}
 
-        E, B, J, phi, rho = initialize_fields(world["Nx"], world["Ny"], world["Nz"])
+        E, B, J, phi, rho = initialize_fields(world)
         external_E = tuple(jnp.zeros_like(comp) for comp in E)
         external_B = tuple(jnp.zeros_like(comp) for comp in B)
         external_E = (jnp.ones_like(external_E[0]), external_E[1], external_E[2])
@@ -154,7 +154,7 @@ class TestEvolveExternalFields(unittest.TestCase):
         world["grids"] = {"center": center_grid, "vertex": vertex_grid}
         constants = {"C": 10.0, "eps": 1.0, "mu": 1.0, "alpha": 0.0}
 
-        E, B, J, phi, rho = initialize_fields(world["Nx"], world["Ny"], world["Nz"])
+        E, B, J, phi, rho = initialize_fields(world)
         external_fields = (
             tuple(jnp.zeros_like(comp) for comp in E),
             tuple(jnp.zeros_like(comp) for comp in B),

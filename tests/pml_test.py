@@ -16,7 +16,6 @@ from PyPIC3D.boundary_conditions.PML import (
 from PyPIC3D.initialization import initialize_fields, initialize_simulation
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
-    empty_tiled_vector_field,
     tile_vector_field,
     update_B,
     update_E,
@@ -271,7 +270,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         constants = {"C": 2.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         tile_shape = (2, 2, 2)
         world["tile_shape"] = tile_shape
-        E, B, J, _, _ = initialize_fields(world["Nx"], world["Ny"], world["Nz"])
+        E, B, J, _, _ = initialize_fields(world)
         B = (B[0], B[1], B[2].at[1:-1, 1:-1, 1:-1].set(1.0))
 
         E_tiles = tile_vector_field(E, world, tile_shape)
@@ -296,7 +295,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
             constants,
         )
         tile_shape = (2, 2, 1)
-        E, B, J, _, _ = initialize_fields(world["Nx"], world["Ny"], world["Nz"])
+        E, B, J, _, _ = initialize_fields(world)
 
         x = world["grids"]["vertex"][0][1:-1]
         y = world["grids"]["vertex"][1][1:-1]
@@ -390,7 +389,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         tile_shape = (4, 1, 1)
         world["tile_shape"] = tile_shape
         tiled_pml_state = initialize_tiled_pml_state(world, tile_shape)
-        E, B, J, _, _ = initialize_fields(world["Nx"], world["Ny"], world["Nz"])
+        E, B, J, _, _ = initialize_fields(world)
 
         x = world["grids"]["vertex"][0][1:-1]
         pulse = jnp.exp(-((x + 0.30) / 0.04) ** 2)
@@ -426,7 +425,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         )
         tile_shape = (2, 1, 1)
         world["tile_shape"] = tile_shape
-        E, B, J, _, _ = initialize_fields(world["Nx"], world["Ny"], world["Nz"])
+        E, B, J, _, _ = initialize_fields(world)
         Ex, Ey, Ez = E
         Bx, By, Bz = B
         Ey = Ey.at[1:-1, 1, 1].set(jnp.linspace(0.0, 0.3, world["Nx"]))

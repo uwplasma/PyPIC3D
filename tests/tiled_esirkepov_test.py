@@ -18,7 +18,7 @@ from PyPIC3D.deposition.Esirkepov import (
 )
 from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.diagnostics.output_adapters import fields_for_output
-from PyPIC3D.initialization import initialize_simulation
+from PyPIC3D.initialization import build_tiled_array, initialize_fields, initialize_simulation
 from PyPIC3D.particles.tiled_particle_refresh import (
     refresh_tiled_particle_tiles,
     update_tiled_particle_positions,
@@ -28,8 +28,6 @@ from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
 from PyPIC3D.particles.tiled_particles import TiledParticles
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
-    empty_tiled_scalar_field,
-    empty_tiled_vector_field,
     tile_vector_field,
     update_E,
 )
@@ -172,10 +170,11 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         }
         g = int(world["guard_cells"])
         tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
+        _, _, J_template, _, _ = initialize_fields(world, tiled=True)
         J_tiles = Esirkepov_current(
             tiled_particles,
             species_config,
-            empty_tiled_vector_field(world, tile_shape, num_guard_cells=g),
+            J_template,
             constants,
             world,
         )
@@ -233,12 +232,13 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         )
         return x, u
 
-    def test_empty_tiled_vector_field_uses_startup_guard_cells(self):
+    def test_initialize_fields_builds_tiled_current_with_startup_guard_cells(self):
         world = self._build_world(Nx=8, Ny=1, Nz=1)
         world["guard_cells"] = 2
         tile_shape = (2, 1, 1)
+        world["tile_shape"] = tile_shape
 
-        J_tiles = empty_tiled_vector_field(world, tile_shape, num_guard_cells=int(world["guard_cells"]))
+        _, _, J_tiles, _, _ = initialize_fields(world, tiled=True)
 
         self.assertEqual(J_tiles[0].shape, (4, 1, 1, 6, 5, 5))
         self.assertTrue(jnp.allclose(J_tiles[0], 0.0))
@@ -254,8 +254,9 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         world = self._build_world(Nx=8, Ny=1, Nz=1)
         world["guard_cells"] = 2
         tile_shape = (2, 1, 1)
+        world["tile_shape"] = tile_shape
         g = int(world["guard_cells"])
-        J_tiles = empty_tiled_vector_field(world, tile_shape, num_guard_cells=g)
+        _, _, J_tiles, _, _ = initialize_fields(world, tiled=True)
         Jx, Jy, Jz = J_tiles
         Jx = Jx.at[1, 0, 0, 2, 2, 2].set(3.0)
 
@@ -274,7 +275,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         g = int(world["guard_cells"])
         E_tiles = tile_vector_field(zeros, world, tile_shape, num_guard_cells=g)
         B_tiles = tile_vector_field(zeros, world, tile_shape, num_guard_cells=g)
-        J_tiles = empty_tiled_vector_field(world, tile_shape, num_guard_cells=g)
+        _, _, J_tiles, _, _ = initialize_fields(world, tiled=True)
         Jx, Jy, Jz = J_tiles
         Jx = Jx.at[1, 0, 0, 2, 2, 2].set(7.0)
         rho = jnp.zeros(shape)
@@ -297,7 +298,8 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         zeros = (jnp.zeros(shape), jnp.zeros(shape), jnp.zeros(shape))
         E_tiles = tile_vector_field(zeros, world, tile_shape, num_guard_cells=g)
         B_tiles = tile_vector_field(zeros, world, tile_shape, num_guard_cells=g)
-        J_tiles = empty_tiled_vector_field(world, tile_shape, num_guard_cells=g)
+        world["tile_shape"] = tile_shape
+        _, _, J_tiles, _, _ = initialize_fields(world, tiled=True)
         Jx, Jy, Jz = J_tiles
         Jx = Jx.at[:, :, :, 2:-2, 2:-2, 2:-2].set(4.0)
 
@@ -356,10 +358,11 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
 
         tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
         g = int(world["guard_cells"])
+        _, _, J_template, _, _ = initialize_fields(world, tiled=True)
         J_tiles = Esirkepov_current(
             tiled_particles,
             species_config,
-            empty_tiled_vector_field(world, tile_shape, num_guard_cells=g),
+            J_template,
             constants,
             world,
         )
@@ -391,10 +394,11 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         old_species = self._species(world, x_old)
 
         tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
+        _, _, J_template, _, _ = initialize_fields(world, tiled=True)
         J_tiles = Esirkepov_current(
             tiled_particles,
             species_config,
-            empty_tiled_vector_field(world, world["tile_shape"], num_guard_cells=int(world["guard_cells"])),
+            J_template,
             constants,
             world,
         )
@@ -434,10 +438,11 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
 
         with self.assertRaisesRegex(ValueError, "Esirkepov current filtering is not supported"):
+            _, _, J_template, _, _ = initialize_fields(world, tiled=True)
             Esirkepov_current(
                 tiled_particles,
                 species_config,
-                empty_tiled_vector_field(world, tile_shape, num_guard_cells=int(world["guard_cells"])),
+                J_template,
                 constants,
                 world,
                 filter="digital",
@@ -544,13 +549,14 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         old_species = self._species_from_arrays(world, x_old, u)
         tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
         g = int(world["guard_cells"])
-        rho_tiles = empty_tiled_scalar_field(world, tile_shape, num_guard_cells=g)
+        rho_tiles = build_tiled_array(world)
 
         rho_old = compute_rho(tiled_particles, species_config, rho_tiles, constants, world)
+        _, _, J_template, _, _ = initialize_fields(world, tiled=True)
         J_tiles = Esirkepov_current(
             tiled_particles,
             species_config,
-            empty_tiled_vector_field(world, tile_shape, num_guard_cells=g),
+            J_template,
             constants,
             world,
         )

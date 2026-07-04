@@ -39,7 +39,6 @@ from PyPIC3D.particles.tiled_particle_initialization import (
 )
 
 from PyPIC3D.solvers.yee_tiled import (
-    empty_tiled_vector_field,
     tile_scalar_field,
     tile_vector_field,
 )
@@ -296,9 +295,6 @@ def initialize_simulation(toml_file):
     GPUs = simulation_parameters['GPUs']
     # set the simulation parameters
 
-    # if 'ncores' in simulation_parameters:
-        # os.environ["XLA_FLAGS"] = f'--xla_force_host_platform_device_count={simulation_parameters['ncores']}'
-    # set the number of cores to use
 
     setup_write_dir(simulation_parameters, plotting_parameters)
     # setup the write directory
@@ -421,7 +417,7 @@ def initialize_simulation(toml_file):
         write_openpmd_initial_particles(particles, world, constants, simulation_parameters['output_dir'])
     # write the initial particles to an openPMD file
 
-    E, B, J, phi, rho = initialize_fields(Nx, Ny, Nz)
+    E, B, J, phi, rho = initialize_fields(world)
     # initialize the electric and magnetic fields
     external_fields = (
         tuple(jax.numpy.zeros_like(comp) for comp in E),
@@ -499,12 +495,11 @@ def initialize_simulation(toml_file):
     world["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
     world["grids"]["tiled_center_grid"] = tiled_center_grid
     particles, species_config = to_tiled_particles(particles, world, simulation_parameters)
-    E = tile_vector_field(E, world, tile_shape, num_guard_cells=guard_cells)
-    B = tile_vector_field(B, world, tile_shape, num_guard_cells=guard_cells)
-    if simulation_parameters["current_calculation"] == "esirkepov":
-        J = empty_tiled_vector_field(world, tile_shape, num_guard_cells=guard_cells, dtype=E[0].dtype)
-    else:
-        J = tile_vector_field(J, world, tile_shape, num_guard_cells=guard_cells)
+    # convert the particles to tiled storage and get the species configuration
+
+
+
+
     external_E, external_B = external_fields
     external_fields = (
         tile_vector_field(external_E, world, tile_shape, num_guard_cells=guard_cells),
@@ -545,46 +540,44 @@ def initialize_simulation(toml_file):
         solver, electrostatic, verbose, GPUs, Nt, relativistic, particle_pusher, species_config
 
 
-
-def initialize_fields(Nx, Ny, Nz):
+def initialize_fields(world):
     """
     Initializes the electric and magnetic field arrays, as well as the electric potential and charge density arrays.
 
-    All arrays include ghost cells and have shape (Nx+2, Ny+2, Nz+2).
-    The physical interior corresponds to indices [1:-1, 1:-1, 1:-1].
-
-    Args:
-        Nx (int): Number of physical grid points in the x-direction.
-        Ny (int): Number of physical grid points in the y-direction.
-        Nz (int): Number of physical grid points in the z-direction.
+    Untiled arrays include one ghost cell on each side and have shape
+    (Nx+2, Ny+2, Nz+2). Tiled arrays use the startup tile shape and guard
+    depth stored in world.
 
     Returns:
-        E (tuple): Electric field arrays (Ex, Ey, Ez) each with shape (Nx+2, Ny+2, Nz+2).
-        B (tuple): Magnetic field arrays (Bx, By, Bz) each with shape (Nx+2, Ny+2, Nz+2).
-        J (tuple): Current density arrays (Jx, Jy, Jz) each with shape (Nx+2, Ny+2, Nz+2).
-        phi (ndarray): Electric potential array with shape (Nx+2, Ny+2, Nz+2).
-        rho (ndarray): Charge density array with shape (Nx+2, Ny+2, Nz+2).
+        E, B, J, phi, rho initialized to zero in either global or tiled storage.
     """
-    # all fields include ghost cells: shape is (Nx+2, Ny+2, Nz+2)
-    ghost_shape = (Nx + 2, Ny + 2, Nz + 2)
 
-    Ex = jax.numpy.zeros(shape = ghost_shape)
-    Ey = jax.numpy.zeros(shape = ghost_shape)
-    Ez = jax.numpy.zeros(shape = ghost_shape)
+    tile_nx, tile_ny, tile_nz = [int(width) for width in world["tile_shape"]]
+    Nx = int(world["Nx"])
+    Ny = int(world["Ny"])
+    Nz = int(world["Nz"])
+    g = int(world["guard_cells"])
+    ntx = Nx // tile_nx
+    nty = Ny // tile_ny
+    ntz = Nz // tile_nz
+    # get the grid and tile dimensions
+
+    tiled_shape = (ntx, nty, ntz, tile_nx + 2 * g, tile_ny + 2 * g, tile_nz + 2 * g)
+
+    Ex = jnp.zeros(shape=tiled_shape, dtype=jnp.float64)
+    Ey = jnp.zeros(shape=tiled_shape, dtype=jnp.float64)
+    Ez = jnp.zeros(shape=tiled_shape, dtype=jnp.float64)
     # initialize the electric field arrays as 0
-
-    Bx = jax.numpy.zeros(shape = ghost_shape)
-    By = jax.numpy.zeros(shape = ghost_shape)
-    Bz = jax.numpy.zeros(shape = ghost_shape)
+    Bx = jnp.zeros(shape=tiled_shape, dtype=jnp.float64)
+    By = jnp.zeros(shape=tiled_shape, dtype=jnp.float64)
+    Bz = jnp.zeros(shape=tiled_shape, dtype=jnp.float64)
     # initialize the magnetic field arrays as 0
-
-    Jx = jax.numpy.zeros(shape = ghost_shape)
-    Jy = jax.numpy.zeros(shape = ghost_shape)
-    Jz = jax.numpy.zeros(shape = ghost_shape)
+    Jx = jnp.zeros(shape=tiled_shape, dtype=jnp.float64)
+    Jy = jnp.zeros(shape=tiled_shape, dtype=jnp.float64)
+    Jz = jnp.zeros(shape=tiled_shape, dtype=jnp.float64)
     # initialize the current density arrays as 0
-
-    phi = jax.numpy.zeros(shape = ghost_shape)
-    rho = jax.numpy.zeros(shape = ghost_shape)
+    phi = jnp.zeros(shape=tiled_shape, dtype=jnp.float64)
+    rho = jnp.zeros(shape=tiled_shape, dtype=jnp.float64)
     # initialize the electric potential and charge density arrays as 0
 
     return (Ex, Ey, Ez), (Bx, By, Bz), (Jx, Jy, Jz), phi, rho

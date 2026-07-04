@@ -40,40 +40,6 @@ def _reduced_tiled_axes(field_tiles, tile_shape, g):
     )
 
 
-def empty_tiled_scalar_field(world, tile_shape, num_guard_cells=2, dtype=None):
-    """
-    Allocate an empty tile-major scalar field with ``num_guard_cells`` guards.
-    """
-
-    tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
-    ntx = _tile_axis_count(world["Nx"], tile_nx)
-    nty = _tile_axis_count(world["Ny"], tile_ny)
-    ntz = _tile_axis_count(world["Nz"], tile_nz)
-    g = int(num_guard_cells)
-    if dtype is None:
-        dtype = jnp.float64
-
-    return jnp.zeros(
-        (
-            ntx,
-            nty,
-            ntz,
-            tile_nx + 2 * g,
-            tile_ny + 2 * g,
-            tile_nz + 2 * g,
-        ),
-        dtype=dtype,
-    )
-
-
-def empty_tiled_vector_field(world, tile_shape, num_guard_cells=2, dtype=None):
-    """
-    Allocate empty tile-major vector-field components.
-    """
-
-    return tuple(empty_tiled_scalar_field(world, tile_shape, num_guard_cells, dtype) for _ in range(3))
-
-
 def _is_stacked_tiled_vector_field(field_tiles):
     return hasattr(field_tiles, "ndim") and field_tiles.ndim == 7 and int(field_tiles.shape[0]) == 3
 
@@ -123,7 +89,17 @@ def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
     ntz = _tile_axis_count(Nz, tile_nz)
 
     if g != 1:
-        field_tiles = empty_tiled_scalar_field(world, tile_shape, g, field.dtype)
+        field_tiles = jnp.zeros(
+            (
+                ntx,
+                nty,
+                ntz,
+                tile_nx + 2 * g,
+                tile_ny + 2 * g,
+                tile_nz + 2 * g,
+            ),
+            dtype=field.dtype,
+        )
         for tx in range(ntx):
             for ty in range(nty):
                 for tz in range(ntz):
@@ -325,6 +301,7 @@ def update_tiled_vector_ghost_cells(field_tiles, world, num_guard_cells=2, tile_
     """
     Refresh tile halos for a tiled vector field.
     """
+
 
     stacked_tiles = stack_tiled_vector_field(field_tiles)
     refreshed = jax.vmap(

@@ -20,6 +20,10 @@ from PyPIC3D.particles.species_class import particle_species
 
 jax.config.update("jax_enable_x64", True)
 
+def _field_world(Nx, Ny, Nz):
+    return {"Nx": Nx, "Ny": Ny, "Nz": Nz}
+
+
 class TestUtilsFunctions(unittest.TestCase):
     def setUp(self):
         self.world = {
@@ -92,7 +96,7 @@ class TestUtilsFunctions(unittest.TestCase):
         self.assertTrue(jnp.allclose(total_B[2], 66.0))
 
     def test_load_external_fields_defaults_to_evolved_fields(self):
-        E, B, J, phi, rho = initialize_fields(2, 2, 2)
+        E, B, J, phi, rho = initialize_fields(_field_world(2, 2, 2))
         fields = [component for field in [E, B, J] for component in field]
         external_fields = (tuple(jnp.zeros_like(comp) for comp in E), tuple(jnp.zeros_like(comp) for comp in B))
 
@@ -108,7 +112,7 @@ class TestUtilsFunctions(unittest.TestCase):
         self.assertTrue(jnp.allclose(external_fields[0][0], 0.0))
 
     def test_load_external_fields_evolve_true_uses_evolved_fields(self):
-        E, B, J, phi, rho = initialize_fields(2, 2, 2)
+        E, B, J, phi, rho = initialize_fields(_field_world(2, 2, 2))
         fields = [component for field in [E, B, J] for component in field]
         external_fields = (tuple(jnp.zeros_like(comp) for comp in E), tuple(jnp.zeros_like(comp) for comp in B))
 
@@ -124,7 +128,7 @@ class TestUtilsFunctions(unittest.TestCase):
         self.assertTrue(jnp.allclose(external_fields[1][1], 0.0))
 
     def test_load_external_fields_evolve_false_uses_external_fields(self):
-        E, B, J, phi, rho = initialize_fields(2, 2, 2)
+        E, B, J, phi, rho = initialize_fields(_field_world(2, 2, 2))
         fields = [component for field in [E, B, J] for component in field]
         external_fields = (tuple(jnp.zeros_like(comp) for comp in E), tuple(jnp.zeros_like(comp) for comp in B))
 
@@ -140,7 +144,7 @@ class TestUtilsFunctions(unittest.TestCase):
         self.assertTrue(jnp.allclose(external_fields[1][2][interior], 5.0))
 
     def test_load_external_fields_rejects_external_current(self):
-        E, B, J, phi, rho = initialize_fields(2, 2, 2)
+        E, B, J, phi, rho = initialize_fields(_field_world(2, 2, 2))
         fields = [component for field in [E, B, J] for component in field]
         external_fields = (tuple(jnp.zeros_like(comp) for comp in E), tuple(jnp.zeros_like(comp) for comp in B))
 
@@ -153,7 +157,7 @@ class TestUtilsFunctions(unittest.TestCase):
                 load_external_fields_from_toml(fields, external_fields, config)
 
     def test_load_external_fields_preserves_shape_validation(self):
-        E, B, J, phi, rho = initialize_fields(2, 2, 2)
+        E, B, J, phi, rho = initialize_fields(_field_world(2, 2, 2))
         fields = [component for field in [E, B, J] for component in field]
         external_fields = (tuple(jnp.zeros_like(comp) for comp in E), tuple(jnp.zeros_like(comp) for comp in B))
 
@@ -166,7 +170,7 @@ class TestUtilsFunctions(unittest.TestCase):
                 load_external_fields_from_toml(fields, external_fields, config)
 
     def test_energy_can_include_external_fields(self):
-        E, B, J, phi, rho = initialize_fields(1, 1, 1)
+        E, B, J, phi, rho = initialize_fields(_field_world(1, 1, 1))
         external_E = tuple(jnp.zeros_like(comp) for comp in E)
         external_B = tuple(jnp.zeros_like(comp) for comp in B)
         interior = (slice(1, -1), slice(1, -1), slice(1, -1))
@@ -183,7 +187,7 @@ class TestUtilsFunctions(unittest.TestCase):
         self.assertEqual(kinetic_energy, 0.0)
 
     def test_compute_energy_ignores_inactive_particles(self):
-        E, B, J, phi, rho = initialize_fields(1, 1, 1)
+        E, B, J, phi, rho = initialize_fields(_field_world(1, 1, 1))
         world = {"dx": 1.0, "dy": 1.0, "dz": 1.0, "Nx": 1, "Ny": 1, "Nz": 1}
         constants = {"eps": 1.0, "mu": 1.0, "C": 10.0}
         species = particle_species(
@@ -396,7 +400,8 @@ class TestUtilsFunctions(unittest.TestCase):
             "guard_cells": 2,
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
-        field = tuple(jnp.zeros((8, 6, 6)) + component for component in (1.0, 2.0, 3.0))
+        field_shape = (world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2)
+        field = tuple(jnp.zeros(field_shape) + component for component in (1.0, 2.0, 3.0))
         tiled_field = tile_vector_field(field, world, world["tile_shape"], num_guard_cells=world["guard_cells"])
 
         with unittest.mock.patch.object(vtk_diagnostics, "gridToVTK") as grid_to_vtk:

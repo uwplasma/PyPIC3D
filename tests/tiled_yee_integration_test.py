@@ -8,13 +8,12 @@ import numpy as np
 import toml
 
 from PyPIC3D.evolve import time_loop_electrodynamic
-from PyPIC3D.initialization import initialize_simulation, validate_field_solver
+from PyPIC3D.initialization import initialize_fields, initialize_simulation, validate_field_solver
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
 from PyPIC3D.particles.tiled_particles import TiledParticles
 from PyPIC3D.solvers.yee_tiled import (
     assemble_tiled_vector_field,
-    empty_tiled_vector_field,
     tile_vector_field,
     update_B,
     update_E,
@@ -77,13 +76,9 @@ class TestTiledYeeIntegration(unittest.TestCase):
         return world
 
     def _empty_fields(self, world):
-        shape = (world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2)
-        zero = jnp.zeros(shape)
-        E = (zero, zero, zero)
-        B = (zero, zero, zero)
-        J = (zero, zero, zero)
+        E, B, J, phi, rho = initialize_fields(world)
         external_fields = (E, B)
-        return E, B, J, zero, zero, external_fields, None
+        return E, B, J, rho, phi, external_fields, None
 
     def _species(self, world):
         return particle_species(
@@ -193,7 +188,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         tiled_particles = self._pad_tiled_particle_capacity(tiled_particles, min_slots=12)
         g = int(tiled_world["guard_cells"])
         if current_deposition == "esirkepov":
-            J_tiles = empty_tiled_vector_field(tiled_world, tile_shape, num_guard_cells=g, dtype=E[0].dtype)
+            _, _, J_tiles, _, _ = initialize_fields(tiled_world, tiled=True, dtype=E[0].dtype)
         else:
             J_tiles = tile_vector_field(J, tiled_world, tile_shape, num_guard_cells=g)
 
@@ -282,7 +277,7 @@ class TestTiledYeeIntegration(unittest.TestCase):
         E, B, J, rho, phi, external_fields, pml_state = fields
         g = int(world["guard_cells"])
         if current_deposition == "esirkepov":
-            J_tiles = empty_tiled_vector_field(world, tile_shape, num_guard_cells=g, dtype=E[0].dtype)
+            _, _, J_tiles, _, _ = initialize_fields(world, tiled=True, dtype=E[0].dtype)
         else:
             J_tiles = tile_vector_field(J, world, tile_shape, num_guard_cells=g)
         tiled_fields = (

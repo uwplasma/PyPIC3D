@@ -8,6 +8,7 @@ from PyPIC3D import evolve
 from PyPIC3D.deposition import Esirkepov
 from PyPIC3D.deposition import J_from_rhov
 from PyPIC3D.deposition import rho
+from PyPIC3D.initialization import build_tiled_array, initialize_fields
 from PyPIC3D.solvers import electrostatic_yee
 from PyPIC3D.solvers import yee_tiled
 from PyPIC3D.utilities.grids import build_yee_grid
@@ -82,6 +83,35 @@ class TestTiledRefactorContracts(unittest.TestCase):
         self.assertFalse(hasattr(yee_tiled, "update_tiled_B"))
         self.assertFalse(hasattr(yee_tiled, "tiled_grid_axes_from_world"))
         self.assertFalse(hasattr(yee_tiled, "tile_grid_axes"))
+        self.assertFalse(hasattr(yee_tiled, "empty_tiled_scalar_field"))
+        self.assertFalse(hasattr(yee_tiled, "empty_tiled_vector_field"))
+
+    def test_tiled_array_initialization_lives_in_initialization(self):
+        world = self._world()
+        world["tile_shape"] = (2, 3, 2)
+        world["guard_cells"] = 2
+
+        array = build_tiled_array(world, dtype=jnp.float32)
+        self.assertEqual(array.shape, (4, 2, 2, 6, 7, 6))
+        self.assertEqual(array.dtype, jnp.float32)
+        self.assertTrue(jnp.all(array == 0.0))
+
+    def test_initialize_fields_builds_tiled_field_state_from_world(self):
+        world = self._world()
+        world["tile_shape"] = (2, 3, 2)
+        world["guard_cells"] = 2
+
+        E, B, J, phi, rho_tiles = initialize_fields(world, tiled=True, dtype=jnp.float32)
+        for vector_field in (E, B, J):
+            self.assertEqual(len(vector_field), 3)
+            for component in vector_field:
+                self.assertEqual(component.shape, (4, 2, 2, 6, 7, 6))
+                self.assertEqual(component.dtype, jnp.float32)
+                self.assertTrue(jnp.all(component == 0.0))
+        for scalar_field in (phi, rho_tiles):
+            self.assertEqual(scalar_field.shape, (4, 2, 2, 6, 7, 6))
+            self.assertEqual(scalar_field.dtype, jnp.float32)
+            self.assertTrue(jnp.all(scalar_field == 0.0))
 
     def test_grid_builders_live_in_utilities(self):
         from PyPIC3D import utils
