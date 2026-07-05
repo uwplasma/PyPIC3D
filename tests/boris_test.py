@@ -6,7 +6,6 @@ import os
 from functools import partial
 
 
-from PyPIC3D.pusher.particle_push import validate_particle_pusher
 from PyPIC3D.pusher.boris import boris_single_particle, interpolate_field_to_particles
 from PyPIC3D.pusher.higuera_cary import higuera_cary_single_particle
 from PyPIC3D.utils import mae, convergence_test
@@ -243,10 +242,6 @@ class TestBorisMethods(unittest.TestCase):
         self.assertGreater(newvx[1], newvx[0])
         self.assertTrue(jnp.allclose(newvy, jnp.zeros(2)))
         self.assertTrue(jnp.allclose(newvz, jnp.zeros(2)))
-
-    def test_validate_particle_pusher_rejects_unknown_name(self):
-        with self.assertRaises(ValueError):
-            validate_particle_pusher("not_a_pusher")
 
 
     def test_trilinear_convergence(self):

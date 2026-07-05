@@ -49,7 +49,6 @@ from PyPIC3D.evolve import (
     time_loop_electrostatic,
 )
 
-from PyPIC3D.pusher.particle_push import validate_particle_pusher
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 from PyPIC3D.boundary_conditions.PML import (
@@ -285,7 +284,7 @@ def initialize_simulation(toml_file):
     electrostatic = solver == "electrostatic"
     relativistic = simulation_parameters['relativistic']
     particle_pusher = simulation_parameters['particle_pusher']
-    validate_particle_pusher(particle_pusher)
+    
     if electrostatic:
         simulation_parameters["particle_tile_nx"] = int(Nx)
         simulation_parameters["particle_tile_ny"] = int(Ny)

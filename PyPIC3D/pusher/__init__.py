@@ -10,7 +10,5 @@ from PyPIC3D.pusher.higuera_cary import (
     velocity_from_u,
 )
 from PyPIC3D.pusher.particle_push import (
-    VALID_PARTICLE_PUSHERS,
     particle_push,
-    validate_particle_pusher,
 )

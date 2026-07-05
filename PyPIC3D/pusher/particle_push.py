@@ -10,17 +10,6 @@ from PyPIC3D.pusher.boris import (
 from PyPIC3D.pusher.higuera_cary import higuera_cary_single_particle
 
 
-VALID_PARTICLE_PUSHERS = ("boris", "higuera_cary")
-
-
-def validate_particle_pusher(particle_pusher):
-    """
-    Validate the particle pusher name before entering jitted simulation code.
-    """
-    if particle_pusher not in VALID_PARTICLE_PUSHERS:
-        raise ValueError(f"particle_pusher must be one of {VALID_PARTICLE_PUSHERS}, got {particle_pusher!r}")
-
-
 def particle_push(particles, species_config, E_tiles, B_tiles, world, constants, relativistic=True, particle_pusher="boris"):
     """
     Push tile-major particles with the selected pusher using compact tiled Yee fields.
