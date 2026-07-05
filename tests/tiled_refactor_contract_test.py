@@ -174,10 +174,11 @@ class TestTiledRefactorContracts(unittest.TestCase):
         self.assertNotIn("assemble_tiled_vector_field", source)
         self.assertNotIn("fields_for_output", source)
 
-    def test_electrostatic_global_poisson_bridge_stays_explicit(self):
+    def test_electrostatic_solver_uses_single_tile_arrays_directly(self):
         source = inspect.getsource(electrostatic_yee.calculate_tiled_electrostatic_fields)
-        self.assertIn("assemble_tiled_scalar_field", source)
-        self.assertIn("tile_scalar_field", source)
+        self.assertNotIn("assemble_tiled_scalar_field", source)
+        self.assertNotIn("tile_scalar_field", source)
+        self.assertIn("[0, 0, 0]", source)
 
     def test_flat_current_and_electrodynamic_references_are_removed(self):
         self.assertFalse(hasattr(J_from_rhov, "_J_from_rhov_flat"))

@@ -22,28 +22,6 @@ def apply_negative_laplacian(field, dx, dy, dz):
     return -(laplacian_x + laplacian_y + laplacian_z)
 
 
-def _update_ghost_cells(field, bc_x, bc_y, bc_z):
-    field = jax.lax.cond(
-        bc_x == BC_PERIODIC,
-        lambda f: f.at[0, :, :].set(f[-2, :, :]).at[-1, :, :].set(f[1, :, :]),
-        lambda f: f.at[0, :, :].set(0.0).at[-1, :, :].set(0.0),
-        operand=field,
-    )
-    field = jax.lax.cond(
-        bc_y == BC_PERIODIC,
-        lambda f: f.at[:, 0, :].set(f[:, -2, :]).at[:, -1, :].set(f[:, 1, :]),
-        lambda f: f.at[:, 0, :].set(0.0).at[:, -1, :].set(0.0),
-        operand=field,
-    )
-    field = jax.lax.cond(
-        bc_z == BC_PERIODIC,
-        lambda f: f.at[:, :, 0].set(f[:, :, -2]).at[:, :, -1].set(f[:, :, 1]),
-        lambda f: f.at[:, :, 0].set(0.0).at[:, :, -1].set(0.0),
-        operand=field,
-    )
-    return field
-
-
 class TestElectrostaticYeeMethods(unittest.TestCase):
     def setUp(self):
         self.Nx = 16
@@ -78,7 +56,7 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
             "z_wind": self.z_wind,
             "shape_factor": 1,
             "guard_cells": 2,
-            "tile_shape": (8, 8, 8),
+            "tile_shape": (self.Nx, self.Ny, self.Nz),
             "boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},
         }
         vertex_grid, center_grid = build_yee_grid(self.world)
@@ -90,9 +68,11 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
         self.world["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
         self.world["grids"]["tiled_center_grid"] = tiled_center_grid
 
-        # Ghost-celled initial fields: shape (Nx+2, Ny+2, Nz+2)
-        self.initial_rho = jnp.zeros((self.Nx + 2, self.Ny + 2, self.Nz + 2))
-        self.initial_phi = jnp.zeros((self.Nx + 2, self.Ny + 2, self.Nz + 2))
+        self.g = int(self.world["guard_cells"])
+        self.active = slice(self.g, -self.g)
+        # Single tile-local fields: shape (Nx+2*g, Ny+2*g, Nz+2*g)
+        self.initial_rho = jnp.zeros((self.Nx + 2 * self.g, self.Ny + 2 * self.g, self.Nz + 2 * self.g))
+        self.initial_phi = jnp.zeros((self.Nx + 2 * self.g, self.Ny + 2 * self.g, self.Nz + 2 * self.g))
 
         self.particles = [
             particle_species(
@@ -127,9 +107,8 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
         rho_interior = rhs * self.constants["eps"]
 
         # Place rho into ghost-celled array
-        rho = jnp.zeros((self.Nx + 2, self.Ny + 2, self.Nz + 2))
-        rho = rho.at[1:-1, 1:-1, 1:-1].set(rho_interior)
-        rho = _update_ghost_cells(rho, BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
+        rho = jnp.zeros_like(self.initial_rho)
+        rho = rho.at[self.active, self.active, self.active].set(rho_interior)
 
         phi = solve_poisson_with_conjugate_gradient(
             rho,
@@ -141,7 +120,7 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
         )
 
         # Compare on interior
-        phi_num = phi[1:-1, 1:-1, 1:-1]
+        phi_num = phi[self.active, self.active, self.active]
         phi_num = phi_num - jnp.mean(phi_num)
         phi_true = phi_true_interior - jnp.mean(phi_true_interior)
 
@@ -169,17 +148,17 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
             self.world,
         )
         expected_Ex_fdtd, expected_Ey_fdtd, expected_Ez_fdtd = centered_finite_difference_gradient(
-            -1.0 * expected_phi_fdtd[1:-1, 1:-1, 1:-1],
+            -1.0 * expected_phi_fdtd[self.active, self.active, self.active],
             self.dx,
             self.dy,
             self.dz,
             "periodic",
         )
 
-        self.assertTrue(jnp.allclose(phi_fdtd[1:-1, 1:-1, 1:-1], expected_phi_fdtd[1:-1, 1:-1, 1:-1], atol=1e-6, rtol=1e-6))
-        self.assertTrue(jnp.allclose(E_fdtd[0][1:-1, 1:-1, 1:-1], expected_Ex_fdtd, atol=1e-6, rtol=1e-6))
-        self.assertTrue(jnp.allclose(E_fdtd[1][1:-1, 1:-1, 1:-1], expected_Ey_fdtd, atol=1e-6, rtol=1e-6))
-        self.assertTrue(jnp.allclose(E_fdtd[2][1:-1, 1:-1, 1:-1], expected_Ez_fdtd, atol=1e-6, rtol=1e-6))
+        self.assertTrue(jnp.allclose(phi_fdtd[self.active, self.active, self.active], expected_phi_fdtd[self.active, self.active, self.active], atol=1e-6, rtol=1e-6))
+        self.assertTrue(jnp.allclose(E_fdtd[0][self.active, self.active, self.active], expected_Ex_fdtd, atol=1e-6, rtol=1e-6))
+        self.assertTrue(jnp.allclose(E_fdtd[1][self.active, self.active, self.active], expected_Ey_fdtd, atol=1e-6, rtol=1e-6))
+        self.assertTrue(jnp.allclose(E_fdtd[2][self.active, self.active, self.active], expected_Ez_fdtd, atol=1e-6, rtol=1e-6))
 
 
 if __name__ == "__main__":

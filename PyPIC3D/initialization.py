@@ -286,6 +286,12 @@ def initialize_simulation(toml_file):
     relativistic = simulation_parameters['relativistic']
     particle_pusher = simulation_parameters['particle_pusher']
     validate_particle_pusher(particle_pusher)
+    if electrostatic:
+        simulation_parameters["particle_tile_nx"] = int(Nx)
+        simulation_parameters["particle_tile_ny"] = int(Ny)
+        simulation_parameters["particle_tile_nz"] = int(Nz)
+        # Electrostatic uses one tile covering the whole domain.  The leading
+        # tile axes remain present, but their extent is one in each direction.
     guard_cells = int(simulation_parameters["guard_cells"])
     guard_cells = max(guard_cells, 2)
     _validate_current_filter_contract(simulation_parameters)
