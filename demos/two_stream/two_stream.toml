@@ -29,7 +29,7 @@ N_particles = 1500
 charge = -1.602e-19
 mass   = 9.1093837e-31
 vth = 14989622.9
-ds_per_debye = 8.0
+number_density = 1.0e15
 initial_vx = 0.5e8
 
 [particle2]

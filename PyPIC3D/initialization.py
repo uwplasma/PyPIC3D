@@ -199,9 +199,9 @@ def default_parameters():
         "ds_per_debye" : None, # number of grid spacings per debye length
         "shape_factor" : 1, # shape factor for the simulation (1 for 1st order, 2 for 2nd order)
         "guard_cells": 2, # tile guard-cell depth shared by tiled fields and tiled currents
-        "particle_tile_nx": 1, # number of x cells per shared field/particle tile
-        "particle_tile_ny": 1, # number of y cells per shared field/particle tile
-        "particle_tile_nz": 1, # number of z cells per shared field/particle tile
+        "particle_tile_nx": None, # number of x cells per shared field/particle tile
+        "particle_tile_ny": None, # number of y cells per shared field/particle tile
+        "particle_tile_nz": None, # number of z cells per shared field/particle tile
         "particle_tile_capacity_factor": 1.0, # inactive particle slot headroom per tile
         "current_calculation": "j_from_rhov",  # current calculation method: esirkepov, villasenor_buneman, j_from_rhov
         "filter_j": "bilinear",  # filter for the current density: bilinear, digital, none
@@ -281,6 +281,13 @@ def initialize_simulation(toml_file):
     electrostatic = solver == "electrostatic"
     relativistic = simulation_parameters['relativistic']
     particle_pusher = simulation_parameters['particle_pusher']
+
+    if simulation_parameters['particle_tile_nx'] is None:
+        simulation_parameters["particle_tile_nx"] = int(Nx)
+    if simulation_parameters['particle_tile_ny'] is None:
+        simulation_parameters["particle_tile_ny"] = int(Ny)
+    if simulation_parameters['particle_tile_nz'] is None:
+        simulation_parameters["particle_tile_nz"] = int(Nz)
     
     if electrostatic:
         simulation_parameters["particle_tile_nx"] = int(Nx)
