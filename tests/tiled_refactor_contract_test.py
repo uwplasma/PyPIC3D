@@ -1,4 +1,5 @@
 import inspect
+import importlib
 import importlib.util
 import unittest
 
@@ -200,14 +201,21 @@ class TestTiledRefactorContracts(unittest.TestCase):
     def test_tiled_benchmarking_module_is_removed(self):
         self.assertIsNone(importlib.util.find_spec("PyPIC3D.diagnostics.tiled_benchmarking"))
 
-    def test_tiled_pusher_reads_tiled_grids_from_world(self):
-        from PyPIC3D.pusher import tiled_pusher
+    def test_particle_push_owns_tiled_pusher_contract(self):
+        particle_push = importlib.import_module("PyPIC3D.pusher.particle_push")
 
-        source = inspect.getsource(tiled_pusher.tiled_particle_push)
+        self.assertIsNone(importlib.util.find_spec("PyPIC3D.pusher.tiled_pusher"))
+        signature = inspect.signature(particle_push.particle_push)
+        for name in ("grid", "staggered_grid", "tile_shape", "g"):
+            self.assertNotIn(name, signature.parameters)
+
+        source = inspect.getsource(particle_push.particle_push)
         self.assertIn('world["grids"]["tiled_center_grid"]', source)
         self.assertIn('world["grids"]["tiled_vertex_grid"]', source)
         self.assertNotIn("tiled_grid_axes_from_world", source)
         self.assertNotIn("tile_grid_axes", source)
+        self.assertNotIn("get_forward_position", source)
+        self.assertNotIn("set_velocity", source)
 
     def test_electrodynamic_hot_step_does_not_assemble_global_fields(self):
         source = inspect.getsource(evolve.time_loop_electrodynamic)

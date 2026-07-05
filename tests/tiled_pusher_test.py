@@ -7,7 +7,6 @@ from PyPIC3D.boundary_conditions import ghost_cells
 from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
 from PyPIC3D.pusher.particle_push import particle_push
-from PyPIC3D.pusher.tiled_pusher import tiled_particle_push
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 
 
@@ -104,6 +103,36 @@ class TestTiledParticlePusher(unittest.TestCase):
         world["grids"]["tiled_center_grid"] = tiled_center_grid
         return world
 
+    def _copy_world_for_tile_shape(self, world, tile_shape, g):
+        tiled_world = dict(world)
+        tiled_world["grids"] = dict(world["grids"])
+        return self._with_tiled_grids(tiled_world, tile_shape, g=g)
+
+    def _simulation_parameters_for_tile_shape(self, tile_shape):
+        return {
+            "particle_tile_nx": tile_shape[0],
+            "particle_tile_ny": tile_shape[1],
+            "particle_tile_nz": tile_shape[2],
+        }
+
+    def _push_tiled_species(self, species, world, tile_shape, E, B, constants, relativistic=True, particle_pusher="boris"):
+        tiled_particles, species_config = to_tiled_particles(
+            [species],
+            world,
+            self._simulation_parameters_for_tile_shape(tile_shape),
+        )
+        g = int(world["guard_cells"])
+        return particle_push(
+            tiled_particles,
+            species_config,
+            tile_vector_field(E, world, tile_shape, num_guard_cells=g),
+            tile_vector_field(B, world, tile_shape, num_guard_cells=g),
+            world,
+            constants,
+            relativistic=relativistic,
+            particle_pusher=particle_pusher,
+        )
+
     def _deterministic_vector_field(self, world, scale):
         Nx, Ny, Nz = world["Nx"], world["Ny"], world["Nz"]
         ii, jj, kk = jnp.meshgrid(
@@ -156,63 +185,50 @@ class TestTiledParticlePusher(unittest.TestCase):
         order = jnp.lexsort((x[:, 2], x[:, 1], x[:, 0]))
         return x[order], u[order]
 
-    def test_tiled_particle_push_matches_flat_boris(self):
+    def test_particle_push_matches_one_tile_boris(self):
         world = self._build_world()
         constants = {"C": 10.0}
         tile_shape = (2, 3, 2)
         world = self._with_tiled_grids(world, tile_shape)
-        simulation_parameters = {
-            "particle_tile_nx": tile_shape[0],
-            "particle_tile_ny": tile_shape[1],
-            "particle_tile_nz": tile_shape[2],
-        }
         E = self._deterministic_vector_field(world, scale=1.0)
         B = self._deterministic_vector_field(world, scale=0.2)
 
         species = self._species(world)
         reference = self._species(world)
-        reference = particle_push(
+        reference_tile_shape = (world["Nx"], world["Ny"], world["Nz"])
+        reference_world = self._copy_world_for_tile_shape(world, reference_tile_shape, int(world["guard_cells"]))
+        reference = self._push_tiled_species(
             reference,
+            reference_world,
+            reference_tile_shape,
             E,
             B,
-            world["grids"]["center"],
-            world["grids"]["vertex"],
-            world,
             constants,
             relativistic=False,
             particle_pusher="boris",
         )
 
-        tiled_particles, species_config = to_tiled_particles([species], world, simulation_parameters)
-        pushed = tiled_particle_push(
-            tiled_particles,
-            species_config,
-            tile_vector_field(E, world, tile_shape, num_guard_cells=1),
-            tile_vector_field(B, world, tile_shape, num_guard_cells=1),
+        pushed = self._push_tiled_species(
+            species,
             world,
-            constants,
             tile_shape,
-            1,
+            E,
+            B,
+            constants,
             relativistic=False,
+            particle_pusher="boris",
         )
 
         _, tiled_u = self._flatten_active_by_position(pushed)
-        flat_u = jnp.stack(reference.get_velocity(), axis=1)
-        flat_x = jnp.stack(reference.get_forward_position(), axis=1)
-        order = jnp.lexsort((flat_x[:, 2], flat_x[:, 1], flat_x[:, 0]))
+        _, reference_u = self._flatten_active_by_position(reference)
 
-        self.assertTrue(jnp.allclose(tiled_u, flat_u[order], rtol=1.0e-12, atol=1.0e-12))
+        self.assertTrue(jnp.allclose(tiled_u, reference_u, rtol=1.0e-12, atol=1.0e-12))
 
-    def test_tiled_particle_push_matches_flat_higuera_cary(self):
+    def test_particle_push_matches_one_tile_higuera_cary(self):
         world = self._build_world()
         constants = {"C": 10.0}
         tile_shape = (2, 3, 2)
         world = self._with_tiled_grids(world, tile_shape)
-        simulation_parameters = {
-            "particle_tile_nx": tile_shape[0],
-            "particle_tile_ny": tile_shape[1],
-            "particle_tile_nz": tile_shape[2],
-        }
         E = self._deterministic_vector_field(world, scale=0.25)
         B = self._deterministic_vector_field(world, scale=0.05)
 
@@ -241,38 +257,34 @@ class TestTiledParticlePusher(unittest.TestCase):
 
         species = make_species()
         reference = make_species()
-        reference = particle_push(
+        reference_tile_shape = (world["Nx"], world["Ny"], world["Nz"])
+        reference_world = self._copy_world_for_tile_shape(world, reference_tile_shape, int(world["guard_cells"]))
+        reference = self._push_tiled_species(
             reference,
+            reference_world,
+            reference_tile_shape,
             E,
             B,
-            world["grids"]["center"],
-            world["grids"]["vertex"],
-            world,
             constants,
             particle_pusher="higuera_cary",
         )
 
-        tiled_particles, species_config = to_tiled_particles([species], world, simulation_parameters)
-        pushed = tiled_particle_push(
-            tiled_particles,
-            species_config,
-            tile_vector_field(E, world, tile_shape, num_guard_cells=1),
-            tile_vector_field(B, world, tile_shape, num_guard_cells=1),
+        pushed = self._push_tiled_species(
+            species,
             world,
-            constants,
             tile_shape,
-            1,
+            E,
+            B,
+            constants,
             particle_pusher="higuera_cary",
         )
 
         _, tiled_u = self._flatten_active_by_position(pushed)
-        flat_u = jnp.stack(reference.get_velocity(), axis=1)
-        flat_x = jnp.stack(reference.get_forward_position(), axis=1)
-        order = jnp.lexsort((flat_x[:, 2], flat_x[:, 1], flat_x[:, 0]))
+        _, reference_u = self._flatten_active_by_position(reference)
 
-        self.assertTrue(jnp.allclose(tiled_u, flat_u[order], rtol=1.0e-12, atol=1.0e-12))
+        self.assertTrue(jnp.allclose(tiled_u, reference_u, rtol=1.0e-12, atol=1.0e-12))
 
-    def test_tiled_particle_push_respects_active_and_update_flags(self):
+    def test_particle_push_respects_active_and_update_flags(self):
         world = self._build_world()
         constants = {"C": 10.0}
         tile_shape = (2, 3, 2)
@@ -293,15 +305,13 @@ class TestTiledParticlePusher(unittest.TestCase):
         )
         tiled_particles, species_config = to_tiled_particles([species], world, simulation_parameters)
 
-        pushed = tiled_particle_push(
+        pushed = particle_push(
             tiled_particles,
             species_config,
             tile_vector_field(E, world, tile_shape, num_guard_cells=1),
             tile_vector_field(B, world, tile_shape, num_guard_cells=1),
             world,
             constants,
-            tile_shape,
-            1,
             relativistic=False,
         )
 
@@ -309,16 +319,11 @@ class TestTiledParticlePusher(unittest.TestCase):
         self.assertTrue(jnp.allclose(pushed.u[..., 2], tiled_particles.u[..., 2]))
         self.assertTrue(jnp.allclose(pushed.u[..., 1][~tiled_particles.active], tiled_particles.u[..., 1][~tiled_particles.active]))
 
-    def test_tiled_particle_push_matches_relativistic_flat_boris_on_reduced_axes(self):
+    def test_particle_push_matches_relativistic_one_tile_boris_on_reduced_axes(self):
         world = self._build_world(Nx=8, Ny=1, Nz=1)
         constants = {"C": 10.0}
         tile_shape = (2, 1, 1)
         world = self._with_tiled_grids(world, tile_shape)
-        simulation_parameters = {
-            "particle_tile_nx": tile_shape[0],
-            "particle_tile_ny": tile_shape[1],
-            "particle_tile_nz": tile_shape[2],
-        }
         E = self._deterministic_vector_field(world, scale=0.1)
         B = self._deterministic_vector_field(world, scale=0.02)
         def make_species():
@@ -346,49 +351,41 @@ class TestTiledParticlePusher(unittest.TestCase):
 
         species = make_species()
         reference = make_species()
-        reference = particle_push(
+        reference_tile_shape = (world["Nx"], world["Ny"], world["Nz"])
+        reference_world = self._copy_world_for_tile_shape(world, reference_tile_shape, int(world["guard_cells"]))
+        reference = self._push_tiled_species(
             reference,
+            reference_world,
+            reference_tile_shape,
             E,
             B,
-            world["grids"]["center"],
-            world["grids"]["vertex"],
-            world,
             constants,
             relativistic=True,
             particle_pusher="boris",
         )
 
-        tiled_particles, species_config = to_tiled_particles([species], world, simulation_parameters)
-        pushed = tiled_particle_push(
-            tiled_particles,
-            species_config,
-            tile_vector_field(E, world, tile_shape, num_guard_cells=1),
-            tile_vector_field(B, world, tile_shape, num_guard_cells=1),
+        pushed = self._push_tiled_species(
+            species,
             world,
-            constants,
             tile_shape,
-            1,
+            E,
+            B,
+            constants,
             relativistic=True,
+            particle_pusher="boris",
         )
 
         _, tiled_u = self._flatten_active_by_position(pushed)
-        flat_u = jnp.stack(reference.get_velocity(), axis=1)
-        flat_x = jnp.stack(reference.get_forward_position(), axis=1)
-        order = jnp.lexsort((flat_x[:, 2], flat_x[:, 1], flat_x[:, 0]))
+        _, reference_u = self._flatten_active_by_position(reference)
 
-        self.assertTrue(jnp.allclose(tiled_u, flat_u[order], rtol=1.0e-12, atol=1.0e-12))
+        self.assertTrue(jnp.allclose(tiled_u, reference_u, rtol=1.0e-12, atol=1.0e-12))
 
-    def test_tiled_particle_push_matches_flat_boris_on_two_guard_reduced_axes(self):
+    def test_particle_push_matches_one_tile_boris_on_two_guard_reduced_axes(self):
         world = self._build_world(Nx=8, Ny=1, Nz=1, shape_factor=2)
         constants = {"C": 10.0}
         tile_shape = (2, 1, 1)
         g = 2
         world = self._with_tiled_grids(world, tile_shape, g=g)
-        simulation_parameters = {
-            "particle_tile_nx": tile_shape[0],
-            "particle_tile_ny": tile_shape[1],
-            "particle_tile_nz": tile_shape[2],
-        }
         E = self._deterministic_vector_field(world, scale=0.1)
         B = self._deterministic_vector_field(world, scale=0.02)
 
@@ -417,37 +414,34 @@ class TestTiledParticlePusher(unittest.TestCase):
 
         species = make_species()
         reference = make_species()
-        reference = particle_push(
+        reference_tile_shape = (world["Nx"], world["Ny"], world["Nz"])
+        reference_world = self._copy_world_for_tile_shape(world, reference_tile_shape, g)
+        reference = self._push_tiled_species(
             reference,
+            reference_world,
+            reference_tile_shape,
             E,
             B,
-            world["grids"]["center"],
-            world["grids"]["vertex"],
-            world,
             constants,
             relativistic=True,
             particle_pusher="boris",
         )
 
-        tiled_particles, species_config = to_tiled_particles([species], world, simulation_parameters)
-        pushed = tiled_particle_push(
-            tiled_particles,
-            species_config,
-            tile_vector_field(E, world, tile_shape, num_guard_cells=g),
-            tile_vector_field(B, world, tile_shape, num_guard_cells=g),
+        pushed = self._push_tiled_species(
+            species,
             world,
-            constants,
             tile_shape,
-            g,
+            E,
+            B,
+            constants,
             relativistic=True,
+            particle_pusher="boris",
         )
 
         _, tiled_u = self._flatten_active_by_position(pushed)
-        flat_u = jnp.stack(reference.get_velocity(), axis=1)
-        flat_x = jnp.stack(reference.get_forward_position(), axis=1)
-        order = jnp.lexsort((flat_x[:, 2], flat_x[:, 1], flat_x[:, 0]))
+        _, reference_u = self._flatten_active_by_position(reference)
 
-        self.assertTrue(jnp.allclose(tiled_u, flat_u[order], rtol=1.0e-12, atol=1.0e-12))
+        self.assertTrue(jnp.allclose(tiled_u, reference_u, rtol=1.0e-12, atol=1.0e-12))
 
 
 if __name__ == "__main__":

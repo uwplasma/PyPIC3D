@@ -13,7 +13,7 @@ from PyPIC3D.particles.tiled_particle_refresh import (
     refresh_tiled_particle_tiles,
     update_tiled_particle_positions,
 )
-from PyPIC3D.pusher.tiled_pusher import tiled_particle_push
+from PyPIC3D.pusher.particle_push import particle_push
 from PyPIC3D.solvers.electrostatic_yee import calculate_tiled_electrostatic_fields
 from PyPIC3D.solvers.first_order_yee import update_B, update_E
 from PyPIC3D.utils import add_external_fields
@@ -46,22 +46,19 @@ def time_loop_electrodynamic(
     # unpack the tiled field state
 
     tile_shape = tuple(int(width) for width in world["tile_shape"])
-    g = int(world["guard_cells"])
     particle_world = _particle_kernel_world(world)
     # get tiled layout information from the world contract
 
     push_E, push_B = add_external_fields(E, B, external_fields)
     # particles see evolved fields plus external-only fields
 
-    particles = tiled_particle_push(
+    particles = particle_push(
         particles,
         species_config,
         push_E,
         push_B,
         particle_world,
         constants,
-        tile_shape,
-        g,
         relativistic=relativistic,
         particle_pusher=particle_pusher,
     )
@@ -149,22 +146,19 @@ def time_loop_electrostatic(
     # unpack the tiled field state
 
     tile_shape = tuple(int(width) for width in world["tile_shape"])
-    g = int(world["guard_cells"])
     particle_world = _particle_kernel_world(world)
     # get tiled layout information from the world contract
 
     push_E_tiles, push_B_tiles = add_external_fields(E_tiles, B_tiles, external_fields)
     # particles see evolved fields plus prescribed external fields
 
-    particles = tiled_particle_push(
+    particles = particle_push(
         particles,
         species_config,
         push_E_tiles,
         push_B_tiles,
         particle_world,
         constants,
-        tile_shape,
-        g,
         relativistic=relativistic,
         particle_pusher=particle_pusher,
     )
