@@ -7,8 +7,8 @@ import numpy as np
 import toml
 from PyPIC3D.boundary_conditions import ghost_cells
 from PyPIC3D.initialization import initialize_fields
-from PyPIC3D.particles.tiled_particles import TiledParticles
-from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
+from PyPIC3D.particles.tiled_particles import SpeciesConfig, TiledParticles
+from PyPIC3D.tests.tiled_particle_fixtures import to_tiled_particles
 from PyPIC3D.diagnostics import plotting, vtk as vtk_diagnostics
 from PyPIC3D.utilities.grids import build_collocated_grid, build_yee_grid
 from PyPIC3D.utils import (
@@ -16,7 +16,7 @@ from PyPIC3D.utils import (
     particle_sanity_check, load_external_fields_from_toml, add_external_fields,
     compute_energy, dump_parameters_to_toml,
 )
-from PyPIC3D.particles.species_class import particle_species
+from PyPIC3D.tests.tiled_particle_fixtures import particle_species
 
 jax.config.update("jax_enable_x64", True)
 
@@ -146,18 +146,11 @@ class TestUtilsFunctions(unittest.TestCase):
         # Check that the stability check does not raise an error
 
     def test_particle_sanity_check(self):
-        class DummyParticles:
-            def __iter__(self):
-                return iter([self])
-            def get_position(self):
-                N = 5
-                return (jnp.zeros(N), jnp.zeros(N), jnp.zeros(N))
-            def get_velocity(self):
-                N = 5
-                return (jnp.zeros(N), jnp.zeros(N), jnp.zeros(N))
-            def get_number_of_particles(self):
-                return 5
-        particles = DummyParticles()
+        particles = TiledParticles(
+            x=jnp.zeros((1, 1, 1, 1, 5, 3)),
+            u=jnp.zeros((1, 1, 1, 1, 5, 3)),
+            active=jnp.ones((1, 1, 1, 1, 5), dtype=bool),
+        )
         # Should not raise
         particle_sanity_check(particles)
         # Check that the particle sanity check does not raise an error
@@ -268,14 +261,33 @@ class TestUtilsFunctions(unittest.TestCase):
 
         world = world | {"dx": 1.0, "dy": 1.0, "dz": 1.0}
         constants = {"eps": 2.0, "mu": 4.0, "C": 10.0}
-        e_energy, b_energy, kinetic_energy = compute_energy([], total_E, total_B, world, constants)
+        particles = TiledParticles(
+            x=jnp.zeros((1, 1, 1, 1, 0, 3)),
+            u=jnp.zeros((1, 1, 1, 1, 0, 3)),
+            active=jnp.zeros((1, 1, 1, 1, 0), dtype=bool),
+        )
+        species_config = SpeciesConfig(
+            charge=jnp.asarray([1.0]),
+            mass=jnp.asarray([1.0]),
+            weight=jnp.asarray([1.0]),
+            update_x=jnp.ones((1, 3), dtype=bool),
+            update_u=jnp.ones((1, 3), dtype=bool),
+        )
+        e_energy, b_energy, kinetic_energy = compute_energy(particles, total_E, total_B, world, constants, species_config=species_config)
 
         self.assertTrue(jnp.allclose(e_energy, 4.0))
         self.assertTrue(jnp.allclose(b_energy, 1.125))
         self.assertEqual(kinetic_energy, 0.0)
 
     def test_compute_energy_ignores_inactive_particles(self):
-        world = _field_world(1, 1, 1) | {"dx": 1.0, "dy": 1.0, "dz": 1.0}
+        world = _field_world(1, 1, 1) | {
+            "dx": 1.0,
+            "dy": 1.0,
+            "dz": 1.0,
+            "x_wind": 1.0,
+            "y_wind": 1.0,
+            "z_wind": 1.0,
+        }
         E, B, J, phi, rho = initialize_fields(world)
         constants = {"eps": 1.0, "mu": 1.0, "C": 10.0}
         species = particle_species(
@@ -301,7 +313,9 @@ class TestUtilsFunctions(unittest.TestCase):
         )
         species.boundary_conditions({"particle_boundary_conditions": {"x": 2, "y": 0, "z": 0}})
 
-        _, _, kinetic_energy = compute_energy([species], E, B, world, constants)
+        tiled_particles, species_config = to_tiled_particles([species], world, {"particle_tile_nx": 1, "particle_tile_ny": 1, "particle_tile_nz": 1})
+
+        _, _, kinetic_energy = compute_energy(tiled_particles, E, B, world, constants, species_config=species_config)
 
         self.assertTrue(jnp.allclose(kinetic_energy, 0.0))
 
@@ -374,6 +388,7 @@ class TestUtilsFunctions(unittest.TestCase):
             "x_wind": 1.0,
             "y_wind": 1.0,
             "z_wind": 1.0,
+            "tile_shape": (2, 1, 1),
             "particle_boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
         simulation_parameters = {
@@ -446,6 +461,7 @@ class TestUtilsFunctions(unittest.TestCase):
             "x_wind": 1.0,
             "y_wind": 1.0,
             "z_wind": 1.0,
+            "tile_shape": (2, 1, 1),
             "particle_boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
         simulation_parameters = {

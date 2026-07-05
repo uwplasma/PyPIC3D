@@ -137,11 +137,11 @@ def write_openpmd_particles_to_iteration(iteration, particles, constants, specie
     C = float(constants["C"])
 
     for species in particles:
-        species_name = species.get_name().replace(" ", "_")
+        species_name = species.name.replace(" ", "_")
         species_group = iteration.particles[species_name]
 
-        x, y, z = species.get_position()
-        vx, vy, vz = species.get_velocity()
+        x, y, z = species.x_diagnostic[:, 0], species.x_diagnostic[:, 1], species.x_diagnostic[:, 2]
+        vx, vy, vz = species.u[:, 0], species.u[:, 1], species.u[:, 2]
         gamma = 1 / jnp.sqrt(1.0 - (vx**2 + vy**2 + vz**2) / C**2)
 
         x = _ensure_openpmd_array(x, squeeze=True)
@@ -155,9 +155,9 @@ def write_openpmd_particles_to_iteration(iteration, particles, constants, specie
         num_particles = x.shape[0]
         # number of particles in this species
 
-        particle_mass = species.get_mass()
-        particle_charge = species.get_charge()
-        weights         = species.get_weight()
+        particle_mass = species.mass * species.weight
+        particle_charge = species.charge * species.weight
+        weights = species.weight
         # get the particle mass, charge, and weight for this species
 
 
@@ -316,7 +316,7 @@ def write_openpmd_initial_particles(particles, world, constants, output_dir, fil
         return arr
 
     for species in particles:
-        species_name = species.get_name().replace(" ", "_")
+        species_name = species.name.replace(" ", "_")
         series_filename = f"{species_name}_{filename}"
         series_path = os.path.join(output_path, series_filename)
 
@@ -331,8 +331,8 @@ def write_openpmd_initial_particles(particles, world, constants, output_dir, fil
 
         species_group = iteration.particles[species_name]
 
-        x, y, z = species.get_forward_position()
-        vx, vy, vz = species.get_velocity()
+        x, y, z = species.x[:, 0], species.x[:, 1], species.x[:, 2]
+        vx, vy, vz = species.u[:, 0], species.u[:, 1], species.u[:, 2]
         gamma = 1 / jnp.sqrt(1.0 - (vx**2 + vy**2 + vz**2) / C**2)
         # compute the Lorentz factor
 
@@ -345,9 +345,9 @@ def write_openpmd_initial_particles(particles, world, constants, output_dir, fil
         gamma = make_array_writable(gamma)
 
         num_particles = x.shape[0]
-        particle_mass = species.get_mass()
-        particle_charge = species.get_charge()
-        particle_weight = species.get_weight()
+        particle_mass = species.mass * species.weight
+        particle_charge = species.charge * species.weight
+        particle_weight = species.weight
 
         if jnp.ndim(particle_weight) == 0:
             weights = np.full(num_particles, float(particle_weight), dtype=np.float64)

@@ -29,13 +29,10 @@ from PyPIC3D.utilities.grids import (
 from PyPIC3D.diagnostics.plotting import (
     plot_initial_histograms
 )
+from PyPIC3D.diagnostics.output_adapters import particles_for_output
 
 from PyPIC3D.diagnostics.openPMD import (
     write_openpmd_initial_particles, write_openpmd_initial_fields
-)
-
-from PyPIC3D.particles.tiled_particle_initialization import (
-    to_tiled_particles
 )
 
 from PyPIC3D.boundary_conditions.ghost_cells import (
@@ -398,23 +395,34 @@ def initialize_simulation(toml_file):
         # create the data directory if it doesn't exist
     ################################### INITIALIZE PARTICLES AND FIELDS ########################################################
 
-    particles = load_particles_from_toml(toml_file, simulation_parameters, world, constants)
-    # load the particles from the configuration file
-    simulation_parameters["particle_species_names"] = tuple(species.get_name() for species in particles)
-    # keep species names available after tiled storage drops per-species objects
+    particles, species_config, particle_species_names, particle_metadata = load_particles_from_toml(
+        toml_file,
+        simulation_parameters,
+        world,
+        constants,
+    )
+    # load particles directly into tiled runtime storage
+    simulation_parameters["particle_species_names"] = particle_species_names
+    simulation_parameters["particle_species_metadata"] = particle_metadata
+    # keep species names and scalar metadata available for diagnostics/output
 
-    for species in particles:
-        name = species.get_name()
-        name = name.replace(" ", "_")
+    initial_particle_records = particles_for_output(
+        particles,
+        species_config=species_config,
+        species_names=particle_species_names,
+        world=world,
+    )
+    for particle_record in initial_particle_records:
+        name = particle_record.name.replace(" ", "_")
         # replace spaces with underscores in the name
-        plot_initial_histograms(species, world, path=f"{simulation_parameters['output_dir']}/data", name=name)
+        plot_initial_histograms(particle_record, world, path=f"{simulation_parameters['output_dir']}/data", name=name)
         # plot the initial histograms of the particles
 
     print_stats(world)
     # print the statistics of the simulation
 
-    if particles:
-        plasma_parameters = build_plasma_parameters_dict(world, constants, particles[0], dt)
+    if particle_metadata:
+        plasma_parameters = build_plasma_parameters_dict(world, constants, particle_metadata[0], dt)
         # build the plasma parameters dictionary
     else:
         plasma_parameters = {}
@@ -424,7 +432,14 @@ def initialize_simulation(toml_file):
     # ensure the arrays for the particles are of the correct shape
 
     if plotting_parameters['dump_particles']:
-        write_openpmd_initial_particles(particles, world, constants, simulation_parameters['output_dir'])
+        write_openpmd_initial_particles(
+            particles,
+            world,
+            constants,
+            simulation_parameters['output_dir'],
+            species_config=species_config,
+            species_names=particle_species_names,
+        )
     # write the initial particles to an openPMD file
 
     E, B, J, phi, rho = initialize_fields(world)
@@ -463,7 +478,14 @@ def initialize_simulation(toml_file):
     ######################### COMPUTE INITIAL ENERGY ########################################################
     total_E, total_B = add_external_fields(E, B, external_fields)
     # energy diagnostics use the same total fields that the particle pusher sees
-    e_energy, b_energy, kinetic_energy = compute_energy(particles, total_E, total_B, world, constants)
+    e_energy, b_energy, kinetic_energy = compute_energy(
+        particles,
+        total_E,
+        total_B,
+        world,
+        constants,
+        species_config=species_config,
+    )
     # compute the initial energy of the system
     print(f"Initial Electric Field Energy: {e_energy:.2e} J")
     print(f"Initial Magnetic Field Energy: {b_energy:.2e} J")
@@ -491,10 +513,6 @@ def initialize_simulation(toml_file):
     elif simulation_parameters['current_calculation'] == "j_from_rhov":
         print(f"Using J from rhov current calculation method with filter: {simulation_parameters['filter_j']}")
 
-
-    species_config = None
-    particles, species_config = to_tiled_particles(particles, world, simulation_parameters)
-    # convert the particles to tiled storage and get the species configuration
 
     external_E, external_B = external_fields
     external_fields = (external_E, external_B)

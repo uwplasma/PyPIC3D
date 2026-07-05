@@ -8,8 +8,8 @@ from PyPIC3D.evolve import (
     time_loop_electrostatic,
 )
 from PyPIC3D.initialization import initialize_fields
-from PyPIC3D.particles.species_class import particle_species
-from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
+from PyPIC3D.tests.tiled_particle_fixtures import particle_species
+from PyPIC3D.tests.tiled_particle_fixtures import to_tiled_particles
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 
 jax.config.update("jax_enable_x64", True)

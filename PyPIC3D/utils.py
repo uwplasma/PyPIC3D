@@ -109,7 +109,7 @@ def compute_energy(particles, E, B, world, constants, species_config=None):
     Compute the total energy of the system, including electric field energy, magnetic field energy, and kinetic energy of particles.
 
     Args:
-        particles (list): List of particle species.
+        particles (TiledParticles): Tile-major particle storage.
         E (tuple): Electric field components (Ex, Ey, Ez).
         B (tuple): Magnetic field components (Bx, By, Bz).
         world (dict): Dictionary containing the simulation world parameters.
@@ -164,38 +164,22 @@ def compute_energy(particles, E, B, world, constants, species_config=None):
     e_energy = 0.5 * constants['eps'] * E2_integral
     b_energy = 0.5 / constants['mu'] * B2_integral
     # Electric and magnetic field energy
-    # kinetic_energy = sum([species.kinetic_energy() for species in particles])
-
     C = constants['C']
     # speed of light
-    kinetic_energy = 0.0
-    if hasattr(particles, "active") and hasattr(particles, "u"):
-        vx = particles.u[..., 0]
-        vy = particles.u[..., 1]
-        vz = particles.u[..., 2]
-        v2 = vx**2 + vy**2 + vz**2
-        active = particles.active.astype(v2.dtype)
-        species_mass = species_config.mass * species_config.weight
-        mass = jnp.broadcast_to(
-            species_mass.reshape((1, 1, 1, species_mass.shape[0], 1)),
-            particles.active.shape,
-        )
-        gamma = 1.0 / jnp.sqrt(1 - v2 / C**2)
-        momentum2 = jnp.square(mass * gamma) * v2
-        kinetic_energy = jnp.sum(active * (jnp.sqrt(momentum2 * C**2 + mass**2 * C**4) - mass * C**2))
-    else:
-        for species in particles:
-            mass = species.get_mass()
-            vx, vy, vz = species.get_velocity()
-            v2 = vx**2 + vy**2 + vz**2
-            active = species.get_active_mask().astype(v2.dtype)
-            gamma = 1.0 / jnp.sqrt(1 - v2 / C**2)
-            momentum2 = jnp.square(mass * gamma ) * v2
-            # compute the squared momentum for each particle
-            KE = jnp.sum(active * (jnp.sqrt(momentum2 * C**2 + mass**2 * C**4) - mass * C**2))
-            # compute the kinetic energy for this species
-            kinetic_energy += KE
-            # add to total kinetic energy
+    vx = particles.u[..., 0]
+    vy = particles.u[..., 1]
+    vz = particles.u[..., 2]
+    v2 = vx**2 + vy**2 + vz**2
+
+    active = particles.active.astype(v2.dtype)
+    species_mass = species_config.mass * species_config.weight
+    mass = jnp.broadcast_to(
+        species_mass.reshape((1, 1, 1, species_mass.shape[0], 1)),
+        particles.active.shape,
+    )
+    gamma = 1.0 / jnp.sqrt(1 - v2 / C**2)
+    momentum2 = jnp.square(mass * gamma) * v2
+    kinetic_energy = jnp.sum(active * (jnp.sqrt(momentum2 * C**2 + mass**2 * C**4) - mass * C**2))
 
 
     # Kinetic energy of particles
@@ -204,20 +188,17 @@ def compute_energy(particles, E, B, world, constants, species_config=None):
 
 def compute_total_momentum(particles, species_config=None):
     """
-    Compute the scalar momentum diagnostic for either species-list or tiled particles.
+    Compute the scalar momentum diagnostic for tiled particles.
     """
 
-    if hasattr(particles, "active") and hasattr(particles, "u"):
-        vmag = jnp.sqrt(particles.u[..., 0]**2 + particles.u[..., 1]**2 + particles.u[..., 2]**2)
-        active = particles.active.astype(vmag.dtype)
-        species_mass = species_config.mass * species_config.weight
-        mass = jnp.broadcast_to(
-            species_mass.reshape((1, 1, 1, species_mass.shape[0], 1)),
-            particles.active.shape,
-        )
-        return jnp.sum(active * vmag * mass)
-
-    return sum(particle_species.momentum() for particle_species in particles)
+    vmag = jnp.sqrt(particles.u[..., 0]**2 + particles.u[..., 1]**2 + particles.u[..., 2]**2)
+    active = particles.active.astype(vmag.dtype)
+    species_mass = species_config.mass * species_config.weight
+    mass = jnp.broadcast_to(
+        species_mass.reshape((1, 1, 1, species_mass.shape[0], 1)),
+        particles.active.shape,
+    )
+    return jnp.sum(active * vmag * mass)
 
 
 def add_external_fields(E, B, external_fields):
@@ -316,30 +297,18 @@ def if_verbose_print(verbose, string):
 
 def particle_sanity_check(particles):
     """
-    Perform a sanity check on the particles to ensure consistency in their attributes.
-
-    This function iterates over each species in the particles list and checks that the 
-    number of particles matches the shape of their position and velocity arrays.
+    Perform a basic shape check for tiled particle storage.
 
     Args:
-        particles (list): A list of species objects, where each species object must have 
-                        the following methods:
-                        - get_number_of_particles(): returns the number of particles (int)
-                        - get_position(): returns a tuple of numpy arrays (x, y, z) representing 
-                            the positions of the particles
-                        - get_velocity(): returns a tuple of numpy arrays (vx, vy, vz) representing 
-                            the velocities of the particles
+        particles (TiledParticles): Tile-major particle storage.
 
     Raises:
-        AssertionError: If the shapes of the position and velocity arrays do not match the 
-                        number of particles.
+        AssertionError: If the tiled position, velocity, and active arrays are inconsistent.
     """
 
-    for species in particles:
-        N = species.get_number_of_particles()
-        x, y, z = species.get_position()
-        vx, vy, vz = species.get_velocity()
-        assert x.shape == y.shape == z.shape == vx.shape == vy.shape == vz.shape == (N,)
+    assert particles.x.shape == particles.u.shape
+    assert particles.x.shape[-1] == 3
+    assert particles.active.shape == particles.x.shape[:-1]
 
 
 def print_stats(world):
@@ -425,28 +394,33 @@ def build_plasma_parameters_dict(world, constants, electrons, dt):
     Args:
         world (dict): A dictionary containing the spatial resolution and wind parameters.
         constants (dict): A dictionary containing physical constants.
-        electrons (object): An object representing the electrons in the simulation.
+        electrons (dict): Metadata for the electron species from particle initialization.
         dt (float): Time step of the simulation.
 
     Returns:
         dict: A dictionary containing the plasma parameters.
     """
 
-    me = electrons.get_mass()
-    Te = electrons.get_temperature()
+    me = electrons["mass"]
+    Te = electrons["temperature"]
+    N = electrons["N_particles"]
+    q = electrons["charge"]
+    weight = electrons["weight"]
     kb = constants['kb']
     dx, dy, dz = world['dx'], world['dy'], world['dz']
 
-    theoretical_freq = plasma_frequency(electrons, world, constants)
-    debye = debye_length(electrons, world, constants)
+    volume = world["x_wind"] * world["y_wind"] * world["z_wind"]
+    density = weight * N / volume
+    theoretical_freq = jnp.sqrt(density) * jnp.abs(q) / jnp.sqrt(constants["eps"] * me)
+    debye = jnp.sqrt(constants["eps"] * kb * Te / (density * q**2))
     thermal_velocity = jnp.sqrt(3*kb*Te/me)
 
     plasma_parameters = {
         "Theoretical Plasma Frequency": theoretical_freq,
         "Debye Length": debye,
         "Thermal Velocity": thermal_velocity,
-        "Number of Electrons": electrons.get_number_of_particles(),
-        "Temperature of Electrons": electrons.get_temperature(),
+        "Number of Electrons": N,
+        "Temperature of Electrons": Te,
         "dx per debye length": debye/dx,
         "dy per debye length": debye/dy,
         "dz per debye length": debye/dz,
@@ -684,7 +658,7 @@ def dump_parameters_to_toml(simulation_stats, simulation_parameters, plasma_para
         simulation_parameters (dict): Dictionary of simulation parameters.
         plotting_parameters (dict): Dictionary of plotting parameters.
         constants (dict): Dictionary of constants.
-        particles (list): List of particle species.
+        particles (TiledParticles): Tile-major particle storage.
     """
 
     output_path = simulation_parameters["output_dir"]
@@ -699,47 +673,30 @@ def dump_parameters_to_toml(simulation_stats, simulation_parameters, plasma_para
         "particles": []
     }
 
-    if hasattr(particles, "active") and hasattr(particles, "u"):
-        n_species = particles.active.shape[3]
-        species_names = simulation_parameters.get("particle_species_names")
-        tile_shape = jax.tree_util.tree_map(
-            lambda x: x.tolist() if isinstance(x, jnp.ndarray) else x,
-            simulation_parameters.get("tile_shape", ()),
-        )
+    n_species = particles.active.shape[3]
+    species_names = simulation_parameters.get("particle_species_names")
+    species_metadata = simulation_parameters.get("particle_species_metadata")
+    tile_shape = jax.tree_util.tree_map(
+        lambda x: x.tolist() if isinstance(x, jnp.ndarray) else x,
+        simulation_parameters.get("tile_shape", ()),
+    )
 
-        for species_index in range(n_species):
-            if species_names is None:
-                name = f"species_{species_index}"
-            else:
-                name = species_names[species_index]
+    for species_index in range(n_species):
+        if species_names is None:
+            name = f"species_{species_index}"
+        else:
+            name = species_names[species_index]
 
-            active_particles = int(jnp.sum(particles.active[:, :, :, species_index, :]))
-            config["particles"].append(
-                {
-                    "name": name,
-                    "storage": "tiled",
-                    "active_particles": active_particles,
-                    "tile_shape": tile_shape,
-                }
-            )
-    else:
-        for particle in particles:
-            if hasattr(particle, "species_meta") and particle.species_meta:
-                config["particles"].extend(particle.species_meta)
-                continue
-            particle_dict = {
-                "name": particle.name,
-                "N_particles": float(particle.N_particles),
-                "weight": float(particle.weight),
-                "charge": float(particle.charge),
-                "mass": float(particle.mass),
-                "temperature": float(particle.T),
-                "scaled mass": float(particle.get_mass()),
-                "scaled charge": float(particle.get_charge()),
-                "update_pos": particle.update_pos,
-                "update_v": particle.update_v
-            }
-            config["particles"].append(particle_dict)
+        active_particles = int(jnp.sum(particles.active[:, :, :, species_index, :]))
+        if species_metadata is None:
+            particle_dict = {"name": name}
+        else:
+            particle_dict = dict(species_metadata[species_index])
+
+        particle_dict["storage"] = "tiled"
+        particle_dict["active_particles"] = active_particles
+        particle_dict["tile_shape"] = tile_shape
+        config["particles"].append(particle_dict)
 
     config["version"] = {
         "PyPIC3D_version": importlib.metadata.version('PyPIC3D'),
@@ -819,80 +776,3 @@ def courant_condition(courant_number, dx, dy, dz, simulation_parameters, constan
 
     return dt
 
-
-def plasma_frequency(particle_species, world, constants):
-    """
-    Calculate the plasma frequency.
-
-    The plasma frequency is calculated using the properties of the electrons,
-    the dimensions of the world, and physical constants.
-
-    Args:
-        particle_species (object): An object representing the particle species
-                    with the following methods:
-                    - get_charge(): returns the charge of the particle.
-                    - get_number_of_particles(): returns the number of particles.
-                    - get_mass(): returns the mass of the particle.
-                    - get_temperature(): returns the temperature of the particle.
-        world (dict): A dictionary containing the dimensions of the world with keys:
-                    'x_wind', 'y_wind', and 'z_wind'.
-        constants (dict): A dictionary containing physical constants with key 'eps'.
-
-    Returns:
-        float: The calculated plasma frequency.
-    """
-
-
-    x_wind = world['x_wind']
-    y_wind = world['y_wind']
-    z_wind = world['z_wind']
-    q = particle_species.get_charge() / particle_species.weight
-    N = particle_species.get_number_of_particles()
-    m = particle_species.get_mass() / particle_species.weight
-    eps = constants['eps']
-
-    # these values are so small that I was having issues calculating
-    # the plasma frequency with floating point precision so I had to
-    # break it down into smaller parts
-    sqrt_dv = jnp.sqrt( x_wind * y_wind * z_wind )
-    sqrt_ne = jnp.sqrt( N * particle_species.weight) / sqrt_dv
-    sqrt_eps = jnp.sqrt( eps )
-    sqrt_me = jnp.sqrt( m )
-    pf = sqrt_ne * jnp.abs(q) / (sqrt_eps * sqrt_me)
-
-    # pf = jnp.sqrt( N * particle_species.weight * q**2 ) / jnp.sqrt(m) / jnp.sqrt(eps) / jnp.sqrt(x_wind)
-
-    #plasma_frequency = jnp.sqrt(number_pseudoelectrons * weight * charge_electron**2)/jnp.sqrt(mass_electron)/jnp.sqrt(epsilon_0)/jnp.sqrt(length)
-
-
-    return pf
-# calculate the expected plasma frequency from analytical theory
-
-def debye_length(particle_species, world, constants):
-    """
-    Calculate the Debye length of a system based on the given parameters.
-
-    Args:
-        particle_species (object): An object representing the particle species
-                    with the following methods:
-                    - get_charge(): returns the charge of the particle.
-                    - get_number_of_particles(): returns the number of particles.
-                    - get_temperature(): returns the temperature of the particle.
-        world (dict): A dictionary containing the dimensions of the world with keys:
-                    'x_wind', 'y_wind', and 'z_wind'.
-        constants (dict): A dictionary containing physical constants with keys 'eps' and 'kb'.
-
-    Returns:
-        float: Debye length of the system.
-    """
-
-    q = particle_species.get_charge()
-    N_particles = particle_species.get_number_of_particles()
-    T = particle_species.get_temperature()
-    eps = constants['eps']
-    kb = constants['kb']
-    x_wind = world['x_wind']
-    y_wind = world['y_wind']
-    z_wind = world['z_wind']
-    n = particle_species.weight * N_particles / (x_wind * y_wind * z_wind)
-    return jnp.sqrt(eps * kb * T / (n * ( q / particle_species.weight )**2))

@@ -65,13 +65,12 @@ def plot_vtk_particles(particles, t, path, species_config=None, species_names=No
     # Tiled particle arrays are fixed-capacity by tile; VTK particle output only
     # receives the active diagnostic particles.
 
-    particle_names = [species.get_name().replace(" ", "") for species in particles]
     for species in particles:
-        name = species.get_name().replace(" ", "")
-        x, y, z = map(np.asarray, species.get_position())
-        vx, vy, vz = map(np.asarray, species.get_velocity())
+        name = species.name.replace(" ", "")
+        x, y, z = map(np.asarray, (species.x_diagnostic[:, 0], species.x_diagnostic[:, 1], species.x_diagnostic[:, 2]))
+        vx, vy, vz = map(np.asarray, (species.u[:, 0], species.u[:, 1], species.u[:, 2]))
         # Get the position and velocity of the particles
-        q = np.asarray( species.get_charge() * np.ones_like(vx) )
+        q = np.asarray(species.charge * species.weight * np.ones_like(vx))
         # Get the charge of the particles
 
         pointsToVTK(f"{path}/data/particles/{name}.{t:09}", x, y, z, \

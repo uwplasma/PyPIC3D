@@ -31,11 +31,11 @@ def plot_positions(particles, t, x_wind, y_wind, z_wind, path, species_config=No
 
     colors = ['red', 'blue', 'green', 'purple', 'orange', 'yellow', 'cyan']
     for idx, species in enumerate(particles):
-        x, y, z = species.get_position()
+        x, y, z = species.x_diagnostic[:, 0], species.x_diagnostic[:, 1], species.x_diagnostic[:, 2]
         fig.add_trace(go.Scatter3d(
             x=x, y=y, z=z, mode='markers',
             marker=dict(size=2, color=colors[idx % len(colors)]),
-            name=species.get_name()
+            name=species.name
         ))
 
     fig.update_layout(
@@ -80,9 +80,9 @@ def write_particles_phase_space(particles, t, path, species_config=None, species
     # writes only active particles and otherwise keeps the old species-list path.
 
     for species in particles:
-        x, y, z = species.get_position()
-        vx, vy, vz = species.get_velocity()
-        name = species.get_name().replace(" ", "")
+        x, y, z = species.x_diagnostic[:, 0], species.x_diagnostic[:, 1], species.x_diagnostic[:, 2]
+        vx, vy, vz = species.u[:, 0], species.u[:, 1], species.u[:, 2]
+        name = species.name.replace(" ", "")
 
         x_phase_space = jnp.stack((x, vx), axis=-1)
         y_phase_space = jnp.stack((y, vy), axis=-1)
@@ -118,8 +118,8 @@ def particles_phase_space(particles, world, t, name, path, species_config=None, 
     # once here rather than leaking into the plotting loops.
 
     for species in particles:
-        x, y, z = species.get_position()
-        vx, vy, vz = species.get_velocity()
+        x, y, z = species.x_diagnostic[:, 0], species.x_diagnostic[:, 1], species.x_diagnostic[:, 2]
+        vx, vy, vz = species.u[:, 0], species.u[:, 1], species.u[:, 2]
         plt.scatter(x, vx, c=colors[idx], zorder=order, s=1)
         idx += 1
         order -= 1
@@ -133,8 +133,8 @@ def particles_phase_space(particles, world, t, name, path, species_config=None, 
 
     idx = 0
     for species in particles:
-        x, y, z = species.get_position()
-        vx, vy, vz = species.get_velocity()
+        x, y, z = species.x_diagnostic[:, 0], species.x_diagnostic[:, 1], species.x_diagnostic[:, 2]
+        vx, vy, vz = species.u[:, 0], species.u[:, 1], species.u[:, 2]
         plt.scatter(y, vy, c=colors[idx])
         idx += 1
     plt.xlabel("Position")
@@ -146,8 +146,8 @@ def particles_phase_space(particles, world, t, name, path, species_config=None, 
 
     idx = 0
     for species in particles:
-        x, y, z = species.get_position()
-        vx, vy, vz = species.get_velocity()
+        x, y, z = species.x_diagnostic[:, 0], species.x_diagnostic[:, 1], species.x_diagnostic[:, 2]
+        vx, vy, vz = species.u[:, 0], species.u[:, 1], species.u[:, 2]
         plt.scatter(z, vz, c=colors[idx])
         idx += 1
     plt.xlabel("Position")
@@ -158,16 +158,14 @@ def particles_phase_space(particles, world, t, name, path, species_config=None, 
     plt.close()
 
 
-def plot_initial_histograms(particle_species, world, name, path):
+def plot_initial_histograms(particle_record, world, name, path):
     """
     Generates and saves histograms for the initial positions and velocities 
     of particles in a simulation.
 
     Parameters:
-        particle_species (object): An object representing the particle species, 
-                                   which provides methods `get_position()` and 
-                                   `get_velocity()` to retrieve particle positions 
-                                   (x, y, z) and velocities (vx, vy, vz).
+        particle_record (ParticleOutputRecord): Flattened tiled particle output
+                                   with diagnostic positions and velocities.
         world (dict): A dictionary containing the simulation world parameters, 
                       specifically the wind dimensions with keys 'x_wind', 
                       'y_wind', and 'z_wind'.
@@ -183,8 +181,8 @@ def plot_initial_histograms(particle_species, world, name, path):
         formatted as "{name}_initial_<property>_histogram.png".
     """
 
-    x, y, z = particle_species.get_position()
-    vx, vy, vz = particle_species.get_velocity()
+    x, y, z = particle_record.x_diagnostic[:, 0], particle_record.x_diagnostic[:, 1], particle_record.x_diagnostic[:, 2]
+    vx, vy, vz = particle_record.u[:, 0], particle_record.u[:, 1], particle_record.u[:, 2]
 
     x_wind = world['x_wind']
     y_wind = world['y_wind']

@@ -207,6 +207,16 @@ class TestTiledRefactorContracts(unittest.TestCase):
         self.assertIsNone(importlib.util.find_spec("PyPIC3D.boris"))
         self.assertIsNotNone(importlib.util.find_spec("PyPIC3D.pusher.boris"))
 
+    def test_old_particle_species_surfaces_are_removed(self):
+        self.assertIsNone(importlib.util.find_spec("PyPIC3D.particles.species_class"))
+        self.assertIsNone(importlib.util.find_spec("PyPIC3D.particles.tiled_particle_diagnostics"))
+
+        from PyPIC3D.particles import particle_initialization
+
+        self.assertFalse(hasattr(particle_initialization, "to_tiled_particles"))
+        source = inspect.getsource(particle_initialization.load_particles_from_toml)
+        self.assertNotIn("particle_species", source)
+
     def test_particle_push_owns_tiled_pusher_contract(self):
         particle_push = importlib.import_module("PyPIC3D.pusher.particle_push")
 

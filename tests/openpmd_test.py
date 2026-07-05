@@ -7,8 +7,8 @@ import jax.numpy as jnp
 from PyPIC3D.boundary_conditions import ghost_cells
 from PyPIC3D.diagnostics import openPMD
 from PyPIC3D.diagnostics.openPMD import _ensure_openpmd_array
-from PyPIC3D.particles.species_class import particle_species
-from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
+from PyPIC3D.tests.tiled_particle_fixtures import particle_species
+from PyPIC3D.tests.tiled_particle_fixtures import to_tiled_particles
 
 
 def _tile_axis_count(n_cells, cells_per_tile):

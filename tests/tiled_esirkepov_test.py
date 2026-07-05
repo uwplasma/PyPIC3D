@@ -24,8 +24,8 @@ from PyPIC3D.particles.tiled_particle_refresh import (
     refresh_tiled_particle_tiles,
     update_tiled_particle_positions,
 )
-from PyPIC3D.particles.species_class import particle_species
-from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
+from PyPIC3D.tests.tiled_particle_fixtures import particle_species
+from PyPIC3D.tests.tiled_particle_fixtures import to_tiled_particles
 from PyPIC3D.particles.tiled_particles import TiledParticles
 from PyPIC3D.solvers.first_order_yee import (
     update_E,

@@ -14,7 +14,6 @@ from . import evolve
 from .solvers import electrostatic_yee
 
 from .particles import particle_initialization
-from .particles import species_class
 
 from .deposition import shapes
 from .deposition import Esirkepov

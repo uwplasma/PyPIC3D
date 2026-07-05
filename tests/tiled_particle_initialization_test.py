@@ -6,10 +6,10 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from PyPIC3D.particles.tiled_particle_initialization import load_tiled_particles_from_toml
-from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
+from PyPIC3D.particles.particle_initialization import load_particles_from_toml
+from PyPIC3D.tests.tiled_particle_fixtures import to_tiled_particles
 from PyPIC3D.particles.tiled_particles import SpeciesConfig, TiledParticles
-from PyPIC3D.particles.species_class import particle_species
+from PyPIC3D.tests.tiled_particle_fixtures import particle_species
 
 
 jax.config.update("jax_enable_x64", True)
@@ -215,7 +215,7 @@ class TestTiledParticleInitialization(unittest.TestCase):
         self.assertEqual(int(jnp.sum(particles.active)), 3)
         self.assertEqual(species_config.charge.shape, (1,))
 
-    def test_load_tiled_particles_from_toml_uses_tile_axes_before_species(self):
+    def test_load_particles_from_toml_uses_tile_axes_before_species(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             x_path = self._write_array(tmpdir, "x.npy", [-1.5, 0.5, 1.5])
             y_path = self._write_array(tmpdir, "y.npy", [-0.5, 0.5, 0.5])
@@ -235,6 +235,7 @@ class TestTiledParticleInitialization(unittest.TestCase):
                 "x_wind": 4.0,
                 "y_wind": 2.0,
                 "z_wind": 1.0,
+                "tile_shape": (2, 1, 1),
             }
             constants = {"kb": 1.0, "eps": 1.0}
             simulation_parameters = {
@@ -261,10 +262,12 @@ class TestTiledParticleInitialization(unittest.TestCase):
                 }
             }
 
-            particles, species_config = load_tiled_particles_from_toml(config, simulation_parameters, world, constants)
+            particles, species_config, species_names, metadata = load_particles_from_toml(config, simulation_parameters, world, constants)
 
             self.assertIsInstance(particles, TiledParticles)
             self.assertIsInstance(species_config, SpeciesConfig)
+            self.assertEqual(species_names, ("electrons",))
+            self.assertEqual(metadata[0]["name"], "electrons")
             self.assertEqual(particles.x.shape, (2, 2, 1, 1, 2, 3))
             self.assertEqual(particles.u.shape, (2, 2, 1, 1, 2, 3))
 
@@ -282,7 +285,7 @@ class TestTiledParticleInitialization(unittest.TestCase):
             self.assertTrue(jnp.allclose(species_config.mass, jnp.array([2.0])))
             self.assertTrue(jnp.allclose(species_config.weight, jnp.array([4.0])))
 
-    def test_load_tiled_particles_from_toml_maps_update_flags_to_active_particles(self):
+    def test_load_particles_from_toml_maps_update_flags_to_active_particles(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             x_path = self._write_array(tmpdir, "x.npy", [0.0])
             y_path = self._write_array(tmpdir, "y.npy", [0.0])
@@ -299,6 +302,7 @@ class TestTiledParticleInitialization(unittest.TestCase):
                 "x_wind": 1.0,
                 "y_wind": 1.0,
                 "z_wind": 1.0,
+                "tile_shape": (1, 1, 1),
             }
             constants = {"kb": 1.0, "eps": 1.0}
             simulation_parameters = {
@@ -332,7 +336,7 @@ class TestTiledParticleInitialization(unittest.TestCase):
                 }
             }
 
-            particles, species_config = load_tiled_particles_from_toml(config, simulation_parameters, world, constants)
+            particles, species_config, species_names, metadata = load_particles_from_toml(config, simulation_parameters, world, constants)
 
             self.assertTrue(bool(species_config.update_x[0, 0]))
             self.assertFalse(bool(species_config.update_x[0, 1]))

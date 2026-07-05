@@ -16,6 +16,7 @@ from PyPIC3D.boundary_conditions import ghost_cells
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 from PyPIC3D.diagnostics.output_adapters import assemble_tiled_vector_field
 from PyPIC3D.initialization import initialize_simulation
+from PyPIC3D.particles.tiled_particles import SpeciesConfig, TiledParticles
 from PyPIC3D.solvers.first_order_yee import (
     update_B,
     update_E,
@@ -506,7 +507,29 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         B_tiles = tile_vector_field((Bx, By, Bz), world, tile_shape)
         J_tiles = tile_vector_field(J, world, tile_shape)
 
-        initial_energy = sum(compute_energy([], E_tiles, B_tiles, world, constants)[:2])
+        empty_particles = TiledParticles(
+            x=jnp.zeros((1, 1, 1, 0, 0, 3)),
+            u=jnp.zeros((1, 1, 1, 0, 0, 3)),
+            active=jnp.zeros((1, 1, 1, 0, 0), dtype=bool),
+        )
+        empty_species_config = SpeciesConfig(
+            charge=jnp.zeros((0,)),
+            mass=jnp.zeros((0,)),
+            weight=jnp.zeros((0,)),
+            update_x=jnp.zeros((0, 3), dtype=bool),
+            update_u=jnp.zeros((0, 3), dtype=bool),
+        )
+
+        initial_energy = sum(
+            compute_energy(
+                empty_particles,
+                E_tiles,
+                B_tiles,
+                world,
+                constants,
+                species_config=empty_species_config,
+            )[:2]
+        )
         def step(E_tiles, B_tiles, tiled_pml_state):
             E_tiles, tiled_pml_state = update_E(E_tiles, B_tiles, J_tiles, world, constants, tiled_pml_state)
             B_tiles, tiled_pml_state = update_B(E_tiles, B_tiles, world, constants, tiled_pml_state)
@@ -516,7 +539,16 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         for _ in range(60):
             E_tiles, B_tiles, tiled_pml_state = step(E_tiles, B_tiles, tiled_pml_state)
 
-        final_energy = sum(compute_energy([], E_tiles, B_tiles, world, constants)[:2])
+        final_energy = sum(
+            compute_energy(
+                empty_particles,
+                E_tiles,
+                B_tiles,
+                world,
+                constants,
+                species_config=empty_species_config,
+            )[:2]
+        )
         self.assertTrue(jnp.isfinite(final_energy))
         self.assertLess(float(final_energy), 0.65 * float(initial_energy))
 

@@ -1,6 +1,18 @@
 import jax.numpy as jnp
+from typing import NamedTuple
 
-from PyPIC3D.particles.tiled_particle_diagnostics import flatten_tiled_particles_by_species
+from PyPIC3D.particles.tiled_particles import TiledParticles
+
+
+class ParticleOutputRecord(NamedTuple):
+    name: str
+    species_index: int
+    x: jnp.ndarray
+    x_diagnostic: jnp.ndarray
+    u: jnp.ndarray
+    charge: jnp.ndarray
+    mass: jnp.ndarray
+    weight: jnp.ndarray
 
 
 def _is_tiled_scalar(field):
@@ -124,14 +136,70 @@ def fields_for_output(fields, world):
     return output_fields + (pml_state,)
 
 
+def _axis_diagnostic_position(x, u, dt, wind, bc):
+    x_diagnostic = x - u * dt / 2
+
+    if int(jnp.asarray(bc).item()) == 0:
+        half_wind = wind / 2
+        x_diagnostic = jnp.where(
+            x_diagnostic > half_wind,
+            x_diagnostic - wind,
+            jnp.where(x_diagnostic < -half_wind, x_diagnostic + wind, x_diagnostic),
+        )
+
+    return x_diagnostic
+
+
+def _diagnostic_position(x, u, world):
+    if world is None:
+        return x
+
+    particle_bc = world.get("particle_boundary_conditions", {})
+    dt = world["dt"]
+    x_diagnostic = _axis_diagnostic_position(x[:, 0], u[:, 0], dt, world["x_wind"], particle_bc.get("x", 0))
+    y_diagnostic = _axis_diagnostic_position(x[:, 1], u[:, 1], dt, world["y_wind"], particle_bc.get("y", 0))
+    z_diagnostic = _axis_diagnostic_position(x[:, 2], u[:, 2], dt, world["z_wind"], particle_bc.get("z", 0))
+
+    return jnp.stack((x_diagnostic, y_diagnostic, z_diagnostic), axis=-1)
+
+
 def particles_for_output(particles, species_config=None, species_names=None, world=None):
     """
     Flatten fixed-capacity tiled particle storage for diagnostics.
     """
 
-    return flatten_tiled_particles_by_species(
-        particles,
-        species_config=species_config,
-        species_names=species_names,
-        world=world,
-    )
+    if not isinstance(particles, TiledParticles):
+        raise TypeError("Particle output requires TiledParticles runtime storage.")
+
+    n_species = particles.active.shape[3]
+    output_particles = []
+
+    for species_index in range(n_species):
+        active = particles.active[:, :, :, species_index, :].reshape(-1)
+
+        x = particles.x[:, :, :, species_index, :, :].reshape(-1, 3)[active]
+        u = particles.u[:, :, :, species_index, :, :].reshape(-1, 3)[active]
+        n_active = int(jnp.sum(active))
+        charge = jnp.full((n_active,), species_config.charge[species_index])
+        mass = jnp.full((n_active,), species_config.mass[species_index])
+        weight = jnp.full((n_active,), species_config.weight[species_index])
+
+        if species_names is None:
+            name = f"species_{species_index}"
+        else:
+            name = species_names[species_index]
+
+        output_particles.append(
+            ParticleOutputRecord(
+                name=name,
+                species_index=species_index,
+                x=x,
+                x_diagnostic=_diagnostic_position(x, u, world),
+                u=u,
+                charge=charge,
+                mass=mass,
+                weight=weight,
+            )
+        )
+
+    return output_particles

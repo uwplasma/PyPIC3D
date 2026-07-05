@@ -10,8 +10,8 @@ from PyPIC3D.utilities.filters import (
     digital_filter,
     digital_filter_vector,
 )
-from PyPIC3D.particles.species_class import particle_species
-from PyPIC3D.particles.tiled_particle_initialization import to_tiled_particles
+from PyPIC3D.tests.tiled_particle_fixtures import particle_species
+from PyPIC3D.tests.tiled_particle_fixtures import to_tiled_particles
 from PyPIC3D.particles.tiled_particle_refresh import refresh_tiled_particle_tiles
 from PyPIC3D.diagnostics.output_adapters import assemble_tiled_vector_field
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
