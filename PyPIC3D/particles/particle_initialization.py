@@ -46,50 +46,6 @@ def load_initial_velocities(param, config, key, default, N_particles):
     return default
 
 
-def compute_macroparticle_weight(config, particle_keys, simulation_parameters, world, constants):
-    x_wind = world["x_wind"]
-    y_wind = world["y_wind"]
-    z_wind = world["z_wind"]
-    dx = world["dx"]
-    dy = world["dy"]
-    dz = world["dz"]
-    kb = constants["kb"]
-    eps = constants["eps"]
-
-    if simulation_parameters["ds_per_debye"]:
-        ds_per_debye = simulation_parameters["ds_per_debye"]
-        inverse_total_debye = 0
-
-        for toml_key in particle_keys:
-            N_particles = config[toml_key]["N_particles"]
-            charge = config[toml_key]["charge"]
-            mass = config[toml_key]["mass"]
-            if "temperature" in config[toml_key]:
-                T = config[toml_key]["temperature"]
-            elif "vth" in config[toml_key]:
-                T = vth_to_T(config[toml_key]["vth"], mass, kb)
-
-            inverse_total_debye += (
-                jnp.sqrt(N_particles / (x_wind * y_wind * z_wind) / (eps * kb * T))
-                * jnp.abs(charge)
-            )
-
-        ds2 = 0
-        for d in [dx, dy, dz]:
-            if d != 1:
-                ds2 += d**2
-
-        if ds2 == 0:
-            raise ValueError(
-                "Invalid configuration for 'ds_per_debye': at least one of dx, dy, dz must differ from 1."
-            )
-        weight = 1 / (ds2) / (ds_per_debye**2) / inverse_total_debye
-    else:
-        weight = 1.0
-
-    return weight
-
-
 def initial_particles(
     N_per_cell,
     N_particles,
@@ -146,28 +102,29 @@ def _particle_tile_indices(x1, x2, x3, world, tile_nx, tile_ny, tile_nz):
     return x_cell // tile_nx, y_cell // tile_ny, z_cell // tile_nz
 
 
-def _scaled_plasma_frequency(N_particles, charge, mass, weight, world, constants):
-    x_wind = world["x_wind"]
-    y_wind = world["y_wind"]
-    z_wind = world["z_wind"]
+def _plasma_frequency(N_per_cell, charge, mass, weight, world, constants):
+    dx, dy, dz = world["dx"], world["dy"], world["dz"]
+    # get spatial resolution of the simulation domain
     eps = constants["eps"]
-
-    sqrt_dv = jnp.sqrt(x_wind * y_wind * z_wind)
-    sqrt_ne = jnp.sqrt(N_particles * weight) / sqrt_dv
+    # get the permittivity of free space from the constants dictionary
+    n = N_per_cell * weight / (dx * dy * dz)
+    # define the number density
+    sqrt_n = jnp.sqrt(n)
+    # take the square root of the number density
     sqrt_eps = jnp.sqrt(eps)
     sqrt_mass = jnp.sqrt(mass)
-    return sqrt_ne * jnp.abs(charge) / (sqrt_eps * sqrt_mass)
+    return sqrt_n * jnp.abs(charge) / (sqrt_eps * sqrt_mass) / (2 * jnp.pi)
 
 
-def _scaled_debye_length(N_particles, charge, temperature, weight, world, constants):
+def _debye_length(N_per_cell, charge, temperature, weight, world, constants):
     eps = constants["eps"]
     kb = constants["kb"]
-    x_wind = world["x_wind"]
-    y_wind = world["y_wind"]
-    z_wind = world["z_wind"]
+    # get the permittivity of free space and Boltzmann constant from the constants dictionary
+    dx, dy, dz = world["dx"], world["dy"], world["dz"]
+    n = N_per_cell * weight / (dx * dy * dz)
+    # define the number density
 
-    density = weight * N_particles / (x_wind * y_wind * z_wind)
-    return jnp.sqrt(eps * kb * temperature / (density * charge**2))
+    return jnp.sqrt(eps * kb * temperature / (n * charge**2))
 
 
 def load_particles_from_toml(config, simulation_parameters, world, constants):
@@ -183,15 +140,15 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
     dt = world["dt"]
     kb = constants["kb"]
     eps = constants["eps"]
+    # get the simulation domain dimensions, grid sizes, spatial resolutions, time step, Boltzmann constant, and permittivity of free space from the world and constants dictionaries
 
     i = 0
     particle_keys = grab_particle_keys(config)
     species_arrays = []
     species_metadata = []
 
-    weight = compute_macroparticle_weight(
-        config, particle_keys, simulation_parameters, world, constants
-    )
+    weight = 1.0
+    # start with a default weight of 1.0, which will be overwritten if specified in the config
 
     for toml_key in particle_keys:
         key1, key2, key3 = jax.random.key(i), jax.random.key(i + 1), jax.random.key(i + 2)
@@ -201,6 +158,7 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         print(f"\nInitializing particle species: {particle_name}")
         charge = config[toml_key]["charge"]
         mass = config[toml_key]["mass"]
+        # get the particle species name, charge, and mass from the config
 
         if "N_particles" in config[toml_key]:
             N_particles = config[toml_key]["N_particles"]
@@ -208,6 +166,7 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         elif "N_per_cell" in config[toml_key]:
             N_per_cell = config[toml_key]["N_per_cell"]
             N_particles = int(N_per_cell * world["Nx"] * world["Ny"] * world["Nz"])
+        # get the number of particles and number of particles per cell for the simulation
 
         if "temperature" in config[toml_key]:
             T = config[toml_key]["temperature"]
@@ -218,10 +177,12 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         else:
             T = 1.0
             vth = T_to_vth(T, mass, kb)
+        # from the provided configuration, determine the temperature and thermal velocity of the particle species, using either the specified temperature or thermal velocity, or defaulting to a temperature of 1.0 if neither is provided
 
         Tx = read_value("Tx", toml_key, config, T)
         Ty = read_value("Ty", toml_key, config, T)
         Tz = read_value("Tz", toml_key, config, T)
+        # overwrite the temperature in each direction if specified in the configuration, otherwise use the previously determined temperature
 
         xmin = read_value("xmin", toml_key, config, -x_wind / 2)
         xmax = read_value("xmax", toml_key, config, x_wind / 2)
@@ -277,6 +238,7 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         vx = load_initial_velocities("initial_vx", config, toml_key, vx, N_particles)
         vy = load_initial_velocities("initial_vy", config, toml_key, vy, N_particles)
         vz = load_initial_velocities("initial_vz", config, toml_key, vz, N_particles)
+        # overwrite the initial positions and velocities of the particles if specified in the configuration, otherwise use the previously generated values
 
         if "temperature" not in config[toml_key]:
             T = (mass / (3 * kb * N_particles)) * (
@@ -285,21 +247,10 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
 
         if "weight" in config[toml_key]:
             weight = config[toml_key]["weight"]
-        elif "ds_per_debye" in config[toml_key]:
-            ds_per_debye = config[toml_key]["ds_per_debye"]
-
-            ds2 = 0
-            for d in [dx, dy, dz]:
-                if d != 1:
-                    ds2 += d**2
-
-            if ds2 == 0:
-                raise ValueError(
-                    "Invalid configuration for 'ds_per_debye': at least one of dx, dy, dz must differ from 1."
-                )
-            weight = (
-                x_wind * y_wind * z_wind * eps * kb * T
-            ) / (N_particles * charge**2 * ds_per_debye**2 * ds2)
+        elif "number_density" in config[toml_key]:
+            n = config[toml_key]["number_density"]
+            weight = (n / N_per_cell) * (dx * dy * dz)
+            # convert number density to weight based on the number of particles per cell and cell volume
 
         update_pos = read_value("update_pos", toml_key, config, True)
         update_v = read_value("update_v", toml_key, config, True)
@@ -309,6 +260,7 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         update_x = read_value("update_x", toml_key, config, True)
         update_y = read_value("update_y", toml_key, config, True)
         update_z = read_value("update_z", toml_key, config, True)
+        # determine whether to update the position and velocity components of the particle species based on the configuration, defaulting to True if not specified
 
         x_array = jnp.stack((x, y, z), axis=-1)
         u_array = jnp.stack((vx, vy, vz), axis=-1)
@@ -333,8 +285,10 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         species_metadata.append(metadata)
 
         kinetic_energy = 0.5 * weight * mass * jnp.sum(vx**2 + vy**2 + vz**2)
-        pf = _scaled_plasma_frequency(N_particles, charge, mass, weight, world, constants)
-        dl = _scaled_debye_length(N_particles, charge, T, weight, world, constants)
+        # calculate the total kinetic energy of the particle species
+        pf = _plasma_frequency(N_per_cell, charge, mass, weight, world, constants)
+        dl = _debye_length(N_per_cell, charge, T, weight, world, constants)
+        # calculate the plasma frequency and Debye length for the particle species
 
         print(f"Number of particles: {N_particles}")
         print(f"Number of particles per cell: {N_per_cell}")
@@ -352,6 +306,7 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         print(f"Particle Species Scaled Mass: {mass * weight}")
 
     tile_nx, tile_ny, tile_nz = [_as_int(width) for width in world["tile_shape"]]
+    # determine the number of tiles in each dimension based on the tile shape and simulation domain dimensions
 
     ntx = _tile_axis_count(world["Nx"], tile_nx)
     nty = _tile_axis_count(world["Ny"], tile_ny)
@@ -372,6 +327,7 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
     max_particles_per_tile = int(np.max(tile_counts)) if tile_counts.size else 0
     capacity_factor = float(simulation_parameters.get("particle_tile_capacity_factor", 1.0))
     max_particles_per_tile = int(math.ceil(max_particles_per_tile * capacity_factor))
+    # determine the maximum number of particles per tile across all species and tiles, and apply a capacity factor to allow for some buffer
 
     x_tiles = jnp.zeros((ntx, nty, ntz, n_species, max_particles_per_tile, 3))
     u_tiles = jnp.zeros_like(x_tiles)
