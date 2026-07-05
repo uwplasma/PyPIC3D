@@ -2,7 +2,6 @@ import jax.numpy as jnp
 from jax import lax
 
 from PyPIC3D.deposition.rho import compute_rho
-from PyPIC3D.solvers.fdtd import centered_finite_difference_gradient
 from PyPIC3D.utilities.filters import digital_filter
 from PyPIC3D.boundary_conditions import ghost_cells
 
@@ -29,6 +28,22 @@ def _refresh_single_tile_scalar(field, world, g, tile_shape, apply_conducting=Fa
         field_tiles = ghost_cells.apply_tiled_scalar_conducting_bc(field_tiles, world, num_guard_cells=g)
     field_tiles = ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
     return field_tiles[0, 0, 0]
+
+
+def _centered_finite_difference_gradient(field, dx, dy, dz):
+    """
+    Compute the centered finite-difference gradient on a periodic scalar field.
+
+    This is the electrostatic single-tile post-processing stencil.  The tiled
+    electrostatic path below uses the same centered difference directly on
+    compact tile arrays with refreshed halos.
+    """
+
+    grad_x = (jnp.roll(field, shift=-1, axis=0) - jnp.roll(field, shift=1, axis=0)) / (2.0 * dx)
+    grad_y = (jnp.roll(field, shift=-1, axis=1) - jnp.roll(field, shift=1, axis=1)) / (2.0 * dy)
+    grad_z = (jnp.roll(field, shift=-1, axis=2) - jnp.roll(field, shift=1, axis=2)) / (2.0 * dz)
+
+    return grad_x, grad_y, grad_z
 
 
 def solve_poisson_with_conjugate_gradient(rho, phi, constants, world, tol=1e-12, max_iter=5000):
@@ -156,7 +171,9 @@ def calculate_electrostatic_fields(world, particles, constants, rho, phi, solver
     phi = _refresh_single_tile_scalar(phi, world, g, tile_shape, apply_conducting=True)
     # update ghost cells after filtering
 
-    Ex, Ey, Ez = centered_finite_difference_gradient(-1 * phi[active, active, active], dx, dy, dz, bc)
+    del solver, bc
+
+    Ex, Ey, Ez = _centered_finite_difference_gradient(-1.0 * phi[active, active, active], dx, dy, dz)
     # compute gradient on the interior
 
     # Place the gradient results into ghost-celled arrays

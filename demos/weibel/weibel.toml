@@ -3,7 +3,7 @@
 name = "Demo of a 1D Weibel instability with 3,000 electrons"
 Nt = 6000
 bc = 'periodic'
-solver = 'fdtd'
+solver = 'electrodynamic_yee'
 Nx = 201
 Ny = 1
 Nz = 1

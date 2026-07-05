@@ -6,14 +6,11 @@ import os, sys
 import matplotlib.pyplot as plt
 # import external libraries
 
-from . import errors
 from . import initialization
 from . import utils
-from . import boris
 from . import pusher
 from . import evolve
 
-from .solvers import fdtd
 from .solvers import electrostatic_yee
 
 from .particles import particle_initialization

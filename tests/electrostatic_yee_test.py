@@ -7,8 +7,8 @@ from PyPIC3D.particles.species_class import particle_species
 from PyPIC3D.solvers.electrostatic_yee import (
     solve_poisson_with_conjugate_gradient,
     calculate_electrostatic_fields,
+    _centered_finite_difference_gradient,
 )
-from PyPIC3D.solvers.fdtd import centered_finite_difference_gradient
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
 
@@ -130,35 +130,34 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
         residual = apply_negative_laplacian(phi_num, self.dx, self.dy, self.dz) - rho_interior / self.constants["eps"]
         self.assertLess(jnp.max(jnp.abs(residual)), 1e-6)
 
-    def test_solver_mode_mapping(self):
-        E_fdtd, phi_fdtd, rho_fdtd = calculate_electrostatic_fields(
+    def test_electrostatic_field_solve_uses_local_centered_gradient(self):
+        E, phi, rho = calculate_electrostatic_fields(
             self.world,
             self.particles,
             self.constants,
             self.initial_rho,
             self.initial_phi,
-            "fdtd",
+            "electrostatic",
             "periodic",
         )
 
-        expected_phi_fdtd = solve_poisson_with_conjugate_gradient(
-            rho_fdtd,
+        expected_phi = solve_poisson_with_conjugate_gradient(
+            rho,
             self.initial_phi,
             self.constants,
             self.world,
         )
-        expected_Ex_fdtd, expected_Ey_fdtd, expected_Ez_fdtd = centered_finite_difference_gradient(
-            -1.0 * expected_phi_fdtd[self.active, self.active, self.active],
+        expected_Ex, expected_Ey, expected_Ez = _centered_finite_difference_gradient(
+            -1.0 * expected_phi[self.active, self.active, self.active],
             self.dx,
             self.dy,
             self.dz,
-            "periodic",
         )
 
-        self.assertTrue(jnp.allclose(phi_fdtd[self.active, self.active, self.active], expected_phi_fdtd[self.active, self.active, self.active], atol=1e-6, rtol=1e-6))
-        self.assertTrue(jnp.allclose(E_fdtd[0][self.active, self.active, self.active], expected_Ex_fdtd, atol=1e-6, rtol=1e-6))
-        self.assertTrue(jnp.allclose(E_fdtd[1][self.active, self.active, self.active], expected_Ey_fdtd, atol=1e-6, rtol=1e-6))
-        self.assertTrue(jnp.allclose(E_fdtd[2][self.active, self.active, self.active], expected_Ez_fdtd, atol=1e-6, rtol=1e-6))
+        self.assertTrue(jnp.allclose(phi[self.active, self.active, self.active], expected_phi[self.active, self.active, self.active], atol=1e-6, rtol=1e-6))
+        self.assertTrue(jnp.allclose(E[0][self.active, self.active, self.active], expected_Ex, atol=1e-6, rtol=1e-6))
+        self.assertTrue(jnp.allclose(E[1][self.active, self.active, self.active], expected_Ey, atol=1e-6, rtol=1e-6))
+        self.assertTrue(jnp.allclose(E[2][self.active, self.active, self.active], expected_Ez, atol=1e-6, rtol=1e-6))
 
 
 if __name__ == "__main__":

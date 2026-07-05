@@ -2,7 +2,7 @@
 [simulation_parameters]
 name = "Demo of a TS instability with 3,000 electrons"
 t_wind = 5.413e-8
-solver = 'fdtd'
+solver = 'electrodynamic_yee'
 Nx = 100
 Ny = 1
 Nz = 1

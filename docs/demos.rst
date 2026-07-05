@@ -42,7 +42,6 @@ Convergence Scripts
 .. code-block:: bash
 
     python demos/convergence_testing/interpolation_convergence_test.py
-    python demos/convergence_testing/solver_convergence_test.py
 
 Notes
 -----

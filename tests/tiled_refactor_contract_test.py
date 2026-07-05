@@ -201,6 +201,12 @@ class TestTiledRefactorContracts(unittest.TestCase):
     def test_tiled_benchmarking_module_is_removed(self):
         self.assertIsNone(importlib.util.find_spec("PyPIC3D.diagnostics.tiled_benchmarking"))
 
+    def test_deprecated_fdtd_errors_and_root_boris_modules_are_removed(self):
+        self.assertIsNone(importlib.util.find_spec("PyPIC3D.solvers.fdtd"))
+        self.assertIsNone(importlib.util.find_spec("PyPIC3D.errors"))
+        self.assertIsNone(importlib.util.find_spec("PyPIC3D.boris"))
+        self.assertIsNotNone(importlib.util.find_spec("PyPIC3D.pusher.boris"))
+
     def test_particle_push_owns_tiled_pusher_contract(self):
         particle_push = importlib.import_module("PyPIC3D.pusher.particle_push")
 
