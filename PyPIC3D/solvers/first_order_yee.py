@@ -1,127 +1,9 @@
-import jax
-import jax.numpy as jnp
-
 from PyPIC3D.boundary_conditions.PML import (
     apply_tiled_pml_to_b_curl,
     apply_tiled_pml_to_e_curl,
 )
 from PyPIC3D.boundary_conditions import ghost_cells
 from PyPIC3D.utilities.filters import digital_filter_vector
-
-
-def _tile_axis_count(n_cells, cells_per_tile):
-    if int(n_cells) % int(cells_per_tile) != 0:
-        raise ValueError("Shared tile sizes must divide the physical grid dimensions exactly.")
-    return int(n_cells) // int(cells_per_tile)
-
-
-def _active_slice(g):
-    return slice(g, -g)
-
-
-def _forward_slice(g):
-    return slice(g + 1, None if g == 1 else -g + 1)
-
-
-def _backward_slice(g):
-    return slice(g - 1, -g - 1)
-
-
-def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
-    """
-    Split a ghost-celled field into compact tiles using the shared tile shape.
-    """
-
-    tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
-    g = int(num_guard_cells)
-    Nx = int(field.shape[0]) - 2
-    Ny = int(field.shape[1]) - 2
-    Nz = int(field.shape[2]) - 2
-    ntx = _tile_axis_count(Nx, tile_nx)
-    nty = _tile_axis_count(Ny, tile_ny)
-    ntz = _tile_axis_count(Nz, tile_nz)
-
-    if g != 1:
-        field_tiles = jnp.zeros(
-            (
-                ntx,
-                nty,
-                ntz,
-                tile_nx + 2 * g,
-                tile_ny + 2 * g,
-                tile_nz + 2 * g,
-            ),
-            dtype=field.dtype,
-        )
-        for tx in range(ntx):
-            for ty in range(nty):
-                for tz in range(ntz):
-                    ix = 1 + tx * tile_nx
-                    iy = 1 + ty * tile_ny
-                    iz = 1 + tz * tile_nz
-                    interior = field[ix:ix + tile_nx, iy:iy + tile_ny, iz:iz + tile_nz]
-                    field_tiles = field_tiles.at[tx, ty, tz, g:-g, g:-g, g:-g].set(interior)
-        return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
-
-    def tile_at(tx, ty, tz):
-        start = (tx * tile_nx, ty * tile_ny, tz * tile_nz)
-        size = (tile_nx + 2, tile_ny + 2, tile_nz + 2)
-        return jax.lax.dynamic_slice(field, start, size)
-
-    return jnp.stack(
-        [
-            jnp.stack(
-                [
-                    jnp.stack([tile_at(tx, ty, tz) for tz in range(ntz)], axis=0)
-                    for ty in range(nty)
-                ],
-                axis=0,
-            )
-            for tx in range(ntx)
-        ],
-        axis=0,
-    )
-
-
-def assemble_tiled_scalar_field(field_tiles, world, tile_shape, num_guard_cells=2):
-    """
-    Assemble compact field tiles back into one global ghost-celled field.
-    """
-
-    tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
-    g = int(num_guard_cells)
-    ntx, nty, ntz = field_tiles.shape[:3]
-    Nx = int(ntx) * tile_nx
-    Ny = int(nty) * tile_ny
-    Nz = int(ntz) * tile_nz
-
-    field = jnp.zeros((Nx + 2, Ny + 2, Nz + 2), dtype=field_tiles.dtype)
-
-    for tx in range(ntx):
-        for ty in range(nty):
-            for tz in range(ntz):
-                tile_with_one_guard = field_tiles[
-                    tx,
-                    ty,
-                    tz,
-                    g - 1:g + tile_nx + 1,
-                    g - 1:g + tile_ny + 1,
-                    g - 1:g + tile_nz + 1,
-                ]
-                ix = tx * tile_nx
-                iy = ty * tile_ny
-                iz = tz * tile_nz
-                field = field.at[ix:ix + tile_nx + 2, iy:iy + tile_ny + 2, iz:iz + tile_nz + 2].set(tile_with_one_guard)
-
-    return field
-
-
-def assemble_tiled_vector_field(field_tiles, world, tile_shape, num_guard_cells=2):
-    """
-    Assemble tiled vector-field components into ordinary ghost-celled arrays.
-    """
-
-    return tuple(assemble_tiled_scalar_field(component, world, tile_shape, num_guard_cells) for component in field_tiles)
 
 
 def update_E(E_tiles, B_tiles, J_tiles, world, constants, pml_state=None):
@@ -134,17 +16,20 @@ def update_E(E_tiles, B_tiles, J_tiles, world, constants, pml_state=None):
 
     Ex, Ey, Ez = E_tiles
     tile_shape = tuple(int(width) for width in world["tile_shape"])
-    tile_nx, tile_ny, tile_nz = tile_shape
     g = int(world["guard_cells"])
-    g = int(g)
-    active = _active_slice(g)
-    forward = _forward_slice(g)
+    # get the tile information
+
+    active = slice(g, -g)
+    # build interior slice for active axes
+    forward = slice(g + 1, None if g == 1 else -g + 1)
+    # build forward slice used for forward differences
+
     if pml_state is None:
         Bx, By, Bz = ghost_cells.update_tiled_vector_ghost_cells(B_tiles, world, g, tile_shape)
     else:
         Bx, By, Bz = ghost_cells.update_tiled_vector_ghost_cells_for_pml(B_tiles, world, g, tile_shape)
     Jx, Jy, Jz = J_tiles
-    current = _active_slice(g)
+    current = slice(g, -g) #_active_slice(g)
 
     dt = world["dt"]
     dx, dy, dz = world["dx"], world["dy"], world["dz"]
@@ -215,8 +100,11 @@ def update_B(E_tiles, B_tiles, world, constants, pml_state=None):
     tile_nx, tile_ny, tile_nz = tile_shape
     g = int(world["guard_cells"])
     g = int(g)
-    active = _active_slice(g)
-    backward = _backward_slice(g)
+    active = slice(g, -g)
+    # build interior slice for active axes
+    backward = slice(g - 1, -g - 1)
+    # build backward slice for active axes, used for backward differences
+
     if pml_state is None:
         Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells(E_tiles, world, g, tile_shape)
     else:

@@ -15,7 +15,7 @@ from PyPIC3D.particles.tiled_particle_refresh import (
 )
 from PyPIC3D.pusher.tiled_pusher import tiled_particle_push
 from PyPIC3D.solvers.electrostatic_yee import calculate_tiled_electrostatic_fields
-from PyPIC3D.solvers.yee_tiled import update_B, update_E
+from PyPIC3D.solvers.first_order_yee import update_B, update_E
 from PyPIC3D.utils import add_external_fields
 
 

@@ -1,5 +1,6 @@
+import jax.numpy as jnp
+
 from PyPIC3D.particles.tiled_particle_diagnostics import flatten_tiled_particles_by_species
-from PyPIC3D.solvers.yee_tiled import assemble_tiled_scalar_field, assemble_tiled_vector_field
 
 
 def _is_tiled_scalar(field):
@@ -20,6 +21,47 @@ def _tile_shape_from_world(world):
 
 def _guard_depth_from_world(world):
     return int(world["guard_cells"])
+
+
+def assemble_tiled_scalar_field(field_tiles, world, tile_shape, num_guard_cells=2):
+    """
+    Assemble compact field tiles back into one global ghost-celled field.
+    """
+
+    tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
+    g = int(num_guard_cells)
+    ntx, nty, ntz = field_tiles.shape[:3]
+    Nx = int(ntx) * tile_nx
+    Ny = int(nty) * tile_ny
+    Nz = int(ntz) * tile_nz
+
+    field = jnp.zeros((Nx + 2, Ny + 2, Nz + 2), dtype=field_tiles.dtype)
+
+    for tx in range(ntx):
+        for ty in range(nty):
+            for tz in range(ntz):
+                tile_with_one_guard = field_tiles[
+                    tx,
+                    ty,
+                    tz,
+                    g - 1:g + tile_nx + 1,
+                    g - 1:g + tile_ny + 1,
+                    g - 1:g + tile_nz + 1,
+                ]
+                ix = tx * tile_nx
+                iy = ty * tile_ny
+                iz = tz * tile_nz
+                field = field.at[ix:ix + tile_nx + 2, iy:iy + tile_ny + 2, iz:iz + tile_nz + 2].set(tile_with_one_guard)
+
+    return field
+
+
+def assemble_tiled_vector_field(field_tiles, world, tile_shape, num_guard_cells=2):
+    """
+    Assemble tiled vector-field components into ordinary ghost-celled arrays.
+    """
+
+    return tuple(assemble_tiled_scalar_field(component, world, tile_shape, num_guard_cells) for component in field_tiles)
 
 
 def scalar_field_for_output(field, world):
