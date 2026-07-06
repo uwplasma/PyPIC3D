@@ -20,11 +20,9 @@ from PyPIC3D.diagnostics.plotting import (
 
 from PyPIC3D.diagnostics.async_writer import (
     create_async_tiled_openpmd_field_writer,
+    create_async_tiled_openpmd_particle_writer,
     enqueue_openpmd_field_output,
-)
-
-from PyPIC3D.diagnostics.openPMD import (
-    write_openpmd_particles,
+    enqueue_openpmd_particle_output,
 )
 
 from PyPIC3D.utils import (
@@ -104,6 +102,7 @@ def run_PyPIC3D(config_file):
     initial_energy = e_energy + b_energy + kinetic_energy
 
     field_writer = None
+    particle_writer = None
     if plotting_parameters['plot_openpmd_fields']:
         setup_pmd_files( os.path.join(output_dir, "data"), "fields", ".h5")
         field_writer = create_async_tiled_openpmd_field_writer(
@@ -113,7 +112,16 @@ def run_PyPIC3D(config_file):
             file_extension=".h5",
             queue_size=int(plotting_parameters.get("openpmd_field_queue_size", 2)),
         )
-    if plotting_parameters['plot_openpmd_particles']: setup_pmd_files( os.path.join(output_dir, "data"), "particles", ".h5")
+    if plotting_parameters['plot_openpmd_particles']:
+        setup_pmd_files( os.path.join(output_dir, "data"), "particles", ".h5")
+        particle_writer = create_async_tiled_openpmd_particle_writer(
+            world,
+            constants,
+            os.path.join(output_dir, "data"),
+            filename="particles",
+            file_extension=".h5",
+            queue_size=int(plotting_parameters.get("openpmd_particle_queue_size", 2)),
+        )
     # setup the openPMD files if needed
 
     ############################################################################################################
@@ -157,9 +165,17 @@ def run_PyPIC3D(config_file):
 
 
 
-                if plotting_parameters['plot_openpmd_particles']:
-                    write_openpmd_particles(particles, world, constants, os.path.join(output_dir, "data"), plot_num, t, "particles", ".h5", species_config=species_config, species_names=particle_species_names)
-                # Write the particles in openPMD format
+                if particle_writer is not None:
+                    enqueue_openpmd_particle_output(
+                        particle_writer,
+                        particles,
+                        world,
+                        plot_num,
+                        t,
+                        species_config=species_config,
+                        species_names=particle_species_names,
+                    )
+                # Queue tiled particle chunks for asynchronous openPMD output
 
                 if field_writer is not None:
                     enqueue_openpmd_field_output(field_writer, fields, world, plot_num, t)
@@ -183,8 +199,17 @@ def run_PyPIC3D(config_file):
         loop_error = exc
         raise
     finally:
-        if field_writer is not None:
-            field_writer.close(raise_errors=loop_error is None)
+        writer_error = None
+        for writer in (particle_writer, field_writer):
+            if writer is None:
+                continue
+            try:
+                writer.close(raise_errors=loop_error is None)
+            except BaseException as exc:
+                if writer_error is None:
+                    writer_error = exc
+        if loop_error is None and writer_error is not None:
+            raise writer_error
 
 
     return Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles, fields, world, species_config

@@ -198,6 +198,19 @@ def _simulation_parameters():
     }
 
 
+def _record_data(record):
+    if len(record.chunks) <= 1:
+        return record.data
+
+    n = sum(int(extent[0]) for _offset, extent, _data in record.chunks)
+    out = jnp.zeros((n,), dtype=record.chunks[0][2].dtype)
+    for offset, extent, data in record.chunks:
+        start = int(offset[0])
+        stop = start + int(extent[0])
+        out = out.at[start:stop].set(data)
+    return out
+
+
 def _species(name, charge, mass, weight, x1):
     world = _world()
     return particle_species(
@@ -388,6 +401,124 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
             writer.start()
             self.assertTrue(writer.enqueue(snapshot))
             with self.assertRaisesRegex(RuntimeError, "Async openPMD writer failed"):
+                writer.close()
+
+    def test_tiled_particle_snapshot_writes_same_records_as_synchronous_output(self):
+        world = _world()
+        species = [
+            _species("beam electrons", -1.0, 2.0, 3.0, jnp.array([-1.5, 0.5])),
+            _species("background ions", 1.0, 4.0, 5.0, jnp.array([1.5, -0.5])),
+        ]
+        tiled_particles, species_config = to_tiled_particles(species, world, _simulation_parameters())
+        species_names = tuple(s.get_name() for s in species)
+        constants = {"C": 10.0}
+
+        sync_series = FakeSeries()
+        with patch.object(openPMD, "_open_openpmd_series", return_value=sync_series):
+            openPMD.write_openpmd_particles(
+                tiled_particles,
+                world,
+                constants,
+                "/tmp",
+                plot_t=2,
+                t=3,
+                species_config=species_config,
+                species_names=species_names,
+            )
+
+        snapshot = async_writer.make_tiled_particle_snapshot(
+            tiled_particles,
+            step=2,
+            time=3 * world["dt"],
+            species_names=species_names,
+            species_config=species_config,
+        )
+        async_series = FakeSeries()
+        with patch.object(openPMD, "_open_openpmd_series", return_value=async_series):
+            openPMD.write_tiled_particle_snapshot_openpmd(
+                snapshot,
+                output_dir="/tmp",
+                filename="particles",
+                world=world,
+                constants=constants,
+                file_extension=".h5",
+            )
+
+        sync_electrons = sync_series.iterations[2].particles["beam_electrons"]
+        async_electrons = async_series.iterations[2].particles["beam_electrons"]
+        sync_ions = sync_series.iterations[2].particles["background_ions"]
+        async_ions = async_series.iterations[2].particles["background_ions"]
+
+        self.assertEqual(async_series.iterations[2].time, 3 * world["dt"])
+        self.assertEqual(_record_data(async_electrons["position"]["x"]).shape, _record_data(sync_electrons["position"]["x"]).shape)
+        self.assertEqual(_record_data(async_ions["position"]["x"]).shape, _record_data(sync_ions["position"]["x"]).shape)
+        for group_async, group_sync in ((async_electrons, sync_electrons), (async_ions, sync_ions)):
+            for record_name in ("position", "positionOffset", "momentum"):
+                for component in ("x", "y", "z"):
+                    self.assertTrue(
+                        jnp.allclose(
+                            _record_data(group_async[record_name][component]),
+                            _record_data(group_sync[record_name][component]),
+                        )
+                    )
+            for record_name in ("weighting", "charge", "mass"):
+                self.assertTrue(
+                    jnp.allclose(
+                        _record_data(group_async[record_name]),
+                        _record_data(group_sync[record_name]),
+                    )
+                )
+
+    def test_async_particle_writer_queue_size_caps_pending_snapshots(self):
+        world = _world()
+        writer = async_writer.AsyncTiledOpenPMDParticleWriter(
+            output_dir="/tmp",
+            filename="particles",
+            world=world,
+            constants={"C": 10.0},
+            queue_size=1,
+        )
+        snapshot = async_writer.TiledParticleSnapshot(
+            step=0,
+            time=0.0,
+            species_names=("electrons",),
+            x_shards=[],
+            u_shards=[],
+            active_shards=[],
+            species_charge=jnp.array([-1.0]),
+            species_mass=jnp.array([1.0]),
+            species_weight=jnp.array([1.0]),
+        )
+
+        self.assertTrue(writer.enqueue(snapshot, block=False))
+        self.assertFalse(writer.enqueue(snapshot, block=False))
+        writer.close(raise_errors=False)
+
+    def test_async_particle_writer_raises_worker_errors_on_close(self):
+        world = _world()
+        writer = async_writer.AsyncTiledOpenPMDParticleWriter(
+            output_dir="/tmp",
+            filename="particles",
+            world=world,
+            constants={"C": 10.0},
+            queue_size=1,
+        )
+        snapshot = async_writer.TiledParticleSnapshot(
+            step=0,
+            time=0.0,
+            species_names=("electrons",),
+            x_shards=[],
+            u_shards=[],
+            active_shards=[],
+            species_charge=jnp.array([-1.0]),
+            species_mass=jnp.array([1.0]),
+            species_weight=jnp.array([1.0]),
+        )
+
+        with patch.object(async_writer, "write_tiled_particle_snapshot_openpmd", side_effect=RuntimeError("disk failed")):
+            writer.start()
+            self.assertTrue(writer.enqueue(snapshot))
+            with self.assertRaisesRegex(RuntimeError, "Async openPMD particle writer failed"):
                 writer.close()
 
     def test_write_openpmd_initial_particles_flattens_tiled_particles_and_preserves_names(self):

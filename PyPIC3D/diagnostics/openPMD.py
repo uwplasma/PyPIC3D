@@ -392,6 +392,215 @@ def write_openpmd_particles_to_iteration(iteration, particles, constants, specie
         mass.unit_SI = 1.0
 
 
+def _axis_diagnostic_position_array(x, u, dt, wind, bc):
+    x_diagnostic = x - u * dt / 2.0
+
+    if int(np.asarray(bc)) == 0:
+        half_wind = wind / 2.0
+        x_diagnostic = np.where(
+            x_diagnostic > half_wind,
+            x_diagnostic - wind,
+            np.where(x_diagnostic < -half_wind, x_diagnostic + wind, x_diagnostic),
+        )
+
+    return x_diagnostic
+
+
+def _diagnostic_position_array(x, u, world):
+    particle_bc = world.get("particle_boundary_conditions", {})
+    dt = float(world["dt"])
+
+    return np.stack(
+        (
+            _axis_diagnostic_position_array(x[:, 0], u[:, 0], dt, float(world["x_wind"]), particle_bc.get("x", 0)),
+            _axis_diagnostic_position_array(x[:, 1], u[:, 1], dt, float(world["y_wind"]), particle_bc.get("y", 0)),
+            _axis_diagnostic_position_array(x[:, 2], u[:, 2], dt, float(world["z_wind"]), particle_bc.get("z", 0)),
+        ),
+        axis=-1,
+    )
+
+
+def _count_snapshot_particles_by_species(snapshot):
+    counts = np.zeros(len(snapshot.species_names), dtype=np.int64)
+
+    for active_index, active_chunk in snapshot.active_shards:
+        if active_chunk.ndim != 5:
+            raise ValueError(
+                "Expected active particle shard with shape "
+                "(ntx, nty, ntz, nspecies, max_particles_per_tile). "
+                f"Got {active_chunk.shape}."
+            )
+        s0 = _slice_start(active_index[3])
+        for local_s in range(active_chunk.shape[3]):
+            counts[s0 + local_s] += int(np.count_nonzero(active_chunk[:, :, :, local_s, :]))
+
+    return counts
+
+
+def _iter_snapshot_particle_chunks(snapshot, world, constants):
+    if len(snapshot.x_shards) != len(snapshot.u_shards) or len(snapshot.x_shards) != len(snapshot.active_shards):
+        raise ValueError("Particle snapshot x, u, and active shard lists must have the same length.")
+
+    C = float(constants["C"])
+    species_charge = np.asarray(snapshot.species_charge, dtype=np.float64)
+    species_mass = np.asarray(snapshot.species_mass, dtype=np.float64)
+    species_weight = np.asarray(snapshot.species_weight, dtype=np.float64)
+
+    for (x_index, x_chunk), (_u_index, u_chunk), (_active_index, active_chunk) in zip(
+        snapshot.x_shards,
+        snapshot.u_shards,
+        snapshot.active_shards,
+    ):
+        if x_chunk.ndim != 6:
+            raise ValueError(
+                "Expected particle x shard with shape "
+                "(ntx, nty, ntz, nspecies, max_particles_per_tile, 3). "
+                f"Got {x_chunk.shape}."
+            )
+        if u_chunk.shape != x_chunk.shape:
+            raise ValueError(f"Particle u shard shape {u_chunk.shape} must match x shape {x_chunk.shape}.")
+        if active_chunk.shape != x_chunk.shape[:-1]:
+            raise ValueError(f"Particle active shard shape {active_chunk.shape} must match x.shape[:-1] {x_chunk.shape[:-1]}.")
+
+        s0 = _slice_start(x_index[3])
+        ntx, nty, ntz, ns_local, _slots, _coords = x_chunk.shape
+
+        for tx in range(ntx):
+            for ty in range(nty):
+                for tz in range(ntz):
+                    for local_s in range(ns_local):
+                        species_index = s0 + local_s
+                        active = np.asarray(active_chunk[tx, ty, tz, local_s], dtype=bool)
+                        n_active = int(np.count_nonzero(active))
+                        if n_active == 0:
+                            continue
+
+                        x_live = np.array(x_chunk[tx, ty, tz, local_s][active], dtype=np.float64, copy=True, order="C")
+                        u_live = np.array(u_chunk[tx, ty, tz, local_s][active], dtype=np.float64, copy=True, order="C")
+                        x_diagnostic = _diagnostic_position_array(x_live, u_live, world)
+
+                        charge = np.full(n_active, float(species_charge[species_index]), dtype=np.float64)
+                        mass = np.full(n_active, float(species_mass[species_index]), dtype=np.float64)
+                        weight = np.full(n_active, float(species_weight[species_index]), dtype=np.float64)
+
+                        gamma = 1.0 / np.sqrt(1.0 - np.sum(u_live * u_live, axis=1) / C**2)
+
+                        yield species_index, x_diagnostic, u_live, charge, mass, weight, gamma
+
+
+def _reset_particle_species_records(species_group, dtype, num_particles):
+    shape = [int(num_particles)]
+    dtype = np.dtype(dtype)
+
+    for record_name in ("position", "positionOffset", "momentum"):
+        record = species_group[record_name]
+        for component in ("x", "y", "z"):
+            record_component = record[component]
+            record_component.reset_dataset(io.Dataset(dtype, shape))
+            record_component.unit_SI = 1.0
+
+    for record_name in ("weighting", "charge", "mass"):
+        record_component = species_group[record_name]
+        record_component.reset_dataset(io.Dataset(dtype, shape))
+        record_component.unit_SI = 1.0
+
+
+def _store_particle_record_chunk(species_group, offset, x, u, charge, mass, weight, gamma, dtype=np.float64):
+    num_particles = int(x.shape[0])
+    if num_particles == 0:
+        return int(offset)
+
+    start = [int(offset)]
+    extent = [num_particles]
+
+    x = _ensure_openpmd_array(x, dtype=dtype)
+    u = _ensure_openpmd_array(u, dtype=dtype)
+    charge = _ensure_openpmd_array(charge, dtype=dtype)
+    mass = _ensure_openpmd_array(mass, dtype=dtype)
+    weight = _ensure_openpmd_array(weight, dtype=dtype)
+    gamma = _ensure_openpmd_array(gamma, dtype=dtype)
+
+    for component, data in zip(("x", "y", "z"), (x[:, 0], x[:, 1], x[:, 2])):
+        species_group["position"][component].store_chunk(_ensure_openpmd_array(data, dtype=dtype), start, extent)
+
+    zeros = np.zeros(num_particles, dtype=np.dtype(dtype))
+    for component in ("x", "y", "z"):
+        species_group["positionOffset"][component].store_chunk(zeros, start, extent)
+
+    momentum = u * (mass * weight * gamma)[:, None]
+    for component, data in zip(("x", "y", "z"), (momentum[:, 0], momentum[:, 1], momentum[:, 2])):
+        species_group["momentum"][component].store_chunk(_ensure_openpmd_array(data, dtype=dtype), start, extent)
+
+    species_group["weighting"].store_chunk(weight, start, extent)
+    species_group["charge"].store_chunk(charge, start, extent)
+    species_group["mass"].store_chunk(mass, start, extent)
+
+    return int(offset) + num_particles
+
+
+def write_tiled_particle_snapshot_to_iteration(iteration, snapshot, world, constants, dtype=np.float64):
+    counts = _count_snapshot_particles_by_species(snapshot)
+
+    for species_index, species_name in enumerate(snapshot.species_names):
+        species_group = iteration.particles[species_name.replace(" ", "_")]
+        _reset_particle_species_records(
+            species_group,
+            dtype=dtype,
+            num_particles=int(counts[species_index]),
+        )
+
+    offsets = np.zeros(len(snapshot.species_names), dtype=np.int64)
+
+    for species_index, x, u, charge, mass, weight, gamma in _iter_snapshot_particle_chunks(snapshot, world, constants):
+        species_group = iteration.particles[snapshot.species_names[species_index].replace(" ", "_")]
+        offsets[species_index] = _store_particle_record_chunk(
+            species_group,
+            int(offsets[species_index]),
+            x,
+            u,
+            charge,
+            mass,
+            weight,
+            gamma,
+            dtype=dtype,
+        )
+
+    for species_name, stored, expected in zip(snapshot.species_names, offsets, counts):
+        if int(stored) != int(expected):
+            raise RuntimeError(f"Stored {stored} particles for {species_name}, expected {expected}.")
+
+
+def write_tiled_particle_snapshot_openpmd(
+    snapshot,
+    *,
+    output_dir,
+    filename,
+    world,
+    constants,
+    file_extension=".bp",
+    dtype=np.float64,
+):
+    series = _open_openpmd_series(output_dir, filename, file_extension=file_extension)
+
+    try:
+        iteration = series.iterations[int(snapshot.step)]
+        iteration.time = float(snapshot.time)
+        iteration.dt = float(world["dt"])
+        iteration.time_unit_SI = 1.0
+
+        write_tiled_particle_snapshot_to_iteration(
+            iteration,
+            snapshot,
+            world,
+            constants,
+            dtype=dtype,
+        )
+
+        series.flush()
+    finally:
+        series.close()
+
+
 def write_openpmd_fields(fields, world, output_dir, plot_t, t, filename="fields", file_extension=".bp"):
     """
     Write all field data to an openPMD file for visualization in ParaView/VisIt.
