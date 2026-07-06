@@ -7,7 +7,7 @@ import numpy as np
 import toml
 from PyPIC3D.boundary_conditions import ghost_cells
 from PyPIC3D.initialization import initialize_fields
-from PyPIC3D.particles.tiled_particles import SpeciesConfig, TiledParticles
+from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
 from PyPIC3D.tests.tiled_particle_fixtures import to_tiled_particles
 from PyPIC3D.diagnostics import plotting, vtk as vtk_diagnostics
 from PyPIC3D.utilities.grids import build_collocated_grid, build_yee_grid

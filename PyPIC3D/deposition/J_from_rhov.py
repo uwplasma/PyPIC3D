@@ -1,4 +1,4 @@
-from PyPIC3D.particles.tiled_particles import TiledParticles, SpeciesConfig
+from PyPIC3D.particles.particle_class import TiledParticles, SpeciesConfig
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import (
     collapse_axis_stencil,

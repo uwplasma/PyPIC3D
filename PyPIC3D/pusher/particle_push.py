@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from PyPIC3D.particles.tiled_particles import TiledParticles
+from PyPIC3D.particles.particle_class import TiledParticles
 from PyPIC3D.pusher.boris import (
     boris_single_particle,
     interpolate_field_to_particles,

@@ -16,7 +16,7 @@ from PyPIC3D.boundary_conditions import ghost_cells
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 from PyPIC3D.diagnostics.output_adapters import assemble_tiled_vector_field
 from PyPIC3D.initialization import initialize_simulation
-from PyPIC3D.particles.tiled_particles import SpeciesConfig, TiledParticles
+from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
 from PyPIC3D.solvers.first_order_yee import (
     update_B,
     update_E,

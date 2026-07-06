@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import wrap_periodic_position
-from PyPIC3D.particles.tiled_particles import TiledParticles
+from PyPIC3D.particles.particle_class import TiledParticles
 
 
 def _particle_boundary_conditions(world):

@@ -3,7 +3,7 @@ import math
 import jax.numpy as jnp
 import numpy as np
 
-from PyPIC3D.particles.tiled_particles import SpeciesConfig, TiledParticles
+from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
 
 
 class particle_species:

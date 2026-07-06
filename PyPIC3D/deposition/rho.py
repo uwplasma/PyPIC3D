@@ -11,7 +11,7 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
 )
 from PyPIC3D.boundary_conditions.ghost_cells import update_tiled_ghost_cells
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
-from PyPIC3D.particles.tiled_particles import TiledParticles
+from PyPIC3D.particles.particle_class import TiledParticles
 from PyPIC3D.utilities.filters import digital_filter
 
 

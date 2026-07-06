@@ -8,7 +8,7 @@ import numpy as np
 
 from PyPIC3D.particles.particle_initialization import load_particles_from_toml
 from PyPIC3D.tests.tiled_particle_fixtures import to_tiled_particles
-from PyPIC3D.particles.tiled_particles import SpeciesConfig, TiledParticles
+from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
 from PyPIC3D.tests.tiled_particle_fixtures import particle_species
 
 

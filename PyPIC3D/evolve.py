@@ -9,7 +9,7 @@ import jax
 
 from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
-from PyPIC3D.particles.tiled_particle_refresh import (
+from PyPIC3D.particles.particle_tile_communication import (
     refresh_tiled_particle_tiles,
     update_tiled_particle_positions,
 )

@@ -3,7 +3,7 @@ from PyPIC3D.deposition.rho import (
     compute_tiled_pressure_field_from_tiled_particles,
     compute_tiled_velocity_field_from_tiled_particles,
 )
-from PyPIC3D.particles.tiled_particles import TiledParticles
+from PyPIC3D.particles.particle_class import TiledParticles
 
 
 def compute_mass_density(particles, rho, world, species_config=None):

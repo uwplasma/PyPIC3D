@@ -7,7 +7,7 @@ import jax
 import jax.numpy as jnp
 from PyPIC3D.initialization import setup_write_dir, default_parameters, initialize_simulation, validate_field_solver
 from PyPIC3D.evolve import time_loop_electrodynamic, time_loop_electrostatic
-from PyPIC3D.particles.tiled_particles import TiledParticles
+from PyPIC3D.particles.particle_class import TiledParticles
 
 jax.config.update("jax_enable_x64", True)
 

@@ -11,7 +11,7 @@ from PyPIC3D.evolve import time_loop_electrodynamic
 from PyPIC3D.initialization import initialize_simulation, validate_field_solver
 from PyPIC3D.tests.tiled_particle_fixtures import particle_species
 from PyPIC3D.tests.tiled_particle_fixtures import to_tiled_particles
-from PyPIC3D.particles.tiled_particles import TiledParticles
+from PyPIC3D.particles.particle_class import TiledParticles
 from PyPIC3D.boundary_conditions import ghost_cells
 from PyPIC3D.diagnostics.output_adapters import assemble_tiled_vector_field
 from PyPIC3D.solvers.first_order_yee import (

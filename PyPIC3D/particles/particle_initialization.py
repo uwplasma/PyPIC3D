@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import math
 
 from PyPIC3D.utils import vth_to_T, T_to_vth
-from PyPIC3D.particles.tiled_particles import SpeciesConfig, TiledParticles
+from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
 
 
 def grab_particle_keys(config):

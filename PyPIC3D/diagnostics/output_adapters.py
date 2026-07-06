@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 from typing import NamedTuple
 
-from PyPIC3D.particles.tiled_particles import TiledParticles
+from PyPIC3D.particles.particle_class import TiledParticles
 
 
 class ParticleOutputRecord(NamedTuple):
