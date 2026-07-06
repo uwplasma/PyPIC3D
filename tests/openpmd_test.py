@@ -1,4 +1,6 @@
 import unittest
+import threading
+import time
 from unittest.mock import patch
 
 import jax
@@ -520,6 +522,67 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
             self.assertTrue(writer.enqueue(snapshot))
             with self.assertRaisesRegex(RuntimeError, "Async openPMD particle writer failed"):
                 writer.close()
+
+    def test_field_and_particle_async_writers_serialize_openpmd_calls(self):
+        world = _world()
+        field_writer = async_writer.AsyncTiledOpenPMDFieldWriter(
+            output_dir="/tmp",
+            filename="fields",
+            world=world,
+            global_shape=(world["Nx"], world["Ny"], world["Nz"]),
+            tile_shape=world["tile_shape"],
+            guard_cells=world["guard_cells"],
+            queue_size=1,
+        )
+        particle_writer = async_writer.AsyncTiledOpenPMDParticleWriter(
+            output_dir="/tmp",
+            filename="particles",
+            world=world,
+            constants={"C": 10.0},
+            queue_size=1,
+        )
+        field_snapshot = async_writer.TiledFieldSnapshot(step=0, time=0.0, fields={})
+        particle_snapshot = async_writer.TiledParticleSnapshot(
+            step=0,
+            time=0.0,
+            species_names=("electrons",),
+            x_shards=[],
+            u_shards=[],
+            active_shards=[],
+            species_charge=jnp.array([-1.0]),
+            species_mass=jnp.array([1.0]),
+            species_weight=jnp.array([1.0]),
+        )
+
+        active_writes = 0
+        overlaps = []
+        counter_lock = threading.Lock()
+        field_write_started = threading.Event()
+
+        def write_snapshot(*args, **kwargs):
+            nonlocal active_writes
+            with counter_lock:
+                active_writes += 1
+                if active_writes > 1:
+                    overlaps.append(active_writes)
+            field_write_started.set()
+            time.sleep(0.05)
+            with counter_lock:
+                active_writes -= 1
+
+        with (
+            patch.object(async_writer, "write_tiled_field_snapshot_openpmd", side_effect=write_snapshot),
+            patch.object(async_writer, "write_tiled_particle_snapshot_openpmd", side_effect=write_snapshot),
+        ):
+            field_writer.start()
+            particle_writer.start()
+            self.assertTrue(field_writer.enqueue(field_snapshot))
+            self.assertTrue(field_write_started.wait(timeout=1.0))
+            self.assertTrue(particle_writer.enqueue(particle_snapshot))
+            field_writer.close()
+            particle_writer.close()
+
+        self.assertEqual(overlaps, [])
 
     def test_write_openpmd_initial_particles_flattens_tiled_particles_and_preserves_names(self):
         world = _world()

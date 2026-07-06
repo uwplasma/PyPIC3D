@@ -23,6 +23,9 @@ FieldValue = Union[ArrayLike, Sequence[ArrayLike]]
 SnapshotFieldValue = Union[HostShardList, Tuple[HostShardList, HostShardList, HostShardList]]
 
 
+_OPENPMD_WRITE_LOCK = threading.Lock()
+
+
 @dataclass(frozen=True)
 class TiledFieldSnapshot:
     """
@@ -273,14 +276,18 @@ class AsyncTiledOpenPMDFieldWriter:
                     return
 
                 if self._error is None:
-                    write_tiled_field_snapshot_openpmd(
-                        item,
-                        output_dir=self.output_dir,
-                        filename=self.filename,
-                        world=self.world,
-                        layout=self.layout,
-                        file_extension=self.file_extension,
-                    )
+                    # openPMD/HDF5 native writes are serialized across field and
+                    # particle diagnostics; host snapshot construction remains
+                    # outside this lock.
+                    with _OPENPMD_WRITE_LOCK:
+                        write_tiled_field_snapshot_openpmd(
+                            item,
+                            output_dir=self.output_dir,
+                            filename=self.filename,
+                            world=self.world,
+                            layout=self.layout,
+                            file_extension=self.file_extension,
+                        )
 
             except BaseException as exc:
                 self._error = exc
@@ -381,15 +388,18 @@ class AsyncTiledOpenPMDParticleWriter:
                     return
 
                 if self._error is None:
-                    write_tiled_particle_snapshot_openpmd(
-                        item,
-                        output_dir=self.output_dir,
-                        filename=self.filename,
-                        world=self.world,
-                        constants=self.constants,
-                        file_extension=self.file_extension,
-                        dtype=self.dtype,
-                    )
+                    # Share the same native-write lock as field diagnostics so
+                    # independent output streams never enter openPMD concurrently.
+                    with _OPENPMD_WRITE_LOCK:
+                        write_tiled_particle_snapshot_openpmd(
+                            item,
+                            output_dir=self.output_dir,
+                            filename=self.filename,
+                            world=self.world,
+                            constants=self.constants,
+                            file_extension=self.file_extension,
+                            dtype=self.dtype,
+                        )
 
             except BaseException as exc:
                 self._error = exc

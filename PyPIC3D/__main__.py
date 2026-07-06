@@ -156,15 +156,6 @@ def run_PyPIC3D(config_file):
                 write_data(f"{output_dir}/data/total_momentum.txt", t * dt, total_momentum)
                 # Write the total momentum to a file
 
-                # for species in particles:
-                #     write_data(f"{output_dir}/data/{species.name}_kinetic_energy.txt", t * dt, species.kinetic_energy())
-
-
-                if plotting_parameters['plot_phasespace']:
-                    write_particles_phase_space(particles, t, output_dir, species_config=species_config, species_names=particle_species_names, world=world)
-
-
-
                 if particle_writer is not None:
                     enqueue_openpmd_particle_output(
                         particle_writer,

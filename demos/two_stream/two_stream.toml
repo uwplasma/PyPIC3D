@@ -18,10 +18,8 @@ relativistic = true
 
 [plotting]
 plotting_interval = 8
-plot_phasespace = true
 plot_openpmd_particles = true
 plot_openpmd_fields = true
-dump_particles = true
 
 [particle1]
 name = "electron1"
