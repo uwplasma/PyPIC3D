@@ -5,6 +5,7 @@ import jax
 import jax.numpy as jnp
 
 from PyPIC3D.boundary_conditions import ghost_cells
+from PyPIC3D.diagnostics import async_writer
 from PyPIC3D.diagnostics import openPMD
 from PyPIC3D.diagnostics.openPMD import _ensure_openpmd_array
 from PyPIC3D.tests.tiled_particle_fixtures import particle_species
@@ -318,7 +319,7 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
             "rho": tile_scalar_field(rho_global, world, tile_shape),
             "phi": tile_scalar_field(phi_global, world, tile_shape),
         }
-        snapshot = openPMD.make_tiled_field_snapshot(
+        snapshot = async_writer.make_tiled_field_snapshot(
             field_map,
             step=3,
             time=0.6,
@@ -355,7 +356,7 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
 
     def test_async_field_writer_queue_size_caps_pending_snapshots(self):
         world = _world()
-        writer = openPMD.AsyncTiledOpenPMDFieldWriter(
+        writer = async_writer.AsyncTiledOpenPMDFieldWriter(
             output_dir="/tmp",
             filename="fields",
             world=world,
@@ -364,7 +365,7 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
             guard_cells=world["guard_cells"],
             queue_size=1,
         )
-        snapshot = openPMD.TiledFieldSnapshot(step=0, time=0.0, fields={})
+        snapshot = async_writer.TiledFieldSnapshot(step=0, time=0.0, fields={})
 
         self.assertTrue(writer.enqueue(snapshot, block=False))
         self.assertFalse(writer.enqueue(snapshot, block=False))
@@ -372,7 +373,7 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
 
     def test_async_field_writer_raises_worker_errors_on_close(self):
         world = _world()
-        writer = openPMD.AsyncTiledOpenPMDFieldWriter(
+        writer = async_writer.AsyncTiledOpenPMDFieldWriter(
             output_dir="/tmp",
             filename="fields",
             world=world,
@@ -381,9 +382,9 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
             guard_cells=world["guard_cells"],
             queue_size=1,
         )
-        snapshot = openPMD.TiledFieldSnapshot(step=0, time=0.0, fields={})
+        snapshot = async_writer.TiledFieldSnapshot(step=0, time=0.0, fields={})
 
-        with patch.object(openPMD, "write_tiled_field_snapshot_openpmd", side_effect=RuntimeError("disk failed")):
+        with patch.object(async_writer, "write_tiled_field_snapshot_openpmd", side_effect=RuntimeError("disk failed")):
             writer.start()
             self.assertTrue(writer.enqueue(snapshot))
             with self.assertRaisesRegex(RuntimeError, "Async openPMD writer failed"):

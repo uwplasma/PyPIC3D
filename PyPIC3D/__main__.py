@@ -18,10 +18,13 @@ from PyPIC3D.diagnostics.plotting import (
     write_particles_phase_space, write_data
 )
 
-from PyPIC3D.diagnostics.openPMD import (
-    write_openpmd_particles,
+from PyPIC3D.diagnostics.async_writer import (
     create_async_tiled_openpmd_field_writer,
     enqueue_openpmd_field_output,
+)
+
+from PyPIC3D.diagnostics.openPMD import (
+    write_openpmd_particles,
 )
 
 from PyPIC3D.utils import (
@@ -149,8 +152,8 @@ def run_PyPIC3D(config_file):
                 #     write_data(f"{output_dir}/data/{species.name}_kinetic_energy.txt", t * dt, species.kinetic_energy())
 
 
-                # if plotting_parameters['plot_phasespace']:
-                #     write_particles_phase_space(particles, t, output_dir, species_config=species_config, species_names=particle_species_names, world=world)
+                if plotting_parameters['plot_phasespace']:
+                    write_particles_phase_space(particles, t, output_dir, species_config=species_config, species_names=particle_species_names, world=world)
 
 
 
