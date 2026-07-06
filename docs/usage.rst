@@ -57,9 +57,6 @@ Minimal Working Example
     [plotting]
     plotting_interval = 10
     plot_phasespace = false
-    plot_vtk_particles = false
-    plot_vtk_scalars = false
-    plot_vtk_vectors = false
     plot_openpmd_particles = false
     plot_openpmd_fields = false
     dump_particles = false
@@ -135,5 +132,5 @@ At ``plotting_interval`` cadence, PyPIC3D writes diagnostics like:
 - ``kinetic_energy.txt``
 - ``total_momentum.txt``
 
-Depending on flags, it also writes VTK and openPMD files plus
-``data/output.toml`` metadata.
+Depending on flags, it also writes matplotlib phase-space arrays and openPMD
+files plus ``data/output.toml`` metadata.

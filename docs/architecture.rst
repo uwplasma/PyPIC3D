@@ -26,7 +26,7 @@ Core Module Map
 - ``PyPIC3D/rho.py``: charge deposition.
 - ``PyPIC3D/solvers/``: field update operators and electrostatic Poisson
   helpers.
-- ``PyPIC3D/diagnostics/``: phase-space plots, VTK output, openPMD output.
+- ``PyPIC3D/diagnostics/``: phase-space plots and openPMD output.
 - ``PyPIC3D/utils.py``: config handling, filters, energy calculations,
   serialization helpers.
 
@@ -83,6 +83,6 @@ Data and Output Flow
 
 - Diagnostics and metadata are written under ``<output_dir>/data``.
 - Text outputs include energy and momentum traces.
-- Optional outputs include VTK files and openPMD files.
+- Optional outputs include matplotlib phase-space arrays and openPMD files.
 - ``output.toml`` captures simulation stats, resolved runtime parameters,
   particle summaries, and package versions.

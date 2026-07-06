@@ -1,7 +1,6 @@
 import jax
 import plotly
 import tqdm
-import pyevtk
 from jax import jit
 import argparse
 import jax.numpy as jnp
@@ -714,7 +713,6 @@ def dump_parameters_to_toml(simulation_stats, simulation_parameters, plasma_para
         "toml": toml.__version__,
         "plotly": plotly.__version__,
         "tqdm": tqdm.__version__,
-        "pyevtk": pyevtk.__version__,
     }
 
     config["package_versions"] = package_versions

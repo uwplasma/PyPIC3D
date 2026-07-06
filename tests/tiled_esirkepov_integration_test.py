@@ -17,7 +17,7 @@ jax.config.update("jax_enable_x64", True)
 
 
 class TiledEsirkepovIntegrationTest(unittest.TestCase):
-    def test_short_output_enabled_tiled_esirkepov_run_keeps_live_state_tiled(self):
+    def test_short_output_enabled_tiled_esirkepov_run_writes_openpmd_without_vtk(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             x_path = os.path.join(tmpdir, "x.npy")
             zeros_path = os.path.join(tmpdir, "zeros.npy")
@@ -50,11 +50,9 @@ class TiledEsirkepovIntegrationTest(unittest.TestCase):
                 },
                 "plotting": {
                     "plotting_interval": 1,
-                    "plot_vtk_vectors": True,
-                    "plot_vtk_particles": True,
                     "plot_openpmd_fields": True,
                     "plot_openpmd_particles": True,
-                    "plot_phasespace": False,
+                    "plot_phasespace": True,
                 },
                 "particle1": {
                     "name": "electrons",
@@ -87,8 +85,9 @@ class TiledEsirkepovIntegrationTest(unittest.TestCase):
                 self.assertTrue(os.path.exists(os.path.join(tmpdir, "data", filename)))
             self.assertTrue(os.path.exists(os.path.join(tmpdir, "data", "fields.h5")))
             self.assertTrue(os.path.exists(os.path.join(tmpdir, "data", "particles.h5")))
-            self.assertTrue(os.path.exists(os.path.join(tmpdir, "data", "vector_field_slice", "vector_field_slice_000000000.vtk")))
-            self.assertTrue(os.path.exists(os.path.join(tmpdir, "data", "particles", "electrons.000000000.vtu")))
+            self.assertFalse(os.path.exists(os.path.join(tmpdir, "data", "vector_field_slice")))
+            self.assertFalse(os.path.exists(os.path.join(tmpdir, "data", "particles", "electrons.000000000.vtu")))
+            self.assertTrue(os.path.exists(os.path.join(tmpdir, "data", "phase_space", "x", "electrons_phase_space.000000000.npy")))
 
     def test_main_prints_final_energy_for_tiled_runtime(self):
         with tempfile.TemporaryDirectory() as tmpdir:

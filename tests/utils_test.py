@@ -1,15 +1,17 @@
 import unittest
 import os
 import tempfile
+import importlib.util
 import jax
 import jax.numpy as jnp
 import numpy as np
 import toml
+import PyPIC3D
 from PyPIC3D.boundary_conditions import ghost_cells
 from PyPIC3D.initialization import initialize_fields
 from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
 from PyPIC3D.tests.tiled_particle_fixtures import to_tiled_particles
-from PyPIC3D.diagnostics import plotting, vtk as vtk_diagnostics
+from PyPIC3D.diagnostics import plotting
 from PyPIC3D.utilities.grids import build_collocated_grid, build_yee_grid
 from PyPIC3D.utils import (
     print_stats, check_stability,
@@ -355,6 +357,10 @@ class TestUtilsFunctions(unittest.TestCase):
         self.assertEqual(config["particles"][1]["active_particles"], 1)
         self.assertEqual(config["particles"][0]["tile_shape"], [2, 1, 1])
 
+    def test_package_does_not_export_vtk_diagnostics(self):
+        self.assertFalse(hasattr(PyPIC3D, "vtk"))
+        self.assertIsNone(importlib.util.find_spec("PyPIC3D.diagnostics.vtk"))
+
     def test_plot_positions_flattens_tiled_particles_and_preserves_species_names(self):
         species = particle_species(
             name="beam electrons",
@@ -488,42 +494,6 @@ class TestUtilsFunctions(unittest.TestCase):
                     )
 
         self.assertEqual(scatter.call_count, 3)
-
-    def test_vtk_plot_fields_assembles_tiled_components_at_output_boundary(self):
-        world = {
-            "Nx": 4,
-            "Ny": 2,
-            "Nz": 2,
-            "dx": 0.25,
-            "dy": 0.5,
-            "dz": 0.75,
-            "x_wind": 1.0,
-            "y_wind": 1.0,
-            "z_wind": 1.5,
-            "tile_shape": (2, 1, 1),
-            "guard_cells": 2,
-            "boundary_conditions": {"x": 0, "y": 0, "z": 0},
-        }
-        field_shape = (world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2)
-        field = tuple(jnp.zeros(field_shape) + component for component in (1.0, 2.0, 3.0))
-        tiled_field = _tile_vector_field(field, world, world["tile_shape"], num_guard_cells=world["guard_cells"])
-
-        with unittest.mock.patch.object(vtk_diagnostics, "gridToVTK") as grid_to_vtk:
-            vtk_diagnostics.plot_fields(
-                tiled_field[0],
-                tiled_field[1],
-                tiled_field[2],
-                0,
-                "E",
-                world["dx"],
-                world["dy"],
-                world["dz"],
-                world=world,
-            )
-
-        cell_data = grid_to_vtk.call_args.kwargs["cellData"]
-        self.assertEqual(cell_data["E_x"].shape, (6, 4, 4))
-        self.assertTrue(jnp.allclose(cell_data["E_y"], 2.0))
 
 if __name__ == '__main__':
     unittest.main()

@@ -9,7 +9,6 @@ import os
 import time
 import jax
 from jax import block_until_ready
-import jax.numpy as jnp
 from tqdm import tqdm
 
 #from memory_profiler import profile
@@ -23,10 +22,6 @@ from PyPIC3D.diagnostics.openPMD import (
     write_openpmd_particles, write_openpmd_fields
 )
 
-from PyPIC3D.diagnostics.vtk import (
-    plot_field_slice_vtk, plot_vectorfield_slice_vtk, plot_vtk_particles
-)
-
 from PyPIC3D.utils import (
     dump_parameters_to_toml, load_config_file, compute_energy,
     setup_pmd_files, add_external_fields, compute_total_momentum
@@ -35,13 +30,6 @@ from PyPIC3D.utils import (
 from PyPIC3D.initialization import (
     initialize_simulation
 )
-
-from PyPIC3D.diagnostics.fluid_quantities import (
-    compute_mass_density
-)
-
-from PyPIC3D.deposition.rho import compute_rho
-from PyPIC3D.diagnostics.output_adapters import fields_for_output, scalar_field_for_output
 
 
 # Importing functions from the PyPIC3D package
@@ -65,13 +53,6 @@ def run_PyPIC3D(config_file):
 
     dt = world['dt']
     output_dir = simulation_parameters['output_dir']
-    vertex_grid = tuple(g[1:-1] for g in world['grids']['vertex'])
-    # unpack the physical interior of the vertex grid (strip ghost cell positions)
-
-    scalar_field_names = ["rho", "mass_density"]
-    vector_field_names = ["E", "B", "J"]
-    tile_shape = tuple(int(width) for width in world["tile_shape"])
-    g = int(world["guard_cells"])
     particle_species_names = simulation_parameters.get("particle_species_names")
 
     def loop_with_static_world(
@@ -159,38 +140,6 @@ def run_PyPIC3D(config_file):
                 write_particles_phase_space(particles, t, output_dir, species_config=species_config, species_names=particle_species_names, world=world)
 
 
-
-            if plotting_parameters['plot_vtk_scalars']:
-                if getattr(rho, "ndim", 0) == 6:
-                    rho = compute_rho(particles, species_config, rho, constants, world)
-                    mass_density = compute_mass_density(particles, rho, world, species_config=species_config)
-                    rho_output = scalar_field_for_output(rho, world)
-                    mass_density_output = scalar_field_for_output(mass_density, world)
-                else:
-                    raise ValueError("Runtime scalar diagnostics require tiled rho storage.")
-
-                y_mid = world['Ny']//2 + 1
-                # midplane index shifted by 1 for ghost cells
-                fields_mag = [rho_output[1:-1, y_mid, 1:-1], mass_density_output[1:-1, y_mid, 1:-1]]
-                plot_field_slice_vtk(fields_mag, scalar_field_names, 1, vertex_grid, t, "scalar_field", output_dir, world)
-                # Plot the scalar fields in VTK format
-
-
-            if plotting_parameters['plot_vtk_vectors']:
-                output_fields = fields_for_output(fields, world)
-                E, B, J, rho, phi, external_fields, *rest = output_fields
-                # assemble tiled fields before VTK output
-                y_mid = world['Ny']//2 + 1
-                # midplane index shifted by 1 for ghost cells
-                vector_field_slices = [ [E[0][1:-1, y_mid, 1:-1], E[1][1:-1, y_mid, 1:-1], E[2][1:-1, y_mid, 1:-1]],
-                                        [B[0][1:-1, y_mid, 1:-1], B[1][1:-1, y_mid, 1:-1], B[2][1:-1, y_mid, 1:-1]],
-                                        [J[0][1:-1, y_mid, 1:-1], J[1][1:-1, y_mid, 1:-1], J[2][1:-1, y_mid, 1:-1]]]
-                plot_vectorfield_slice_vtk(vector_field_slices, vector_field_names, 1, vertex_grid, t, 'vector_field', output_dir, world)
-                # Plot the vector fields in VTK format
-
-            if plotting_parameters['plot_vtk_particles']:
-                plot_vtk_particles(particles, plot_num, output_dir, species_config=species_config, species_names=particle_species_names, world=world)
-            # Plot the particles in VTK format
 
             if plotting_parameters['plot_openpmd_particles']:
                 write_openpmd_particles(particles, world, constants, os.path.join(output_dir, "data"), plot_num, t, "particles", ".h5", species_config=species_config, species_names=particle_species_names)

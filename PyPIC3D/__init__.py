@@ -23,7 +23,6 @@ from .deposition import rho
 from .diagnostics import plotting
 from .diagnostics import fluid_quantities
 from .diagnostics import openPMD
-from .diagnostics import vtk
 
 from .boundary_conditions import boundaryconditions
 from .boundary_conditions import grid_and_stencil

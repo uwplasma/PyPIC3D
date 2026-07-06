@@ -17,8 +17,6 @@ dependencies = [
     "plotly",
     "toml",
     "tqdm",
-    "pyevtk",
-    "vtk",
     "openpmd-api",
 ]
 

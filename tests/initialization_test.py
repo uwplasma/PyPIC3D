@@ -35,6 +35,9 @@ class TestInitializationFunctions(unittest.TestCase):
         self.assertEqual(sim["particle_y_bc"], "periodic")
         self.assertEqual(sim["particle_z_bc"], "periodic")
         self.assertEqual(sim["guard_cells"], 2)
+        self.assertNotIn("plot_vtk_particles", plotting)
+        self.assertNotIn("plot_vtk_scalars", plotting)
+        self.assertNotIn("plot_vtk_vectors", plotting)
         self.assertIn('eps', const)
         self.assertIn('plotfields', plotting)
         # check that the default parameters contain expected keys

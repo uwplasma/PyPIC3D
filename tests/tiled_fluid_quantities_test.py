@@ -1,10 +1,8 @@
-import inspect
 import unittest
 
 import jax
 import jax.numpy as jnp
 
-from PyPIC3D import __main__ as pypic_main
 from PyPIC3D.boundary_conditions import ghost_cells
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
 from PyPIC3D.diagnostics.fluid_quantities import (
@@ -401,12 +399,6 @@ class TestTiledFluidQuantities(unittest.TestCase):
             compute_velocity_field(particles, field, 0, world)
         with self.assertRaisesRegex(ValueError, "TiledParticles"):
             compute_pressure_field(particles, field, field, 0, world)
-
-    def test_tiled_scalar_vtk_path_no_longer_rejects_electrodynamic_yee(self):
-        run_source = inspect.getsource(pypic_main.run_PyPIC3D)
-
-        self.assertNotIn("plot_vtk_scalars is not supported for electrodynamic_yee", run_source)
-
 
 if __name__ == "__main__":
     unittest.main()

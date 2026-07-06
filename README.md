@@ -16,7 +16,7 @@ PyPIC3D --config path/to/config.toml
 - Advances charged particle species with a Boris particle pusher.
 - Deposits current with either `j_from_rhov` or `esirkepov`.
 - Evolves fields with a first-order Yee electrodynamic update or an electrostatic Poisson solve.
-- Writes diagnostics, VTK outputs, and optional openPMD files.
+- Writes diagnostics, matplotlib phase-space outputs, and optional openPMD files.
 
 ## Installation
 
@@ -76,7 +76,7 @@ PyPIC3D/
   J.py                     # current deposition methods
   rho.py                   # charge deposition
   solvers/                 # field solvers and operators
-  diagnostics/             # plotting, VTK, openPMD writers
+  diagnostics/             # plotting and openPMD writers
   utils.py                 # config, IO, helper math/utilities
 
 demos/                     # runnable example configurations

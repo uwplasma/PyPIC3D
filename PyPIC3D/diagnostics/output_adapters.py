@@ -80,7 +80,7 @@ def scalar_field_for_output(field, world):
     """
     Return an ordinary ghost-celled scalar field for file formats.
 
-    Runtime diagnostics can operate on tile-major arrays, but openPMD and VTK
+    Runtime diagnostics can operate on tile-major arrays, but openPMD
     mesh writers still expect one global ghost-celled array.
     """
 

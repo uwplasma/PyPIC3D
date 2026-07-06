@@ -18,7 +18,6 @@ relativistic = true
 
 [plotting]
 plotting_interval = 50
-plot_vtk_particles = false
 plot_phasespace = true
 
 [field1]
