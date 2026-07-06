@@ -691,7 +691,12 @@ def dump_parameters_to_toml(simulation_stats, simulation_parameters, plasma_para
         if species_metadata is None:
             particle_dict = {"name": name}
         else:
-            particle_dict = dict(species_metadata[species_index])
+            particle_dict = dict(
+                jax.tree_util.tree_map(
+                    lambda x: x.tolist() if isinstance(x, jnp.ndarray) else x,
+                    species_metadata[species_index],
+                )
+            )
 
         particle_dict["storage"] = "tiled"
         particle_dict["active_particles"] = active_particles
@@ -775,4 +780,3 @@ def courant_condition(courant_number, dx, dy, dz, simulation_parameters, constan
     # compute the maximum allowed timestep
 
     return dt
-

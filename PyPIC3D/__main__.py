@@ -215,7 +215,7 @@ def run_PyPIC3D(config_file):
         # soon as it is detected.
 
 
-    return Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles, fields, world
+    return Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles, fields, world, species_config
 
 def main():
     ###################### JAX SETTINGS ########################################################################
@@ -234,7 +234,7 @@ def main():
     start = time.time()
     # start the timer
 
-    Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles, fields, world =  block_until_ready(run_PyPIC3D(toml_file))
+    Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles, fields, world, species_config =  block_until_ready(run_PyPIC3D(toml_file))
     # run the PyPIC3D simulation
 
     end = time.time()
