@@ -1,11 +1,56 @@
 
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
+import queue
+import threading
+import traceback
+
 import openpmd_api as io
+import jax
 import jax.numpy as jnp
 import os
 import numpy as np
 import importlib.metadata
 
 from PyPIC3D.diagnostics.output_adapters import fields_for_output, particles_for_output
+
+ArrayLike = Any
+ShardIndex = Tuple[Union[slice, int], ...]
+HostShard = Tuple[ShardIndex, np.ndarray]
+HostShardList = List[HostShard]
+FieldValue = Union[ArrayLike, Sequence[ArrayLike]]
+SnapshotFieldValue = Union[HostShardList, Tuple[HostShardList, HostShardList, HostShardList]]
+
+
+@dataclass(frozen=True)
+class TiledFieldSnapshot:
+    """
+    Host-owned snapshot of tiled field data.
+
+    Scalar fields store a list of ``(shard_index, host_array)`` chunks. Vector
+    fields store one such list for each component. The first three array axes
+    are tile indices; the last three are tile-local grid indices including
+    guard cells.
+    """
+
+    step: int
+    time: float
+    fields: Mapping[str, SnapshotFieldValue]
+
+
+@dataclass(frozen=True)
+class TiledMeshLayout:
+    """
+    Metadata needed to place tile-local interiors into a global openPMD mesh.
+    """
+
+    global_shape: Tuple[int, int, int]
+    tile_shape: Tuple[int, int, int]
+    guard_cells: Union[int, Tuple[int, int, int]] = 1
+    active_dims: Tuple[int, int, int] = (1, 1, 1)
+    dtype: Any = np.float64
 
 def _ensure_openpmd_array(data, dtype=np.float64, squeeze=False):
     arr = np.asarray(data, dtype=dtype)
@@ -115,6 +160,394 @@ def _fields_to_interior_map(fields):
             else:
                 field_map[f"field_{idx}"] = extra[interior]
     return field_map
+
+
+def _fields_to_tiled_output_map(fields):
+    """Return the tiled field components currently written by field diagnostics."""
+    E, B, J, rho, phi, external_fields, *rest = fields
+    external_E, external_B = external_fields
+    return {
+        "E": E,
+        "B": B,
+        "J": J,
+        "rho": rho,
+        "phi": phi,
+        "external_E": external_E,
+        "external_B": external_B,
+    }
+
+
+def _as_3tuple(value):
+    if isinstance(value, tuple):
+        return tuple(int(v) for v in value)
+    if isinstance(value, list):
+        return tuple(int(v) for v in value)
+    return (int(value), int(value), int(value))
+
+
+def _slice_start(index_entry):
+    if isinstance(index_entry, slice):
+        return 0 if index_entry.start is None else int(index_entry.start)
+    return int(index_entry)
+
+
+def _copy_array_to_host_shards(arr):
+    """
+    Copy a possibly-sharded JAX array to host-owned NumPy chunks.
+
+    Only addressable shards are copied. In ordinary single-process runs this is
+    the complete tiled field. Multi-process distributed output can build on this
+    same shard contract later.
+    """
+    if hasattr(arr, "addressable_shards"):
+        out = []
+        for shard in arr.addressable_shards:
+            host = np.array(jax.device_get(shard.data), copy=True, order="C")
+            out.append((tuple(shard.index), host))
+        return out
+
+    try:
+        arr = jax.device_get(arr)
+    except Exception:
+        pass
+
+    host = np.array(arr, copy=True, order="C")
+    full_index = tuple(slice(0, n) for n in host.shape)
+    return [(full_index, host)]
+
+
+def prefetch_field_map_to_host(field_map):
+    """
+    Start asynchronous copies for JAX arrays that support it.
+
+    ``make_tiled_field_snapshot`` still performs the real host copy before the
+    snapshot enters the queue.
+    """
+    def _prefetch(value):
+        if hasattr(value, "copy_to_host_async"):
+            value.copy_to_host_async()
+
+    for value in field_map.values():
+        if isinstance(value, (tuple, list)):
+            for component in value:
+                _prefetch(component)
+        else:
+            _prefetch(value)
+
+
+def make_tiled_field_snapshot(field_map, *, step, time):
+    copied = {}
+
+    for name, value in field_map.items():
+        is_vector = isinstance(value, (tuple, list)) and len(value) == 3
+        if is_vector:
+            copied[name] = tuple(_copy_array_to_host_shards(component) for component in value)
+        else:
+            copied[name] = _copy_array_to_host_shards(value)
+
+    return TiledFieldSnapshot(
+        step=int(step),
+        time=float(time),
+        fields=copied,
+    )
+
+
+def _tile_interior(tile, guard_cells):
+    gx, gy, gz = guard_cells
+    sx = slice(gx, -gx) if gx > 0 else slice(None)
+    sy = slice(gy, -gy) if gy > 0 else slice(None)
+    sz = slice(gz, -gz) if gz > 0 else slice(None)
+    return tile[sx, sy, sz]
+
+
+def _iter_tile_chunks_from_host_shard(shard_index, shard_data, *, layout):
+    """
+    Yield ``(global_mesh_offset, tile_interior)`` chunks from one host shard.
+    """
+    if shard_data.ndim != 6:
+        raise ValueError(
+            "Expected tiled scalar field shard with shape "
+            "(ntx, nty, ntz, nx+2g, ny+2g, nz+2g). "
+            f"Got {shard_data.shape}."
+        )
+
+    tile_shape = tuple(int(width) for width in layout.tile_shape)
+    guard_cells = _as_3tuple(layout.guard_cells)
+
+    tx0 = _slice_start(shard_index[0])
+    ty0 = _slice_start(shard_index[1])
+    tz0 = _slice_start(shard_index[2])
+    ntx_local, nty_local, ntz_local = shard_data.shape[:3]
+
+    for ltx in range(ntx_local):
+        for lty in range(nty_local):
+            for ltz in range(ntz_local):
+                tx = tx0 + ltx
+                ty = ty0 + lty
+                tz = tz0 + ltz
+
+                raw_tile = shard_data[ltx, lty, ltz]
+                interior = _tile_interior(raw_tile, guard_cells)
+                if tuple(interior.shape) != tile_shape:
+                    raise ValueError(
+                        f"Tile interior has shape {interior.shape}, expected {tile_shape}. "
+                        f"Check guard_cells={guard_cells} and tile_shape={tile_shape}."
+                    )
+
+                offset = [
+                    tx * tile_shape[0],
+                    ty * tile_shape[1],
+                    tz * tile_shape[2],
+                ]
+                yield offset, interior
+
+
+def _reset_scalar_mesh_record(iteration, name, *, world, layout):
+    mesh = iteration.meshes[name]
+    _configure_openpmd_mesh(mesh, world, layout.active_dims)
+    record = mesh[io.Mesh_Record_Component.SCALAR]
+    record.reset_dataset(io.Dataset(np.dtype(layout.dtype), list(layout.global_shape)))
+    record.unit_SI = 1.0
+    return record
+
+
+def _reset_vector_mesh_record(iteration, name, component_name, *, world, layout):
+    mesh = iteration.meshes[name]
+    _configure_openpmd_mesh(mesh, world, layout.active_dims)
+    record = mesh[component_name]
+    record.reset_dataset(io.Dataset(np.dtype(layout.dtype), list(layout.global_shape)))
+    record.unit_SI = 1.0
+    return record
+
+
+def write_tiled_scalar_field_chunks_to_iteration(iteration, name, host_shards, *, world, layout):
+    record = _reset_scalar_mesh_record(iteration, name, world=world, layout=layout)
+
+    for shard_index, shard_data in host_shards:
+        for offset, tile in _iter_tile_chunks_from_host_shard(
+            shard_index,
+            shard_data,
+            layout=layout,
+        ):
+            tile = _ensure_openpmd_array(tile, dtype=layout.dtype)
+            record.store_chunk(tile, offset, list(tile.shape))
+
+
+def write_tiled_vector_field_chunks_to_iteration(
+    iteration,
+    name,
+    component_host_shards,
+    *,
+    world,
+    layout,
+    component_names=("x", "y", "z"),
+):
+    for component_name, host_shards in zip(component_names, component_host_shards):
+        record = _reset_vector_mesh_record(
+            iteration,
+            name,
+            component_name,
+            world=world,
+            layout=layout,
+        )
+
+        for shard_index, shard_data in host_shards:
+            for offset, tile in _iter_tile_chunks_from_host_shard(
+                shard_index,
+                shard_data,
+                layout=layout,
+            ):
+                tile = _ensure_openpmd_array(tile, dtype=layout.dtype)
+                record.store_chunk(tile, offset, list(tile.shape))
+
+
+def write_tiled_field_snapshot_openpmd(
+    snapshot,
+    *,
+    output_dir,
+    filename,
+    world,
+    layout,
+    file_extension=".bp",
+):
+    series = _open_openpmd_series(output_dir, filename, file_extension=file_extension)
+
+    try:
+        iteration = series.iterations[int(snapshot.step)]
+        iteration.time = float(snapshot.time)
+        iteration.dt = float(world["dt"])
+        iteration.time_unit_SI = 1.0
+
+        for name, value in snapshot.fields.items():
+            is_vector = isinstance(value, tuple) and len(value) == 3
+            if is_vector:
+                write_tiled_vector_field_chunks_to_iteration(
+                    iteration,
+                    name,
+                    value,
+                    world=world,
+                    layout=layout,
+                )
+            else:
+                write_tiled_scalar_field_chunks_to_iteration(
+                    iteration,
+                    name,
+                    value,
+                    world=world,
+                    layout=layout,
+                )
+
+        series.flush()
+    finally:
+        series.close()
+
+
+class AsyncTiledOpenPMDFieldWriter:
+    """
+    Bounded background queue writer for tiled openPMD field output.
+
+    The simulation thread copies tile-major fields to a host snapshot and puts
+    that snapshot in a bounded queue. The writer thread strips guard cells and
+    writes tile interiors as chunks in the global openPMD mesh.
+    """
+
+    def __init__(
+        self,
+        *,
+        output_dir,
+        filename,
+        world,
+        global_shape,
+        tile_shape,
+        guard_cells=1,
+        active_dims=(1, 1, 1),
+        file_extension=".bp",
+        dtype=np.float64,
+        queue_size=2,
+        raise_writer_errors_on_close=True,
+    ):
+        queue_size = max(1, int(queue_size))
+
+        self.output_dir = output_dir
+        self.filename = filename
+        self.world = world
+        self.layout = TiledMeshLayout(
+            global_shape=tuple(int(width) for width in global_shape),
+            tile_shape=tuple(int(width) for width in tile_shape),
+            guard_cells=guard_cells,
+            active_dims=active_dims,
+            dtype=dtype,
+        )
+        self.file_extension = file_extension
+        self.raise_writer_errors_on_close = bool(raise_writer_errors_on_close)
+
+        self._queue = queue.Queue(maxsize=queue_size)
+        self._thread = None
+        self._closed = False
+        self._error = None
+        self._error_traceback = None
+
+    def start(self):
+        if self._thread is not None:
+            return
+
+        self._thread = threading.Thread(target=self._writer_loop, daemon=True)
+        self._thread.start()
+
+    def enqueue(self, snapshot, *, block=True):
+        if self._closed:
+            raise RuntimeError("Cannot enqueue after writer.close().")
+        if self._error is not None:
+            raise RuntimeError(
+                "Async openPMD writer failed. Original traceback:\n"
+                f"{self._error_traceback}"
+            ) from self._error
+
+        try:
+            self._queue.put(snapshot, block=block)
+            return True
+        except queue.Full:
+            return False
+
+    def enqueue_fields(self, field_map, *, step, time, block=True):
+        snapshot = make_tiled_field_snapshot(field_map, step=step, time=time)
+        return self.enqueue(snapshot, block=block)
+
+    def close(self, raise_errors=None):
+        if self._closed:
+            return
+
+        self._closed = True
+        if self._thread is not None:
+            self._queue.put(None)
+            self._queue.join()
+            self._thread.join()
+            self._thread = None
+
+        if raise_errors is None:
+            raise_errors = self.raise_writer_errors_on_close
+        if self._error is not None and raise_errors:
+            raise RuntimeError(
+                "Async openPMD writer failed. Original traceback:\n"
+                f"{self._error_traceback}"
+            ) from self._error
+
+    def _writer_loop(self):
+        while True:
+            item = self._queue.get()
+            try:
+                if item is None:
+                    return
+
+                if self._error is None:
+                    write_tiled_field_snapshot_openpmd(
+                        item,
+                        output_dir=self.output_dir,
+                        filename=self.filename,
+                        world=self.world,
+                        layout=self.layout,
+                        file_extension=self.file_extension,
+                    )
+
+            except BaseException as exc:
+                self._error = exc
+                self._error_traceback = traceback.format_exc()
+            finally:
+                self._queue.task_done()
+
+
+def create_async_tiled_openpmd_field_writer(
+    world,
+    output_dir,
+    *,
+    filename="fields",
+    file_extension=".h5",
+    queue_size=2,
+):
+    writer = AsyncTiledOpenPMDFieldWriter(
+        output_dir=output_dir,
+        filename=filename,
+        world=world,
+        global_shape=(int(world["Nx"]), int(world["Ny"]), int(world["Nz"])),
+        tile_shape=tuple(int(width) for width in world["tile_shape"]),
+        guard_cells=int(world["guard_cells"]),
+        active_dims=(1, 1, 1),
+        file_extension=file_extension,
+        queue_size=queue_size,
+    )
+    writer.start()
+    return writer
+
+
+def enqueue_openpmd_field_output(field_writer, fields, world, plot_t, t, *, block=True):
+    field_map = _fields_to_tiled_output_map(fields)
+    prefetch_field_map_to_host(field_map)
+    return field_writer.enqueue_fields(
+        field_map,
+        step=int(plot_t),
+        time=float(t * world["dt"]),
+        block=block,
+    )
 
 
 def write_openpmd_fields_to_iteration(iteration, field_map, world, active_dims=(1,1,1)):

@@ -76,15 +76,20 @@ def tile_vector_field(field, world, tile_shape, num_guard_cells=2):
 class FakeRecord:
     def __init__(self):
         self.shape = None
+        self.dataset_shape = None
         self.unit_SI = None
         self.data = None
+        self.chunks = []
 
     def reset_dataset(self, dataset):
-        pass
+        extent = getattr(dataset, "extent", None)
+        if extent is not None:
+            self.dataset_shape = tuple(extent)
 
     def store_chunk(self, array, offset, extent):
         self.shape = tuple(extent)
         self.data = jnp.asarray(array)
+        self.chunks.append((tuple(offset), tuple(extent), jnp.asarray(array)))
 
 
 class FakeMesh:
@@ -300,6 +305,89 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
         rho_mesh = series.iterations[0].meshes["rho"]
         self.assertEqual(E_mesh.records["x"].shape, (4, 2, 2))
         self.assertEqual(rho_mesh.records[openPMD.io.Mesh_Record_Component.SCALAR].shape, (4, 2, 2))
+
+    def test_tiled_field_snapshot_writes_tile_chunks_without_global_assembly(self):
+        world = _world()
+        shape_with_ghosts = (6, 4, 3)
+        rho_global = jnp.arange(6 * 4 * 3, dtype=jnp.float64).reshape(shape_with_ghosts)
+        phi_global = rho_global + 100.0
+        E_global = tuple(rho_global + offset for offset in (10.0, 20.0, 30.0))
+        tile_shape = world["tile_shape"]
+        field_map = {
+            "E": tile_vector_field(E_global, world, tile_shape),
+            "rho": tile_scalar_field(rho_global, world, tile_shape),
+            "phi": tile_scalar_field(phi_global, world, tile_shape),
+        }
+        snapshot = openPMD.make_tiled_field_snapshot(
+            field_map,
+            step=3,
+            time=0.6,
+        )
+        layout = openPMD.TiledMeshLayout(
+            global_shape=(world["Nx"], world["Ny"], world["Nz"]),
+            tile_shape=tile_shape,
+            guard_cells=world["guard_cells"],
+        )
+        series = FakeSeries()
+
+        with patch.object(openPMD, "_open_openpmd_series", return_value=series):
+            openPMD.write_tiled_field_snapshot_openpmd(
+                snapshot,
+                output_dir="/tmp",
+                filename="fields",
+                world=world,
+                layout=layout,
+                file_extension=".h5",
+            )
+
+        iteration = series.iterations[3]
+        rho_record = iteration.meshes["rho"].records[openPMD.io.Mesh_Record_Component.SCALAR]
+        E_record = iteration.meshes["E"].records["x"]
+
+        self.assertEqual(iteration.time, 0.6)
+        self.assertEqual(iteration.dt, world["dt"])
+        self.assertEqual(iteration.meshes["rho"].axis_labels, ["x", "y", "z"])
+        self.assertEqual(len(rho_record.chunks), 4)
+        self.assertEqual(rho_record.chunks[0][0], (0, 0, 0))
+        self.assertEqual(rho_record.chunks[0][1], tile_shape)
+        self.assertEqual(len(E_record.chunks), 4)
+        self.assertEqual(E_record.chunks[0][0], (0, 0, 0))
+
+    def test_async_field_writer_queue_size_caps_pending_snapshots(self):
+        world = _world()
+        writer = openPMD.AsyncTiledOpenPMDFieldWriter(
+            output_dir="/tmp",
+            filename="fields",
+            world=world,
+            global_shape=(world["Nx"], world["Ny"], world["Nz"]),
+            tile_shape=world["tile_shape"],
+            guard_cells=world["guard_cells"],
+            queue_size=1,
+        )
+        snapshot = openPMD.TiledFieldSnapshot(step=0, time=0.0, fields={})
+
+        self.assertTrue(writer.enqueue(snapshot, block=False))
+        self.assertFalse(writer.enqueue(snapshot, block=False))
+        writer.close(raise_errors=False)
+
+    def test_async_field_writer_raises_worker_errors_on_close(self):
+        world = _world()
+        writer = openPMD.AsyncTiledOpenPMDFieldWriter(
+            output_dir="/tmp",
+            filename="fields",
+            world=world,
+            global_shape=(world["Nx"], world["Ny"], world["Nz"]),
+            tile_shape=world["tile_shape"],
+            guard_cells=world["guard_cells"],
+            queue_size=1,
+        )
+        snapshot = openPMD.TiledFieldSnapshot(step=0, time=0.0, fields={})
+
+        with patch.object(openPMD, "write_tiled_field_snapshot_openpmd", side_effect=RuntimeError("disk failed")):
+            writer.start()
+            self.assertTrue(writer.enqueue(snapshot))
+            with self.assertRaisesRegex(RuntimeError, "Async openPMD writer failed"):
+                writer.close()
 
     def test_write_openpmd_initial_particles_flattens_tiled_particles_and_preserves_names(self):
         world = _world()

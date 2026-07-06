@@ -19,7 +19,9 @@ from PyPIC3D.diagnostics.plotting import (
 )
 
 from PyPIC3D.diagnostics.openPMD import (
-    write_openpmd_particles, write_openpmd_fields
+    write_openpmd_particles,
+    create_async_tiled_openpmd_field_writer,
+    enqueue_openpmd_field_output,
 )
 
 from PyPIC3D.utils import (
@@ -98,7 +100,16 @@ def run_PyPIC3D(config_file):
     # Compute the energy of the system
     initial_energy = e_energy + b_energy + kinetic_energy
 
-    if plotting_parameters['plot_openpmd_fields']: setup_pmd_files( os.path.join(output_dir, "data"), "fields", ".h5")
+    field_writer = None
+    if plotting_parameters['plot_openpmd_fields']:
+        setup_pmd_files( os.path.join(output_dir, "data"), "fields", ".h5")
+        field_writer = create_async_tiled_openpmd_field_writer(
+            world,
+            os.path.join(output_dir, "data"),
+            filename="fields",
+            file_extension=".h5",
+            queue_size=int(plotting_parameters.get("openpmd_field_queue_size", 2)),
+        )
     if plotting_parameters['plot_openpmd_particles']: setup_pmd_files( os.path.join(output_dir, "data"), "particles", ".h5")
     # setup the openPMD files if needed
 
@@ -106,62 +117,71 @@ def run_PyPIC3D(config_file):
 
     ###################################################### SIMULATION LOOP #####################################
 
-    for t in tqdm(range(Nt)):
+    loop_error = None
+    try:
+        for t in tqdm(range(Nt)):
 
-        # plot the data
-        if t % plotting_parameters['plotting_interval'] == 0:
+            # plot the data
+            if t % plotting_parameters['plotting_interval'] == 0:
 
-            plot_num = t // plotting_parameters['plotting_interval']
-            # determine the plot number
+                plot_num = t // plotting_parameters['plotting_interval']
+                # determine the plot number
 
-            E, B, J, rho, phi, external_fields, *rest = fields
-            # unpack the fields
+                E, B, J, rho, phi, external_fields, *rest = fields
+                # unpack the fields
 
-            total_E, total_B = add_external_fields(E, B, external_fields)
-            # energy diagnostics use the fields seen by the particle pusher
-            e_energy, b_energy, kinetic_energy = compute_energy(particles, total_E, total_B, world, constants, species_config=species_config)
-            # Compute the energy of the system
-            write_data(f"{output_dir}/data/total_energy.txt", t * dt, e_energy + b_energy + kinetic_energy)
-            write_data(f"{output_dir}/data/energy_error.txt", t * dt, abs( initial_energy - (e_energy + b_energy + kinetic_energy)) / max(initial_energy, 1e-10))
-            write_data(f"{output_dir}/data/electric_field_energy.txt", t * dt, e_energy)
-            write_data(f"{output_dir}/data/magnetic_field_energy.txt", t * dt, b_energy)
-            write_data(f"{output_dir}/data/kinetic_energy.txt", t * dt, kinetic_energy)
-            # Write the total energy to a file
-            total_momentum = compute_total_momentum(particles, species_config=species_config)
-            # Total momentum of the particles
-            write_data(f"{output_dir}/data/total_momentum.txt", t * dt, total_momentum)
-            # Write the total momentum to a file
+                total_E, total_B = add_external_fields(E, B, external_fields)
+                # energy diagnostics use the fields seen by the particle pusher
+                e_energy, b_energy, kinetic_energy = compute_energy(particles, total_E, total_B, world, constants, species_config=species_config)
+                # Compute the energy of the system
+                write_data(f"{output_dir}/data/total_energy.txt", t * dt, e_energy + b_energy + kinetic_energy)
+                write_data(f"{output_dir}/data/energy_error.txt", t * dt, abs( initial_energy - (e_energy + b_energy + kinetic_energy)) / max(initial_energy, 1e-10))
+                write_data(f"{output_dir}/data/electric_field_energy.txt", t * dt, e_energy)
+                write_data(f"{output_dir}/data/magnetic_field_energy.txt", t * dt, b_energy)
+                write_data(f"{output_dir}/data/kinetic_energy.txt", t * dt, kinetic_energy)
+                # Write the total energy to a file
+                total_momentum = compute_total_momentum(particles, species_config=species_config)
+                # Total momentum of the particles
+                write_data(f"{output_dir}/data/total_momentum.txt", t * dt, total_momentum)
+                # Write the total momentum to a file
 
-            # for species in particles:
-            #     write_data(f"{output_dir}/data/{species.name}_kinetic_energy.txt", t * dt, species.kinetic_energy())
-
-
-            if plotting_parameters['plot_phasespace']:
-                write_particles_phase_space(particles, t, output_dir, species_config=species_config, species_names=particle_species_names, world=world)
+                # for species in particles:
+                #     write_data(f"{output_dir}/data/{species.name}_kinetic_energy.txt", t * dt, species.kinetic_energy())
 
 
+                # if plotting_parameters['plot_phasespace']:
+                #     write_particles_phase_space(particles, t, output_dir, species_config=species_config, species_names=particle_species_names, world=world)
 
-            if plotting_parameters['plot_openpmd_particles']:
-                write_openpmd_particles(particles, world, constants, os.path.join(output_dir, "data"), plot_num, t, "particles", ".h5", species_config=species_config, species_names=particle_species_names)
-            # Write the particles in openPMD format
 
-            if plotting_parameters['plot_openpmd_fields']:
-                write_openpmd_fields(fields, world, os.path.join(output_dir, "data"), plot_num, t,  "fields", ".h5")
-            # Write the fields in openPMD format
 
-        particles, fields = jit_loop(
-            particles,
-            species_config,
-            fields,
-            constants,
-            solver,
-            relativistic=relativistic,
-            particle_pusher=particle_pusher,
-        )
-        # time loop to update the particles and fields
-        _raise_if_tiled_particles_overflowed(fields, simulation_parameters)
-        # fixed tile capacity overflow would silently drop particles; stop as
-        # soon as it is detected.
+                if plotting_parameters['plot_openpmd_particles']:
+                    write_openpmd_particles(particles, world, constants, os.path.join(output_dir, "data"), plot_num, t, "particles", ".h5", species_config=species_config, species_names=particle_species_names)
+                # Write the particles in openPMD format
+
+                if field_writer is not None:
+                    enqueue_openpmd_field_output(field_writer, fields, world, plot_num, t)
+                # Queue tiled field chunks for asynchronous openPMD output
+
+            particles, fields = jit_loop(
+                particles,
+                species_config,
+                fields,
+                constants,
+                solver,
+                relativistic=relativistic,
+                particle_pusher=particle_pusher,
+            )
+            # time loop to update the particles and fields
+            _raise_if_tiled_particles_overflowed(fields, simulation_parameters)
+            # fixed tile capacity overflow would silently drop particles; stop as
+            # soon as it is detected.
+
+    except BaseException as exc:
+        loop_error = exc
+        raise
+    finally:
+        if field_writer is not None:
+            field_writer.close(raise_errors=loop_error is None)
 
 
     return Nt, plotting_parameters, simulation_parameters, plasma_parameters, constants, particles, fields, world, species_config

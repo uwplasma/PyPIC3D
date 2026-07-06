@@ -162,6 +162,7 @@ def default_parameters():
     "plot_openpmd_particles": False,
     "plot_openpmd_fields": False,
     "plotting_interval": 10,
+    "openpmd_field_queue_size": 2,
     "dump_particles": False,
     "dump_fields": False,
     }

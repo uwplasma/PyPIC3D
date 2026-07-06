@@ -59,6 +59,7 @@ Minimal Working Example
     plot_phasespace = false
     plot_openpmd_particles = false
     plot_openpmd_fields = false
+    openpmd_field_queue_size = 2
     dump_particles = false
     dump_fields = false
 
@@ -133,4 +134,6 @@ At ``plotting_interval`` cadence, PyPIC3D writes diagnostics like:
 - ``total_momentum.txt``
 
 Depending on flags, it also writes matplotlib phase-space arrays and openPMD
-files plus ``data/output.toml`` metadata.
+files plus ``data/output.toml`` metadata. Runtime openPMD field output uses a
+bounded queue; ``openpmd_field_queue_size`` caps the number of pending field
+batches so output cannot grow memory without bound.
