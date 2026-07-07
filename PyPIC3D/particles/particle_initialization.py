@@ -102,6 +102,95 @@ def _particle_tile_indices(x1, x2, x3, world, tile_nx, tile_ny, tile_nz):
     return x_cell // tile_nx, y_cell // tile_ny, z_cell // tile_nz
 
 
+def _prepare_species_tile_data(species_arrays, world, tile_shape):
+    tile_nx, tile_ny, tile_nz = tile_shape
+    ntx = _tile_axis_count(world["Nx"], tile_nx)
+    nty = _tile_axis_count(world["Ny"], tile_ny)
+    ntz = _tile_axis_count(world["Nz"], tile_nz)
+    n_tiles = ntx * nty * ntz
+
+    tile_counts = np.zeros((ntx, nty, ntz, len(species_arrays)), dtype=int)
+    species_tile_data = []
+
+    for species_index, (x_array, u_array, active_mask) in enumerate(species_arrays):
+        x_np = np.asarray(x_array)
+        u_np = np.asarray(u_array)
+        active_np = np.asarray(active_mask, dtype=bool)
+
+        tx, ty, tz = _particle_tile_indices(
+            x_np[:, 0],
+            x_np[:, 1],
+            x_np[:, 2],
+            world,
+            tile_nx,
+            tile_ny,
+            tile_nz,
+        )
+        flat_tile = (tx * nty + ty) * ntz + tz
+        active_indices = np.nonzero(active_np)[0]
+
+        flat_counts = np.bincount(flat_tile[active_indices], minlength=n_tiles)
+        tile_counts[:, :, :, species_index] = flat_counts.reshape((ntx, nty, ntz))
+
+        species_tile_data.append((x_np, u_np, active_np, tx, ty, tz, flat_tile, active_indices))
+
+    return tile_counts, species_tile_data
+
+
+def _pack_species_arrays_into_tiles(species_arrays, world, tile_shape, capacity_factor):
+    tile_nx, tile_ny, tile_nz = tile_shape
+    ntx = _tile_axis_count(world["Nx"], tile_nx)
+    nty = _tile_axis_count(world["Ny"], tile_ny)
+    ntz = _tile_axis_count(world["Nz"], tile_nz)
+    n_species = len(species_arrays)
+
+    tile_counts, species_tile_data = _prepare_species_tile_data(species_arrays, world, tile_shape)
+    max_particles_per_tile = int(np.max(tile_counts)) if tile_counts.size else 0
+    max_particles_per_tile = int(math.ceil(max_particles_per_tile * capacity_factor))
+
+    x_tiles = np.zeros((ntx, nty, ntz, n_species, max_particles_per_tile, 3), dtype=float)
+    u_tiles = np.zeros_like(x_tiles)
+    active_tiles = np.zeros((ntx, nty, ntz, n_species, max_particles_per_tile), dtype=bool)
+
+    for species_index, (x_np, u_np, active_np, tx, ty, tz, flat_tile, active_indices) in enumerate(species_tile_data):
+        if active_indices.size == 0:
+            continue
+
+        order = np.argsort(flat_tile[active_indices], kind="stable")
+        particle_indices = active_indices[order]
+        sorted_flat_tile = flat_tile[particle_indices]
+
+        flat_counts = tile_counts[:, :, :, species_index].reshape(-1)
+        tile_starts = np.cumsum(flat_counts) - flat_counts
+        slots = np.arange(particle_indices.size) - tile_starts[sorted_flat_tile]
+
+        x_tiles[
+            tx[particle_indices],
+            ty[particle_indices],
+            tz[particle_indices],
+            species_index,
+            slots,
+            :,
+        ] = x_np[particle_indices]
+        u_tiles[
+            tx[particle_indices],
+            ty[particle_indices],
+            tz[particle_indices],
+            species_index,
+            slots,
+            :,
+        ] = u_np[particle_indices]
+        active_tiles[
+            tx[particle_indices],
+            ty[particle_indices],
+            tz[particle_indices],
+            species_index,
+            slots,
+        ] = active_np[particle_indices]
+
+    return x_tiles, u_tiles, active_tiles, tile_counts
+
+
 def _plasma_frequency(N_per_cell, charge, mass, weight, world, constants):
     dx, dy, dz = world["dx"], world["dy"], world["dz"]
     # get spatial resolution of the simulation domain
@@ -308,47 +397,15 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
     tile_nx, tile_ny, tile_nz = [_as_int(width) for width in world["tile_shape"]]
     # determine the number of tiles in each dimension based on the tile shape and simulation domain dimensions
 
-    ntx = _tile_axis_count(world["Nx"], tile_nx)
-    nty = _tile_axis_count(world["Ny"], tile_ny)
-    ntz = _tile_axis_count(world["Nz"], tile_nz)
-    n_species = len(species_arrays)
-
-    tile_counts = np.zeros((ntx, nty, ntz, n_species), dtype=int)
-    particle_tile_indices = []
-
-    for species_index, (x_array, _u_array, active_mask) in enumerate(species_arrays):
-        tx, ty, tz = _particle_tile_indices(x_array[:, 0], x_array[:, 1], x_array[:, 2], world, tile_nx, tile_ny, tile_nz)
-        particle_tile_indices.append((tx, ty, tz))
-
-        for p in range(int(active_mask.shape[0])):
-            if bool(active_mask[p]):
-                tile_counts[tx[p], ty[p], tz[p], species_index] += 1
-
-    max_particles_per_tile = int(np.max(tile_counts)) if tile_counts.size else 0
     capacity_factor = float(simulation_parameters.get("particle_tile_capacity_factor", 1.0))
-    max_particles_per_tile = int(math.ceil(max_particles_per_tile * capacity_factor))
     # determine the maximum number of particles per tile across all species and tiles, and apply a capacity factor to allow for some buffer
 
-    x_tiles = jnp.zeros((ntx, nty, ntz, n_species, max_particles_per_tile, 3))
-    u_tiles = jnp.zeros_like(x_tiles)
-    active_tiles = jnp.zeros((ntx, nty, ntz, n_species, max_particles_per_tile), dtype=bool)
-
-    next_slot = np.zeros_like(tile_counts)
-
-    for species_index, (x_array, u_array, active_mask) in enumerate(species_arrays):
-        tx, ty, tz = particle_tile_indices[species_index]
-
-        for p in range(int(active_mask.shape[0])):
-            if not bool(active_mask[p]):
-                continue
-            tile_index = (tx[p], ty[p], tz[p], species_index)
-            slot = next_slot[tile_index]
-            next_slot[tile_index] += 1
-            index = tile_index + (slot,)
-
-            x_tiles = x_tiles.at[index].set(x_array[p])
-            u_tiles = u_tiles.at[index].set(u_array[p])
-            active_tiles = active_tiles.at[index].set(True)
+    x_tiles, u_tiles, active_tiles, _tile_counts = _pack_species_arrays_into_tiles(
+        species_arrays,
+        world,
+        (tile_nx, tile_ny, tile_nz),
+        capacity_factor,
+    )
 
     species_config = SpeciesConfig(
         charge=jnp.asarray([metadata["charge"] for metadata in species_metadata]),
@@ -358,9 +415,9 @@ def load_particles_from_toml(config, simulation_parameters, world, constants):
         update_u=jnp.asarray([metadata["update_u"] for metadata in species_metadata], dtype=bool),
     )
     particles = TiledParticles(
-        x=x_tiles,
-        u=u_tiles,
-        active=active_tiles,
+        x=jnp.asarray(x_tiles),
+        u=jnp.asarray(u_tiles),
+        active=jnp.asarray(active_tiles),
     )
     species_names = tuple(metadata["name"] for metadata in species_metadata)
 

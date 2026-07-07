@@ -1,4 +1,5 @@
 import os
+import inspect
 import tempfile
 import unittest
 
@@ -7,9 +8,8 @@ import jax.numpy as jnp
 import numpy as np
 
 from PyPIC3D.particles.particle_initialization import load_particles_from_toml
-from PyPIC3D.tests.tiled_particle_fixtures import to_tiled_particles
 from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
-from PyPIC3D.tests.tiled_particle_fixtures import particle_species
+from tiled_particle_fixtures import particle_species, to_tiled_particles
 
 
 jax.config.update("jax_enable_x64", True)
@@ -284,6 +284,95 @@ class TestTiledParticleInitialization(unittest.TestCase):
             self.assertTrue(jnp.allclose(species_config.charge, jnp.array([-1.0])))
             self.assertTrue(jnp.allclose(species_config.mass, jnp.array([2.0])))
             self.assertTrue(jnp.allclose(species_config.weight, jnp.array([4.0])))
+
+    def test_load_particles_from_toml_preserves_interleaved_tile_order(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            electron_x_path = self._write_array(tmpdir, "electron_x.npy", [-1.5, 0.5, -0.5, 1.5])
+            ion_x_path = self._write_array(tmpdir, "ion_x.npy", [1.5, -1.5, 0.5, -0.5])
+            y_path = self._write_array(tmpdir, "y.npy", [0.0, 0.0, 0.0, 0.0])
+            z_path = self._write_array(tmpdir, "z.npy", [0.0, 0.0, 0.0, 0.0])
+            electron_vx_path = self._write_array(tmpdir, "electron_vx.npy", [10.0, 20.0, 30.0, 40.0])
+            ion_vx_path = self._write_array(tmpdir, "ion_vx.npy", [100.0, 200.0, 300.0, 400.0])
+            vy_path = self._write_array(tmpdir, "vy.npy", [0.0, 0.0, 0.0, 0.0])
+            vz_path = self._write_array(tmpdir, "vz.npy", [1.0, 2.0, 3.0, 4.0])
+
+            world = {
+                "Nx": 4,
+                "Ny": 1,
+                "Nz": 1,
+                "dx": 1.0,
+                "dy": 1.0,
+                "dz": 1.0,
+                "dt": 0.1,
+                "x_wind": 4.0,
+                "y_wind": 1.0,
+                "z_wind": 1.0,
+                "tile_shape": (2, 1, 1),
+            }
+            constants = {"kb": 1.0, "eps": 1.0}
+            simulation_parameters = {
+                "ds_per_debye": None,
+                "shape_factor": 1,
+                "particle_tile_nx": 2,
+                "particle_tile_ny": 1,
+                "particle_tile_nz": 1,
+            }
+            config = {
+                "particle1": {
+                    "name": "electrons",
+                    "N_particles": 4,
+                    "charge": -1.0,
+                    "mass": 2.0,
+                    "weight": 4.0,
+                    "temperature": 1.0,
+                    "initial_x": electron_x_path,
+                    "initial_y": y_path,
+                    "initial_z": z_path,
+                    "initial_vx": electron_vx_path,
+                    "initial_vy": vy_path,
+                    "initial_vz": vz_path,
+                },
+                "particle2": {
+                    "name": "ions",
+                    "N_particles": 4,
+                    "charge": 1.0,
+                    "mass": 3.0,
+                    "weight": 5.0,
+                    "temperature": 1.0,
+                    "initial_x": ion_x_path,
+                    "initial_y": y_path,
+                    "initial_z": z_path,
+                    "initial_vx": ion_vx_path,
+                    "initial_vy": vy_path,
+                    "initial_vz": vz_path,
+                },
+            }
+
+            particles, species_config, species_names, metadata = load_particles_from_toml(config, simulation_parameters, world, constants)
+
+            self.assertEqual(species_names, ("electrons", "ions"))
+            self.assertEqual(tuple(item["name"] for item in metadata), ("electrons", "ions"))
+            self.assertEqual(particles.x.shape, (2, 1, 1, 2, 2, 3))
+            self.assertEqual(int(jnp.sum(particles.active)), 8)
+
+            self.assertTrue(jnp.allclose(particles.x[0, 0, 0, 0, :, 0], jnp.array([-1.5, -0.5])))
+            self.assertTrue(jnp.allclose(particles.u[0, 0, 0, 0, :, 0], jnp.array([10.0, 30.0])))
+            self.assertTrue(jnp.allclose(particles.x[1, 0, 0, 0, :, 0], jnp.array([0.5, 1.5])))
+            self.assertTrue(jnp.allclose(particles.u[1, 0, 0, 0, :, 0], jnp.array([20.0, 40.0])))
+
+            self.assertTrue(jnp.allclose(particles.x[0, 0, 0, 1, :, 0], jnp.array([-1.5, -0.5])))
+            self.assertTrue(jnp.allclose(particles.u[0, 0, 0, 1, :, 0], jnp.array([200.0, 400.0])))
+            self.assertTrue(jnp.allclose(particles.x[1, 0, 0, 1, :, 0], jnp.array([1.5, 0.5])))
+            self.assertTrue(jnp.allclose(particles.u[1, 0, 0, 1, :, 0], jnp.array([100.0, 300.0])))
+
+            self.assertTrue(jnp.allclose(species_config.charge, jnp.array([-1.0, 1.0])))
+            self.assertTrue(jnp.allclose(species_config.mass, jnp.array([2.0, 3.0])))
+            self.assertTrue(jnp.allclose(species_config.weight, jnp.array([4.0, 5.0])))
+
+    def test_load_particles_from_toml_does_not_scatter_each_particle_with_jax_at(self):
+        source = inspect.getsource(load_particles_from_toml)
+
+        self.assertNotIn(".at[index].set", source)
 
     def test_load_particles_from_toml_maps_update_flags_to_active_particles(self):
         with tempfile.TemporaryDirectory() as tmpdir:
