@@ -1,11 +1,1 @@
-import unittest
-import jax
-import jax.numpy as jnp
-import sys
-import os
-
-from . import boris_test
-from . import boundaryconditions_test
-from . import electrostatic_yee_test
-from . import initialization_test
-from . import utils_test
+"""Shared unittest package for PyPIC3D tests."""
