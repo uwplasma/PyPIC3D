@@ -768,8 +768,20 @@ def courant_condition(courant_number, dx, dy, dz, simulation_parameters, constan
 
     C = constants['C']
 
-    # Build dxs list with only components that are not 1
-    dx_inv = list(1/d for d in (dz, dy, dx) if d != 1)
+
+    Nx = simulation_parameters["Nx"]
+    Ny = simulation_parameters["Ny"]
+    Nz = simulation_parameters["Nz"]
+    # get the number of grid points in each direction
+    Ns  = [Nx, Ny, Nz]
+    dxs = [dx, dy, dz]
+    # build a list of the spatial steps in each direction and the number of grid points in each direction
+
+    dx_inv = []
+    for d, N in zip(dxs, Ns):
+        if N > 1:
+            dx_inv.append(1/d)
+    # only add the inverse spatial steps for dimensions with more than one grid point
 
     dx_inv = sum(dx_inv)
     # sum all the inverse spatial steps
