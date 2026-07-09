@@ -19,9 +19,7 @@ from PyPIC3D.particles.particle_tile_communication import (
     refresh_tiled_particle_tiles,
     update_tiled_particle_positions,
 )
-from tests.tiled_particle_fixtures import particle_species
-from tests.tiled_particle_fixtures import to_tiled_particles
-from PyPIC3D.particles.particle_class import TiledParticles
+from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
 from PyPIC3D.solvers.first_order_yee import (
     update_E,
 )
@@ -46,50 +44,50 @@ def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
     nty = _tile_axis_count(Ny, tile_ny)
     ntz = _tile_axis_count(Nz, tile_nz)
 
-    if g != 1:
-        field_tiles = jnp.zeros(
-            (
-                ntx,
-                nty,
-                ntz,
-                tile_nx + 2 * g,
-                tile_ny + 2 * g,
-                tile_nz + 2 * g,
-            ),
-            dtype=field.dtype,
-        )
-        for tx in range(ntx):
-            for ty in range(nty):
-                for tz in range(ntz):
-                    ix = 1 + tx * tile_nx
-                    iy = 1 + ty * tile_ny
-                    iz = 1 + tz * tile_nz
-                    interior = field[ix:ix + tile_nx, iy:iy + tile_ny, iz:iz + tile_nz]
-                    field_tiles = field_tiles.at[tx, ty, tz, g:-g, g:-g, g:-g].set(interior)
-        return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
+    interior_tiles = field[1:-1, 1:-1, 1:-1]
+    interior_tiles = interior_tiles.reshape(ntx, tile_nx, nty, tile_ny, ntz, tile_nz)
+    interior_tiles = interior_tiles.transpose(0, 2, 4, 1, 3, 5)
 
-    def tile_at(tx, ty, tz):
-        start = (tx * tile_nx, ty * tile_ny, tz * tile_nz)
-        size = (tile_nx + 2, tile_ny + 2, tile_nz + 2)
-        return jax.lax.dynamic_slice(field, start, size)
-
-    return jnp.stack(
-        [
-            jnp.stack(
-                [
-                    jnp.stack([tile_at(tx, ty, tz) for tz in range(ntz)], axis=0)
-                    for ty in range(nty)
-                ],
-                axis=0,
-            )
-            for tx in range(ntx)
-        ],
-        axis=0,
+    field_tiles = jnp.zeros(
+        (
+            ntx,
+            nty,
+            ntz,
+            tile_nx + 2 * g,
+            tile_ny + 2 * g,
+            tile_nz + 2 * g,
+        ),
+        dtype=field.dtype,
     )
+    field_tiles = field_tiles.at[:, :, :, g:-g, g:-g, g:-g].set(interior_tiles)
+
+    return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
 
 
 def tile_vector_field(field, world, tile_shape, num_guard_cells=2):
     return tuple(tile_scalar_field(component, world, tile_shape, num_guard_cells) for component in field)
+
+
+def _update_ghost_cells(field, bc_x, bc_y, bc_z):
+    field = jax.lax.cond(
+        bc_x == BC_PERIODIC,
+        lambda f: f.at[0, :, :].set(f[-2, :, :]).at[-1, :, :].set(f[1, :, :]),
+        lambda f: f.at[0, :, :].set(0.0).at[-1, :, :].set(0.0),
+        operand=field,
+    )
+    field = jax.lax.cond(
+        bc_y == BC_PERIODIC,
+        lambda f: f.at[:, 0, :].set(f[:, -2, :]).at[:, -1, :].set(f[:, 1, :]),
+        lambda f: f.at[:, 0, :].set(0.0).at[:, -1, :].set(0.0),
+        operand=field,
+    )
+    field = jax.lax.cond(
+        bc_z == BC_PERIODIC,
+        lambda f: f.at[:, :, 0].set(f[:, :, -2]).at[:, :, -1].set(f[:, :, 1]),
+        lambda f: f.at[:, :, 0].set(0.0).at[:, :, -1].set(0.0),
+        operand=field,
+    )
+    return field
 
 
 class TestTiledEsirkepovCurrent(unittest.TestCase):
@@ -140,52 +138,97 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         shape = (world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2)
         return (jnp.zeros(shape), jnp.zeros(shape), jnp.zeros(shape))
 
-    def _species(self, world, x1):
-        return particle_species(
-            name="electrons",
-            N_particles=3,
-            charge=-1.0,
-            mass=1.0,
-            weight=0.5,
-            T=1.0,
-            x1=x1,
-            x2=jnp.zeros_like(x1),
-            x3=jnp.zeros_like(x1),
-            v1=jnp.array([0.08, -0.06, 0.05]),
-            v2=jnp.zeros_like(x1),
-            v3=jnp.zeros_like(x1),
-            xwind=world["x_wind"],
-            ywind=world["y_wind"],
-            zwind=world["z_wind"],
-            dx=world["dx"],
-            dy=world["dy"],
-            dz=world["dz"],
-            dt=world["dt"],
+    def _species_config(self, charge=-1.0, mass=1.0, weight=0.5):
+        return SpeciesConfig(
+            charge=jnp.asarray([charge], dtype=float),
+            mass=jnp.asarray([mass], dtype=float),
+            weight=jnp.asarray([weight], dtype=float),
+            update_x=jnp.ones((1, 3), dtype=bool),
+            update_u=jnp.ones((1, 3), dtype=bool),
         )
 
-    def _species_from_arrays(self, world, x, u, weight=0.5, active_mask=None):
-        return particle_species(
-            name="electrons",
-            N_particles=x.shape[0],
-            charge=-1.0,
-            mass=1.0,
-            weight=weight,
-            T=1.0,
-            x1=x[:, 0],
-            x2=x[:, 1],
-            x3=x[:, 2],
-            v1=u[:, 0],
-            v2=u[:, 1],
-            v3=u[:, 2],
-            xwind=world["x_wind"],
-            ywind=world["y_wind"],
-            zwind=world["z_wind"],
-            dx=world["dx"],
-            dy=world["dy"],
-            dz=world["dz"],
-            dt=world["dt"],
-            active_mask=active_mask,
+    def _tile_index_for_position(self, position, world, tile_shape):
+        x, y, z = [float(component) for component in position]
+        tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
+
+        ix = int(jnp.floor((x + 0.5 * world["x_wind"]) / world["dx"]))
+        iy = int(jnp.floor((y + 0.5 * world["y_wind"]) / world["dy"]))
+        iz = int(jnp.floor((z + 0.5 * world["z_wind"]) / world["dz"]))
+
+        ix = min(max(ix, 0), int(world["Nx"]) - 1)
+        iy = min(max(iy, 0), int(world["Ny"]) - 1)
+        iz = min(max(iz, 0), int(world["Nz"]) - 1)
+
+        return ix // tile_nx, iy // tile_ny, iz // tile_nz
+
+    def _empty_tiled_particles(self, world, tile_shape, n_slots):
+        tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
+        ntx = _tile_axis_count(world["Nx"], tile_nx)
+        nty = _tile_axis_count(world["Ny"], tile_ny)
+        ntz = _tile_axis_count(world["Nz"], tile_nz)
+        shape = (ntx, nty, ntz, 1, n_slots, 3)
+
+        return TiledParticles(
+            x=jnp.zeros(shape),
+            u=jnp.zeros(shape),
+            active=jnp.zeros(shape[:-1], dtype=bool),
         )
+
+    def _set_tiled_particle(self, particles, tile, slot, x, u, active=True):
+        tx, ty, tz = tile
+        return particles._replace(
+            x=particles.x.at[tx, ty, tz, 0, slot].set(jnp.asarray(x, dtype=float)),
+            u=particles.u.at[tx, ty, tz, 0, slot].set(jnp.asarray(u, dtype=float)),
+            active=particles.active.at[tx, ty, tz, 0, slot].set(active),
+        )
+
+    def _particles_from_arrays(self, world, tile_shape, x, u, active_mask=None):
+        x = jnp.asarray(x, dtype=float)
+        u = jnp.asarray(u, dtype=float)
+        active_mask = jnp.ones(x.shape[0], dtype=bool) if active_mask is None else jnp.asarray(active_mask, dtype=bool)
+        particles = self._empty_tiled_particles(world, tile_shape, max(1, int(x.shape[0])))
+        write_counts = {}
+
+        for particle_index in range(int(x.shape[0])):
+            tile = self._tile_index_for_position(x[particle_index], world, tile_shape)
+            slot = write_counts.get(tile, 0)
+            write_counts[tile] = slot + 1
+            particles = self._set_tiled_particle(
+                particles,
+                tile,
+                slot,
+                x[particle_index],
+                u[particle_index],
+                bool(active_mask[particle_index]),
+            )
+
+        return particles, self._species_config()
+
+    def _one_tile_particles_from_tiled(self, particles):
+        n_species = particles.active.shape[3]
+        n_slots = (
+            particles.active.shape[0]
+            * particles.active.shape[1]
+            * particles.active.shape[2]
+            * particles.active.shape[4]
+        )
+        return TiledParticles(
+            x=particles.x.transpose(3, 0, 1, 2, 4, 5).reshape(1, 1, 1, n_species, n_slots, 3),
+            u=particles.u.transpose(3, 0, 1, 2, 4, 5).reshape(1, 1, 1, n_species, n_slots, 3),
+            active=particles.active.transpose(3, 0, 1, 2, 4).reshape(1, 1, 1, n_species, n_slots),
+        )
+
+    def _one_dimensional_particles(self, world, x1, tile_shape):
+        x = jnp.stack((x1, jnp.zeros_like(x1), jnp.zeros_like(x1)), axis=-1)
+        u = jnp.stack(
+            (
+                jnp.array([0.08, -0.06, 0.05], dtype=float),
+                jnp.zeros_like(x1),
+                jnp.zeros_like(x1),
+            ),
+            axis=-1,
+        )
+        return self._particles_from_arrays(world, tile_shape, x, u)
 
     def _tile_shape_for_world(self, world):
         return (
@@ -196,6 +239,61 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
 
     def _one_tile_shape_for_world(self, world):
         return (int(world["Nx"]), int(world["Ny"]), int(world["Nz"]))
+
+    def _assert_tile_scalar_field_rebuilds_halos(self, world, tile_shape, num_guard_cells):
+        shape = (world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2)
+        field = jnp.arange(jnp.prod(jnp.asarray(shape)), dtype=jnp.float64).reshape(shape)
+        field = field.at[0, :, :].set(-1001.0)
+        field = field.at[-1, :, :].set(-1002.0)
+        field = field.at[:, 0, :].set(-1003.0)
+        field = field.at[:, -1, :].set(-1004.0)
+        field = field.at[:, :, 0].set(-1005.0)
+        field = field.at[:, :, -1].set(-1006.0)
+
+        tiles = tile_scalar_field(field, world, tile_shape, num_guard_cells=num_guard_cells)
+        assembled = assemble_tiled_vector_field(
+            (tiles, tiles, tiles),
+            world,
+            tile_shape,
+            num_guard_cells=num_guard_cells,
+        )[0]
+        expected = _update_ghost_cells(
+            field,
+            world["boundary_conditions"]["x"],
+            world["boundary_conditions"]["y"],
+            world["boundary_conditions"]["z"],
+        )
+
+        self.assertTrue(jnp.allclose(assembled, expected, rtol=1.0e-15, atol=1.0e-15))
+
+    def test_tile_scalar_field_one_guard_rebuilds_periodic_halos_from_interiors(self):
+        world = self._build_world(Nx=8, Ny=6, Nz=4)
+        self._assert_tile_scalar_field_rebuilds_halos(world, (2, 3, 2), num_guard_cells=1)
+
+    def test_tile_scalar_field_two_guards_rebuilds_periodic_halos_from_interiors(self):
+        world = self._build_world(Nx=8, Ny=6, Nz=4)
+        self._assert_tile_scalar_field_rebuilds_halos(world, (2, 3, 2), num_guard_cells=2)
+
+    def test_tile_scalar_field_rebuilds_conducting_halos_from_interiors(self):
+        world = self._build_world(
+            Nx=8,
+            Ny=6,
+            Nz=4,
+            boundary_conditions={"x": BC_CONDUCTING, "y": BC_PERIODIC, "z": BC_PERIODIC},
+        )
+        self._assert_tile_scalar_field_rebuilds_halos(world, (2, 3, 2), num_guard_cells=1)
+
+    def test_source_has_no_legacy_particle_fixture_imports(self):
+        with open(__file__, "r") as source_file:
+            source = source_file.read()
+
+        banned_tokens = [
+            "tiled_" + "particle_" + "fixtures",
+            "particle_" + "species",
+            "to_" + "tiled_" + "particles",
+        ]
+        for token in banned_tokens:
+            self.assertNotIn(token, source)
 
     def _world_with_tiled_grids(self, world, tile_shape):
         g = int(world["guard_cells"])
@@ -208,15 +306,9 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         world["grids"] = grids
         return world
 
-    def _assembled_esirkepov_current(self, world, old_species, constants, tile_shape):
+    def _assembled_esirkepov_current(self, world, tiled_particles, species_config, constants, tile_shape):
         world = self._world_with_tiled_grids(world, tile_shape)
-        simulation_parameters = {
-            "particle_tile_nx": tile_shape[0],
-            "particle_tile_ny": tile_shape[1],
-            "particle_tile_nz": tile_shape[2],
-        }
         g = int(world["guard_cells"])
-        tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
         _, _, J_template, _, _ = initialize_fields(world)
         J_tiles = Esirkepov_current(
             tiled_particles,
@@ -234,11 +326,18 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         if tile_shape is None:
             tile_shape = self._tile_shape_for_world(world)
 
-        old_species = self._species_from_arrays(world, x_old, u)
-        J_tiles, J_from_tiles = self._assembled_esirkepov_current(world, old_species, constants, tile_shape)
+        tiled_particles, species_config = self._particles_from_arrays(world, tile_shape, x_old, u)
+        J_tiles, J_from_tiles = self._assembled_esirkepov_current(
+            world,
+            tiled_particles,
+            species_config,
+            constants,
+            tile_shape,
+        )
         _, J_reference = self._assembled_esirkepov_current(
             world,
-            old_species,
+            self._one_tile_particles_from_tiled(tiled_particles),
+            species_config,
             constants,
             self._one_tile_shape_for_world(world),
         )
@@ -361,15 +460,9 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         constants = {"C": 1.0, "eps": 1.0, "alpha": 1.0}
         tile_shape = (2, 1, 1)
         world = self._world_with_tiled_grids(world, tile_shape)
-        simulation_parameters = {
-            "particle_tile_nx": tile_shape[0],
-            "particle_tile_ny": tile_shape[1],
-            "particle_tile_nz": tile_shape[2],
-        }
         x_old = jnp.array([-1.10, -0.10, 1.05])
-        old_species = self._species(world, x_old)
+        tiled_particles, species_config = self._one_dimensional_particles(world, x_old, tile_shape)
 
-        tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
         g = int(world["guard_cells"])
         _, _, J_template, _, _ = initialize_fields(world)
         J_tiles = Esirkepov_current(
@@ -382,7 +475,8 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         J_from_tiles = assemble_tiled_vector_field(J_tiles, world, tile_shape, num_guard_cells=g)
         _, J_reference = self._assembled_esirkepov_current(
             world,
-            old_species,
+            self._one_tile_particles_from_tiled(tiled_particles),
+            species_config,
             constants,
             self._one_tile_shape_for_world(world),
         )
@@ -398,15 +492,9 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         world["guard_cells"] = 2
         world = self._world_with_tiled_grids(world, (2, 1, 1))
         constants = {"C": 1.0, "eps": 1.0, "alpha": 1.0}
-        simulation_parameters = {
-            "particle_tile_nx": world["tile_shape"][0],
-            "particle_tile_ny": world["tile_shape"][1],
-            "particle_tile_nz": world["tile_shape"][2],
-        }
         x_old = jnp.array([-1.10, -0.10, 1.05])
-        old_species = self._species(world, x_old)
+        tiled_particles, species_config = self._one_dimensional_particles(world, x_old, world["tile_shape"])
 
-        tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
         _, _, J_template, _, _ = initialize_fields(world)
         J_tiles = Esirkepov_current(
             tiled_particles,
@@ -423,7 +511,8 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         )
         _, J_reference = self._assembled_esirkepov_current(
             world,
-            old_species,
+            self._one_tile_particles_from_tiled(tiled_particles),
+            species_config,
             constants,
             self._one_tile_shape_for_world(world),
         )
@@ -442,13 +531,11 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         tile_shape = (2, 1, 1)
         world = self._world_with_tiled_grids(world, tile_shape)
         constants = {"C": 1.0, "eps": 1.0, "alpha": 1.0}
-        simulation_parameters = {
-            "particle_tile_nx": tile_shape[0],
-            "particle_tile_ny": tile_shape[1],
-            "particle_tile_nz": tile_shape[2],
-        }
-        old_species = self._species(world, jnp.array([-1.10, -0.10, 1.05]))
-        tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
+        tiled_particles, species_config = self._one_dimensional_particles(
+            world,
+            jnp.array([-1.10, -0.10, 1.05]),
+            tile_shape,
+        )
 
         with self.assertRaisesRegex(ValueError, "Esirkepov current filtering is not supported"):
             _, _, J_template, _, _ = initialize_fields(world)
@@ -539,11 +626,6 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         constants = {"C": 1.0, "eps": 1.0, "alpha": 1.0}
         tile_shape = (2, 1, 1)
         world = self._world_with_tiled_grids(world, tile_shape)
-        simulation_parameters = {
-            "particle_tile_nx": tile_shape[0],
-            "particle_tile_ny": tile_shape[1],
-            "particle_tile_nz": tile_shape[2],
-        }
         dx = world["dx"]
         x_old = jnp.array(
             [
@@ -559,8 +641,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
                 [-0.4 * dx / world["dt"], 0.0, 0.0],
             ]
         )
-        old_species = self._species_from_arrays(world, x_old, u)
-        tiled_particles, species_config = to_tiled_particles([old_species], world, simulation_parameters)
+        tiled_particles, species_config = self._particles_from_arrays(world, tile_shape, x_old, u)
         g = int(world["guard_cells"])
         rho_tiles = build_tiled_array(world)
 
@@ -835,14 +916,16 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
                 particle_pusher=particle_pusher,
             )
 
-            old_species = self._species_from_arrays(
+            reference_particles, reference_species_config = self._particles_from_arrays(
                 world,
+                self._one_tile_shape_for_world(world),
                 jnp.column_stack((jnp.asarray(x_initial), jnp.zeros(4), jnp.zeros(4))),
                 jnp.column_stack((jnp.asarray(vx_initial), jnp.zeros(4), jnp.zeros(4))),
             )
             _, reference_J = self._assembled_esirkepov_current(
                 world,
-                old_species,
+                reference_particles,
+                reference_species_config,
                 constants,
                 self._one_tile_shape_for_world(world),
             )
