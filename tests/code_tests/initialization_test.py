@@ -87,7 +87,7 @@ class TestInitializationFunctions(unittest.TestCase):
 
             loop, particles, fields, world, simulation_parameters, *_rest = initialize_simulation(toml.load(config_path))
 
-            self.assertIs(loop.func if hasattr(loop, "func") else loop, time_loop_electrodynamic)
+            self.assertIs(loop, time_loop_electrodynamic)
             self.assertIsInstance(particles, TiledParticles)
             self.assertEqual(simulation_parameters["solver"], "electrodynamic_yee")
             self.assertEqual(tuple(world["tile_shape"]), (2, 1, 1))
@@ -99,6 +99,8 @@ class TestInitializationFunctions(unittest.TestCase):
             self.assertEqual(J[0].ndim, 6)
             self.assertIsNone(pml_state)
             self.assertFalse(bool(overflow))
+            # dump a dummy config file to tmp directory and confirm it can be read
+            # in correctly
 
     def test_initialize_simulation_encodes_global_particle_boundary_conditions(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -146,6 +148,7 @@ class TestInitializationFunctions(unittest.TestCase):
 
             self.assertEqual(world["particle_boundary_conditions"], {"x": 1, "y": 2, "z": 0})
             self.assertIsInstance(particles, TiledParticles)
+            # check that the global particle boundary conditions are encoded correctly in the world dictionary
 
     def test_initialize_simulation_uses_collocated_grid_for_electrostatic(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -188,6 +191,7 @@ class TestInitializationFunctions(unittest.TestCase):
             self.assertEqual(fields[0][0].ndim, 6)
             for vertex_axis, center_axis in zip(world["grids"]["vertex"], world["grids"]["center"]):
                 self.assertTrue(jnp.allclose(vertex_axis, center_axis))
+        # test the initialize_simulation function with an electrostatic solver and check that it uses a collocated grid
 
     def test_initialize_simulation_rejects_unknown_solver(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -210,6 +214,7 @@ class TestInitializationFunctions(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "Unsupported solver"):
                 initialize_simulation(config)
+        # test that initialize_simulation raises an error for an unknown solver
 
     def test_validate_field_solver_rejects_spectral(self):
         with self.assertRaisesRegex(ValueError, "Unsupported solver"):
