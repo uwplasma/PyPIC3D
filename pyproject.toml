@@ -20,6 +20,11 @@ dependencies = [
     "openpmd-api",
 ]
 
+[project.optional-dependencies]
+test = [
+    "coverage",
+]
+
 [tool.setuptools.packages.find]
 include = ["PyPIC3D*"]
 
