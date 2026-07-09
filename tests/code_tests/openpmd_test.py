@@ -1,17 +1,16 @@
 import unittest
+import math
 import threading
 import time
 from unittest.mock import patch
 
-import jax
 import jax.numpy as jnp
 
 from PyPIC3D.boundary_conditions import ghost_cells
 from PyPIC3D.diagnostics import async_writer
 from PyPIC3D.diagnostics import openPMD
 from PyPIC3D.diagnostics.openPMD import _ensure_openpmd_array
-from PyPIC3D.tests.tiled_particle_fixtures import particle_species
-from PyPIC3D.tests.tiled_particle_fixtures import to_tiled_particles
+from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
 
 
 def _tile_axis_count(n_cells, cells_per_tile):
@@ -30,46 +29,24 @@ def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
     nty = _tile_axis_count(Ny, tile_ny)
     ntz = _tile_axis_count(Nz, tile_nz)
 
-    if g != 1:
-        field_tiles = jnp.zeros(
-            (
-                ntx,
-                nty,
-                ntz,
-                tile_nx + 2 * g,
-                tile_ny + 2 * g,
-                tile_nz + 2 * g,
-            ),
-            dtype=field.dtype,
-        )
-        for tx in range(ntx):
-            for ty in range(nty):
-                for tz in range(ntz):
-                    ix = 1 + tx * tile_nx
-                    iy = 1 + ty * tile_ny
-                    iz = 1 + tz * tile_nz
-                    interior = field[ix:ix + tile_nx, iy:iy + tile_ny, iz:iz + tile_nz]
-                    field_tiles = field_tiles.at[tx, ty, tz, g:-g, g:-g, g:-g].set(interior)
-        return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
+    interior_tiles = field[1:-1, 1:-1, 1:-1]
+    interior_tiles = interior_tiles.reshape(ntx, tile_nx, nty, tile_ny, ntz, tile_nz)
+    interior_tiles = interior_tiles.transpose(0, 2, 4, 1, 3, 5)
 
-    def tile_at(tx, ty, tz):
-        start = (tx * tile_nx, ty * tile_ny, tz * tile_nz)
-        size = (tile_nx + 2, tile_ny + 2, tile_nz + 2)
-        return jax.lax.dynamic_slice(field, start, size)
-
-    return jnp.stack(
-        [
-            jnp.stack(
-                [
-                    jnp.stack([tile_at(tx, ty, tz) for tz in range(ntz)], axis=0)
-                    for ty in range(nty)
-                ],
-                axis=0,
-            )
-            for tx in range(ntx)
-        ],
-        axis=0,
+    field_tiles = jnp.zeros(
+        (
+            ntx,
+            nty,
+            ntz,
+            tile_nx + 2 * g,
+            tile_ny + 2 * g,
+            tile_nz + 2 * g,
+        ),
+        dtype=field.dtype,
     )
+    field_tiles = field_tiles.at[:, :, :, g:-g, g:-g, g:-g].set(interior_tiles)
+
+    return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
 
 
 def tile_vector_field(field, world, tile_shape, num_guard_cells=2):
@@ -192,14 +169,6 @@ def _world():
     }
 
 
-def _simulation_parameters():
-    return {
-        "particle_tile_nx": 2,
-        "particle_tile_ny": 1,
-        "particle_tile_nz": 1,
-    }
-
-
 def _record_data(record):
     if len(record.chunks) <= 1:
         return record.data
@@ -214,29 +183,86 @@ def _record_data(record):
 
 
 def _species(name, charge, mass, weight, x1):
-    world = _world()
-    return particle_species(
-        name=name,
-        N_particles=x1.shape[0],
-        charge=charge,
-        mass=mass,
-        weight=weight,
-        T=0.0,
-        x1=x1,
-        x2=jnp.zeros_like(x1),
-        x3=jnp.zeros_like(x1),
-        v1=jnp.ones_like(x1) * 0.1,
-        v2=jnp.zeros_like(x1),
-        v3=jnp.zeros_like(x1),
-        xwind=world["x_wind"],
-        ywind=world["y_wind"],
-        zwind=world["z_wind"],
-        dx=world["dx"],
-        dy=world["dy"],
-        dz=world["dz"],
-        active_mask=jnp.ones(x1.shape[0], dtype=bool),
-        dt=world["dt"],
+    return {
+        "name": name,
+        "charge": charge,
+        "mass": mass,
+        "weight": weight,
+        "x1": jnp.asarray(x1),
+        "u1": jnp.ones_like(x1) * 0.1,
+    }
+
+
+def _particle_tile_index(x, y, z, world, tile_shape):
+    tile_nx, tile_ny, tile_nz = tile_shape
+
+    x_cell = math.floor((float(x) + float(world["x_wind"]) / 2.0) / float(world["dx"]))
+    y_cell = math.floor((float(y) + float(world["y_wind"]) / 2.0) / float(world["dy"]))
+    z_cell = math.floor((float(z) + float(world["z_wind"]) / 2.0) / float(world["dz"]))
+
+    x_cell = min(max(x_cell, 0), int(world["Nx"]) - 1)
+    y_cell = min(max(y_cell, 0), int(world["Ny"]) - 1)
+    z_cell = min(max(z_cell, 0), int(world["Nz"]) - 1)
+
+    return x_cell // tile_nx, y_cell // tile_ny, z_cell // tile_nz
+
+
+def _make_tiled_particles(species, world):
+    tile_shape = tuple(int(width) for width in world["tile_shape"])
+    tile_nx, tile_ny, tile_nz = tile_shape
+    ntx = _tile_axis_count(world["Nx"], tile_nx)
+    nty = _tile_axis_count(world["Ny"], tile_ny)
+    ntz = _tile_axis_count(world["Nz"], tile_nz)
+
+    placements = []
+    tile_counts = {}
+
+    for species_index, species_data in enumerate(species):
+        x1 = species_data["x1"]
+        u1 = species_data["u1"]
+        zeros = jnp.zeros_like(x1)
+        x = jnp.stack((x1, zeros, zeros), axis=-1)
+        u = jnp.stack((u1, zeros, zeros), axis=-1)
+
+        for particle_index in range(x1.shape[0]):
+            tx, ty, tz = _particle_tile_index(
+                x[particle_index, 0],
+                x[particle_index, 1],
+                x[particle_index, 2],
+                world,
+                tile_shape,
+            )
+            tile_key = (tx, ty, tz, species_index)
+            tile_counts[tile_key] = tile_counts.get(tile_key, 0) + 1
+            placements.append((tile_key, x[particle_index], u[particle_index]))
+
+    max_particles_per_tile = max(1, max(tile_counts.values()))
+    n_species = len(species)
+
+    x_tiles = jnp.zeros((ntx, nty, ntz, n_species, max_particles_per_tile, 3))
+    u_tiles = jnp.zeros_like(x_tiles)
+    active_tiles = jnp.zeros((ntx, nty, ntz, n_species, max_particles_per_tile), dtype=bool)
+    write_counts = {}
+
+    for tile_key, x_particle, u_particle in placements:
+        slot = write_counts.get(tile_key, 0)
+        write_counts[tile_key] = slot + 1
+
+        x_tiles = x_tiles.at[tile_key + (slot, slice(None))].set(x_particle)
+        u_tiles = u_tiles.at[tile_key + (slot, slice(None))].set(u_particle)
+        active_tiles = active_tiles.at[tile_key + (slot,)].set(True)
+
+    particles = TiledParticles(x=x_tiles, u=u_tiles, active=active_tiles)
+    species_config = SpeciesConfig(
+        charge=jnp.asarray([species_data["charge"] for species_data in species]),
+        mass=jnp.asarray([species_data["mass"] for species_data in species]),
+        weight=jnp.asarray([species_data["weight"] for species_data in species]),
+        update_x=jnp.ones((n_species, 3), dtype=bool),
+        update_u=jnp.ones((n_species, 3), dtype=bool),
     )
+    species_names = tuple(species_data["name"] for species_data in species)
+
+    return particles, species_config, species_names
 
 
 class OpenPMDDiagnosticsTests(unittest.TestCase):
@@ -247,6 +273,66 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
         array = _ensure_openpmd_array(field_component)
 
         self.assertEqual(array.shape, (4, 1, 6))
+
+    def _expected_tiled_scalar_from_interior(self, field, world, num_guard_cells):
+        tile_shape = world["tile_shape"]
+        tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
+        g = int(num_guard_cells)
+        Nx = int(field.shape[0]) - 2
+        Ny = int(field.shape[1]) - 2
+        Nz = int(field.shape[2]) - 2
+        ntx = _tile_axis_count(Nx, tile_nx)
+        nty = _tile_axis_count(Ny, tile_ny)
+        ntz = _tile_axis_count(Nz, tile_nz)
+
+        interior_tiles = field[1:-1, 1:-1, 1:-1]
+        interior_tiles = interior_tiles.reshape(ntx, tile_nx, nty, tile_ny, ntz, tile_nz)
+        interior_tiles = interior_tiles.transpose(0, 2, 4, 1, 3, 5)
+
+        field_tiles = jnp.zeros(
+            (
+                ntx,
+                nty,
+                ntz,
+                tile_nx + 2 * g,
+                tile_ny + 2 * g,
+                tile_nz + 2 * g,
+            ),
+            dtype=field.dtype,
+        )
+        field_tiles = field_tiles.at[:, :, :, g:-g, g:-g, g:-g].set(interior_tiles)
+
+        return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
+
+    def _field_with_stale_global_ghosts(self, world, value_offset=0.0):
+        shape = (world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2)
+        field = jnp.arange(jnp.prod(jnp.asarray(shape)), dtype=jnp.float64).reshape(shape)
+        field = field + value_offset
+        field = field.at[0, :, :].set(-1000.0)
+        field = field.at[-1, :, :].set(-2000.0)
+        field = field.at[:, 0, :].set(-3000.0)
+        field = field.at[:, -1, :].set(-4000.0)
+        field = field.at[:, :, 0].set(-5000.0)
+        field = field.at[:, :, -1].set(-6000.0)
+        return field
+
+    def test_tile_scalar_field_one_guard_rebuilds_periodic_halos_from_interiors(self):
+        world = _world()
+        field = self._field_with_stale_global_ghosts(world)
+
+        tiles = tile_scalar_field(field, world, world["tile_shape"], num_guard_cells=1)
+        expected = self._expected_tiled_scalar_from_interior(field, world, num_guard_cells=1)
+
+        self.assertTrue(jnp.allclose(tiles, expected))
+
+    def test_tile_scalar_field_two_guards_rebuilds_periodic_halos_from_interiors(self):
+        world = _world()
+        field = self._field_with_stale_global_ghosts(world, value_offset=10.0)
+
+        tiles = tile_scalar_field(field, world, world["tile_shape"], num_guard_cells=2)
+        expected = self._expected_tiled_scalar_from_interior(field, world, num_guard_cells=2)
+
+        self.assertTrue(jnp.allclose(tiles, expected))
 
     def test_write_openpmd_fields_preserves_thin_y_mesh_metadata(self):
         shape_with_ghosts = (6, 3, 8)
@@ -411,8 +497,7 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
             _species("beam electrons", -1.0, 2.0, 3.0, jnp.array([-1.5, 0.5])),
             _species("background ions", 1.0, 4.0, 5.0, jnp.array([1.5, -0.5])),
         ]
-        tiled_particles, species_config = to_tiled_particles(species, world, _simulation_parameters())
-        species_names = tuple(s.get_name() for s in species)
+        tiled_particles, species_config, species_names = _make_tiled_particles(species, world)
         constants = {"C": 10.0}
 
         sync_series = FakeSeries()
@@ -590,8 +675,7 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
             _species("beam electrons", -1.0, 2.0, 3.0, jnp.array([-1.5, 0.5])),
             _species("background ions", 1.0, 4.0, 5.0, jnp.array([1.5])),
         ]
-        tiled_particles, species_config = to_tiled_particles(species, world, _simulation_parameters())
-        species_names = tuple(s.get_name() for s in species)
+        tiled_particles, species_config, species_names = _make_tiled_particles(species, world)
         series = FakeSeries()
 
         with patch.object(openPMD.io, "Series", return_value=series):
