@@ -7,8 +7,7 @@ from PyPIC3D.boundary_conditions import ghost_cells
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
 from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.diagnostics.output_adapters import assemble_tiled_scalar_field
-from PyPIC3D.tests.tiled_particle_fixtures import particle_species
-from PyPIC3D.tests.tiled_particle_fixtures import to_tiled_particles
+from tests.initial_particles import build_tiled_particles, tiled_species
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 
 
@@ -129,7 +128,7 @@ class TestTiledRho(unittest.TestCase):
         }
 
     def _particles(self, world):
-        electrons = particle_species(
+        electrons = tiled_species(
             name="electrons",
             N_particles=5,
             charge=-1.0,
@@ -150,7 +149,7 @@ class TestTiledRho(unittest.TestCase):
             dz=world["dz"],
             dt=world["dt"],
         )
-        ions = particle_species(
+        ions = tiled_species(
             name="ions",
             N_particles=4,
             charge=2.0,
@@ -175,7 +174,7 @@ class TestTiledRho(unittest.TestCase):
         return [electrons, ions]
 
     def _tiled_with_noisy_inactive_slots(self, particles, world):
-        tiled_particles, species_config = to_tiled_particles(particles, world, self._simulation_parameters())
+        tiled_particles, species_config = build_tiled_particles(particles, world, self._simulation_parameters())
 
         inactive = ~tiled_particles.active
         x = tiled_particles.x.at[inactive, 0].set(0.33)
@@ -187,9 +186,7 @@ class TestTiledRho(unittest.TestCase):
 
     def _zero_species_velocities(self, particles):
         for species in particles:
-            species.v1 = jnp.zeros_like(species.v1)
-            species.v2 = jnp.zeros_like(species.v2)
-            species.v3 = jnp.zeros_like(species.v3)
+            species["u"] = jnp.zeros_like(species["u"])
         return particles
 
     def _zero_tiled_velocities(self, tiled_particles):

@@ -16,8 +16,7 @@ from PyPIC3D.deposition.rho import (
     compute_tiled_velocity_field_from_tiled_particles,
 )
 from PyPIC3D.diagnostics.output_adapters import assemble_tiled_scalar_field
-from PyPIC3D.tests.tiled_particle_fixtures import particle_species
-from PyPIC3D.tests.tiled_particle_fixtures import to_tiled_particles
+from tests.initial_particles import build_tiled_particles, tiled_species
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 
 
@@ -29,7 +28,6 @@ def _tile_axis_count(n_cells, cells_per_tile):
         raise ValueError("Shared tile sizes must divide the physical grid dimensions exactly.")
     return int(n_cells) // int(cells_per_tile)
 
-
 def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
     tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
     g = int(num_guard_cells)
@@ -39,48 +37,29 @@ def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
     ntx = _tile_axis_count(Nx, tile_nx)
     nty = _tile_axis_count(Ny, tile_ny)
     ntz = _tile_axis_count(Nz, tile_nz)
+    # get the number of tiles along each axis
 
-    if g != 1:
-        field_tiles = jnp.zeros(
-            (
-                ntx,
-                nty,
-                ntz,
-                tile_nx + 2 * g,
-                tile_ny + 2 * g,
-                tile_nz + 2 * g,
-            ),
-            dtype=field.dtype,
-        )
-        for tx in range(ntx):
-            for ty in range(nty):
-                for tz in range(ntz):
-                    ix = 1 + tx * tile_nx
-                    iy = 1 + ty * tile_ny
-                    iz = 1 + tz * tile_nz
-                    interior = field[ix:ix + tile_nx, iy:iy + tile_ny, iz:iz + tile_nz]
-                    field_tiles = field_tiles.at[tx, ty, tz, g:-g, g:-g, g:-g].set(interior)
-        return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
+    interior_tiles = field[1:-1, 1:-1, 1:-1]
+    interior_tiles = interior_tiles.reshape(ntx, tile_nx, nty, tile_ny, ntz, tile_nz)
+    interior_tiles = interior_tiles.transpose(0, 2, 4, 1, 3, 5)
+    # reshape the interior of the field into tiles, and then transpose to get the correct order of axes
 
-    def tile_at(tx, ty, tz):
-        start = (tx * tile_nx, ty * tile_ny, tz * tile_nz)
-        size = (tile_nx + 2, tile_ny + 2, tile_nz + 2)
-        return jax.lax.dynamic_slice(field, start, size)
-
-    return jnp.stack(
-        [
-            jnp.stack(
-                [
-                    jnp.stack([tile_at(tx, ty, tz) for tz in range(ntz)], axis=0)
-                    for ty in range(nty)
-                ],
-                axis=0,
-            )
-            for tx in range(ntx)
-        ],
-        axis=0,
+    field_tiles = jnp.zeros(
+        (
+            ntx,
+            nty,
+            ntz,
+            tile_nx + 2 * g,
+            tile_ny + 2 * g,
+            tile_nz + 2 * g,
+        ),
+        dtype=field.dtype,
     )
+    field_tiles = field_tiles.at[:, :, :, g:-g, g:-g, g:-g].set(interior_tiles)
+    # populate the field tiles with the interior tiles, leaving the guard cells as zeros
 
+    return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
+    # update the guard cells of the tiled field using the ghost_cells function
 
 class TestTiledFluidQuantities(unittest.TestCase):
     def _build_world(self, shape_factor=2):
@@ -136,7 +115,7 @@ class TestTiledFluidQuantities(unittest.TestCase):
         )
 
     def _assembled_mass_density(self, particles, world):
-        tiled_particles, species_config = to_tiled_particles(particles, world, self._simulation_parameters())
+        tiled_particles, species_config = build_tiled_particles(particles, world, self._simulation_parameters())
         rho_tiles = compute_tiled_mass_density_from_tiled_particles(
             tiled_particles,
             species_config,
@@ -153,7 +132,7 @@ class TestTiledFluidQuantities(unittest.TestCase):
         )
 
     def _assembled_velocity_field(self, particles, world, direction):
-        tiled_particles, species_config = to_tiled_particles(particles, world, self._simulation_parameters())
+        tiled_particles, species_config = build_tiled_particles(particles, world, self._simulation_parameters())
         field_tiles = compute_tiled_velocity_field_from_tiled_particles(
             tiled_particles,
             species_config,
@@ -171,7 +150,7 @@ class TestTiledFluidQuantities(unittest.TestCase):
         )
 
     def _assembled_pressure_field(self, particles, world, direction):
-        tiled_particles, species_config = to_tiled_particles(particles, world, self._simulation_parameters())
+        tiled_particles, species_config = build_tiled_particles(particles, world, self._simulation_parameters())
         velocity_tiles = compute_tiled_velocity_field_from_tiled_particles(
             tiled_particles,
             species_config,
@@ -209,7 +188,7 @@ class TestTiledFluidQuantities(unittest.TestCase):
         }
 
     def _particles(self, world):
-        electrons = particle_species(
+        electrons = tiled_species(
             name="electrons",
             N_particles=5,
             charge=-1.0,
@@ -230,7 +209,7 @@ class TestTiledFluidQuantities(unittest.TestCase):
             dz=world["dz"],
             dt=world["dt"],
         )
-        ions = particle_species(
+        ions = tiled_species(
             name="ions",
             N_particles=3,
             charge=2.0,
@@ -257,7 +236,7 @@ class TestTiledFluidQuantities(unittest.TestCase):
     def test_tiled_particles_require_tile_major_mass_storage(self):
         world = self._build_world(shape_factor=2)
         particles = self._particles(world)
-        tiled_particles, species_config = to_tiled_particles(particles, world, self._simulation_parameters())
+        tiled_particles, species_config = build_tiled_particles(particles, world, self._simulation_parameters())
 
         with self.assertRaisesRegex(ValueError, "tile-major scalar field storage"):
             compute_mass_density(tiled_particles, self._empty_scalar(world), world, species_config=species_config)
@@ -266,7 +245,7 @@ class TestTiledFluidQuantities(unittest.TestCase):
         world = self._build_world(shape_factor=2)
         world = self._world_with_tiled_grids(world)
         particles = self._particles(world)
-        tiled_particles, species_config = to_tiled_particles(particles, world, self._simulation_parameters())
+        tiled_particles, species_config = build_tiled_particles(particles, world, self._simulation_parameters())
         reference_world = self._single_tile_world(world)
         mass_reference = self._assembled_mass_density(self._particles(reference_world), reference_world)
         mass_tiles = compute_tiled_mass_density_from_tiled_particles(
@@ -297,7 +276,7 @@ class TestTiledFluidQuantities(unittest.TestCase):
         world = self._build_world(shape_factor=2)
         world = self._world_with_tiled_grids(world)
         particles = self._particles(world)
-        tiled_particles, species_config = to_tiled_particles(particles, world, self._simulation_parameters())
+        tiled_particles, species_config = build_tiled_particles(particles, world, self._simulation_parameters())
         reference_world = self._single_tile_world(world)
         mass_reference = self._assembled_mass_density(self._particles(reference_world), reference_world)
         rho_tiles = self._scalar_tiles(world)
@@ -323,7 +302,7 @@ class TestTiledFluidQuantities(unittest.TestCase):
         world = self._build_world(shape_factor=2)
         world = self._world_with_tiled_grids(world)
         particles = self._particles(world)
-        tiled_particles, species_config = to_tiled_particles(particles, world, self._simulation_parameters())
+        tiled_particles, species_config = build_tiled_particles(particles, world, self._simulation_parameters())
         reference_world = self._single_tile_world(world)
         velocity_reference = self._assembled_velocity_field(self._particles(reference_world), reference_world, 0)
         velocity_tiles = compute_velocity_field(
@@ -353,7 +332,7 @@ class TestTiledFluidQuantities(unittest.TestCase):
         world = self._build_world(shape_factor=2)
         world = self._world_with_tiled_grids(world)
         particles = self._particles(world)
-        tiled_particles, species_config = to_tiled_particles(particles, world, self._simulation_parameters())
+        tiled_particles, species_config = build_tiled_particles(particles, world, self._simulation_parameters())
         reference_world = self._single_tile_world(world)
         pressure_reference = self._assembled_pressure_field(self._particles(reference_world), reference_world, 0)
         field_tiles = self._scalar_tiles(world)

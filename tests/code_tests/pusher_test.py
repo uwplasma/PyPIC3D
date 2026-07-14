@@ -4,8 +4,7 @@ import jax
 import jax.numpy as jnp
 
 from PyPIC3D.boundary_conditions import ghost_cells
-from PyPIC3D.tests.tiled_particle_fixtures import particle_species
-from PyPIC3D.tests.tiled_particle_fixtures import to_tiled_particles
+from tests.initial_particles import build_tiled_particles, tiled_species
 from PyPIC3D.pusher.particle_push import particle_push
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 
@@ -116,7 +115,7 @@ class TestTiledParticlePusher(unittest.TestCase):
         }
 
     def _push_tiled_species(self, species, world, tile_shape, E, B, constants, relativistic=True, particle_pusher="boris"):
-        tiled_particles, species_config = to_tiled_particles(
+        tiled_particles, species_config = build_tiled_particles(
             [species],
             world,
             self._simulation_parameters_for_tile_shape(tile_shape),
@@ -152,7 +151,7 @@ class TestTiledParticlePusher(unittest.TestCase):
         if active_mask is None:
             active_mask = jnp.array([True, True, True, True])
 
-        return particle_species(
+        return tiled_species(
             name="test particles",
             N_particles=4,
             charge=-1.0,
@@ -233,7 +232,7 @@ class TestTiledParticlePusher(unittest.TestCase):
         B = self._deterministic_vector_field(world, scale=0.05)
 
         def make_species():
-            return particle_species(
+            return tiled_species(
                 name="higuera cary particles",
                 N_particles=4,
                 charge=-1.0,
@@ -303,7 +302,7 @@ class TestTiledParticlePusher(unittest.TestCase):
             update_vy=True,
             update_vz=False,
         )
-        tiled_particles, species_config = to_tiled_particles([species], world, simulation_parameters)
+        tiled_particles, species_config = build_tiled_particles([species], world, simulation_parameters)
 
         pushed = particle_push(
             tiled_particles,
@@ -327,7 +326,7 @@ class TestTiledParticlePusher(unittest.TestCase):
         E = self._deterministic_vector_field(world, scale=0.1)
         B = self._deterministic_vector_field(world, scale=0.02)
         def make_species():
-            return particle_species(
+            return tiled_species(
                 name="one dimensional",
                 N_particles=3,
                 charge=1.0,
@@ -390,7 +389,7 @@ class TestTiledParticlePusher(unittest.TestCase):
         B = self._deterministic_vector_field(world, scale=0.02)
 
         def make_species():
-            return particle_species(
+            return tiled_species(
                 name="two guard one dimensional",
                 N_particles=3,
                 charge=1.0,

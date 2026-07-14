@@ -3,9 +3,8 @@ import unittest
 import jax
 import jax.numpy as jnp
 
-from PyPIC3D.tests.tiled_particle_fixtures import particle_species
 from PyPIC3D.diagnostics.output_adapters import particles_for_output
-from PyPIC3D.tests.tiled_particle_fixtures import to_tiled_particles
+from tests.initial_particles import build_tiled_particles, species_names, tiled_species
 
 
 jax.config.update("jax_enable_x64", True)
@@ -35,7 +34,7 @@ class TestTiledParticleDiagnostics(unittest.TestCase):
 
     def _species(self):
         world = self._world()
-        ions = particle_species(
+        ions = tiled_species(
             name="ions",
             N_particles=4,
             charge=2.0,
@@ -57,7 +56,7 @@ class TestTiledParticleDiagnostics(unittest.TestCase):
             active_mask=jnp.array([True, False, True, True]),
             dt=world["dt"],
         )
-        electrons = particle_species(
+        electrons = tiled_species(
             name="electrons",
             N_particles=3,
             charge=-1.0,
@@ -83,29 +82,29 @@ class TestTiledParticleDiagnostics(unittest.TestCase):
 
     def test_flatten_tiled_particles_matches_active_original_species(self):
         species_list = self._species()
-        tiled_particles, species_config = to_tiled_particles(species_list, self._world(), self._simulation_parameters())
+        tiled_particles, species_config = build_tiled_particles(species_list, self._world(), self._simulation_parameters())
 
         flattened_species = particles_for_output(tiled_particles, species_config=species_config)
 
         self.assertEqual(len(flattened_species), len(species_list))
         for species_index, (original, flattened) in enumerate(zip(species_list, flattened_species)):
-            active = original.get_active_mask()
+            active = original["active"]
 
-            original_x = jnp.stack(original.get_forward_position(), axis=-1)[active]
-            original_u = jnp.stack(original.get_velocity(), axis=-1)[active]
+            original_x = original["x"][active]
+            original_u = original["u"][active]
             flattened_x = flattened.x
             flattened_u = flattened.u
 
             self.assertEqual(flattened.species_index, species_index)
             self.assertTrue(jnp.allclose(flattened_x, original_x))
             self.assertTrue(jnp.allclose(flattened_u, original_u))
-            self.assertTrue(jnp.allclose(flattened.charge, original.charge * jnp.ones(jnp.sum(active))))
-            self.assertTrue(jnp.allclose(flattened.mass, original.mass * jnp.ones(jnp.sum(active))))
-            self.assertTrue(jnp.allclose(flattened.weight, original.weight * jnp.ones(jnp.sum(active))))
+            self.assertTrue(jnp.allclose(flattened.charge, original["charge"] * jnp.ones(jnp.sum(active))))
+            self.assertTrue(jnp.allclose(flattened.mass, original["mass"] * jnp.ones(jnp.sum(active))))
+            self.assertTrue(jnp.allclose(flattened.weight, original["weight"] * jnp.ones(jnp.sum(active))))
 
     def test_inactive_tiled_slots_are_not_flattened(self):
         species_list = self._species()
-        tiled_particles, species_config = to_tiled_particles(species_list, self._world(), self._simulation_parameters())
+        tiled_particles, species_config = build_tiled_particles(species_list, self._world(), self._simulation_parameters())
 
         flattened_species = particles_for_output(tiled_particles, species_config=species_config)
 
@@ -116,7 +115,7 @@ class TestTiledParticleDiagnostics(unittest.TestCase):
 
     def test_absorbed_particles_do_not_appear_in_flattened_output(self):
         species_list = self._species()
-        tiled_particles, species_config = to_tiled_particles(species_list, self._world(), self._simulation_parameters())
+        tiled_particles, species_config = build_tiled_particles(species_list, self._world(), self._simulation_parameters())
 
         tiled_particles = tiled_particles._replace(
             active=tiled_particles.active.at[1, 1, 0, 0, 1].set(False)
@@ -134,23 +133,23 @@ class TestTiledParticleDiagnostics(unittest.TestCase):
             "y": 0,
             "z": 0,
         }
-        tiled_particles, species_config = to_tiled_particles(species_list, world, self._simulation_parameters())
+        tiled_particles, species_config = build_tiled_particles(species_list, world, self._simulation_parameters())
 
         flattened_species = particles_for_output(tiled_particles, species_config=species_config, world=world)
 
         for original, flattened in zip(species_list, flattened_species):
-            active = original.get_active_mask()
-            original_position = jnp.stack(original.get_position(), axis=-1)[active]
+            active = original["active"]
+            original_position = original["x"][active] - 0.5 * original["u"][active] * world["dt"]
             flattened_position = flattened.x_diagnostic
 
             self.assertTrue(jnp.allclose(flattened_position, original_position))
 
     def test_species_names_are_preserved_when_metadata_is_available(self):
         species_list = self._species()
-        tiled_particles, species_config = to_tiled_particles(species_list, self._world(), self._simulation_parameters())
-        species_names = tuple(species.get_name() for species in species_list)
+        tiled_particles, species_config = build_tiled_particles(species_list, self._world(), self._simulation_parameters())
+        names = species_names(species_list)
 
-        flattened_species = particles_for_output(tiled_particles, species_config=species_config, species_names=species_names)
+        flattened_species = particles_for_output(tiled_particles, species_config=species_config, species_names=names)
 
         self.assertEqual(flattened_species[0].name, "ions")
         self.assertEqual(flattened_species[1].name, "electrons")

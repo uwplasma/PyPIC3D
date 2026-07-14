@@ -10,7 +10,7 @@ import PyPIC3D
 from PyPIC3D.boundary_conditions import ghost_cells
 from PyPIC3D.initialization import initialize_fields
 from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
-from PyPIC3D.tests.tiled_particle_fixtures import to_tiled_particles
+from tests.initial_particles import build_tiled_particles, tiled_species
 from PyPIC3D.diagnostics import plotting
 from PyPIC3D.utilities.grids import build_collocated_grid, build_yee_grid
 from PyPIC3D.utils import (
@@ -18,7 +18,6 @@ from PyPIC3D.utils import (
     particle_sanity_check, load_external_fields_from_toml, add_external_fields,
     compute_energy, dump_parameters_to_toml,
 )
-from PyPIC3D.tests.tiled_particle_fixtures import particle_species
 
 jax.config.update("jax_enable_x64", True)
 
@@ -292,30 +291,19 @@ class TestUtilsFunctions(unittest.TestCase):
         }
         E, B, J, phi, rho = initialize_fields(world)
         constants = {"eps": 1.0, "mu": 1.0, "C": 10.0}
-        species = particle_species(
-            name="absorbed",
-            N_particles=1,
-            charge=1.0,
-            mass=1.0,
-            weight=1.0,
-            T=0.0,
-            v1=jnp.array([1.0]),
-            v2=jnp.array([0.0]),
-            v3=jnp.array([0.0]),
-            x1=jnp.array([0.6]),
-            x2=jnp.array([0.0]),
-            x3=jnp.array([0.0]),
-            xwind=1.0,
-            ywind=1.0,
-            zwind=1.0,
-            dx=1.0,
-            dy=1.0,
-            dz=1.0,
-            x_bc="periodic",
+        tiled_particles = TiledParticles(
+            x=jnp.asarray([[[[[[0.6, 0.0, 0.0]]]]]], dtype=float),
+            u=jnp.asarray([[[[[[1.0, 0.0, 0.0]]]]]], dtype=float),
+            active=jnp.asarray([[[[[False]]]]], dtype=bool),
         )
-        species.boundary_conditions({"particle_boundary_conditions": {"x": 2, "y": 0, "z": 0}})
-
-        tiled_particles, species_config = to_tiled_particles([species], world, {"particle_tile_nx": 1, "particle_tile_ny": 1, "particle_tile_nz": 1})
+        species_config = SpeciesConfig(
+            charge=jnp.asarray([1.0]),
+            mass=jnp.asarray([1.0]),
+            weight=jnp.asarray([1.0]),
+            update_x=jnp.ones((1, 3), dtype=bool),
+            update_u=jnp.ones((1, 3), dtype=bool),
+        )
+        # Keep a nonzero inactive velocity so this checks the kinetic-energy mask.
 
         _, _, kinetic_energy = compute_energy(tiled_particles, E, B, world, constants, species_config=species_config)
 
@@ -362,26 +350,17 @@ class TestUtilsFunctions(unittest.TestCase):
         self.assertIsNone(importlib.util.find_spec("PyPIC3D.diagnostics.vtk"))
 
     def test_plot_positions_flattens_tiled_particles_and_preserves_species_names(self):
-        species = particle_species(
+        species = tiled_species(
             name="beam electrons",
-            N_particles=2,
             charge=-1.0,
             mass=1.0,
             weight=2.0,
-            T=0.0,
             x1=jnp.array([-0.25, 0.25]),
             x2=jnp.array([0.0, 0.0]),
             x3=jnp.array([0.0, 0.0]),
-            v1=jnp.array([0.1, 0.2]),
-            v2=jnp.array([0.0, 0.0]),
-            v3=jnp.array([0.0, 0.0]),
-            xwind=1.0,
-            ywind=1.0,
-            zwind=1.0,
-            dx=0.25,
-            dy=0.5,
-            dz=1.0,
-            dt=0.1,
+            u1=jnp.array([0.1, 0.2]),
+            u2=jnp.array([0.0, 0.0]),
+            u3=jnp.array([0.0, 0.0]),
         )
         world = {
             "Nx": 4,
@@ -402,7 +381,7 @@ class TestUtilsFunctions(unittest.TestCase):
             "particle_tile_ny": 1,
             "particle_tile_nz": 1,
         }
-        tiled_particles, species_config = to_tiled_particles([species], world, simulation_parameters)
+        tiled_particles, species_config = build_tiled_particles([species], world, simulation_parameters=simulation_parameters)
 
         class FakeFigure:
             def __init__(self):
@@ -435,26 +414,17 @@ class TestUtilsFunctions(unittest.TestCase):
         self.assertEqual(figure.trace_names, ["beam electrons"])
 
     def test_particles_phase_space_flattens_tiled_particles(self):
-        species = particle_species(
+        species = tiled_species(
             name="electrons",
-            N_particles=1,
             charge=-1.0,
             mass=1.0,
             weight=1.0,
-            T=0.0,
             x1=jnp.array([0.0]),
             x2=jnp.array([0.0]),
             x3=jnp.array([0.0]),
-            v1=jnp.array([0.2]),
-            v2=jnp.array([0.0]),
-            v3=jnp.array([0.0]),
-            xwind=1.0,
-            ywind=1.0,
-            zwind=1.0,
-            dx=0.25,
-            dy=0.5,
-            dz=1.0,
-            dt=0.1,
+            u1=jnp.array([0.2]),
+            u2=jnp.array([0.0]),
+            u3=jnp.array([0.0]),
         )
         world = {
             "Nx": 4,
@@ -475,7 +445,7 @@ class TestUtilsFunctions(unittest.TestCase):
             "particle_tile_ny": 1,
             "particle_tile_nz": 1,
         }
-        tiled_particles, species_config = to_tiled_particles([species], world, simulation_parameters)
+        tiled_particles, species_config = build_tiled_particles([species], world, simulation_parameters=simulation_parameters)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             os.makedirs(os.path.join(tmpdir, "data/phase_space/x"))

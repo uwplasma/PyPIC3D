@@ -9,7 +9,7 @@ import numpy as np
 
 from PyPIC3D.particles.particle_initialization import load_particles_from_toml
 from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
-from PyPIC3D.tests.tiled_particle_fixtures import particle_species, to_tiled_particles
+from tests.initial_particles import build_tiled_particles, tiled_species
 
 
 jax.config.update("jax_enable_x64", True)
@@ -21,7 +21,7 @@ class TestTiledParticleInitialization(unittest.TestCase):
         np.save(path, np.asarray(values, dtype=float))
         return path
 
-    def test_to_tiled_particles_packs_existing_particle_species_list(self):
+    def test_direct_tiled_particles_preserve_inactive_slots_and_metadata(self):
         world = {
             "Nx": 4,
             "Ny": 2,
@@ -40,7 +40,7 @@ class TestTiledParticleInitialization(unittest.TestCase):
             "particle_tile_nz": 1,
         }
 
-        species = particle_species(
+        species = tiled_species(
             name="ions",
             N_particles=3,
             charge=2.0,
@@ -65,7 +65,7 @@ class TestTiledParticleInitialization(unittest.TestCase):
             dt=world["dt"],
         )
 
-        particles, species_config = to_tiled_particles([species], world, simulation_parameters)
+        particles, species_config = build_tiled_particles([species], world, simulation_parameters)
 
         self.assertIsInstance(particles, TiledParticles)
         self.assertIsInstance(species_config, SpeciesConfig)
@@ -115,7 +115,7 @@ class TestTiledParticleInitialization(unittest.TestCase):
             "particle_tile_nz": 1,
         }
         species = [
-            particle_species(
+            tiled_species(
                 name="electrons",
                 N_particles=2,
                 charge=-1.0,
@@ -136,7 +136,7 @@ class TestTiledParticleInitialization(unittest.TestCase):
                 dz=world["dz"],
                 dt=world["dt"],
             ),
-            particle_species(
+            tiled_species(
                 name="ions",
                 N_particles=2,
                 charge=2.0,
@@ -159,7 +159,7 @@ class TestTiledParticleInitialization(unittest.TestCase):
             ),
         ]
 
-        particles, species_config = to_tiled_particles(species, world, simulation_parameters)
+        particles, species_config = build_tiled_particles(species, world, simulation_parameters)
 
         self.assertEqual(particles.x.shape[:4], (4, 1, 1, 2))
         self.assertEqual(species_config.charge.shape, (2,))
@@ -168,7 +168,7 @@ class TestTiledParticleInitialization(unittest.TestCase):
         self.assertEqual(species_config.update_x.shape, (2, 3))
         self.assertEqual(species_config.update_u.shape, (2, 3))
 
-    def test_to_tiled_particles_can_allocate_inactive_capacity_headroom(self):
+    def test_direct_tiled_particles_can_allocate_inactive_capacity_headroom(self):
         world = {
             "Nx": 4,
             "Ny": 1,
@@ -187,7 +187,7 @@ class TestTiledParticleInitialization(unittest.TestCase):
             "particle_tile_nz": 1,
             "particle_tile_capacity_factor": 3.0,
         }
-        species = particle_species(
+        species = tiled_species(
             name="ions",
             N_particles=3,
             charge=1.0,
@@ -209,7 +209,7 @@ class TestTiledParticleInitialization(unittest.TestCase):
             dt=world["dt"],
         )
 
-        particles, species_config = to_tiled_particles([species], world, simulation_parameters)
+        particles, species_config = build_tiled_particles([species], world, simulation_parameters)
 
         self.assertEqual(particles.active.shape[-1], 6)
         self.assertEqual(int(jnp.sum(particles.active)), 3)
