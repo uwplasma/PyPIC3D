@@ -13,7 +13,7 @@ permissions:
 jobs:
   build:
 
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
     - uses: actions/checkout@v4
@@ -27,5 +27,4 @@ jobs:
         pip install .
     - name: Test with unittest
       run: |
-        python -m unittest tests/code_tests/*.py 
-# tests/physics_tests/*.py
+        python -m unittest tests/code_tests/*.py tests/physics_tests/*.py
