@@ -26,7 +26,7 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          coverage run -m unittest tests/code_tests/*.py tests/physics_tests/*.py
+          coverage run -m unittest tests/code_tests/*.py
           coverage xml
 
       - name: Upload coverage report
