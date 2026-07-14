@@ -1,9 +1,16 @@
 import unittest
+import os
+import tempfile
 
 import jax
 import jax.numpy as jnp
+import numpy as np
+import toml
 
-from PyPIC3D.tests.tiled_particle_fixtures import particle_species
+from PyPIC3D.evolve import time_loop_electrostatic
+from PyPIC3D.initialization import initialize_simulation
+from PyPIC3D.particles.particle_class import TiledParticles
+from tests.initial_particles import tiled_species
 from PyPIC3D.solvers.electrostatic_yee import (
     solve_poisson_with_conjugate_gradient,
     calculate_electrostatic_fields,
@@ -75,7 +82,7 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
         self.initial_phi = jnp.zeros((self.Nx + 2 * self.g, self.Ny + 2 * self.g, self.Nz + 2 * self.g))
 
         self.particles = [
-            particle_species(
+            tiled_species(
                 name="test",
                 N_particles=1,
                 charge=1.0,
@@ -158,6 +165,74 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
         self.assertTrue(jnp.allclose(E[0][self.active, self.active, self.active], expected_Ex, atol=1e-6, rtol=1e-6))
         self.assertTrue(jnp.allclose(E[1][self.active, self.active, self.active], expected_Ey, atol=1e-6, rtol=1e-6))
         self.assertTrue(jnp.allclose(E[2][self.active, self.active, self.active], expected_Ez, atol=1e-6, rtol=1e-6))
+
+    def test_initialize_simulation_accepts_single_tile_electrostatic(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            x_path = os.path.join(tmpdir, "x.npy")
+            zeros_path = os.path.join(tmpdir, "zeros.npy")
+            vx_path = os.path.join(tmpdir, "vx.npy")
+            np.save(x_path, np.array([-1.5, -0.5, 0.5, 1.5]))
+            np.save(zeros_path, np.zeros(4))
+            np.save(vx_path, np.array([0.10, -0.05, 0.07, -0.02]))
+
+            config = {
+                "simulation_parameters": {
+                    "name": "electrostatic init smoke",
+                    "output_dir": tmpdir,
+                    "solver": "electrostatic",
+                    "Nx": 8,
+                    "Ny": 1,
+                    "Nz": 1,
+                    "x_wind": 4.0,
+                    "y_wind": 1.0,
+                    "z_wind": 1.0,
+                    "dt": 0.01,
+                    "Nt": 1,
+                    "shape_factor": 1,
+                    "particle_tile_nx": 2,
+                    "particle_tile_ny": 1,
+                    "particle_tile_nz": 1,
+                    "current_calculation": "j_from_rhov",
+                    "filter_j": "none",
+                    "particle_pusher": "boris",
+                    "relativistic": False,
+                },
+                "plotting": {"plotting_interval": 1},
+                "particle1": {
+                    "name": "electrons",
+                    "N_particles": 4,
+                    "charge": -1.0,
+                    "mass": 2.0,
+                    "weight": 0.5,
+                    "temperature": 1.0,
+                    "initial_x": x_path,
+                    "initial_y": zeros_path,
+                    "initial_z": zeros_path,
+                    "initial_vx": vx_path,
+                    "initial_vy": zeros_path,
+                    "initial_vz": zeros_path,
+                },
+            }
+
+            loop, particles, fields, world, simulation_parameters, *_ = initialize_simulation(toml.loads(toml.dumps(config)))
+
+            self.assertIs(loop, time_loop_electrostatic)
+            self.assertIsInstance(particles, TiledParticles)
+            self.assertEqual(tuple(world["tile_shape"]), (8, 1, 1))
+            self.assertEqual(tuple(simulation_parameters["tile_shape"]), (8, 1, 1))
+            self.assertEqual(int(simulation_parameters["particle_tile_nx"]), 8)
+            self.assertEqual(int(simulation_parameters["particle_tile_ny"]), 1)
+            self.assertEqual(int(simulation_parameters["particle_tile_nz"]), 1)
+            for vertex_axis, center_axis in zip(world["grids"]["vertex"], world["grids"]["center"]):
+                self.assertTrue(jnp.allclose(vertex_axis, center_axis))
+            for tiled_vertex_axis, tiled_center_axis in zip(
+                world["grids"]["tiled_vertex_grid"],
+                world["grids"]["tiled_center_grid"],
+            ):
+                self.assertTrue(jnp.allclose(tiled_vertex_axis, tiled_center_axis))
+            self.assertEqual(fields[0][0].shape[:3], (1, 1, 1))
+            self.assertEqual(fields[3].shape[:3], (1, 1, 1))
+            self.assertEqual(fields[4].shape[:3], (1, 1, 1))
 
 
 if __name__ == "__main__":
