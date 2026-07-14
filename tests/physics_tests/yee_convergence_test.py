@@ -13,7 +13,7 @@ from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 jax.config.update("jax_enable_x64", True)
 
 
-class TestTiledYeeConvergence(unittest.TestCase):
+class TestYeeConvergence(unittest.TestCase):
     def _world(self, Nx, tile_shape):
         x_wind = 2.0 * math.pi
         world = {
@@ -45,7 +45,7 @@ class TestTiledYeeConvergence(unittest.TestCase):
         world["grids"]["tiled_center_grid"] = tiled_center_grid
         return world
 
-    def _one_step_by_error(self, Nx, tile_shape):
+    def call_updateB(self, Nx, tile_shape):
         world = self._world(Nx, tile_shape)
         E, B, _J, _phi, _rho = initialize_fields(world)
         Ex, Ey, Ez = E
@@ -77,10 +77,12 @@ class TestTiledYeeConvergence(unittest.TestCase):
         for layout in layouts:
             errors = []
             for Nx in (32, 64, 128):
-                errors.append(self._one_step_by_error(Nx, layout(Nx)))
+                errors.append(self.call_updateB(Nx, layout(Nx)))
+                # step through one timestep of the update B method
 
             first_order = math.log(errors[0] / errors[1], 2.0)
             second_order = math.log(errors[1] / errors[2], 2.0)
+            # calculate the observed order of convergence for the first and second refinement steps
 
             self.assertGreater(first_order, 1.8)
             self.assertGreater(second_order, 1.8)
