@@ -1,210 +1,152 @@
-import jax.numpy as jnp
-from jax import jit
-from functools import partial
-# import external libraries
-
-from PyPIC3D.utils import digital_filter
-from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells, apply_conducting_bc
 from PyPIC3D.boundary_conditions.PML import (
-    apply_pml_to_b_curl,
-    apply_pml_to_e_curl,
-    update_ghost_cells_for_pml,
+    apply_tiled_pml_to_b_curl,
+    apply_tiled_pml_to_e_curl,
 )
-# import internal libraries
+from PyPIC3D.boundary_conditions import ghost_cells
+from PyPIC3D.utilities.filters import digital_filter_vector
 
 
-@partial(jit, static_argnames=("curl_func",))
-def update_E(E, B, J, world, constants, curl_func, pml_state=None):
+def update_E(E_tiles, B_tiles, J_tiles, world, constants, pml_state=None):
     """
-    Update the electric field components (Ex, Ey, Ez) based on the given parameters.
+    Update compact tiled electric fields without assembling a global field.
 
-    Uses ghost cells for boundary handling. Fields have shape (Nx+2, Ny+2, Nz+2)
-    with 1 ghost cell on each side. The physical interior is [1:-1, 1:-1, 1:-1].
-
-    Args:
-        E (tuple): A tuple containing the electric field components (Ex, Ey, Ez).
-        B (tuple): A tuple containing the magnetic field components (Bx, By, Bz).
-        J (tuple): A tuple containing the current density components (Jx, Jy, Jz).
-        world (dict): A dictionary containing the world parameters such as 'dx', 'dy', 'dz', and 'dt'.
-        constants (dict): A dictionary containing the physical constants such as 'C' (speed of light) and 'eps' (permittivity).
-        curl_func (function): A function to calculate the curl of the magnetic field.
-
-    Returns:
-        tuple: ``((Ex, Ey, Ez), pml_state)``.  When no PML is active,
-        ``pml_state`` is passed through as ``None`` and the update is the
-        ordinary unstretched Yee update.
+    The Yee curl is evaluated on each tile's physical interior after B halos
+    have been refreshed from neighbor tiles or field boundary conditions.
     """
 
-    Ex, Ey, Ez = E
-    Bx, By, Bz = B
-    Jx, Jy, Jz = J
-    # unpack the E, B, and J fields
+    Ex, Ey, Ez = E_tiles
+    tile_shape = tuple(int(width) for width in world["tile_shape"])
+    g = int(world["guard_cells"])
+    # get the tile information
 
-    dt = world['dt']
-    dx, dy, dz = world['dx'], world['dy'], world['dz']
-    bc_x = world['boundary_conditions']['x']
-    bc_y = world['boundary_conditions']['y']
-    bc_z = world['boundary_conditions']['z']
-    # get the time resolution and grid spacings
+    active = slice(g, -g)
+    # build interior slice for active axes
+    forward = slice(g + 1, None if g == 1 else -g + 1)
+    # build forward slice used for forward differences
 
-    C = constants['C']
-    eps = constants['eps']
-    # get the necessary constants
+    if pml_state is None:
+        Bx, By, Bz = ghost_cells.update_tiled_vector_ghost_cells(B_tiles, world, g, tile_shape)
+    else:
+        Bx, By, Bz = ghost_cells.update_tiled_vector_ghost_cells_for_pml(B_tiles, world, g, tile_shape)
+    Jx, Jy, Jz = J_tiles
+    current = slice(g, -g) #_active_slice(g)
 
-    # forward differences using ghost cells
-    # B has shape (Nx+2, Ny+2, Nz+2) with valid ghost cell values
-    # slicing [1:-1, 2:, 1:-1] reaches into the ghost cell at the +1 boundary
-    dBz_dy = (Bz[1:-1, 2:, 1:-1] - Bz[1:-1, 1:-1, 1:-1]) / dy
-    dBy_dz = (By[1:-1, 1:-1, 2:] - By[1:-1, 1:-1, 1:-1]) / dz
-    dBx_dz = (Bx[1:-1, 1:-1, 2:] - Bx[1:-1, 1:-1, 1:-1]) / dz
-    dBx_dy = (Bx[1:-1, 2:, 1:-1] - Bx[1:-1, 1:-1, 1:-1]) / dy
-    dBz_dx = (Bz[2:, 1:-1, 1:-1] - Bz[1:-1, 1:-1, 1:-1]) / dx
-    dBy_dx = (By[2:, 1:-1, 1:-1] - By[1:-1, 1:-1, 1:-1]) / dx
-    # compute the forward finite differences of the magnetic field
+    dt = world["dt"]
+    dx, dy, dz = world["dx"], world["dy"], world["dz"]
+    C = constants["C"]
+    eps = constants["eps"]
+
+    # Forward differences use each tile's + side guard cell.  Those guards now
+    # contain the adjacent tile's interior value, including periodic wrap at
+    # the global edge.
+    dBz_dy = (Bz[:, :, :, active, forward, active] - Bz[:, :, :, active, active, active]) / dy
+    dBy_dz = (By[:, :, :, active, active, forward] - By[:, :, :, active, active, active]) / dz
+    dBx_dz = (Bx[:, :, :, active, active, forward] - Bx[:, :, :, active, active, active]) / dz
+    dBx_dy = (Bx[:, :, :, active, forward, active] - Bx[:, :, :, active, active, active]) / dy
+    dBz_dx = (Bz[:, :, :, forward, active, active] - Bz[:, :, :, active, active, active]) / dx
+    dBy_dx = (By[:, :, :, forward, active, active] - By[:, :, :, active, active, active]) / dx
 
     if pml_state is None:
         curl_x = dBz_dy - dBy_dz
         curl_y = dBx_dz - dBz_dx
         curl_z = dBy_dx - dBx_dy
     else:
-        # In the PML layer, each Yee derivative is interpreted as a
-        # coordinate-stretched derivative before the curl is assembled.
-        (curl_x, curl_y, curl_z), pml_state = apply_pml_to_e_curl(
+        (curl_x, curl_y, curl_z), pml_state = apply_tiled_pml_to_e_curl(
             (dBz_dy, dBy_dz, dBx_dz, dBz_dx, dBy_dx, dBx_dy),
             world,
             pml_state,
         )
-    # calculate the curl of the magnetic field, optionally using stretched derivatives
 
-    Ex = Ex.at[1:-1, 1:-1, 1:-1].set(
-        Ex[1:-1, 1:-1, 1:-1] + (C**2 * curl_x - Jx[1:-1, 1:-1, 1:-1] / eps) * dt
+    Ex = Ex.at[:, :, :, active, active, active].set(
+        Ex[:, :, :, active, active, active]
+        + (C**2 * curl_x - Jx[:, :, :, current, current, current] / eps) * dt
     )
-    Ey = Ey.at[1:-1, 1:-1, 1:-1].set(
-        Ey[1:-1, 1:-1, 1:-1] + (C**2 * curl_y - Jy[1:-1, 1:-1, 1:-1] / eps) * dt
+    Ey = Ey.at[:, :, :, active, active, active].set(
+        Ey[:, :, :, active, active, active]
+        + (C**2 * curl_y - Jy[:, :, :, current, current, current] / eps) * dt
     )
-    Ez = Ez.at[1:-1, 1:-1, 1:-1].set(
-        Ez[1:-1, 1:-1, 1:-1] + (C**2 * curl_z - Jz[1:-1, 1:-1, 1:-1] / eps) * dt
+    Ez = Ez.at[:, :, :, active, active, active].set(
+        Ez[:, :, :, active, active, active]
+        + (C**2 * curl_z - Jz[:, :, :, current, current, current] / eps) * dt
     )
-    # update the electric field from Maxwell's equations
 
     if pml_state is None:
-        Ex = update_ghost_cells(Ex, bc_x, bc_y, bc_z)
-        Ey = update_ghost_cells(Ey, bc_x, bc_y, bc_z)
-        Ez = update_ghost_cells(Ez, bc_x, bc_y, bc_z)
+        Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells((Ex, Ey, Ez), world, g, tile_shape)
     else:
-        Ex = update_ghost_cells_for_pml(Ex, world)
-        Ey = update_ghost_cells_for_pml(Ey, world)
-        Ez = update_ghost_cells_for_pml(Ez, world)
-    # refresh ghost cells before any stencil-based post-processing
+        Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells_for_pml((Ex, Ey, Ez), world, g, tile_shape)
+    # refresh tile halos before the digital field filter, matching the global
+    # ghost-cell order in the standard Yee solver.
 
-    alpha = constants['alpha']
-    Ex = digital_filter(Ex, alpha)
-    Ey = digital_filter(Ey, alpha)
-    Ez = digital_filter(Ez, alpha)
-    # apply a digital filter to the electric field components
+    Ex, Ey, Ez = digital_filter_vector((Ex, Ey, Ez), constants.get("alpha", 1.0), num_guard_cells=g)
 
-    Ex, Ey, Ez = apply_conducting_bc((Ex, Ey, Ez), bc_x, bc_y, bc_z)
-    # enforce conducting boundary conditions on tangential E
+    Ex, Ey, Ez = ghost_cells.apply_tiled_conducting_bc((Ex, Ey, Ez), world, num_guard_cells=g)
 
     if pml_state is None:
-        Ex = update_ghost_cells(Ex, bc_x, bc_y, bc_z)
-        Ey = update_ghost_cells(Ey, bc_x, bc_y, bc_z)
-        Ez = update_ghost_cells(Ez, bc_x, bc_y, bc_z)
+        return ghost_cells.update_tiled_vector_ghost_cells((Ex, Ey, Ez), world, g, tile_shape), None
+
+    return ghost_cells.update_tiled_vector_ghost_cells_for_pml((Ex, Ey, Ez), world, g, tile_shape), pml_state
+
+
+def update_B(E_tiles, B_tiles, world, constants, pml_state=None):
+    """
+    Update compact tiled magnetic fields without assembling a global field.
+
+    The Yee curl is evaluated on each tile's physical interior after E halos
+    have been refreshed from neighbor tiles or field boundary conditions.
+    """
+
+    Bx, By, Bz = B_tiles
+    tile_shape = tuple(int(width) for width in world["tile_shape"])
+    tile_nx, tile_ny, tile_nz = tile_shape
+    g = int(world["guard_cells"])
+    g = int(g)
+    active = slice(g, -g)
+    # build interior slice for active axes
+    backward = slice(g - 1, -g - 1)
+    # build backward slice for active axes, used for backward differences
+
+    if pml_state is None:
+        Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells(E_tiles, world, g, tile_shape)
     else:
-        Ex = update_ghost_cells_for_pml(Ex, world)
-        Ey = update_ghost_cells_for_pml(Ey, world)
-        Ez = update_ghost_cells_for_pml(Ez, world)
-    # fill ghost cells with the updated values
+        Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells_for_pml(E_tiles, world, g, tile_shape)
+    dt = world["dt"]
+    dx, dy, dz = world["dx"], world["dy"], world["dz"]
 
-    return (Ex, Ey, Ez), pml_state
-
-
-@partial(jit, static_argnames=("curl_func",))
-def update_B(E, B, world, constants, curl_func, pml_state=None):
-    """
-    Update the magnetic field components (Bx, By, Bz) using the curl of the electric field.
-
-    Uses ghost cells for boundary handling. Fields have shape (Nx+2, Ny+2, Nz+2)
-    with 1 ghost cell on each side. The physical interior is [1:-1, 1:-1, 1:-1].
-
-    Args:
-        E (tuple): The electric field components (Ex, Ey, Ez).
-        B (tuple): The magnetic field components (Bx, By, Bz).
-        world (dict): Dictionary containing simulation parameters such as 'dx', 'dy', 'dz', and 'dt'.
-        constants (dict): Dictionary containing physical constants.
-        curl_func (function): Function to calculate the curl of the electric field.
-
-    Returns:
-        tuple: ``((Bx, By, Bz), pml_state)``.  When no PML is active,
-        ``pml_state`` is passed through as ``None`` and the update is the
-        ordinary unstretched Yee update.
-    """
-
-    dt = world['dt']
-    # get the time resolution
-    dx, dy, dz = world['dx'], world['dy'], world['dz']
-    # get the grid spacings
-    bc_x = world['boundary_conditions']['x']
-    bc_y = world['boundary_conditions']['y']
-    bc_z = world['boundary_conditions']['z']
-
-    Ex, Ey, Ez = E
-    Bx, By, Bz = B
-    # unpack the E and B fields
-
-    # backward differences using ghost cells
-    # slicing [1:-1, :-2, 1:-1] reaches into the ghost cell at the -1 boundary
-    dEz_dy = (Ez[1:-1, 1:-1, 1:-1] - Ez[1:-1, :-2, 1:-1]) / dy
-    dEy_dz = (Ey[1:-1, 1:-1, 1:-1] - Ey[1:-1, 1:-1, :-2]) / dz
-    dEx_dz = (Ex[1:-1, 1:-1, 1:-1] - Ex[1:-1, 1:-1, :-2]) / dz
-    dEx_dy = (Ex[1:-1, 1:-1, 1:-1] - Ex[1:-1, :-2, 1:-1]) / dy
-    dEz_dx = (Ez[1:-1, 1:-1, 1:-1] - Ez[:-2, 1:-1, 1:-1]) / dx
-    dEy_dx = (Ey[1:-1, 1:-1, 1:-1] - Ey[:-2, 1:-1, 1:-1]) / dx
-    # compute the backward finite differences of the electric field
+    # Backward differences use each tile's - side guard cell.  Those guards now
+    # contain the adjacent tile's interior value, including periodic wrap at
+    # the global edge.
+    dEz_dy = (Ez[:, :, :, active, active, active] - Ez[:, :, :, active, backward, active]) / dy
+    dEy_dz = (Ey[:, :, :, active, active, active] - Ey[:, :, :, active, active, backward]) / dz
+    dEx_dz = (Ex[:, :, :, active, active, active] - Ex[:, :, :, active, active, backward]) / dz
+    dEx_dy = (Ex[:, :, :, active, active, active] - Ex[:, :, :, active, backward, active]) / dy
+    dEz_dx = (Ez[:, :, :, active, active, active] - Ez[:, :, :, backward, active, active]) / dx
+    dEy_dx = (Ey[:, :, :, active, active, active] - Ey[:, :, :, backward, active, active]) / dx
 
     if pml_state is None:
         curl_x = dEz_dy - dEy_dz
         curl_y = dEx_dz - dEz_dx
         curl_z = dEy_dx - dEx_dy
     else:
-        # In the PML layer, the frequency-space coordinate stretch is carried by
-        # ADE memory terms attached to each finite-difference derivative.
-        (curl_x, curl_y, curl_z), pml_state = apply_pml_to_b_curl(
+        (curl_x, curl_y, curl_z), pml_state = apply_tiled_pml_to_b_curl(
             (dEz_dy, dEy_dz, dEx_dz, dEz_dx, dEy_dx, dEx_dy),
             world,
             pml_state,
         )
-    # calculate the curl of the electric field, optionally using stretched derivatives
 
-    Bx = Bx.at[1:-1, 1:-1, 1:-1].set(Bx[1:-1, 1:-1, 1:-1] - dt * curl_x)
-    By = By.at[1:-1, 1:-1, 1:-1].set(By[1:-1, 1:-1, 1:-1] - dt * curl_y)
-    Bz = Bz.at[1:-1, 1:-1, 1:-1].set(Bz[1:-1, 1:-1, 1:-1] - dt * curl_z)
-    # update the magnetic field from Maxwell's equations
+    Bx = Bx.at[:, :, :, active, active, active].set(Bx[:, :, :, active, active, active] - dt * curl_x)
+    By = By.at[:, :, :, active, active, active].set(By[:, :, :, active, active, active] - dt * curl_y)
+    Bz = Bz.at[:, :, :, active, active, active].set(Bz[:, :, :, active, active, active] - dt * curl_z)
 
     if pml_state is None:
-        Bx = update_ghost_cells(Bx, bc_x, bc_y, bc_z)
-        By = update_ghost_cells(By, bc_x, bc_y, bc_z)
-        Bz = update_ghost_cells(Bz, bc_x, bc_y, bc_z)
+        Bx, By, Bz = ghost_cells.update_tiled_vector_ghost_cells((Bx, By, Bz), world, g, tile_shape)
     else:
-        Bx = update_ghost_cells_for_pml(Bx, world)
-        By = update_ghost_cells_for_pml(By, world)
-        Bz = update_ghost_cells_for_pml(Bz, world)
-    # refresh ghost cells before any stencil-based post-processing
+        Bx, By, Bz = ghost_cells.update_tiled_vector_ghost_cells_for_pml((Bx, By, Bz), world, g, tile_shape)
+    # refresh tile halos before the digital field filter, matching the global
+    # ghost-cell order in the standard Yee solver.
 
-    alpha = constants['alpha']
-    Bx = digital_filter(Bx, alpha)
-    By = digital_filter(By, alpha)
-    Bz = digital_filter(Bz, alpha)
-    # apply a digital filter to the magnetic field components
+    Bx, By, Bz = digital_filter_vector((Bx, By, Bz), constants.get("alpha", 1.0), num_guard_cells=g)
 
     if pml_state is None:
-        Bx = update_ghost_cells(Bx, bc_x, bc_y, bc_z)
-        By = update_ghost_cells(By, bc_x, bc_y, bc_z)
-        Bz = update_ghost_cells(Bz, bc_x, bc_y, bc_z)
-    else:
-        Bx = update_ghost_cells_for_pml(Bx, world)
-        By = update_ghost_cells_for_pml(By, world)
-        Bz = update_ghost_cells_for_pml(Bz, world)
-    # fill ghost cells with the updated values
+        return ghost_cells.update_tiled_vector_ghost_cells((Bx, By, Bz), world, g, tile_shape), None
 
-    return (Bx, By, Bz), pml_state
+    return ghost_cells.update_tiled_vector_ghost_cells_for_pml((Bx, By, Bz), world, g, tile_shape), pml_state

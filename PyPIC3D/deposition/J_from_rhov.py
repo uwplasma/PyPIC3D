@@ -1,101 +1,143 @@
-import jax
-from jax import jit
-import jax.numpy as jnp
-from functools import partial
+from PyPIC3D.particles.particle_class import TiledParticles, SpeciesConfig
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import (
-    axis_has_active_cells,
     collapse_axis_stencil,
     prepare_particle_axis_stencil,
 )
-from PyPIC3D.boundary_conditions.boundaryconditions import fold_ghost_cells, update_ghost_cells
+
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
-from PyPIC3D.utils import bilinear_filter
+from PyPIC3D.boundary_conditions.ghost_cells import (
+    fold_tiled_vector_ghost_cells,
+    update_tiled_vector_ghost_cells,
+)
+
+from PyPIC3D.utilities.filters import (
+    bilinear_filter_vector,
+    digital_filter_vector,
+)
+
+import jax
+import jax.numpy as jnp
+
+def _collapse_tiled_axis_stencil(points, weights, local_n, reduced_axis, g):
+    if reduced_axis:
+        collapsed_points = jnp.full((1, points.shape[1]), int(g), dtype=points.dtype)
+        collapsed_weights = jnp.sum(weights, axis=0, keepdims=True)
+        return collapsed_points, collapsed_weights
+    return collapse_axis_stencil(points, weights, local_n, ghost_cells=True)
 
 
-@partial(jit, static_argnames=("filter",))
-def J_from_rhov(particles, J, constants, world, grid=None, filter="bilinear"):
-    """Compute current density (Jx,Jy,Jz) by depositing particle velocities."""
+def J_from_rhov(
+    particles,
+    species_config,
+    J=None,
+    constants=None,
+    world=None,
+    filter="bilinear",
+):
+    """Compute tile-local direct current from centered tiled particles."""
 
-    if grid is None:
-        grid = world["grids"]["center"]
+
+    tile_shape = tuple(int(width) for width in world["tile_shape"])
+    g = int(world["guard_cells"])
+    g = int(g)
+    # determine the number of guard cells and the shape of each of the tiles
+
+    tiled_grid = world["grids"]["tiled_center_grid"]
+    # get the grid for the tiles
 
     dx = world["dx"]
     dy = world["dy"]
     dz = world["dz"]
+    # get the world resolution
 
-    Jx, Jy, Jz = J
-    Nx, Ny, Nz = Jx.shape
-    # get the grid dimensions for the current density arrays
-    bc_x = world["boundary_conditions"]["x"]
-    bc_y = world["boundary_conditions"]["y"]
-    bc_z = world["boundary_conditions"]["z"]
-    # determine the boundary conditions for each axis to handle ghost cells correctly
+    Jx_tiles, Jy_tiles, Jz_tiles = J
+    # unpack the current density tiles
 
-    Jx = Jx.at[:, :, :].set(0)
-    Jy = Jy.at[:, :, :].set(0)
-    Jz = Jz.at[:, :, :].set(0)
-    # initialize current density arrays to zero before deposition
+    ntx, nty, ntz = Jx_tiles.shape[:3]
+    # get the number of tiles in each dimension
+    tile_nx, tile_ny, tile_nz = tile_shape
+    # unpack the tile shape
+    local_Nx = tile_nx + 2 * g
+    local_Ny = tile_ny + 2 * g
+    local_Nz = tile_nz + 2 * g
+    # piece together the total local tile shape
 
-    for species in particles:
-        shape_factor = species.get_shape()
-        charge = species.get_charge()
-        dq = charge / (dx * dy * dz)
-        # get the particle information needed for deposition, including charge and shape factor
+    shape_factor = world["shape_factor"]
+    # get the shape factor
 
-        x, y, z = species.get_forward_position()
-        vx, vy, vz = species.get_velocity()
-        active = species.get_active_mask().astype(x.dtype)
-        # get the particle velocities and positions at the forward time step (t + dt) for deposition
+    reduced_x = int(tile_nx) == 1 and int(ntx) == 1
+    reduced_y = int(tile_ny) == 1 and int(nty) == 1
+    reduced_z = int(tile_nz) == 1 and int(ntz) == 1
+    # determine if any of the axes are dummy axes
 
-        x = x - vx * world["dt"] / 2
-        y = y - vy * world["dt"] / 2
-        z = z - vz * world["dt"] / 2
-        # half step back the particle positions to align with the time-centered current deposition scheme
+    Jx_template = jnp.zeros_like(Jx_tiles[0, 0, 0])
+    Jy_template = jnp.zeros_like(Jy_tiles[0, 0, 0])
+    Jz_template = jnp.zeros_like(Jz_tiles[0, 0, 0])
+    # build template tiles
+
+    # Tile boundaries are not physical boundaries.  Deposits that cross a tile
+    # edge should land in tile ghost cells and be exchanged by the tiled fold.
+    local_bc = 2
+
+    species_weighted_charge = species_config.charge * species_config.weight
+    # compute the weighted charge for each species
+
+    def deposit_one_tile(x_tile, u_tile, active_tile, tx, ty, tz):
+        # deposit the current density for a single tile, given the particle positions, velocities, and active mask
+        x = x_tile[..., 0].reshape(-1)
+        y = x_tile[..., 1].reshape(-1)
+        z = x_tile[..., 2].reshape(-1)
+        # reshape the particle positions into 1D arrays for processing
+        vx = u_tile[..., 0].reshape(-1)
+        vy = u_tile[..., 1].reshape(-1)
+        vz = u_tile[..., 2].reshape(-1)
+        # reshape the particle velocities into 1D arrays for processing
+        active = active_tile.reshape(-1).astype(x.dtype)
+        # reshape the active particle mask into a 1D array for processing
+        q = jnp.broadcast_to(species_weighted_charge[:, jnp.newaxis], active_tile.shape).reshape(-1)
+        # reshape the particle charges into a 1D array for processing
+        dq = q / (dx * dy * dz)
+        # compute the charge density contribution of each particle
+
+        x_grid = tiled_grid[0][tx, ty, tz]
+        y_grid = tiled_grid[1][tx, ty, tz]
+        z_grid = tiled_grid[2][tx, ty, tz]
+        # get the grid points for the current tile in each dimension
 
         x, x0, deltax_node, xpts = prepare_particle_axis_stencil(
             x,
-            grid[0],
-            Nx,
+            x_grid,
+            local_Nx,
             shape_factor,
-            bc_x,
-            wind=world["x_wind"],
+            local_bc,
+            wind=tile_nx * dx,
             ghost_cells=True,
         )
-        # prepare the particle axis stencil for the x-axis, which includes determining the grid points that 
-        # contribute to the deposition and the corresponding weights based on the particle's position and 
-        # shape factor. This is done for all three axes (x, y, z) to handle 3D deposition correctly.
-
         y, y0, deltay_node, ypts = prepare_particle_axis_stencil(
             y,
-            grid[1],
-            Ny,
+            y_grid,
+            local_Ny,
             shape_factor,
-            bc_y,
-            wind=world["y_wind"],
+            local_bc,
+            wind=tile_ny * dy,
             ghost_cells=True,
-        ) 
-        # prepare the particle axis stencil for the y-axis, which includes determining the grid points that 
-        # contribute to the deposition and the corresponding weights based on the particle's position and 
-        # shape factor. This is done for all three axes (x, y, z) to handle 3D deposition correctly.
-
+        )
         z, z0, deltaz_node, zpts = prepare_particle_axis_stencil(
             z,
-            grid[2],
-            Nz,
+            z_grid,
+            local_Nz,
             shape_factor,
-            bc_z,
-            wind=world["z_wind"],
+            local_bc,
+            wind=tile_nz * dz,
             ghost_cells=True,
-        ) 
-        # prepare the particle axis stencil for the z-axis, which includes determining the grid points that 
-        # contribute to the deposition and the corresponding weights based on the particle's position and 
-        # shape factor. This is done for all three axes (x, y, z) to handle 3D deposition correctly.
+        )
+        # prepare the particle positions and compute the stencil points and deltas for each axis
 
-        deltax_face = (x - grid[0][0]) - (x0 + 0.5) * dx
-        deltay_face = (y - grid[1][0]) - (y0 + 0.5) * dy
-        deltaz_face = (z - grid[2][0]) - (z0 + 0.5) * dz
-        # compute the distances from the particles to the face-centered grid points.
+        deltax_face = (x - x_grid[0]) - (x0 + 0.5) * dx
+        deltay_face = (y - y_grid[0]) - (y0 + 0.5) * dy
+        deltaz_face = (z - z_grid[0]) - (z0 + 0.5) * dz
+        # compute the deltas for the face-centered weights based on the particle positions and grid points
 
         x_weights_node, y_weights_node, z_weights_node = jax.lax.cond(
             shape_factor == 1,
@@ -103,116 +145,96 @@ def J_from_rhov(particles, J, constants, world, grid=None, filter="bilinear"):
             lambda _: get_second_order_weights(deltax_node, deltay_node, deltaz_node, dx, dy, dz),
             operand=None,
         )
-        # compute the node-centered weights for deposition
-
         x_weights_face, y_weights_face, z_weights_face = jax.lax.cond(
             shape_factor == 1,
             lambda _: get_first_order_weights(deltax_face, deltay_face, deltaz_face, dx, dy, dz),
             lambda _: get_second_order_weights(deltax_face, deltay_face, deltaz_face, dx, dy, dz),
             operand=None,
         )
-        # compute the face-centered weights for deposition
+        # compute the weights for the node-centered and face-centered contributions based on the shape factor and deltas
 
         xpts = jnp.asarray(xpts)
         ypts = jnp.asarray(ypts)
         zpts = jnp.asarray(zpts)
-        # Boundary ownership stays in fold_ghost_cells: deposition may write
-        # into ghost cells, and folding maps those deposits back to the domain.
-
-        x_weights_face = jnp.asarray(x_weights_face)
-        y_weights_face = jnp.asarray(y_weights_face)
-        z_weights_face = jnp.asarray(z_weights_face)
-
         x_weights_node = jnp.asarray(x_weights_node)
         y_weights_node = jnp.asarray(y_weights_node)
         z_weights_node = jnp.asarray(z_weights_node)
+        x_weights_face = jnp.asarray(x_weights_face)
+        y_weights_face = jnp.asarray(y_weights_face)
+        z_weights_face = jnp.asarray(z_weights_face)
+        # convert the stencil points and weights to JAX arrays for further processing
 
-        xpts, x_weights_node = collapse_axis_stencil(xpts, x_weights_node, Nx, ghost_cells=True)
-        _, x_weights_face = collapse_axis_stencil(xpts, x_weights_face, Nx, ghost_cells=True)
-        ypts, y_weights_node = collapse_axis_stencil(ypts, y_weights_node, Ny, ghost_cells=True)
-        _, y_weights_face = collapse_axis_stencil(ypts, y_weights_face, Ny, ghost_cells=True)
-        zpts, z_weights_node = collapse_axis_stencil(zpts, z_weights_node, Nz, ghost_cells=True)
-        _, z_weights_face = collapse_axis_stencil(zpts, z_weights_face, Nz, ghost_cells=True)
-        # Collapse stencils for inactive (single-cell) axes so deposition uses the
-        # reduced effective stencil; ghost-cell folding is handled later.
+        xpts, x_weights_node = _collapse_tiled_axis_stencil(xpts, x_weights_node, local_Nx, reduced_x, g)
+        _, x_weights_face = _collapse_tiled_axis_stencil(xpts, x_weights_face, local_Nx, reduced_x, g)
+        ypts, y_weights_node = _collapse_tiled_axis_stencil(ypts, y_weights_node, local_Ny, reduced_y, g)
+        _, y_weights_face = _collapse_tiled_axis_stencil(ypts, y_weights_face, local_Ny, reduced_y, g)
+        zpts, z_weights_node = _collapse_tiled_axis_stencil(zpts, z_weights_node, local_Nz, reduced_z, g)
+        _, z_weights_face = _collapse_tiled_axis_stencil(zpts, z_weights_face, local_Nz, reduced_z, g)
+        # collapse the stencil points and weights for each axis, taking into account any reduced axes and guard cells
 
-        xpts_eff = xpts
-        ypts_eff = ypts
-        zpts_eff = zpts
-        x_weights_node_eff = x_weights_node
-        y_weights_node_eff = y_weights_node
-        z_weights_node_eff = z_weights_node
-        x_weights_face_eff = x_weights_face
-        y_weights_face_eff = y_weights_face
-        z_weights_face_eff = z_weights_face
+        tile_Jx = Jx_template
+        tile_Jy = Jy_template
+        tile_Jz = Jz_template
 
-        ii, jj, kk = jnp.meshgrid(
-            jnp.arange(xpts_eff.shape[0]),
-            jnp.arange(ypts_eff.shape[0]),
-            jnp.arange(zpts_eff.shape[0]),
-            indexing="ij",
-        )
-        combos = jnp.stack([ii.ravel(), jj.ravel(), kk.ravel()], axis=1)
-        # get the list of indices to map over
+        for i in range(xpts.shape[0]):
+            for j in range(ypts.shape[0]):
+                for k in range(zpts.shape[0]):
+                    ix = xpts[i]
+                    iy = ypts[j]
+                    iz = zpts[k]
+                    tile_Jx = tile_Jx.at[ix, iy, iz].add(
+                        active * dq * vx * x_weights_face[i] * y_weights_node[j] * z_weights_node[k],
+                        mode="drop",
+                    )
+                    tile_Jy = tile_Jy.at[ix, iy, iz].add(
+                        active * dq * vy * x_weights_node[i] * y_weights_face[j] * z_weights_node[k],
+                        mode="drop",
+                    )
+                    tile_Jz = tile_Jz.at[ix, iy, iz].add(
+                        active * dq * vz * x_weights_node[i] * y_weights_node[j] * z_weights_face[k],
+                        mode="drop",
+                    )
 
-        def idx_and_dJ_values(idx):
-            i, j, k = idx
-            ix = xpts_eff[i, ...]
-            iy = ypts_eff[j, ...]
-            iz = zpts_eff[k, ...]
-            valx = (
-                (active * dq * vx)
-                * x_weights_face_eff[i, ...]
-                * y_weights_node_eff[j, ...]
-                * z_weights_node_eff[k, ...]
-            )
-            valy = (
-                (active * dq * vy)
-                * x_weights_node_eff[i, ...]
-                * y_weights_face_eff[j, ...]
-                * z_weights_node_eff[k, ...]
-            )
-            valz = (
-                (active * dq * vz)
-                * x_weights_node_eff[i, ...]
-                * y_weights_node_eff[j, ...]
-                * z_weights_face_eff[k, ...]
-            )
-            return ix, iy, iz, valx, valy, valz
+        return tile_Jx, tile_Jy, tile_Jz
 
-        ix, iy, iz, valx, valy, valz = jax.vmap(idx_and_dJ_values)(combos)
-        # use vectorized mapping to compute the current depositions.
+    tx, ty, tz = jnp.meshgrid(
+        jnp.arange(ntx),
+        jnp.arange(nty),
+        jnp.arange(ntz),
+        indexing="ij",
+    )
+    # build the tile index arrays for each dimension
 
-        Jx = Jx.at[(ix, iy, iz)].add(valx, mode="drop")
-        Jy = Jy.at[(ix, iy, iz)].add(valy, mode="drop")
-        Jz = Jz.at[(ix, iy, iz)].add(valz, mode="drop")
-        # deposit the currents onto the faces.
+    deposit_tiles = deposit_one_tile
+    deposit_tiles = jax.vmap(deposit_tiles, in_axes=(0, 0, 0, 0, 0, 0), out_axes=0)
+    deposit_tiles = jax.vmap(deposit_tiles, in_axes=(0, 0, 0, 0, 0, 0), out_axes=0)
+    deposit_tiles = jax.vmap(deposit_tiles, in_axes=(0, 0, 0, 0, 0, 0), out_axes=0)
+    # vectorize the deposit_one_tile function over the tile indices using jax.vmap
 
-    Jx = fold_ghost_cells(Jx, bc_x, bc_y, bc_z)
-    Jy = fold_ghost_cells(Jy, bc_x, bc_y, bc_z)
-    Jz = fold_ghost_cells(Jz, bc_x, bc_y, bc_z)
-    # fold ghost cell deposits back into interior
-    Jx = update_ghost_cells(Jx, bc_x, bc_y, bc_z)
-    Jy = update_ghost_cells(Jy, bc_x, bc_y, bc_z)
-    Jz = update_ghost_cells(Jz, bc_x, bc_y, bc_z)
-    # refresh ghost cells before any stencil-based post-processing
+    Jx, Jy, Jz = deposit_tiles(
+        particles.x,
+        particles.u,
+        particles.active,
+        tx,
+        ty,
+        tz,
+    )
+    # compute the current density contributions for all tiles by applying the vectorized deposit function to the particle data and tile indices
 
-    def filter_func(J_, filter):
-        J_ = jax.lax.cond(
-            filter == "bilinear",
-            lambda J_: bilinear_filter(J_),
-            lambda J_: J_,
-            operand=J_,
-        )
-        return J_
+    J = fold_tiled_vector_ghost_cells((Jx, Jy, Jz), world, g, tile_shape)
+    # fold the ghost cells of the current density tiles to ensure continuity across tile boundaries
+    J = update_tiled_vector_ghost_cells(J, world, g, tile_shape)
+    # update the ghost cells of the current density tiles to reflect the contributions from neighboring tiles
 
-    Jx = filter_func(Jx, filter)
-    Jy = filter_func(Jy, filter)
-    Jz = filter_func(Jz, filter)
-    # apply any filters
-    Jx = update_ghost_cells(Jx, bc_x, bc_y, bc_z)
-    Jy = update_ghost_cells(Jy, bc_x, bc_y, bc_z)
-    Jz = update_ghost_cells(Jz, bc_x, bc_y, bc_z)
-    # update the ghost cells
+    if filter == "bilinear":
+        J = bilinear_filter_vector(J, num_guard_cells=g)
+        # apply a bilinear filter to the current density tiles if specified in the filter argument
+        J = update_tiled_vector_ghost_cells(J, world, g, tile_shape)
+        # update the ghost cells of the current density tiles to reflect the contributions from neighboring tiles
+    elif filter == "digital":
+        J = digital_filter_vector(J, constants["alpha"], num_guard_cells=g)
+        # apply a digital filter to the current density tiles if specified in the filter argument
+        J = update_tiled_vector_ghost_cells(J, world, num_guard_cells=g, tile_shape=tile_shape)
+        # update the ghost cells of the filtered current density tiles to ensure continuity across tile boundaries
 
-    return (Jx, Jy, Jz)
+    return J

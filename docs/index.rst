@@ -5,7 +5,7 @@ PyPIC3D Documentation
 
    PyPIC3D is a JAX-based particle-in-cell code for electrodynamic and
    electrostatic plasma simulation. Runs are composed with TOML, launched
-   from the CLI, and instrumented for diagnostics in VTK and OpenPMD.
+   from the CLI, and instrumented for diagnostics in matplotlib and openPMD.
 
    .. container:: hero-actions
 
@@ -72,4 +72,3 @@ Indices and tables
 - :ref:`genindex`
 - :ref:`modindex`
 - :ref:`search`
-

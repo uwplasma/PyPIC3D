@@ -6,7 +6,7 @@ from functools import partial
 from PyPIC3D.boundary_conditions.grid_and_stencil import (
     BC_PERIODIC,
     axis_has_active_cells,
-    collapse_axis_stencil,
+    inactive_axis_index,
     prepare_particle_axis_stencil,
 )
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
@@ -124,8 +124,18 @@ def relativistic_boris_single_particle(vx, vy, vz, efield_atx, efield_aty, efiel
     return newv[0], newv[1], newv[2]
 
 
-@partial(jit, static_argnames=("ghost_cells",))
-def interpolate_field_to_particles(field, x, y, z, grid, shape_factor, ghost_cells=False):
+@partial(jit, static_argnames=("ghost_cells", "active_axes", "inactive_axis_indices"))
+def interpolate_field_to_particles(
+    field,
+    x,
+    y,
+    z,
+    grid,
+    shape_factor,
+    ghost_cells=False,
+    active_axes=None,
+    inactive_axis_indices=None,
+):
     """
     Interpolate a Yee-grid field component to particle positions using PIC shape functions.
 
@@ -143,9 +153,12 @@ def interpolate_field_to_particles(field, x, y, z, grid, shape_factor, ghost_cel
     Ny = len(y_grid)
     Nz = len(z_grid)
     # grid point counts for each direction
-    x_active = axis_has_active_cells(Nx, ghost_cells=ghost_cells)
-    y_active = axis_has_active_cells(Ny, ghost_cells=ghost_cells)
-    z_active = axis_has_active_cells(Nz, ghost_cells=ghost_cells)
+    if active_axes is None:
+        x_active = axis_has_active_cells(Nx, ghost_cells=ghost_cells)
+        y_active = axis_has_active_cells(Ny, ghost_cells=ghost_cells)
+        z_active = axis_has_active_cells(Nz, ghost_cells=ghost_cells)
+    else:
+        x_active, y_active, z_active = active_axes
 
     _, _, deltax, xpts = prepare_particle_axis_stencil(
         x, x_grid, Nx, shape_factor, BC_PERIODIC, ghost_cells=ghost_cells
@@ -176,25 +189,49 @@ def interpolate_field_to_particles(field, x, y, z, grid, shape_factor, ghost_cel
     ypts = jnp.asarray(ypts)
     zpts = jnp.asarray(zpts)
 
+    def collapse_axis(points, weights, axis_size, axis_active, inactive_index):
+        if axis_active:
+            return points, weights
+
+        if inactive_index is None:
+            inactive_index = inactive_axis_index(axis_size, ghost_cells=ghost_cells)
+
+        collapsed_points = jnp.full(
+            (1, points.shape[1]),
+            int(inactive_index),
+            dtype=points.dtype,
+        )
+        collapsed_weights = jnp.sum(weights, axis=0, keepdims=True)
+        return collapsed_points, collapsed_weights
+
+    if inactive_axis_indices is None:
+        inactive_axis_indices = (None, None, None)
+
     # Keep full shape-factor computation but collapse inactive axes to an
     # effective stencil size of 1 to avoid redundant interpolation work.
     if x_active:
         xpts_eff = xpts
         x_weights_eff = x_weights
     else:
-        xpts_eff, x_weights_eff = collapse_axis_stencil(xpts, x_weights, Nx, ghost_cells=ghost_cells)
+        xpts_eff, x_weights_eff = collapse_axis(
+            xpts, x_weights, Nx, x_active, inactive_axis_indices[0]
+        )
 
     if y_active:
         ypts_eff = ypts
         y_weights_eff = y_weights
     else:
-        ypts_eff, y_weights_eff = collapse_axis_stencil(ypts, y_weights, Ny, ghost_cells=ghost_cells)
+        ypts_eff, y_weights_eff = collapse_axis(
+            ypts, y_weights, Ny, y_active, inactive_axis_indices[1]
+        )
 
     if z_active:
         zpts_eff = zpts
         z_weights_eff = z_weights
     else:
-        zpts_eff, z_weights_eff = collapse_axis_stencil(zpts, z_weights, Nz, ghost_cells=ghost_cells)
+        zpts_eff, z_weights_eff = collapse_axis(
+            zpts, z_weights, Nz, z_active, inactive_axis_indices[2]
+        )
 
     def stencil_contribution(stencil_idx):
         i, j, k = stencil_idx

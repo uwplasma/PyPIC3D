@@ -3,7 +3,7 @@
 name = "Demo of a Orszag_TangVortex with 30,000 electrons"
 t_wind = 0.75e-8
 bc = 'periodic'
-solver = 'fdtd'
+solver = 'electrodynamic_yee'
 Nx = 100
 Ny = 100
 Nz = 1
@@ -11,7 +11,6 @@ x_wind = 1
 y_wind = 1
 z_wind = 1
 verbose = false
-electrostatic = false
 cfl = 0.4
 shape_factor = 1
 

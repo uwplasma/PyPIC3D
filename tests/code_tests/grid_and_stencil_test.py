@@ -30,12 +30,16 @@ class TestGhostCellHelpers(unittest.TestCase):
         wrapped = wrap_periodic_position(x, wind)
         expected = jnp.array([1.5, -2.0, 1.75, 2.0, -1.75, -1.5])
         self.assertTrue(jnp.allclose(wrapped, expected))
+        # test that the periodic wrapping works
 
     def test_axis_activity_and_inactive_index(self):
         self.assertTrue(axis_has_active_cells(6, ghost_cells=True))
         self.assertFalse(axis_has_active_cells(3, ghost_cells=True))
         self.assertEqual(inactive_axis_index(3, ghost_cells=True), 1)
         self.assertEqual(inactive_axis_index(1, ghost_cells=False), 0)
+        # test the methods that determine if the axes are active in the simulation.
+        # inactive axes are for quasi-dimensional simulations.
+        # i.e. 2D in xy has a inactive z axis.
 
     def test_axis_spacing_and_anchor_helpers(self):
         axis = build_collocated_axis(-1.0, 0.5, 4)
@@ -46,6 +50,8 @@ class TestGhostCellHelpers(unittest.TestCase):
         self.assertAlmostEqual(float(uniform_axis_spacing(axis)), 0.5)
         self.assertTrue(jnp.array_equal(anchor, jnp.array([3, 4])))
         self.assertTrue(jnp.allclose(offset, jnp.array([0.1, 0.1])))
+        # test that nearest index and difference between nearest index methods
+        # are working properly.
 
     def test_build_axis_stencil_points_periodic_and_conducting(self):
         anchor = jnp.array([0, 5])
@@ -58,6 +64,7 @@ class TestGhostCellHelpers(unittest.TestCase):
         self.assertTrue(jnp.array_equal(periodic[:, 1], jnp.array([4, 5, 0])))
         self.assertTrue(jnp.array_equal(conducting[:, 0], jnp.array([-1, 0, 1])))
         self.assertTrue(jnp.array_equal(conducting[:, 1], jnp.array([4, 5, 6])))
+        # test that method that builds the local interpolation and deposition stencils.
 
     def test_prepare_particle_axis_stencil_wraps_periodic_indices(self):
         axis = build_collocated_axis(-1.0, 0.5, 4)
@@ -74,6 +81,8 @@ class TestGhostCellHelpers(unittest.TestCase):
         self.assertTrue(jnp.array_equal(anchor, jnp.array([5])))
         self.assertTrue(jnp.allclose(offset, jnp.array([0.1])))
         self.assertTrue(jnp.array_equal(points[:, 0], jnp.array([4, 5, 0])))
+        # confirm that method for local interpolation and deposition stencils enforces
+        # periodic boundaries properly.
 
     def test_collapse_axis_stencil_for_inactive_axis(self):
         points = jnp.array([[0, 1], [1, 1], [2, 1]])
@@ -88,6 +97,7 @@ class TestGhostCellHelpers(unittest.TestCase):
 
         self.assertTrue(jnp.array_equal(collapsed_points, jnp.array([[1, 1]])))
         self.assertTrue(jnp.allclose(collapsed_weights, jnp.array([[1.0, 1.0]])))
+        # test method used to simplify dummy (grid_points=1) axes.
 
     def test_build_axis_helpers_include_ghost_cells(self):
         collocated = build_collocated_axis(-1.0, 0.5, 4)
@@ -95,7 +105,7 @@ class TestGhostCellHelpers(unittest.TestCase):
 
         self.assertTrue(jnp.allclose(collocated, jnp.array([-1.5, -1.0, -0.5, 0.0, 0.5, 1.0])))
         self.assertTrue(jnp.allclose(staggered, jnp.array([-1.25, -0.75, -0.25, 0.25, 0.75, 1.25])))
-
+        # test that axis construction methods include the ghost cell points
 
 if __name__ == "__main__":
     unittest.main()

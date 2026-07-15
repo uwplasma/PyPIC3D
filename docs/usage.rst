@@ -33,8 +33,7 @@ Minimal Working Example
 
     [simulation_parameters]
     name = "minimal"
-    solver = "fdtd"
-    electrostatic = false
+    solver = "electrodynamic_yee"
     relativistic = true
     current_calculation = "j_from_rhov"   # j_from_rhov or esirkepov
     filter_j = "bilinear"                 # bilinear, digital, none
@@ -50,16 +49,18 @@ Minimal Working Example
     x_bc = "periodic"                     # periodic or conducting
     y_bc = "periodic"
     z_bc = "periodic"
+    particle_x_bc = "periodic"            # periodic, reflecting, or absorbing
+    particle_y_bc = "periodic"
+    particle_z_bc = "periodic"
     output_dir = "./outputs"
 
     [plotting]
     plotting_interval = 10
     plot_phasespace = false
-    plot_vtk_particles = false
-    plot_vtk_scalars = false
-    plot_vtk_vectors = false
     plot_openpmd_particles = false
     plot_openpmd_fields = false
+    openpmd_field_queue_size = 2
+    openpmd_particle_queue_size = 2
     dump_particles = false
     dump_fields = false
 
@@ -76,7 +77,6 @@ Minimal Working Example
     charge = -1.602e-19
     mass = 9.1093837e-31
     temperature = 1.0
-    x_bc = "periodic"                     # periodic or reflecting
 
 Key Notes
 ---------
@@ -90,8 +90,9 @@ Key Notes
 
 - Field boundary conditions use ``simulation_parameters.x_bc/y_bc/z_bc`` with
   values ``periodic`` or ``conducting``.
-- Particle boundary conditions are per species (``x_bc/y_bc/z_bc``) with values
-  ``periodic`` or ``reflecting``.
+- Particle boundary conditions are global simulation parameters:
+  ``particle_x_bc/particle_y_bc/particle_z_bc`` with values ``periodic``,
+  ``reflecting``, or ``absorbing``.
 - The smoothing coefficient is ``constants.alpha`` (not
   ``simulation_parameters.alpha``).
 
@@ -133,5 +134,8 @@ At ``plotting_interval`` cadence, PyPIC3D writes diagnostics like:
 - ``kinetic_energy.txt``
 - ``total_momentum.txt``
 
-Depending on flags, it also writes VTK and openPMD files plus
-``data/output.toml`` metadata.
+Depending on flags, it also writes matplotlib phase-space arrays and openPMD
+files plus ``data/output.toml`` metadata. Runtime openPMD field and particle
+output use bounded queues; ``openpmd_field_queue_size`` and
+``openpmd_particle_queue_size`` cap pending batches so output cannot grow memory
+without bound.

@@ -1,8 +1,8 @@
 import math
 
+import jax
 import jax.numpy as jnp
 
-from PyPIC3D.boundary_conditions.boundaryconditions import update_ghost_cells
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 
 
@@ -128,6 +128,104 @@ def initialize_pml_state(world):
     return e_memory, b_memory
 
 
+def _tile_axis_count(n_cells, cells_per_tile):
+    if int(n_cells) % int(cells_per_tile) != 0:
+        raise ValueError("PML tile sizes must divide the physical grid dimensions exactly.")
+    return int(n_cells) // int(cells_per_tile)
+
+
+def _tile_scalar_profile(profile, tile_shape, num_guard_cells=2):
+    """
+    Split one ghost-celled PML profile into compact tile-local profile arrays.
+    """
+
+    tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
+    Nx = int(profile.shape[0]) - 2
+    Ny = int(profile.shape[1]) - 2
+    Nz = int(profile.shape[2]) - 2
+    ntx = _tile_axis_count(Nx, tile_nx)
+    nty = _tile_axis_count(Ny, tile_ny)
+    ntz = _tile_axis_count(Nz, tile_nz)
+    g = int(num_guard_cells)
+
+    if g != 1:
+        profile_tiles = jnp.zeros(
+            (ntx, nty, ntz, tile_nx + 2 * g, tile_ny + 2 * g, tile_nz + 2 * g),
+            dtype=profile.dtype,
+        )
+        for tx in range(ntx):
+            for ty in range(nty):
+                for tz in range(ntz):
+                    ix = tx * tile_nx
+                    iy = ty * tile_ny
+                    iz = tz * tile_nz
+                    tile_with_one_guard = profile[ix:ix + tile_nx + 2, iy:iy + tile_ny + 2, iz:iz + tile_nz + 2]
+                    profile_tiles = profile_tiles.at[
+                        tx,
+                        ty,
+                        tz,
+                        g - 1:g + tile_nx + 1,
+                        g - 1:g + tile_ny + 1,
+                        g - 1:g + tile_nz + 1,
+                    ].set(tile_with_one_guard)
+        return profile_tiles
+
+    def tile_at(tx, ty, tz):
+        start = (tx * tile_nx, ty * tile_ny, tz * tile_nz)
+        size = (tile_nx + 2, tile_ny + 2, tile_nz + 2)
+        return jax.lax.dynamic_slice(profile, start, size)
+
+    return jnp.stack(
+        [
+            jnp.stack(
+                [
+                    jnp.stack([tile_at(tx, ty, tz) for tz in range(ntz)], axis=0)
+                    for ty in range(nty)
+                ],
+                axis=0,
+            )
+            for tx in range(ntx)
+        ],
+        axis=0,
+    )
+
+
+def tile_pml_profiles(world, tile_shape):
+    """
+    Tile the ghost-celled PML conductivity profiles.
+
+    The leading tile axes match tiled field storage.  The final three axes use
+    the same guard-cell depth as the field tiles.
+    """
+
+    _, _, _, _, profiles = world["pml"]
+    g = int(world.get("guard_cells", 2))
+    return tuple(_tile_scalar_profile(profile, tile_shape, num_guard_cells=g) for profile in profiles)
+
+
+def initialize_tiled_pml_state(world, tile_shape):
+    """
+    Allocate tile-local ADE memory for stretched tiled Yee derivatives.
+
+    The memory arrays have leading tile axes followed by the tile physical
+    interior.  They intentionally do not store halos; the ADE terms are attached
+    to the derivatives after the tile halo exchange has already supplied the
+    stencil values.
+    """
+
+    tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
+    ntx = _tile_axis_count(int(world["Nx"]), tile_nx)
+    nty = _tile_axis_count(int(world["Ny"]), tile_ny)
+    ntz = _tile_axis_count(int(world["Nz"]), tile_nz)
+    shape = (ntx, nty, ntz, tile_nx, tile_ny, tile_nz)
+
+    e_memory = tuple(jnp.zeros(shape) for _ in range(6))
+    b_memory = tuple(jnp.zeros(shape) for _ in range(6))
+    tiled_profiles = tile_pml_profiles(world, tile_shape)
+
+    return e_memory, b_memory, tiled_profiles
+
+
 def stretch_spatial_derivative(derivative, memory, sigma, dt):
     """
     Apply one coordinate-stretched PML derivative.
@@ -249,21 +347,93 @@ def apply_pml_to_b_curl(derivatives, world, pml_state):
     return (curl_x, curl_y, curl_z), (e_memory, b_memory)
 
 
-def update_ghost_cells_for_pml(field, world):
+def apply_tiled_pml_to_e_curl(derivatives, world, pml_state):
     """
-    Fill ghost cells without periodically wrapping across a PML wall.
-
-    The PML damping happens in the stretched derivatives above.  This ghost-cell
-    rule only prevents a periodic stencil from feeding a wave back through the
-    opposite side of a PML-active axis.
+    Stretch tile-local B derivatives before assembling Ampere's-law curls.
     """
-    bc_x = world["boundary_conditions"]["x"]
-    bc_y = world["boundary_conditions"]["y"]
-    bc_z = world["boundary_conditions"]["z"]
-    _, pml_x, pml_y, pml_z, _ = world["pml"]
 
-    bc_x = jnp.where((pml_x) & (bc_x == BC_PERIODIC), BC_CONDUCTING, bc_x)
-    bc_y = jnp.where((pml_y) & (bc_y == BC_PERIODIC), BC_CONDUCTING, bc_y)
-    bc_z = jnp.where((pml_z) & (bc_z == BC_PERIODIC), BC_CONDUCTING, bc_z)
+    dBz_dy, dBy_dz, dBx_dz, dBz_dx, dBy_dx, dBx_dy = derivatives
+    e_memory, b_memory, tiled_profiles = pml_state
+    (
+        memory_dBz_dy,
+        memory_dBy_dz,
+        memory_dBx_dz,
+        memory_dBz_dx,
+        memory_dBy_dx,
+        memory_dBx_dy,
+    ) = e_memory
 
-    return update_ghost_cells(field, bc_x, bc_y, bc_z)
+    sigma_x, sigma_y, sigma_z = tiled_profiles
+    g = int(world.get("guard_cells", 2))
+    sigma_x = sigma_x[:, :, :, g:-g, g:-g, g:-g]
+    sigma_y = sigma_y[:, :, :, g:-g, g:-g, g:-g]
+    sigma_z = sigma_z[:, :, :, g:-g, g:-g, g:-g]
+    dt = world["dt"]
+
+    dBz_dy, memory_dBz_dy = stretch_spatial_derivative(dBz_dy, memory_dBz_dy, sigma_y, dt)
+    dBy_dz, memory_dBy_dz = stretch_spatial_derivative(dBy_dz, memory_dBy_dz, sigma_z, dt)
+    dBx_dz, memory_dBx_dz = stretch_spatial_derivative(dBx_dz, memory_dBx_dz, sigma_z, dt)
+    dBz_dx, memory_dBz_dx = stretch_spatial_derivative(dBz_dx, memory_dBz_dx, sigma_x, dt)
+    dBy_dx, memory_dBy_dx = stretch_spatial_derivative(dBy_dx, memory_dBy_dx, sigma_x, dt)
+    dBx_dy, memory_dBx_dy = stretch_spatial_derivative(dBx_dy, memory_dBx_dy, sigma_y, dt)
+
+    curl_x = dBz_dy - dBy_dz
+    curl_y = dBx_dz - dBz_dx
+    curl_z = dBy_dx - dBx_dy
+
+    e_memory = (
+        memory_dBz_dy,
+        memory_dBy_dz,
+        memory_dBx_dz,
+        memory_dBz_dx,
+        memory_dBy_dx,
+        memory_dBx_dy,
+    )
+
+    return (curl_x, curl_y, curl_z), (e_memory, b_memory, tiled_profiles)
+
+
+def apply_tiled_pml_to_b_curl(derivatives, world, pml_state):
+    """
+    Stretch tile-local E derivatives before assembling Faraday-law curls.
+    """
+
+    dEz_dy, dEy_dz, dEx_dz, dEz_dx, dEy_dx, dEx_dy = derivatives
+    e_memory, b_memory, tiled_profiles = pml_state
+    (
+        memory_dEz_dy,
+        memory_dEy_dz,
+        memory_dEx_dz,
+        memory_dEz_dx,
+        memory_dEy_dx,
+        memory_dEx_dy,
+    ) = b_memory
+
+    sigma_x, sigma_y, sigma_z = tiled_profiles
+    g = int(world.get("guard_cells", 2))
+    sigma_x = sigma_x[:, :, :, g:-g, g:-g, g:-g]
+    sigma_y = sigma_y[:, :, :, g:-g, g:-g, g:-g]
+    sigma_z = sigma_z[:, :, :, g:-g, g:-g, g:-g]
+    dt = world["dt"]
+
+    dEz_dy, memory_dEz_dy = stretch_spatial_derivative(dEz_dy, memory_dEz_dy, sigma_y, dt)
+    dEy_dz, memory_dEy_dz = stretch_spatial_derivative(dEy_dz, memory_dEy_dz, sigma_z, dt)
+    dEx_dz, memory_dEx_dz = stretch_spatial_derivative(dEx_dz, memory_dEx_dz, sigma_z, dt)
+    dEz_dx, memory_dEz_dx = stretch_spatial_derivative(dEz_dx, memory_dEz_dx, sigma_x, dt)
+    dEy_dx, memory_dEy_dx = stretch_spatial_derivative(dEy_dx, memory_dEy_dx, sigma_x, dt)
+    dEx_dy, memory_dEx_dy = stretch_spatial_derivative(dEx_dy, memory_dEx_dy, sigma_y, dt)
+
+    curl_x = dEz_dy - dEy_dz
+    curl_y = dEx_dz - dEz_dx
+    curl_z = dEy_dx - dEx_dy
+
+    b_memory = (
+        memory_dEz_dy,
+        memory_dEy_dz,
+        memory_dEx_dz,
+        memory_dEz_dx,
+        memory_dEy_dx,
+        memory_dEx_dy,
+    )
+
+    return (curl_x, curl_y, curl_z), (e_memory, b_memory, tiled_profiles)

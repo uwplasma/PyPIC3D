@@ -17,9 +17,12 @@ dependencies = [
     "plotly",
     "toml",
     "tqdm",
-    "pyevtk",
-    "vtk",
     "openpmd-api",
+]
+
+[project.optional-dependencies]
+test = [
+    "coverage",
 ]
 
 [tool.setuptools.packages.find]

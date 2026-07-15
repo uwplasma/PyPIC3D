@@ -4,7 +4,7 @@ name = "Electron Positron Reconnection in Harris Current Sheet"
 Nt   = 1500
 x_bc = "periodic"
 z_bc = "conducting"
-solver = 'fdtd'
+solver = 'electrodynamic_yee'
 Nx = 500
 Ny = 1
 Nz = 500
@@ -12,14 +12,12 @@ x_wind = 0.0008
 y_wind = 1
 z_wind = 0.0008
 verbose = false
-electrostatic = false
 cfl = 0.1
 shape_factor = 2
 relativistic = true
 
 [plotting]
 plotting_interval = 50
-plot_vtk_particles = false
 plot_phasespace = true
 
 [field1]
