@@ -226,7 +226,7 @@ def _centered_tiled_electrostatic_gradient(phi_tiles, world, tile_shape, g):
     return ghost_cells.update_tiled_vector_ghost_cells((Ex, Ey, Ez), world, g)
 
 
-def calculate_tiled_electrostatic_fields(world, particles, species_config, constants, rho_tiles, phi_tiles, solver, bc):
+def calculate_tiled_electrostatic_fields(world, particles, species_config, constants, rho_tiles, phi_tiles):
     """
     Compute electrostatic fields from single-tile rho deposition and a Poisson solve.
 
@@ -235,8 +235,6 @@ def calculate_tiled_electrostatic_fields(world, particles, species_config, const
     on ``rho_tiles[0, 0, 0]`` and ``phi_tiles[0, 0, 0]`` without assembling a
     separate global representation.
     """
-
-    del bc
 
     tile_shape = tuple(int(width) for width in world["tile_shape"])
     g = int(world["guard_cells"])

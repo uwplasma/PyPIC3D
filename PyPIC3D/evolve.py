@@ -177,9 +177,7 @@ def time_loop_electrostatic(
         species_config,
         constants,
         rho_tiles,
-        phi_tiles,
-        solver,
-        "periodic",
+        phi_tiles
     )
     # solve electrostatic fields from tiled charge density
 
