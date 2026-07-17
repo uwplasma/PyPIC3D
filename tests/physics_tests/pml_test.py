@@ -96,15 +96,10 @@ def _update_ghost_cells(field, bc_x, bc_y, bc_z):
     return field
 
 
-def _update_ghost_cells_for_pml(field, world):
+def _update_ghost_cells_from_world(field, world):
     bc_x = world["boundary_conditions"]["x"]
     bc_y = world["boundary_conditions"]["y"]
     bc_z = world["boundary_conditions"]["z"]
-    _, pml_x, pml_y, pml_z, _ = world["pml"]
-
-    bc_x = jnp.where((pml_x) & (bc_x == BC_PERIODIC), BC_CONDUCTING, bc_x)
-    bc_y = jnp.where((pml_y) & (bc_y == BC_PERIODIC), BC_CONDUCTING, bc_y)
-    bc_z = jnp.where((pml_z) & (bc_z == BC_PERIODIC), BC_CONDUCTING, bc_z)
 
     return _update_ghost_cells(field, bc_x, bc_y, bc_z)
 
@@ -308,6 +303,9 @@ class TestPMLInitialization(unittest.TestCase):
         self.assertTrue(pml_x)
         self.assertFalse(pml_y)
         self.assertFalse(pml_z)
+        self.assertEqual(world["boundary_conditions"]["x"], BC_CONDUCTING)
+        self.assertEqual(world["boundary_conditions"]["y"], BC_PERIODIC)
+        self.assertEqual(world["boundary_conditions"]["z"], BC_PERIODIC)
 
     def test_initialize_simulation_uses_tiled_pml_state_for_electrodynamic_yee(self):
         pml = [{"wall": "+x", "thickness": 2, "sigma_max": 1.0}]
@@ -386,6 +384,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
             world,
             constants,
         )
+        world["boundary_conditions"]["x"] = BC_CONDUCTING
         tile_shape = (2, 2, 1)
         E, B, J = _empty_global_fields(world)
 
@@ -406,8 +405,8 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         E = (Ex, Ey, Ez)
         B = (Bx, By, Bz)
         J = (Jx, Jy, Jz)
-        E = tuple(_update_ghost_cells_for_pml(component, world) for component in E)
-        B = tuple(_update_ghost_cells_for_pml(component, world) for component in B)
+        E = tuple(_update_ghost_cells_from_world(component, world) for component in E)
+        B = tuple(_update_ghost_cells_from_world(component, world) for component in B)
 
         reference_tile_shape = (world["Nx"], world["Ny"], world["Nz"])
         world["tile_shape"] = reference_tile_shape
@@ -480,6 +479,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
             world,
             constants,
         )
+        world["boundary_conditions"]["x"] = BC_CONDUCTING
         tile_shape = (4, 1, 1)
         world["tile_shape"] = tile_shape
         world["field_mesh"] = ghost_cells.make_field_mesh((10, 1, 1))
@@ -549,6 +549,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
             world,
             constants,
         )
+        world["boundary_conditions"]["x"] = BC_CONDUCTING
         tile_shape = (2, 1, 1)
         world["tile_shape"] = tile_shape
         world["field_mesh"] = ghost_cells.make_field_mesh((4, 1, 1))

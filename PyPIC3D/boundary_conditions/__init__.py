@@ -19,8 +19,6 @@ from PyPIC3D.boundary_conditions.ghost_cells import (
     make_distributed_electric_conducting_bc,
     update_tiled_ghost_cells,
     update_tiled_vector_ghost_cells,
-    update_tiled_ghost_cells_for_pml,
-    update_tiled_vector_ghost_cells_for_pml,
     apply_tiled_conducting_bc,
     apply_tiled_scalar_conducting_bc,
     fold_tiled_ghost_cells,

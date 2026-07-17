@@ -26,20 +26,6 @@ def _boundary_tuple(boundary_conditions):
     )
 
 
-def _effective_pml_boundary_tuple(world):
-    bc_x, bc_y, bc_z = _boundary_tuple(world["boundary_conditions"])
-    _, pml_x, pml_y, pml_z, _ = world["pml"]
-
-    if bool(pml_x) and bc_x == BC_PERIODIC:
-        bc_x = BC_CONDUCTING
-    if bool(pml_y) and bc_y == BC_PERIODIC:
-        bc_y = BC_CONDUCTING
-    if bool(pml_z) and bc_z == BC_PERIODIC:
-        bc_z = BC_CONDUCTING
-
-    return bc_x, bc_y, bc_z
-
-
 def _reduced_axes_from_tile_shape(tile_shape, mesh_shape):
     tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
     ntx, nty, ntz = [int(width) for width in mesh_shape]
@@ -548,38 +534,6 @@ def update_tiled_vector_ghost_cells(field_tiles, world, num_guard_cells=2):
         mesh,
         tile_shape,
         _boundary_tuple(world["boundary_conditions"]),
-        num_guard_cells,
-    )
-    return updater(field_tiles)
-
-
-def update_tiled_ghost_cells_for_pml(field_tiles, world, num_guard_cells=2):
-    """
-    Refresh scalar halos with PML-active periodic axes made nonwrapping.
-    """
-
-    tile_shape = tuple(int(width) for width in world["tile_shape"])
-    mesh = world["field_mesh"]
-    updater = make_distributed_ghost_updater(
-        mesh,
-        tile_shape,
-        _effective_pml_boundary_tuple(world),
-        num_guard_cells,
-    )
-    return updater(field_tiles)
-
-
-def update_tiled_vector_ghost_cells_for_pml(field_tiles, world, num_guard_cells=2):
-    """
-    Refresh vector halos with PML-active periodic axes made nonwrapping.
-    """
-
-    tile_shape = tuple(int(width) for width in world["tile_shape"])
-    mesh = world["field_mesh"]
-    updater = make_distributed_vector_ghost_updater(
-        mesh,
-        tile_shape,
-        _effective_pml_boundary_tuple(world),
         num_guard_cells,
     )
     return updater(field_tiles)

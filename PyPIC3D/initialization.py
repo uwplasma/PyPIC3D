@@ -38,7 +38,6 @@ from PyPIC3D.diagnostics.openPMD import (
 from PyPIC3D.boundary_conditions.ghost_cells import (
     make_field_mesh,
     update_tiled_vector_ghost_cells,
-    update_tiled_vector_ghost_cells_for_pml,
 )
 
 
@@ -138,6 +137,17 @@ def _validate_tiled_yee_configuration(simulation_parameters, electrostatic, pml_
     for cells, tile_width in zip(grid_shape, tile_shape):
         if cells % tile_width != 0:
             raise ValueError("Yee runtime requires the shared tile shape to divide Nx/Ny/Nz exactly")
+
+
+def _apply_pml_field_boundaries(world):
+    """
+    PML-active axes use nonwrapping field halos from initialization onward.
+    """
+
+    _, pml_x, pml_y, pml_z, _ = world["pml"]
+    for axis, pml_axis_active in zip(("x", "y", "z"), (pml_x, pml_y, pml_z)):
+        if pml_axis_active and world["boundary_conditions"][axis] == BC_PERIODIC:
+            world["boundary_conditions"][axis] = BC_CONDUCTING
 
 
 def default_parameters():
@@ -366,6 +376,7 @@ def initialize_simulation(toml_file):
         raise ValueError("PML is only supported for the electrodynamic_yee solver")
     _validate_tiled_yee_configuration(simulation_parameters, electrostatic, pml_active)
     world["pml"] = load_pml_from_toml(raw_pml, world, constants)
+    _apply_pml_field_boundaries(world)
 
     world = convert_to_jax_compatible(world)
     constants = convert_to_jax_compatible(constants)
@@ -471,20 +482,12 @@ def initialize_simulation(toml_file):
     E, B, J = fields[:3], fields[3:6], fields[6:9]
     # convert the fields list back into tuples
 
-    if pml_active:
-        E = update_tiled_vector_ghost_cells_for_pml(E, world, num_guard_cells=guard_cells)
-        B = update_tiled_vector_ghost_cells_for_pml(B, world, num_guard_cells=guard_cells)
-    else:
-        E = update_tiled_vector_ghost_cells(E, world, num_guard_cells=guard_cells)
-        B = update_tiled_vector_ghost_cells(B, world, num_guard_cells=guard_cells)
+    E = update_tiled_vector_ghost_cells(E, world, num_guard_cells=guard_cells)
+    B = update_tiled_vector_ghost_cells(B, world, num_guard_cells=guard_cells)
     # fill ghost cells for the initial E and B fields
     external_E, external_B = external_fields
-    if pml_active:
-        external_E = update_tiled_vector_ghost_cells_for_pml(external_E, world, num_guard_cells=guard_cells)
-        external_B = update_tiled_vector_ghost_cells_for_pml(external_B, world, num_guard_cells=guard_cells)
-    else:
-        external_E = update_tiled_vector_ghost_cells(external_E, world, num_guard_cells=guard_cells)
-        external_B = update_tiled_vector_ghost_cells(external_B, world, num_guard_cells=guard_cells)
+    external_E = update_tiled_vector_ghost_cells(external_E, world, num_guard_cells=guard_cells)
+    external_B = update_tiled_vector_ghost_cells(external_B, world, num_guard_cells=guard_cells)
     external_fields = (external_E, external_B)
     # fill ghost cells for external fields before they are interpolated to particles
 

@@ -295,15 +295,14 @@ class TestDistributedGhostCells(unittest.TestCase):
             self.assert_allclose(component[:, :, :, 0, :, :], 0.0)
             self.assert_allclose(component[:, :, :, -1, :, :], 0.0)
 
-    def test_pml_effective_boundaries_turn_periodic_axis_nonwrapping(self):
+    def test_standard_refresh_uses_initialization_owned_nonwrapping_axis(self):
         mesh_shape = (2, 1, 1)
         tile_shape = (2, 2, 2)
-        world = _world((BC_PERIODIC, BC_PERIODIC, BC_PERIODIC), tile_shape)
-        world["pml"] = (True, True, False, False, None)
+        world = _world((BC_CONDUCTING, BC_PERIODIC, BC_PERIODIC), tile_shape)
         world["field_mesh"] = _mesh(mesh_shape)
         tiles = _coordinate_tiles(mesh_shape, tile_shape)
 
-        actual = ghost_cells.update_tiled_ghost_cells_for_pml(tiles, world, 1)
+        actual = ghost_cells.update_tiled_ghost_cells(tiles, world, 1)
         expected = _reference_update(tiles, (BC_CONDUCTING, BC_PERIODIC, BC_PERIODIC), tile_shape)
 
         self.assert_allclose(actual, expected)
