@@ -57,7 +57,10 @@ def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
     field_tiles = field_tiles.at[:, :, :, g:-g, g:-g, g:-g].set(interior_tiles)
     # populate the field tiles with the interior tiles, leaving the guard cells as zeros
 
-    return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
+    world = dict(world)
+    world["tile_shape"] = tuple(int(width) for width in tile_shape)
+    world["field_mesh"] = ghost_cells.make_field_mesh((ntx, nty, ntz))
+    return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g)
     # update the guard cells of the tiled field using the ghost_cells function
 
 
@@ -169,6 +172,11 @@ class TestDirectDeposition(unittest.TestCase):
         world = dict(world)
         grids = dict(world["grids"])
         world["tile_shape"] = tile_shape
+        world["field_mesh"] = ghost_cells.make_field_mesh((
+            int(world["Nx"]) // int(tile_shape[0]),
+            int(world["Ny"]) // int(tile_shape[1]),
+            int(world["Nz"]) // int(tile_shape[2]),
+        ))
         tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world, tile_shape, g)
         grids["tiled_vertex_grid"] = tiled_vertex_grid
         grids["tiled_center_grid"] = tiled_center_grid
@@ -458,6 +466,7 @@ class TestDirectDeposition(unittest.TestCase):
     def test_tiled_digital_filter_matches_global_digital_filter(self):
         world = self._build_world(Nx=8, Ny=6, Nz=4)
         tile_shape = (2, 3, 2)
+        world = self._world_with_tiled_grids(world, tile_shape)
         alpha = 0.6
         shape = (world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2)
         bc_x = world["boundary_conditions"]["x"]
@@ -475,7 +484,7 @@ class TestDirectDeposition(unittest.TestCase):
 
         J_tiles = tile_vector_field(J, world, tile_shape)
         filtered_tiles = digital_filter_vector(J_tiles, alpha, num_guard_cells=1)
-        filtered_tiles = ghost_cells.update_tiled_vector_ghost_cells(filtered_tiles, world, num_guard_cells=1, tile_shape=tile_shape)
+        filtered_tiles = ghost_cells.update_tiled_vector_ghost_cells(filtered_tiles, world, num_guard_cells=1)
         filtered_from_tiles = assemble_tiled_vector_field(filtered_tiles, world, tile_shape)
         filtered_reference = tuple(
             _update_ghost_cells(digital_filter(component, alpha), bc_x, bc_y, bc_z)
@@ -493,7 +502,7 @@ class TestDirectDeposition(unittest.TestCase):
         tiles = tiles.at[0, 0, 0, -1, 1, 1].set(2.0)
         tiles = tiles.at[1, 0, 0, 0, 1, 1].set(3.0)
 
-        folded = ghost_cells.fold_tiled_ghost_cells(tiles, world, num_guard_cells=1, tile_shape=world["tile_shape"])
+        folded = ghost_cells.fold_tiled_ghost_cells(tiles, world, num_guard_cells=1)
 
         self.assertEqual(float(folded[1, 0, 0, 1, 1, 1]), 2.0)
         self.assertEqual(float(folded[0, 0, 0, -2, 1, 1]), 3.0)
@@ -513,7 +522,7 @@ class TestDirectDeposition(unittest.TestCase):
         tiles = tiles.at[0, 0, 0, -2, 2, 2].set(5.0)
         tiles = tiles.at[0, 0, 0, -1, 2, 2].set(7.0)
 
-        folded = ghost_cells.fold_tiled_ghost_cells(tiles, world, num_guard_cells, tile_shape=world["tile_shape"])
+        folded = ghost_cells.fold_tiled_ghost_cells(tiles, world, num_guard_cells)
 
         self.assertEqual(float(folded[0, 0, 0, 4, 2, 2]), 2.0)
         self.assertEqual(float(folded[0, 0, 0, 5, 2, 2]), 3.0)
@@ -536,7 +545,7 @@ class TestDirectDeposition(unittest.TestCase):
         tiles = tiles.at[0, 0, 0, 2, 3, 2].set(3.0)
         tiles = tiles.at[0, 0, 0, 2, 4, 2].set(4.0)
 
-        folded = ghost_cells.fold_tiled_ghost_cells(tiles, world, num_guard_cells, tile_shape=tile_shape)
+        folded = ghost_cells.fold_tiled_ghost_cells(tiles, world, num_guard_cells)
 
         self.assertEqual(float(folded[0, 0, 0, 2, 2, 2]), 10.0)
         self.assertTrue(jnp.allclose(folded[:, :, :, :, :num_guard_cells, :], 0.0))
@@ -557,7 +566,7 @@ class TestDirectDeposition(unittest.TestCase):
         tiles = tiles.at[0, 0, 0, -1, 1, 1].set(2.0)
         tiles = tiles.at[1, 0, 0, 0, 1, 1].set(3.0)
 
-        folded = ghost_cells.fold_tiled_ghost_cells(tiles, world, num_guard_cells=1, tile_shape=world["tile_shape"])
+        folded = ghost_cells.fold_tiled_ghost_cells(tiles, world, num_guard_cells=1)
 
         self.assertEqual(float(folded[0, 0, 0, 1, 1, 1]), -4.0)
         self.assertEqual(float(folded[-1, 0, 0, -2, 1, 1]), -7.0)
@@ -597,8 +606,8 @@ class TestDirectDeposition(unittest.TestCase):
         field = field.at[3, 3, -1].set(5.0)
         tiles = tiles.at[1, 1, -1, 1, 1, -1].set(5.0)
 
-        folded_tiles = ghost_cells.fold_tiled_ghost_cells(tiles, world, num_guard_cells=1, tile_shape=tile_shape)
-        folded_tiles = ghost_cells.update_tiled_ghost_cells(folded_tiles, world, num_guard_cells=1, tile_shape=tile_shape)
+        folded_tiles = ghost_cells.fold_tiled_ghost_cells(tiles, world, num_guard_cells=1)
+        folded_tiles = ghost_cells.update_tiled_ghost_cells(folded_tiles, world, num_guard_cells=1)
         folded_from_tiles = assemble_tiled_vector_field((folded_tiles, folded_tiles, folded_tiles), world, tile_shape, num_guard_cells=1)[0]
         folded_reference = _update_ghost_cells(
             _fold_ghost_cells(

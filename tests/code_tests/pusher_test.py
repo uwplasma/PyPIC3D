@@ -2,6 +2,7 @@ import unittest
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from PyPIC3D.boundary_conditions import ghost_cells
 from tests.initial_particles import build_tiled_particles, tiled_species
@@ -48,7 +49,10 @@ def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
                     iz = 1 + tz * tile_nz
                     interior = field[ix:ix + tile_nx, iy:iy + tile_ny, iz:iz + tile_nz]
                     field_tiles = field_tiles.at[tx, ty, tz, g:-g, g:-g, g:-g].set(interior)
-        return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
+        world = dict(world)
+        world["tile_shape"] = tuple(int(width) for width in tile_shape)
+        world["field_mesh"] = ghost_cells.make_field_mesh((ntx, nty, ntz))
+        return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g)
 
     def tile_at(tx, ty, tz):
         start = (tx * tile_nx, ty * tile_ny, tz * tile_nz)
@@ -97,6 +101,11 @@ class TestTiledParticlePusher(unittest.TestCase):
     def _with_tiled_grids(self, world, tile_shape, g=1):
         world["tile_shape"] = tuple(int(width) for width in tile_shape)
         world["guard_cells"] = int(g)
+        world["field_mesh"] = ghost_cells.make_field_mesh((
+            int(world["Nx"]) // int(tile_shape[0]),
+            int(world["Ny"]) // int(tile_shape[1]),
+            int(world["Nz"]) // int(tile_shape[2]),
+        ))
         tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world, tile_shape, g)
         world["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
         world["grids"]["tiled_center_grid"] = tiled_center_grid
@@ -220,8 +229,10 @@ class TestTiledParticlePusher(unittest.TestCase):
 
         _, tiled_u = self._flatten_active_by_position(pushed)
         _, reference_u = self._flatten_active_by_position(reference)
+        tiled_u = jax.device_get(tiled_u)
+        reference_u = jax.device_get(reference_u)
 
-        self.assertTrue(jnp.allclose(tiled_u, reference_u, rtol=1.0e-12, atol=1.0e-12))
+        self.assertTrue(np.allclose(np.asarray(tiled_u), np.asarray(reference_u), rtol=1.0e-12, atol=1.0e-12))
 
     def test_particle_push_matches_one_tile_higuera_cary(self):
         world = self._build_world()
@@ -280,6 +291,8 @@ class TestTiledParticlePusher(unittest.TestCase):
 
         _, tiled_u = self._flatten_active_by_position(pushed)
         _, reference_u = self._flatten_active_by_position(reference)
+        tiled_u = jax.device_get(tiled_u)
+        reference_u = jax.device_get(reference_u)
 
         self.assertTrue(jnp.allclose(tiled_u, reference_u, rtol=1.0e-12, atol=1.0e-12))
 
@@ -377,7 +390,7 @@ class TestTiledParticlePusher(unittest.TestCase):
         _, tiled_u = self._flatten_active_by_position(pushed)
         _, reference_u = self._flatten_active_by_position(reference)
 
-        self.assertTrue(jnp.allclose(tiled_u, reference_u, rtol=1.0e-12, atol=1.0e-12))
+        self.assertTrue(np.allclose(np.asarray(tiled_u), np.asarray(reference_u), rtol=1.0e-12, atol=1.0e-12))
 
     def test_particle_push_matches_one_tile_boris_on_two_guard_reduced_axes(self):
         world = self._build_world(Nx=8, Ny=1, Nz=1, shape_factor=2)
@@ -440,7 +453,7 @@ class TestTiledParticlePusher(unittest.TestCase):
         _, tiled_u = self._flatten_active_by_position(pushed)
         _, reference_u = self._flatten_active_by_position(reference)
 
-        self.assertTrue(jnp.allclose(tiled_u, reference_u, rtol=1.0e-12, atol=1.0e-12))
+        self.assertTrue(np.allclose(np.asarray(tiled_u), np.asarray(reference_u), rtol=1.0e-12, atol=1.0e-12))
 
 
 if __name__ == "__main__":

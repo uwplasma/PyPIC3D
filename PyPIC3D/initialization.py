@@ -472,19 +472,19 @@ def initialize_simulation(toml_file):
     # convert the fields list back into tuples
 
     if pml_active:
-        E = update_tiled_vector_ghost_cells_for_pml(E, world, num_guard_cells=guard_cells, tile_shape=tile_shape)
-        B = update_tiled_vector_ghost_cells_for_pml(B, world, num_guard_cells=guard_cells, tile_shape=tile_shape)
+        E = update_tiled_vector_ghost_cells_for_pml(E, world, num_guard_cells=guard_cells)
+        B = update_tiled_vector_ghost_cells_for_pml(B, world, num_guard_cells=guard_cells)
     else:
-        E = update_tiled_vector_ghost_cells(E, world, num_guard_cells=guard_cells, tile_shape=tile_shape)
-        B = update_tiled_vector_ghost_cells(B, world, num_guard_cells=guard_cells, tile_shape=tile_shape)
+        E = update_tiled_vector_ghost_cells(E, world, num_guard_cells=guard_cells)
+        B = update_tiled_vector_ghost_cells(B, world, num_guard_cells=guard_cells)
     # fill ghost cells for the initial E and B fields
     external_E, external_B = external_fields
     if pml_active:
-        external_E = update_tiled_vector_ghost_cells_for_pml(external_E, world, num_guard_cells=guard_cells, tile_shape=tile_shape)
-        external_B = update_tiled_vector_ghost_cells_for_pml(external_B, world, num_guard_cells=guard_cells, tile_shape=tile_shape)
+        external_E = update_tiled_vector_ghost_cells_for_pml(external_E, world, num_guard_cells=guard_cells)
+        external_B = update_tiled_vector_ghost_cells_for_pml(external_B, world, num_guard_cells=guard_cells)
     else:
-        external_E = update_tiled_vector_ghost_cells(external_E, world, num_guard_cells=guard_cells, tile_shape=tile_shape)
-        external_B = update_tiled_vector_ghost_cells(external_B, world, num_guard_cells=guard_cells, tile_shape=tile_shape)
+        external_E = update_tiled_vector_ghost_cells(external_E, world, num_guard_cells=guard_cells)
+        external_B = update_tiled_vector_ghost_cells(external_B, world, num_guard_cells=guard_cells)
     external_fields = (external_E, external_B)
     # fill ghost cells for external fields before they are interpolated to particles
 

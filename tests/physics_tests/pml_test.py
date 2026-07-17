@@ -63,7 +63,10 @@ def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
     field_tiles = field_tiles.at[:, :, :, g:-g, g:-g, g:-g].set(interior_tiles)
     # populate the field tiles with the interior tiles, leaving the guard cells as zeros
 
-    return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
+    world = dict(world)
+    world["tile_shape"] = tuple(int(width) for width in tile_shape)
+    world["field_mesh"] = ghost_cells.make_field_mesh((ntx, nty, ntz))
+    return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g)
     # update the guard cells of the tiled field using the ghost_cells function
 
 
@@ -358,6 +361,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         constants = {"C": 2.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         tile_shape = (2, 2, 2)
         world["tile_shape"] = tile_shape
+        world["field_mesh"] = ghost_cells.make_field_mesh((2, 2, 2))
         E, B, J = _empty_global_fields(world)
         B = (B[0], B[1], B[2].at[1:-1, 1:-1, 1:-1].set(1.0))
 
@@ -407,6 +411,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
 
         reference_tile_shape = (world["Nx"], world["Ny"], world["Nz"])
         world["tile_shape"] = reference_tile_shape
+        world["field_mesh"] = ghost_cells.make_field_mesh((1, 1, 1))
         reference_pml_state = initialize_tiled_pml_state(world, reference_tile_shape)
         reference_E, reference_pml_state = update_E(
             tile_vector_field(E, world, reference_tile_shape),
@@ -437,6 +442,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         )
 
         world["tile_shape"] = tile_shape
+        world["field_mesh"] = ghost_cells.make_field_mesh((4, 2, 2))
         tiled_pml_state = initialize_tiled_pml_state(world, tile_shape)
         E_tiles, tiled_pml_state = update_E(
             tile_vector_field(E, world, tile_shape),
@@ -476,6 +482,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         )
         tile_shape = (4, 1, 1)
         world["tile_shape"] = tile_shape
+        world["field_mesh"] = ghost_cells.make_field_mesh((10, 1, 1))
         tiled_pml_state = initialize_tiled_pml_state(world, tile_shape)
         E, B, J = _empty_global_fields(world)
 
@@ -544,6 +551,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         )
         tile_shape = (2, 1, 1)
         world["tile_shape"] = tile_shape
+        world["field_mesh"] = ghost_cells.make_field_mesh((4, 1, 1))
         E, B, J = _empty_global_fields(world)
         Ex, Ey, Ez = E
         Bx, By, Bz = B

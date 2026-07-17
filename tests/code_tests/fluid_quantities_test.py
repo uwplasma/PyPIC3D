@@ -58,7 +58,10 @@ def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
     field_tiles = field_tiles.at[:, :, :, g:-g, g:-g, g:-g].set(interior_tiles)
     # populate the field tiles with the interior tiles, leaving the guard cells as zeros
 
-    return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
+    world = dict(world)
+    world["tile_shape"] = tuple(int(width) for width in tile_shape)
+    world["field_mesh"] = ghost_cells.make_field_mesh((ntx, nty, ntz))
+    return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g)
     # update the guard cells of the tiled field using the ghost_cells function
 
 class TestTiledFluidQuantities(unittest.TestCase):
@@ -94,6 +97,11 @@ class TestTiledFluidQuantities(unittest.TestCase):
         world = dict(world)
         grids = dict(world["grids"])
         world["tile_shape"] = tile_shape
+        world["field_mesh"] = ghost_cells.make_field_mesh((
+            int(world["Nx"]) // int(tile_shape[0]),
+            int(world["Ny"]) // int(tile_shape[1]),
+            int(world["Nz"]) // int(tile_shape[2]),
+        ))
         tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world, tile_shape, g)
         grids["tiled_vertex_grid"] = tiled_vertex_grid
         grids["tiled_center_grid"] = tiled_center_grid

@@ -196,14 +196,14 @@ def _deposit_tiled_scalar_moment_to_tiles(
                 )
                 rho_tiles = rho_tiles.at[tx, ty, tz, lx, ly, lz].add(value, mode="drop")
 
-    rho_tiles = update_tiled_ghost_cells(rho_tiles, world, g, tile_shape)
+    rho_tiles = update_tiled_ghost_cells(rho_tiles, world, g)
 
     return rho_tiles
 
 
-def _filter_tiled_scalar_with_halos(field_tiles, alpha, world, g, tile_shape):
+def _filter_tiled_scalar_with_halos(field_tiles, alpha, world, g):
     g = int(g)
-    field_tiles = update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
+    field_tiles = update_tiled_ghost_cells(field_tiles, world, g)
     return digital_filter(field_tiles, alpha, num_guard_cells=g)
 
 
@@ -238,13 +238,12 @@ def compute_rho(
     )
 
     alpha = constants["alpha"]
-    rho_tiles = _filter_tiled_scalar_with_halos(rho_tiles, alpha, world, g, tile_shape)
-    rho_tiles = update_tiled_ghost_cells(rho_tiles, world, g, tile_shape)
+    rho_tiles = _filter_tiled_scalar_with_halos(rho_tiles, alpha, world, g)
+    rho_tiles = update_tiled_ghost_cells(rho_tiles, world, g)
 
     return rho_tiles
 
 
-@partial(jit, static_argnames=("tile_shape", "g"))
 def compute_tiled_mass_density_from_tiled_particles(tiled_particles, species_config, rho_tiles, world, grid=None, tile_shape=None, g=2):
     """Compute mass density into tile-major vertex-grid scalar arrays."""
     if grid is None:
@@ -267,7 +266,6 @@ def compute_tiled_mass_density_from_tiled_particles(tiled_particles, species_con
     )
 
 
-@partial(jit, static_argnames=("direction", "tile_shape", "g"))
 def compute_tiled_velocity_field_from_tiled_particles(
     tiled_particles,
     species_config,
@@ -300,7 +298,6 @@ def compute_tiled_velocity_field_from_tiled_particles(
     )
 
 
-@partial(jit, static_argnames=("direction", "tile_shape", "g"))
 def compute_tiled_pressure_field_from_tiled_particles(
     tiled_particles,
     species_config,
@@ -425,5 +422,5 @@ def compute_tiled_pressure_field_from_tiled_particles(
                 )
                 field_tiles = field_tiles.at[tx, ty, tz, lx, ly, lz].add(value, mode="drop")
 
-    field_tiles = update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
+    field_tiles = update_tiled_ghost_cells(field_tiles, world, g)
     return field_tiles

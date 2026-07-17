@@ -22,11 +22,11 @@ def _as_single_tile(field):
     return field[jnp.newaxis, jnp.newaxis, jnp.newaxis, :, :, :]
 
 
-def _refresh_single_tile_scalar(field, world, g, tile_shape, apply_conducting=False):
+def _refresh_single_tile_scalar(field, world, g, apply_conducting=False):
     field_tiles = _as_single_tile(field)
     if apply_conducting:
         field_tiles = ghost_cells.apply_tiled_scalar_conducting_bc(field_tiles, world, num_guard_cells=g)
-    field_tiles = ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
+    field_tiles = ghost_cells.update_tiled_ghost_cells(field_tiles, world, g)
     return field_tiles[0, 0, 0]
 
 
@@ -69,7 +69,6 @@ def solve_poisson_with_conjugate_gradient(rho, phi, constants, world, tol=1e-12,
     eps = constants['eps']
 
     g = int(world["guard_cells"])
-    tile_shape = tuple(int(width) for width in world["tile_shape"])
     active = _active_slice(g)
     forward = _forward_slice(g)
     backward = _backward_slice(g)
@@ -84,7 +83,7 @@ def solve_poisson_with_conjugate_gradient(rho, phi, constants, world, tol=1e-12,
     # compute the laplacian on the interior using ghost cell neighbors
 
     def apply_bc(field):
-        return _refresh_single_tile_scalar(field, world, g, tile_shape, apply_conducting=True)
+        return _refresh_single_tile_scalar(field, world, g, apply_conducting=True)
     # apply scalar conducting boundaries and refresh ghost cells through the tiled halo path
 
     def body_fun(state):
@@ -163,12 +162,12 @@ def calculate_electrostatic_fields(world, particles, constants, rho, phi, solver
 
     phi = solve_poisson_with_conjugate_gradient(rho, phi, constants, world)
 
-    phi = _refresh_single_tile_scalar(phi, world, g, tile_shape)
+    phi = _refresh_single_tile_scalar(phi, world, g)
     # refresh ghost cells before any stencil-based post-processing
 
     alpha = constants['alpha']
     phi = digital_filter(phi, alpha, num_guard_cells=g)
-    phi = _refresh_single_tile_scalar(phi, world, g, tile_shape, apply_conducting=True)
+    phi = _refresh_single_tile_scalar(phi, world, g, apply_conducting=True)
     # update ghost cells after filtering
 
     del solver, bc
@@ -183,9 +182,9 @@ def calculate_electrostatic_fields(world, particles, constants, rho, phi, solver
     Ex_full = Ex_full.at[active, active, active].set(Ex)
     Ey_full = Ey_full.at[active, active, active].set(Ey)
     Ez_full = Ez_full.at[active, active, active].set(Ez)
-    Ex_full = _refresh_single_tile_scalar(Ex_full, world, g, tile_shape)
-    Ey_full = _refresh_single_tile_scalar(Ey_full, world, g, tile_shape)
-    Ez_full = _refresh_single_tile_scalar(Ez_full, world, g, tile_shape)
+    Ex_full = _refresh_single_tile_scalar(Ex_full, world, g)
+    Ey_full = _refresh_single_tile_scalar(Ey_full, world, g)
+    Ez_full = _refresh_single_tile_scalar(Ez_full, world, g)
 
     return (Ex_full, Ey_full, Ez_full), phi, rho
 
@@ -208,7 +207,7 @@ def _centered_tiled_electrostatic_gradient(phi_tiles, world, tile_shape, g):
     forward = slice(g + 1, None if g == 1 else -g + 1)
     backward = slice(g - 1, -g - 1)
 
-    phi_tiles = ghost_cells.update_tiled_ghost_cells(phi_tiles, world, g, tile_shape)
+    phi_tiles = ghost_cells.update_tiled_ghost_cells(phi_tiles, world, g)
 
     Ex = jnp.zeros_like(phi_tiles)
     Ey = jnp.zeros_like(phi_tiles)
@@ -224,7 +223,7 @@ def _centered_tiled_electrostatic_gradient(phi_tiles, world, tile_shape, g):
         -1.0 * (phi_tiles[:, :, :, active, active, forward] - phi_tiles[:, :, :, active, active, backward]) / (2.0 * dz)
     )
 
-    return ghost_cells.update_tiled_vector_ghost_cells((Ex, Ey, Ez), world, g, tile_shape)
+    return ghost_cells.update_tiled_vector_ghost_cells((Ex, Ey, Ez), world, g)
 
 
 def calculate_tiled_electrostatic_fields(world, particles, species_config, constants, rho_tiles, phi_tiles, solver, bc):
@@ -247,13 +246,13 @@ def calculate_tiled_electrostatic_fields(world, particles, species_config, const
 
     phi = solve_poisson_with_conjugate_gradient(rho, phi, constants, world)
     phi_tiles = phi_tiles.at[0, 0, 0].set(phi)
-    phi_tiles = ghost_cells.update_tiled_ghost_cells(phi_tiles, world, g, tile_shape)
+    phi_tiles = ghost_cells.update_tiled_ghost_cells(phi_tiles, world, g)
     # refresh ghost cells before filtering and tiled differentiation
 
     alpha = constants["alpha"]
     phi_tiles = digital_filter(phi_tiles, alpha, num_guard_cells=g)
     phi_tiles = ghost_cells.apply_tiled_scalar_conducting_bc(phi_tiles, world, num_guard_cells=g)
-    phi_tiles = ghost_cells.update_tiled_ghost_cells(phi_tiles, world, g, tile_shape)
+    phi_tiles = ghost_cells.update_tiled_ghost_cells(phi_tiles, world, g)
     # keep the same phi post-processing order as the previous electrostatic solver
 
     E_tiles = _centered_tiled_electrostatic_gradient(phi_tiles, world, tile_shape, g)

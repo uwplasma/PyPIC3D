@@ -19,16 +19,25 @@ class TestGhostCells(unittest.TestCase):
             "boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},
         }
 
+    def _world_with_field_mesh(self, tile_grid_shape):
+        world = dict(self.world)
+        try:
+            world["field_mesh"] = ghost_cells.make_field_mesh(tile_grid_shape)
+        except ValueError as exc:
+            self.skipTest(str(exc))
+        return world
+
     def test_update_tiled_ghost_cells_periodic_refreshes_neighbor_halos(self):
         # this tests the communication of ghost cells between two tiles in a periodic domain
 
+        world = self._world_with_field_mesh((2, 1, 1))
         field_tiles = jnp.zeros((2, 1, 1, 4, 4, 4))
         field_tiles = field_tiles.at[0, 0, 0, 1:3, 1:3, 1:3].set(1.0)
         field_tiles = field_tiles.at[1, 0, 0, 1:3, 1:3, 1:3].set(2.0)
         # create two tiles, one with a value of 1.0 and one with a value of 2.0 constant 
         # across the tile
 
-        result = ghost_cells.update_tiled_ghost_cells(field_tiles, self.world, self.g, self.tile_shape)
+        result = ghost_cells.update_tiled_ghost_cells(field_tiles, world, self.g)
         # call the update ghost cells method to communicate the ghost cells between the two tiles
 
         self.assertTrue(jnp.all(result[0, 0, 0, -1, 1:3, 1:3] == 2.0))
@@ -36,10 +45,22 @@ class TestGhostCells(unittest.TestCase):
         self.assertTrue(jnp.all(result[1, 0, 0, 0, 1:3, 1:3] == 1.0))
         # make sure the ghost cell on the second tile has been updated from 2.0 to 1.0
 
+    def test_update_tiled_ghost_cells_requires_world_field_mesh(self):
+        # tiled halo exchange should use the startup-owned field mesh, not infer
+        # a device mesh from the current array shape.
+
+        field_tiles = jnp.zeros((1, 1, 1, 4, 4, 4))
+
+        incomplete_world = dict(self.world)
+
+        with self.assertRaises(KeyError):
+            ghost_cells.update_tiled_ghost_cells(field_tiles, incomplete_world, self.g)
+
     def test_fold_tiled_ghost_cells_periodic_adds_to_owner_tile(self):
         # this tests the folding of ghost cells back to the owner tile in a periodic domain
         # this is used to confirm the current and charge deposition is correct when using ghost cells
 
+        world = self._world_with_field_mesh((2, 1, 1))
         field_tiles = jnp.zeros((2, 1, 1, 4, 4, 4))
         # create two tiles with a shape of (4, 4, 4) and a ghost cell width of 1
         field_tiles = field_tiles.at[0, 0, 0, -1, 2, 2].set(3.0)
@@ -47,7 +68,7 @@ class TestGhostCells(unittest.TestCase):
         field_tiles = field_tiles.at[1, 0, 0, 0, 2, 2].set(5.0)
         # set the ghost cell on the second tile at the left x boundary to a value of 5.0
 
-        result = ghost_cells.fold_tiled_ghost_cells(field_tiles, self.world, self.g, self.tile_shape)
+        result = ghost_cells.fold_tiled_ghost_cells(field_tiles, world, self.g)
         # call the fold ghost cells method to add the ghost cell values back to the owner tile
 
         self.assertAlmostEqual(float(result[1, 0, 0, 1, 2, 2]), 3.0)
@@ -63,6 +84,7 @@ class TestGhostCells(unittest.TestCase):
 
         world = {
             "tile_shape": self.tile_shape,
+            "field_mesh": ghost_cells.make_field_mesh((1, 1, 1)),
             "boundary_conditions": {"x": BC_CONDUCTING, "y": BC_CONDUCTING, "z": BC_CONDUCTING},
         }
         # create a world with conducting boundary conditions in all directions
@@ -82,9 +104,11 @@ class TestGhostCells(unittest.TestCase):
         # make sure the tangential faces of the electric field components have been zeroed out
 
     def test_apply_tiled_scalar_conducting_bc_periodic_noop(self):
+        world = self._world_with_field_mesh((1, 1, 1))
+        world["tile_shape"] = self.tile_shape
         field = jnp.arange(4 * 4 * 4, dtype=float).reshape((1, 1, 1, 4, 4, 4))
         # create a scalar field with shape (1, 1, 1, 4, 4, 4) and values from 0 to 63
-        result = ghost_cells.apply_tiled_scalar_conducting_bc(field, self.world, self.g)
+        result = ghost_cells.apply_tiled_scalar_conducting_bc(field, world, self.g)
         # call the apply tiled scalar conducting boundary conditions method
         # since the boundary conditions are periodic, this should be a no-op and the result should be equal to the input field
 

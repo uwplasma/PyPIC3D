@@ -514,18 +514,18 @@ def Esirkepov_current(
 
     J = fold_tiled_esirkepov_vector_ghost_cells((Jx, Jy, Jz), world, num_guard_cells=g, tile_shape=tile_shape)
     # fold the deposited currents across tile boundaries, applying the appropriate boundary conditions for ghost cells
-    J = update_tiled_vector_ghost_cells(J, world, num_guard_cells=g, tile_shape=tile_shape)
+    J = update_tiled_vector_ghost_cells(J, world, num_guard_cells=g)
     # update the ghost cells of the folded currents to ensure consistency across tile boundaries
 
     if filter == "bilinear":
         J = bilinear_filter_vector(J, num_guard_cells=g)
         # apply a bilinear filter to the current density tiles if specified in the filter argument
-        J = update_tiled_vector_ghost_cells(J, world, g, tile_shape)
+        J = update_tiled_vector_ghost_cells(J, world, g)
         # update the ghost cells of the current density tiles to reflect the contributions from neighboring tiles
     elif filter == "digital":
         J = digital_filter_vector(J, constants["alpha"], num_guard_cells=g)
         # apply a digital filter to the current density tiles if specified in the filter argument
-        J = update_tiled_vector_ghost_cells(J, world, num_guard_cells=g, tile_shape=tile_shape)
+        J = update_tiled_vector_ghost_cells(J, world, num_guard_cells=g)
         # update the ghost cells of the filtered current density tiles to ensure continuity across tile boundaries
 
     return J

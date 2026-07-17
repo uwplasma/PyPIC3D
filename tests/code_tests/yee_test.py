@@ -52,7 +52,10 @@ def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
                     iz = 1 + tz * tile_nz
                     interior = field[ix:ix + tile_nx, iy:iy + tile_ny, iz:iz + tile_nz]
                     field_tiles = field_tiles.at[tx, ty, tz, g:-g, g:-g, g:-g].set(interior)
-        return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
+        world = dict(world)
+        world["tile_shape"] = tuple(int(width) for width in tile_shape)
+        world["field_mesh"] = ghost_cells.make_field_mesh((ntx, nty, ntz))
+        return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g)
 
     def tile_at(tx, ty, tz):
         start = (tx * tile_nx, ty * tile_ny, tz * tile_nz)
@@ -128,6 +131,11 @@ class TestYeeTiled(unittest.TestCase):
     def _with_tile_metadata(self, world, tile_shape, g=2):
         world["tile_shape"] = tuple(int(width) for width in tile_shape)
         world["guard_cells"] = int(g)
+        world["field_mesh"] = ghost_cells.make_field_mesh((
+            int(world["Nx"]) // int(tile_shape[0]),
+            int(world["Ny"]) // int(tile_shape[1]),
+            int(world["Nz"]) // int(tile_shape[2]),
+        ))
         tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world, tile_shape, g)
         world["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
         world["grids"]["tiled_center_grid"] = tiled_center_grid
@@ -166,6 +174,11 @@ class TestYeeTiled(unittest.TestCase):
         reference_world["grids"] = dict(world["grids"])
         reference_world["tile_shape"] = tuple(int(width) for width in tile_shape)
         reference_world["guard_cells"] = int(g)
+        reference_world["field_mesh"] = ghost_cells.make_field_mesh((
+            int(reference_world["Nx"]) // int(tile_shape[0]),
+            int(reference_world["Ny"]) // int(tile_shape[1]),
+            int(reference_world["Nz"]) // int(tile_shape[2]),
+        ))
         return reference_world
 
     def _reference_update_E(self, E, B, J, world, constants):
@@ -315,7 +328,7 @@ class TestYeeTiled(unittest.TestCase):
         stale_tiles = stale_tiles.at[:, :, :, :, :, 0].set(-500.0)
         stale_tiles = stale_tiles.at[:, :, :, :, :, -1].set(-600.0)
 
-        refreshed = ghost_cells.update_tiled_ghost_cells(stale_tiles, world, num_guard_cells=2, tile_shape=tile_shape)
+        refreshed = ghost_cells.update_tiled_ghost_cells(stale_tiles, world, num_guard_cells=2)
 
         self.assertTrue(jnp.allclose(refreshed, tiles, rtol=1.0e-12, atol=1.0e-12))
 
@@ -327,7 +340,7 @@ class TestYeeTiled(unittest.TestCase):
         E_tiles = tile_vector_field(E, world, tile_shape)
 
         stale_tiles = tuple(component.at[:, :, :, 0, :, :].set(-10.0 * (i + 1)) for i, component in enumerate(E_tiles))
-        refreshed = ghost_cells.update_tiled_vector_ghost_cells(stale_tiles, world, num_guard_cells=2, tile_shape=tile_shape)
+        refreshed = ghost_cells.update_tiled_vector_ghost_cells(stale_tiles, world, num_guard_cells=2)
 
         for original_tiles, refreshed_component in zip(E_tiles, refreshed):
             self.assertTrue(jnp.allclose(refreshed_component, original_tiles, rtol=1.0e-12, atol=1.0e-12))

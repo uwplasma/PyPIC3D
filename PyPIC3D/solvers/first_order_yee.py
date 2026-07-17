@@ -25,9 +25,9 @@ def update_E(E_tiles, B_tiles, J_tiles, world, constants, pml_state=None):
     # build forward slice used for forward differences
 
     if pml_state is None:
-        Bx, By, Bz = ghost_cells.update_tiled_vector_ghost_cells(B_tiles, world, g, tile_shape)
+        Bx, By, Bz = ghost_cells.update_tiled_vector_ghost_cells(B_tiles, world, g)
     else:
-        Bx, By, Bz = ghost_cells.update_tiled_vector_ghost_cells_for_pml(B_tiles, world, g, tile_shape)
+        Bx, By, Bz = ghost_cells.update_tiled_vector_ghost_cells_for_pml(B_tiles, world, g)
     Jx, Jy, Jz = J_tiles
     current = slice(g, -g) #_active_slice(g)
 
@@ -71,9 +71,9 @@ def update_E(E_tiles, B_tiles, J_tiles, world, constants, pml_state=None):
     )
 
     if pml_state is None:
-        Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells((Ex, Ey, Ez), world, g, tile_shape)
+        Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells((Ex, Ey, Ez), world, g)
     else:
-        Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells_for_pml((Ex, Ey, Ez), world, g, tile_shape)
+        Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells_for_pml((Ex, Ey, Ez), world, g)
     # refresh tile halos before the digital field filter, matching the global
     # ghost-cell order in the standard Yee solver.
 
@@ -82,9 +82,9 @@ def update_E(E_tiles, B_tiles, J_tiles, world, constants, pml_state=None):
     Ex, Ey, Ez = ghost_cells.apply_tiled_conducting_bc((Ex, Ey, Ez), world, num_guard_cells=g)
 
     if pml_state is None:
-        return ghost_cells.update_tiled_vector_ghost_cells((Ex, Ey, Ez), world, g, tile_shape), None
+        return ghost_cells.update_tiled_vector_ghost_cells((Ex, Ey, Ez), world, g), None
 
-    return ghost_cells.update_tiled_vector_ghost_cells_for_pml((Ex, Ey, Ez), world, g, tile_shape), pml_state
+    return ghost_cells.update_tiled_vector_ghost_cells_for_pml((Ex, Ey, Ez), world, g), pml_state
 
 
 def update_B(E_tiles, B_tiles, world, constants, pml_state=None):
@@ -106,9 +106,9 @@ def update_B(E_tiles, B_tiles, world, constants, pml_state=None):
     # build backward slice for active axes, used for backward differences
 
     if pml_state is None:
-        Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells(E_tiles, world, g, tile_shape)
+        Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells(E_tiles, world, g)
     else:
-        Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells_for_pml(E_tiles, world, g, tile_shape)
+        Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells_for_pml(E_tiles, world, g)
     dt = world["dt"]
     dx, dy, dz = world["dx"], world["dy"], world["dz"]
 
@@ -138,15 +138,15 @@ def update_B(E_tiles, B_tiles, world, constants, pml_state=None):
     Bz = Bz.at[:, :, :, active, active, active].set(Bz[:, :, :, active, active, active] - dt * curl_z)
 
     if pml_state is None:
-        Bx, By, Bz = ghost_cells.update_tiled_vector_ghost_cells((Bx, By, Bz), world, g, tile_shape)
+        Bx, By, Bz = ghost_cells.update_tiled_vector_ghost_cells((Bx, By, Bz), world, g)
     else:
-        Bx, By, Bz = ghost_cells.update_tiled_vector_ghost_cells_for_pml((Bx, By, Bz), world, g, tile_shape)
+        Bx, By, Bz = ghost_cells.update_tiled_vector_ghost_cells_for_pml((Bx, By, Bz), world, g)
     # refresh tile halos before the digital field filter, matching the global
     # ghost-cell order in the standard Yee solver.
 
     Bx, By, Bz = digital_filter_vector((Bx, By, Bz), constants.get("alpha", 1.0), num_guard_cells=g)
 
     if pml_state is None:
-        return ghost_cells.update_tiled_vector_ghost_cells((Bx, By, Bz), world, g, tile_shape), None
+        return ghost_cells.update_tiled_vector_ghost_cells((Bx, By, Bz), world, g), None
 
-    return ghost_cells.update_tiled_vector_ghost_cells_for_pml((Bx, By, Bz), world, g, tile_shape), pml_state
+    return ghost_cells.update_tiled_vector_ghost_cells_for_pml((Bx, By, Bz), world, g), pml_state

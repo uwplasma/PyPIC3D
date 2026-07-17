@@ -46,7 +46,10 @@ def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
     )
     field_tiles = field_tiles.at[:, :, :, g:-g, g:-g, g:-g].set(interior_tiles)
 
-    return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
+    world = dict(world)
+    world["tile_shape"] = tuple(int(width) for width in tile_shape)
+    world["field_mesh"] = ghost_cells.make_field_mesh((ntx, nty, ntz))
+    return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g)
 
 
 def tile_vector_field(field, world, tile_shape, num_guard_cells=2):
@@ -302,7 +305,10 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
         )
         field_tiles = field_tiles.at[:, :, :, g:-g, g:-g, g:-g].set(interior_tiles)
 
-        return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
+        world = dict(world)
+        world["tile_shape"] = tuple(int(width) for width in tile_shape)
+        world["field_mesh"] = ghost_cells.make_field_mesh((ntx, nty, ntz))
+        return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g)
 
     def _field_with_stale_global_ghosts(self, world, value_offset=0.0):
         shape = (world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2)

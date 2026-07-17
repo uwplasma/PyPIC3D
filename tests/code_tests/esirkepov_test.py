@@ -61,7 +61,10 @@ def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
     )
     field_tiles = field_tiles.at[:, :, :, g:-g, g:-g, g:-g].set(interior_tiles)
 
-    return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
+    world = dict(world)
+    world["tile_shape"] = tuple(int(width) for width in tile_shape)
+    world["field_mesh"] = ghost_cells.make_field_mesh((ntx, nty, ntz))
+    return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g)
 
 
 def tile_vector_field(field, world, tile_shape, num_guard_cells=2):
@@ -300,6 +303,11 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         world = dict(world)
         grids = dict(world["grids"])
         world["tile_shape"] = tile_shape
+        world["field_mesh"] = ghost_cells.make_field_mesh((
+            int(world["Nx"]) // int(tile_shape[0]),
+            int(world["Ny"]) // int(tile_shape[1]),
+            int(world["Nz"]) // int(tile_shape[2]),
+        ))
         tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world, tile_shape, g)
         grids["tiled_vertex_grid"] = tiled_vertex_grid
         grids["tiled_center_grid"] = tiled_center_grid
@@ -445,6 +453,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         E_tiles = tile_vector_field(zeros, world, tile_shape, num_guard_cells=g)
         B_tiles = tile_vector_field(zeros, world, tile_shape, num_guard_cells=g)
         world["tile_shape"] = tile_shape
+        world["field_mesh"] = ghost_cells.make_field_mesh((2, 1, 1))
         _, _, J_tiles, _, _ = initialize_fields(world)
         Jx, Jy, Jz = J_tiles
         Jx = Jx.at[:, :, :, 2:-2, 2:-2, 2:-2].set(4.0)

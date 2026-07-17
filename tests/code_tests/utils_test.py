@@ -58,7 +58,10 @@ def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
                     iz = 1 + tz * tile_nz
                     interior = field[ix:ix + tile_nx, iy:iy + tile_ny, iz:iz + tile_nz]
                     field_tiles = field_tiles.at[tx, ty, tz, g:-g, g:-g, g:-g].set(interior)
-        return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
+        world = dict(world)
+        world["tile_shape"] = tuple(int(width) for width in tile_shape)
+        world["field_mesh"] = ghost_cells.make_field_mesh((ntx, nty, ntz))
+        return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g)
 
     def tile_at(tx, ty, tz):
         start = (tx * tile_nx, ty * tile_ny, tz * tile_nz)

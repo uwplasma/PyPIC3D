@@ -300,10 +300,10 @@ class TestDistributedGhostCells(unittest.TestCase):
         tile_shape = (2, 2, 2)
         world = _world((BC_PERIODIC, BC_PERIODIC, BC_PERIODIC), tile_shape)
         world["pml"] = (True, True, False, False, None)
-        world["mesh"] = _mesh(mesh_shape)
+        world["field_mesh"] = _mesh(mesh_shape)
         tiles = _coordinate_tiles(mesh_shape, tile_shape)
 
-        actual = ghost_cells.update_tiled_ghost_cells_for_pml(tiles, world, 1, tile_shape)
+        actual = ghost_cells.update_tiled_ghost_cells_for_pml(tiles, world, 1)
         expected = _reference_update(tiles, (BC_CONDUCTING, BC_PERIODIC, BC_PERIODIC), tile_shape)
 
         self.assert_allclose(actual, expected)

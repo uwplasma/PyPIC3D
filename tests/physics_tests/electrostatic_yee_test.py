@@ -17,6 +17,7 @@ from PyPIC3D.solvers.electrostatic_yee import (
     _centered_finite_difference_gradient,
 )
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
+from PyPIC3D.boundary_conditions import ghost_cells
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
 
 jax.config.update("jax_enable_x64", True)
@@ -64,6 +65,7 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
             "shape_factor": 1,
             "guard_cells": 2,
             "tile_shape": (self.Nx, self.Ny, self.Nz),
+            "field_mesh": ghost_cells.make_field_mesh((1, 1, 1)),
             "boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},
         }
         vertex_grid, center_grid = build_yee_grid(self.world)

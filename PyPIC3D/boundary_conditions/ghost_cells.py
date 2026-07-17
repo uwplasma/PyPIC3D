@@ -117,16 +117,6 @@ def make_field_mesh(tile_grid_shape):
     return _default_mesh_for_tile_shape(tile_grid_shape)
 
 
-def _mesh_from_world_or_field(world, field_tiles, vector=False):
-    if world is not None and "field_mesh" in world:
-        return world["field_mesh"]
-    if world is not None and "mesh" in world:
-        return world["mesh"]
-
-    tile_grid_shape = tuple(field_tiles.shape[1:4] if vector else field_tiles.shape[:3])
-    return _default_mesh_for_tile_shape(tile_grid_shape)
-
-
 def _validate_scalar_tile_topology(field_tiles, mesh):
     tile_grid_shape = tuple(int(width) for width in field_tiles.shape[:3])
     mesh_shape = tuple(int(width) for width in mesh.devices.shape)
@@ -525,7 +515,7 @@ def make_distributed_electric_conducting_bc(mesh, tile_shape, boundary_condition
     return apply
 
 
-def update_tiled_ghost_cells(field_tiles, world, num_guard_cells=2, tile_shape=None):
+def update_tiled_ghost_cells(field_tiles, world, num_guard_cells=2):
     """
     Refresh scalar tile halos with one logical tile per JAX device.
 
@@ -536,9 +526,8 @@ def update_tiled_ghost_cells(field_tiles, world, num_guard_cells=2, tile_shape=N
     ``tile_z``.  The leading tile topology must match the device mesh.
     """
 
-    if tile_shape is None:
-        tile_shape = tuple(int(width) for width in world["tile_shape"])
-    mesh = _mesh_from_world_or_field(world, field_tiles)
+    tile_shape = tuple(int(width) for width in world["tile_shape"])
+    mesh = world["field_mesh"]
     updater = make_distributed_ghost_updater(
         mesh,
         tile_shape,
@@ -548,14 +537,13 @@ def update_tiled_ghost_cells(field_tiles, world, num_guard_cells=2, tile_shape=N
     return updater(field_tiles)
 
 
-def update_tiled_vector_ghost_cells(field_tiles, world, num_guard_cells=2, tile_shape=None):
+def update_tiled_vector_ghost_cells(field_tiles, world, num_guard_cells=2):
     """
     Refresh tiled vector-field halos, preserving stacked or tuple layout.
     """
 
-    if tile_shape is None:
-        tile_shape = tuple(int(width) for width in world["tile_shape"])
-    mesh = _mesh_from_world_or_field(world, _stack_tiled_vector_field(field_tiles), vector=True)
+    tile_shape = tuple(int(width) for width in world["tile_shape"])
+    mesh = world["field_mesh"]
     updater = make_distributed_vector_ghost_updater(
         mesh,
         tile_shape,
@@ -565,14 +553,13 @@ def update_tiled_vector_ghost_cells(field_tiles, world, num_guard_cells=2, tile_
     return updater(field_tiles)
 
 
-def update_tiled_ghost_cells_for_pml(field_tiles, world, num_guard_cells=2, tile_shape=None):
+def update_tiled_ghost_cells_for_pml(field_tiles, world, num_guard_cells=2):
     """
     Refresh scalar halos with PML-active periodic axes made nonwrapping.
     """
 
-    if tile_shape is None:
-        tile_shape = tuple(int(width) for width in world["tile_shape"])
-    mesh = _mesh_from_world_or_field(world, field_tiles)
+    tile_shape = tuple(int(width) for width in world["tile_shape"])
+    mesh = world["field_mesh"]
     updater = make_distributed_ghost_updater(
         mesh,
         tile_shape,
@@ -582,14 +569,13 @@ def update_tiled_ghost_cells_for_pml(field_tiles, world, num_guard_cells=2, tile
     return updater(field_tiles)
 
 
-def update_tiled_vector_ghost_cells_for_pml(field_tiles, world, num_guard_cells=2, tile_shape=None):
+def update_tiled_vector_ghost_cells_for_pml(field_tiles, world, num_guard_cells=2):
     """
     Refresh vector halos with PML-active periodic axes made nonwrapping.
     """
 
-    if tile_shape is None:
-        tile_shape = tuple(int(width) for width in world["tile_shape"])
-    mesh = _mesh_from_world_or_field(world, _stack_tiled_vector_field(field_tiles), vector=True)
+    tile_shape = tuple(int(width) for width in world["tile_shape"])
+    mesh = world["field_mesh"]
     updater = make_distributed_vector_ghost_updater(
         mesh,
         tile_shape,
@@ -605,7 +591,7 @@ def apply_tiled_conducting_bc(E_tiles, world, num_guard_cells=2):
     """
 
     tile_shape = tuple(int(width) for width in world["tile_shape"])
-    mesh = _mesh_from_world_or_field(world, _stack_tiled_vector_field(E_tiles), vector=True)
+    mesh = world["field_mesh"]
     apply_bc = make_distributed_electric_conducting_bc(
         mesh,
         tile_shape,
@@ -621,7 +607,7 @@ def apply_tiled_scalar_conducting_bc(field_tiles, world, num_guard_cells=2):
     """
 
     tile_shape = tuple(int(width) for width in world["tile_shape"])
-    mesh = _mesh_from_world_or_field(world, field_tiles)
+    mesh = world["field_mesh"]
     apply_bc = make_distributed_conducting_bc(
         mesh,
         tile_shape,
@@ -631,7 +617,7 @@ def apply_tiled_scalar_conducting_bc(field_tiles, world, num_guard_cells=2):
     return apply_bc(field_tiles)
 
 
-def fold_tiled_ghost_cells(field_tiles, world, num_guard_cells=2, tile_shape=None):
+def fold_tiled_ghost_cells(field_tiles, world, num_guard_cells=2):
     """
     Add tile-ghost deposits into owning interiors, then clear ghost cells.
 
@@ -640,9 +626,8 @@ def fold_tiled_ghost_cells(field_tiles, world, num_guard_cells=2, tile_shape=Non
     deposits reflect only on devices touching the true global walls.
     """
 
-    if tile_shape is None:
-        tile_shape = tuple(int(width) for width in world["tile_shape"])
-    mesh = _mesh_from_world_or_field(world, field_tiles)
+    tile_shape = tuple(int(width) for width in world["tile_shape"])
+    mesh = world["field_mesh"]
     folder = make_distributed_ghost_folder(
         mesh,
         tile_shape,
@@ -652,14 +637,13 @@ def fold_tiled_ghost_cells(field_tiles, world, num_guard_cells=2, tile_shape=Non
     return folder(field_tiles)
 
 
-def fold_tiled_vector_ghost_cells(field_tiles, world, num_guard_cells=2, tile_shape=None):
+def fold_tiled_vector_ghost_cells(field_tiles, world, num_guard_cells=2):
     """
     Fold tile-ghost deposits for a tiled vector field.
     """
 
-    if tile_shape is None:
-        tile_shape = tuple(int(width) for width in world["tile_shape"])
-    mesh = _mesh_from_world_or_field(world, _stack_tiled_vector_field(field_tiles), vector=True)
+    tile_shape = tuple(int(width) for width in world["tile_shape"])
+    mesh = world["field_mesh"]
     folder = make_distributed_vector_ghost_folder(
         mesh,
         tile_shape,
