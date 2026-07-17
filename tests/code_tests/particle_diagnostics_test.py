@@ -134,8 +134,14 @@ class TestTiledParticleDiagnostics(unittest.TestCase):
             "z": 0,
         }
         tiled_particles, species_config = build_tiled_particles(species_list, world, self._simulation_parameters())
+        static_parameters = {"particle_boundary_conditions": (0, 0, 0)}
 
-        flattened_species = particles_for_output(tiled_particles, species_config=species_config, world=world)
+        flattened_species = particles_for_output(
+            tiled_particles,
+            species_config=species_config,
+            static_parameters=static_parameters,
+            dynamic_parameters=world,
+        )
 
         for original, flattened in zip(species_list, flattened_species):
             active = original["active"]

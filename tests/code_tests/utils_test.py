@@ -185,7 +185,7 @@ class TestUtilsFunctions(unittest.TestCase):
             np.save(path, np.ones((2, 2, 2)))
             config = {"field1": {"name": "Ex", "type": 0, "path": path}}
 
-            fields, external_fields = load_external_fields_from_toml(fields, external_fields, config, world)
+            fields, external_fields = load_external_fields_from_toml(fields, external_fields, config, world, world)
 
         interior = _active_interior(world)
         self.assertTrue(jnp.allclose(fields[0][interior], 1.0))
@@ -202,7 +202,7 @@ class TestUtilsFunctions(unittest.TestCase):
             np.save(path, np.ones((2, 2, 2)) * 3)
             config = {"field1": {"name": "By", "type": 4, "path": path, "evolve": True}}
 
-            fields, external_fields = load_external_fields_from_toml(fields, external_fields, config, world)
+            fields, external_fields = load_external_fields_from_toml(fields, external_fields, config, world, world)
 
         interior = _active_interior(world)
         self.assertTrue(jnp.allclose(fields[4][interior], 3.0))
@@ -219,7 +219,7 @@ class TestUtilsFunctions(unittest.TestCase):
             np.save(path, np.ones((2, 2, 2)) * 5)
             config = {"field1": {"name": "external Bz", "type": 5, "path": path, "evolve": False}}
 
-            fields, external_fields = load_external_fields_from_toml(fields, external_fields, config, world)
+            fields, external_fields = load_external_fields_from_toml(fields, external_fields, config, world, world)
 
         interior = _active_interior(world)
         self.assertTrue(jnp.allclose(fields[5][interior], 0.0))
@@ -237,7 +237,7 @@ class TestUtilsFunctions(unittest.TestCase):
             config = {"field1": {"name": "external Jx", "type": 6, "path": path, "evolve": False}}
 
             with self.assertRaisesRegex(ValueError, "External-only fields must be electric or magnetic"):
-                load_external_fields_from_toml(fields, external_fields, config, world)
+                load_external_fields_from_toml(fields, external_fields, config, world, world)
 
     def test_load_external_fields_preserves_shape_validation(self):
         world = _field_world(2, 2, 2)
@@ -251,7 +251,7 @@ class TestUtilsFunctions(unittest.TestCase):
             config = {"field1": {"name": "wrong Ex", "type": 0, "path": path, "evolve": False}}
 
             with self.assertRaisesRegex(ValueError, "Shape mismatch"):
-                load_external_fields_from_toml(fields, external_fields, config, world)
+                load_external_fields_from_toml(fields, external_fields, config, world, world)
 
     def test_energy_can_include_external_fields(self):
         world = _field_world(1, 1, 1)
@@ -385,6 +385,9 @@ class TestUtilsFunctions(unittest.TestCase):
             "particle_tile_nz": 1,
         }
         tiled_particles, species_config = build_tiled_particles([species], world, simulation_parameters=simulation_parameters)
+        static_parameters = {
+            "particle_boundary_conditions": (0, 0, 0),
+        }
 
         class FakeFigure:
             def __init__(self):
@@ -405,13 +408,11 @@ class TestUtilsFunctions(unittest.TestCase):
                 plotting.plot_positions(
                     tiled_particles,
                     0,
-                    world["x_wind"],
-                    world["y_wind"],
-                    world["z_wind"],
+                    static_parameters,
+                    world,
                     tmpdir,
                     species_config=species_config,
                     species_names=("beam electrons",),
-                    world=world,
                 )
 
         self.assertEqual(figure.trace_names, ["beam electrons"])
@@ -449,6 +450,9 @@ class TestUtilsFunctions(unittest.TestCase):
             "particle_tile_nz": 1,
         }
         tiled_particles, species_config = build_tiled_particles([species], world, simulation_parameters=simulation_parameters)
+        static_parameters = {
+            "particle_boundary_conditions": (0, 0, 0),
+        }
 
         with tempfile.TemporaryDirectory() as tmpdir:
             os.makedirs(os.path.join(tmpdir, "data/phase_space/x"))
@@ -458,6 +462,7 @@ class TestUtilsFunctions(unittest.TestCase):
                 with unittest.mock.patch.object(plotting.plt, "savefig"):
                     plotting.particles_phase_space(
                         tiled_particles,
+                        static_parameters,
                         world,
                         0,
                         "electrons",

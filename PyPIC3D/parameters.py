@@ -34,6 +34,12 @@ def _field_mesh(static_config, tile_shape):
     return make_field_mesh(tile_grid_shape)
 
 
+def _copy_optional(static_config, key, default=None):
+    if key in static_config:
+        return static_config[key]
+    return default
+
+
 def build_static_parameters(static_config):
     """
     Collect compile-time PIC choices for the timestep kernels.
@@ -46,6 +52,12 @@ def build_static_parameters(static_config):
     tile_shape = _tile_shape(static_config)
 
     return {
+        "name": static_config.get("name", "Default Simulation"),
+        "output_dir": static_config.get("output_dir", "."),
+        "Nt": int(static_config.get("Nt", 0)),
+        "verbose": bool(static_config.get("verbose", False)),
+        "GPUs": bool(static_config.get("GPUs", False)),
+        "benchmark": bool(static_config.get("benchmark", False)),
         "solver": static_config.get("solver", "electrodynamic_yee"),
         "electrostatic": bool(static_config.get("electrostatic", False)),
         "relativistic": bool(static_config.get("relativistic", True)),
@@ -55,6 +67,10 @@ def build_static_parameters(static_config):
         "shape_factor": int(static_config["shape_factor"]),
         "guard_cells": int(static_config["guard_cells"]),
         "tile_shape": tile_shape,
+        "particle_tile_capacity_factor": float(static_config.get("particle_tile_capacity_factor", 1.0)),
+        "particle_species_names": _copy_optional(static_config, "particle_species_names"),
+        "particle_species_metadata": _copy_optional(static_config, "particle_species_metadata"),
+        "pml_active": bool(static_config.get("pml_active", False)),
         "boundary_conditions": _axis_tuple(static_config["boundary_conditions"]),
         "particle_boundary_conditions": _axis_tuple(
             static_config.get("particle_boundary_conditions", {"x": 0, "y": 0, "z": 0})
@@ -88,6 +104,36 @@ def build_dynamic_parameters(dynamic_config, extra_dynamic_config=None):
         "kb": jnp.asarray(dynamic_config.get("kb", extra_dynamic_config.get("kb", 1.0))),
         "alpha": jnp.asarray(dynamic_config.get("alpha", extra_dynamic_config.get("alpha", 1.0))),
         "grids": dynamic_config["grids"],
+    }
+
+
+def _output_value(value):
+    if hasattr(value, "tolist"):
+        return value.tolist()
+    if isinstance(value, tuple):
+        return tuple(_output_value(entry) for entry in value)
+    if isinstance(value, list):
+        return [_output_value(entry) for entry in value]
+    if isinstance(value, dict):
+        return {key: _output_value(entry) for key, entry in value.items()}
+    return value
+
+
+def static_parameters_for_output(static_parameters):
+    skip = {"field_mesh"}
+    return {
+        key: _output_value(value)
+        for key, value in static_parameters.items()
+        if key not in skip
+    }
+
+
+def dynamic_parameters_for_output(dynamic_parameters):
+    skip = {"grids"}
+    return {
+        key: _output_value(value)
+        for key, value in dynamic_parameters.items()
+        if key not in skip
     }
 
 

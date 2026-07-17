@@ -29,15 +29,15 @@ def _is_tiled_vector(field):
     )
 
 
-def _tile_shape_from_world(world):
-    return tuple(int(width) for width in world["tile_shape"])
+def _tile_shape_from_static_parameters(static_parameters):
+    return tuple(int(width) for width in static_parameters["tile_shape"])
 
 
-def _guard_depth_from_world(world):
-    return int(world["guard_cells"])
+def _guard_depth_from_static_parameters(static_parameters):
+    return int(static_parameters["guard_cells"])
 
 
-def assemble_tiled_scalar_field(field_tiles, world, tile_shape, num_guard_cells=2):
+def assemble_tiled_scalar_field(field_tiles, static_parameters, tile_shape, num_guard_cells=2):
     """
     Assemble compact field tiles back into one global ghost-celled field.
 
@@ -75,15 +75,15 @@ def assemble_tiled_scalar_field(field_tiles, world, tile_shape, num_guard_cells=
     return field
 
 
-def assemble_tiled_vector_field(field_tiles, world, tile_shape, num_guard_cells=2):
+def assemble_tiled_vector_field(field_tiles, static_parameters, tile_shape, num_guard_cells=2):
     """
     Assemble tiled vector-field components into ordinary ghost-celled arrays.
     """
 
-    return tuple(assemble_tiled_scalar_field(component, world, tile_shape, num_guard_cells) for component in field_tiles)
+    return tuple(assemble_tiled_scalar_field(component, static_parameters, tile_shape, num_guard_cells) for component in field_tiles)
 
 
-def scalar_field_for_output(field, world):
+def scalar_field_for_output(field, static_parameters):
     """
     Return an ordinary ghost-celled scalar field for file formats.
 
@@ -94,12 +94,12 @@ def scalar_field_for_output(field, world):
     if not _is_tiled_scalar(field):
         return field
 
-    tile_shape = _tile_shape_from_world(world)
-    g = _guard_depth_from_world(world)
-    return assemble_tiled_scalar_field(field, world, tile_shape, num_guard_cells=g)
+    tile_shape = _tile_shape_from_static_parameters(static_parameters)
+    g = _guard_depth_from_static_parameters(static_parameters)
+    return assemble_tiled_scalar_field(field, static_parameters, tile_shape, num_guard_cells=g)
 
 
-def vector_field_for_output(field, world):
+def vector_field_for_output(field, static_parameters):
     """
     Return ordinary ghost-celled vector components for file formats.
     """
@@ -107,12 +107,12 @@ def vector_field_for_output(field, world):
     if not _is_tiled_vector(field):
         return field
 
-    tile_shape = _tile_shape_from_world(world)
-    g = _guard_depth_from_world(world)
-    return assemble_tiled_vector_field(field, world, tile_shape, num_guard_cells=g)
+    tile_shape = _tile_shape_from_static_parameters(static_parameters)
+    g = _guard_depth_from_static_parameters(static_parameters)
+    return assemble_tiled_vector_field(field, static_parameters, tile_shape, num_guard_cells=g)
 
 
-def fields_for_output(fields, world):
+def fields_for_output(fields, static_parameters):
     """
     Assemble tile-major fields at the I/O boundary.
 
@@ -125,14 +125,14 @@ def fields_for_output(fields, world):
     external_E, external_B = external_fields
 
     output_fields = (
-        vector_field_for_output(E, world),
-        vector_field_for_output(B, world),
-        vector_field_for_output(J, world),
-        scalar_field_for_output(rho, world),
-        scalar_field_for_output(phi, world),
+        vector_field_for_output(E, static_parameters),
+        vector_field_for_output(B, static_parameters),
+        vector_field_for_output(J, static_parameters),
+        scalar_field_for_output(rho, static_parameters),
+        scalar_field_for_output(phi, static_parameters),
         (
-            vector_field_for_output(external_E, world),
-            vector_field_for_output(external_B, world),
+            vector_field_for_output(external_E, static_parameters),
+            vector_field_for_output(external_B, static_parameters),
         ),
     )
 
@@ -157,26 +157,24 @@ def _axis_diagnostic_position(x, u, dt, wind, bc):
     return x_diagnostic
 
 
-def _diagnostic_position(x, u, world):
-    if world is None:
-        return x
-
-    particle_bc = world.get("particle_boundary_conditions", {})
-    dt = world["dt"]
-    x_diagnostic = _axis_diagnostic_position(x[:, 0], u[:, 0], dt, world["x_wind"], particle_bc.get("x", 0))
-    y_diagnostic = _axis_diagnostic_position(x[:, 1], u[:, 1], dt, world["y_wind"], particle_bc.get("y", 0))
-    z_diagnostic = _axis_diagnostic_position(x[:, 2], u[:, 2], dt, world["z_wind"], particle_bc.get("z", 0))
+def _diagnostic_position(x, u, static_parameters, dynamic_parameters):
+    particle_bc = static_parameters["particle_boundary_conditions"]
+    dt = dynamic_parameters["dt"]
+    x_diagnostic = _axis_diagnostic_position(x[:, 0], u[:, 0], dt, dynamic_parameters["x_wind"], particle_bc[0])
+    y_diagnostic = _axis_diagnostic_position(x[:, 1], u[:, 1], dt, dynamic_parameters["y_wind"], particle_bc[1])
+    z_diagnostic = _axis_diagnostic_position(x[:, 2], u[:, 2], dt, dynamic_parameters["z_wind"], particle_bc[2])
 
     return jnp.stack((x_diagnostic, y_diagnostic, z_diagnostic), axis=-1)
 
 
-def particles_for_output(particles, species_config=None, species_names=None, world=None):
+def particles_for_output(particles, species_config=None, species_names=None, static_parameters=None, dynamic_parameters=None):
     """
     Flatten fixed-capacity tiled particle storage for diagnostics.
     """
 
     if not isinstance(particles, TiledParticles):
         raise TypeError("Particle output requires TiledParticles runtime storage.")
+    use_diagnostic_positions = static_parameters is not None and dynamic_parameters is not None
 
     n_species = particles.active.shape[3]
     output_particles = []
@@ -201,7 +199,11 @@ def particles_for_output(particles, species_config=None, species_names=None, wor
                 name=name,
                 species_index=species_index,
                 x=x,
-                x_diagnostic=_diagnostic_position(x, u, world),
+                x_diagnostic=(
+                    _diagnostic_position(x, u, static_parameters, dynamic_parameters)
+                    if use_diagnostic_positions
+                    else x
+                ),
                 u=u,
                 charge=charge,
                 mass=mass,

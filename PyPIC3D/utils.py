@@ -14,6 +14,8 @@ import importlib.metadata
 from scipy import stats
 # import external libraries
 
+from PyPIC3D.parameters import dynamic_parameters_for_output, static_parameters_for_output
+
 def setup_pmd_files(file_path, name, extension=".bp"):
     """
     Set up the openPMD file structure for storing simulation data.
@@ -103,7 +105,7 @@ def convergence_test(func):
 
     return slope
 
-def compute_energy(particles, E, B, world, constants, species_config=None):
+def compute_energy(particles, E, B, static_parameters, dynamic_parameters=None, species_config=None):
     """
     Compute the total energy of the system, including electric field energy, magnetic field energy, and kinetic energy of particles.
 
@@ -111,21 +113,26 @@ def compute_energy(particles, E, B, world, constants, species_config=None):
         particles (TiledParticles): Tile-major particle storage.
         E (tuple): Electric field components (Ex, Ey, Ez).
         B (tuple): Magnetic field components (Bx, By, Bz).
-        world (dict): Dictionary containing the simulation world parameters.
-        constants (dict): Dictionary containing physical constants.
+        static_parameters (dict): Compile-time geometry and branch choices.
+        dynamic_parameters (dict): Scalar values and grids.
 
     Returns:
         None
     """
 
-    dx = world['dx']
-    dy = world['dy']
-    dz = world['dz']
+    if dynamic_parameters is None:
+        dynamic_parameters = static_parameters
+    elif "dx" not in dynamic_parameters:
+        dynamic_parameters = {**static_parameters, **dynamic_parameters}
+
+    dx = dynamic_parameters['dx']
+    dy = dynamic_parameters['dy']
+    dz = dynamic_parameters['dz']
     # get the resolution of the grid
 
-    Nx = world['Nx']
-    Ny = world['Ny']
-    Nz = world['Nz']
+    Nx = dynamic_parameters['Nx']
+    Ny = dynamic_parameters['Ny']
+    Nz = dynamic_parameters['Nz']
     # get the number of grid points in each direction
 
     def nd_trapezoid(arr, dxs):
@@ -144,7 +151,7 @@ def compute_energy(particles, E, B, world, constants, species_config=None):
     # integral.  Tiled fields have leading tile axes followed by local
     # ghost-celled Yee arrays.
     if Ex.ndim == 6:
-        g = int(world.get("guard_cells", 2))
+        g = int(static_parameters.get("guard_cells", 2))
         interior = (
             slice(None),
             slice(None),
@@ -160,10 +167,10 @@ def compute_energy(particles, E, B, world, constants, species_config=None):
     E2_integral = jnp.sum(Ex[interior]**2 + Ey[interior]**2 + Ez[interior]**2) * dV
     B2_integral = jnp.sum(Bx[interior]**2 + By[interior]**2 + Bz[interior]**2) * dV
     # Integrate E^2 and B^2 over the grid using trapezoidal rule
-    e_energy = 0.5 * constants['eps'] * E2_integral
-    b_energy = 0.5 / constants['mu'] * B2_integral
+    e_energy = 0.5 * dynamic_parameters['eps'] * E2_integral
+    b_energy = 0.5 / dynamic_parameters['mu'] * B2_integral
     # Electric and magnetic field energy
-    C = constants['C']
+    C = dynamic_parameters['C']
     # speed of light
     vx = particles.u[..., 0]
     vy = particles.u[..., 1]
@@ -310,33 +317,26 @@ def particle_sanity_check(particles):
     assert particles.active.shape == particles.x.shape[:-1]
 
 
-def print_stats(world):
+def print_stats(static_parameters, dynamic_parameters):
     """
-    Print the statistics of the simulation world.
+    Print the statistics of the simulation.
     
     Args:
-        world (dict): A dictionary containing the following keys:
-            - 'Nt' (int): Number of time steps.
-            - 'dx' (float): Resolution in the x-direction.
-            - 'dy' (float): Resolution in the y-direction.
-            - 'dz' (float): Resolution in the z-direction.
-            - 'dt' (float): Time step size.
-            - 'x_wind' (float): Size of the window in the x-direction.
-            - 'y_wind' (float): Size of the window in the y-direction.
-            - 'z_wind' (float): Size of the window in the z-direction.
+        static_parameters (dict): Compile-time run settings.
+        dynamic_parameters (dict): Spatial and temporal scalar values.
         
     Prints:
         The time window, x window, y window, z window, and resolution details (dx, dy, dz, dt, Nt).
     """
 
-    Nt = world['Nt']
-    dx = world['dx']
-    dy = world['dy']
-    dz = world['dz']
-    dt = world['dt']
-    x_wind = world['x_wind']
-    y_wind = world['y_wind']
-    z_wind = world['z_wind']
+    Nt = static_parameters['Nt']
+    dx = dynamic_parameters['dx']
+    dy = dynamic_parameters['dy']
+    dz = dynamic_parameters['dz']
+    dt = dynamic_parameters['dt']
+    x_wind = dynamic_parameters['x_wind']
+    y_wind = dynamic_parameters['y_wind']
+    z_wind = dynamic_parameters['z_wind']
     t_wind = Nt*dt
     print(f'\ntime window: {t_wind} s with {Nt} time steps of {dt} s')
     print(f'x window: {x_wind} m with dx: {dx} m')
@@ -386,13 +386,13 @@ def check_stability(plasma_parameters, dt):
     print(f"Number of Electrons: {num_electrons}\n")
 
 
-def build_plasma_parameters_dict(world, constants, electrons, dt):
+def build_plasma_parameters_dict(static_parameters, dynamic_parameters, electrons):
     """
     Build a dictionary containing various plasma parameters.
 
     Args:
-        world (dict): A dictionary containing the spatial resolution and wind parameters.
-        constants (dict): A dictionary containing physical constants.
+        static_parameters (dict): Compile-time run settings.
+        dynamic_parameters (dict): Scalar values and grids.
         electrons (dict): Metadata for the electron species from particle initialization.
         dt (float): Time step of the simulation.
 
@@ -405,13 +405,13 @@ def build_plasma_parameters_dict(world, constants, electrons, dt):
     N = electrons["N_particles"]
     q = electrons["charge"]
     weight = electrons["weight"]
-    kb = constants['kb']
-    dx, dy, dz = world['dx'], world['dy'], world['dz']
+    kb = dynamic_parameters['kb']
+    dx, dy, dz = dynamic_parameters['dx'], dynamic_parameters['dy'], dynamic_parameters['dz']
 
-    volume = world["x_wind"] * world["y_wind"] * world["z_wind"]
+    volume = dynamic_parameters["x_wind"] * dynamic_parameters["y_wind"] * dynamic_parameters["z_wind"]
     density = weight * N / volume
-    theoretical_freq = jnp.sqrt(density) * jnp.abs(q) / jnp.sqrt(constants["eps"] * me)
-    debye = jnp.sqrt(constants["eps"] * kb * Te / (density * q**2))
+    theoretical_freq = jnp.sqrt(density) * jnp.abs(q) / jnp.sqrt(dynamic_parameters["eps"] * me)
+    debye = jnp.sqrt(dynamic_parameters["eps"] * kb * Te / (density * q**2))
     thermal_velocity = jnp.sqrt(3*kb*Te/me)
 
     plasma_parameters = {
@@ -510,15 +510,15 @@ def grab_field_keys(config):
             field_keys.append(key)
     return field_keys
 
-def _add_external_field_to_tiled_component(component, external_field, world, field_name):
+def _add_external_field_to_tiled_component(component, external_field, static_parameters, dynamic_parameters, field_name):
     """
     Add one physical field array into the active interiors of a tiled component.
     """
 
-    tile_nx, tile_ny, tile_nz = [int(width) for width in world["tile_shape"]]
-    g = int(world["guard_cells"])
+    tile_nx, tile_ny, tile_nz = [int(width) for width in static_parameters["tile_shape"]]
+    g = int(static_parameters["guard_cells"])
     ntx, nty, ntz = component.shape[:3]
-    interior_shape = (int(world["Nx"]), int(world["Ny"]), int(world["Nz"]))
+    interior_shape = (int(dynamic_parameters["Nx"]), int(dynamic_parameters["Ny"]), int(dynamic_parameters["Nz"]))
     if external_field.shape != interior_shape:
         raise ValueError(
             f"Shape mismatch for field '{field_name}': external field shape {external_field.shape} "
@@ -542,7 +542,7 @@ def _add_external_field_to_tiled_component(component, external_field, world, fie
     return component
 
 
-def load_external_fields_from_toml(fields, external_fields, config, world):
+def load_external_fields_from_toml(fields, external_fields, config, static_parameters, dynamic_parameters):
     """
     Load external fields from a TOML file.
 
@@ -550,7 +550,8 @@ def load_external_fields_from_toml(fields, external_fields, config, world):
         fields (list): Flattened list of evolved E, B, and J field components.
         external_fields (tuple): External-only E and B field tuples.
         config (dict): Dictionary containing the configuration values.
-        world (dict): Simulation world with tiled field geometry.
+        static_parameters (dict): Tile shape and guard-cell depth.
+        dynamic_parameters (dict): Grid size and scalar values.
 
     Returns:
         tuple: Updated evolved fields list and external field tuple.
@@ -577,7 +578,8 @@ def load_external_fields_from_toml(fields, external_fields, config, world):
             fields[field_type] = _add_external_field_to_tiled_component(
                 fields[field_type],
                 external_field,
-                world,
+                static_parameters,
+                dynamic_parameters,
                 field_name,
             )
         else:
@@ -588,7 +590,8 @@ def load_external_fields_from_toml(fields, external_fields, config, world):
                 external_E[field_type] = _add_external_field_to_tiled_component(
                     external_E[field_type],
                     external_field,
-                    world,
+                    static_parameters,
+                    dynamic_parameters,
                     field_name,
                 )
                 external_E = tuple(external_E)
@@ -598,7 +601,8 @@ def load_external_fields_from_toml(fields, external_fields, config, world):
                 external_B[b_index] = _add_external_field_to_tiled_component(
                     external_B[b_index],
                     external_field,
-                    world,
+                    static_parameters,
+                    dynamic_parameters,
                     field_name,
                 )
                 external_B = tuple(external_B)
@@ -619,65 +623,64 @@ def debugprint(value):
     """
     jax.debug.print('{x}', x=value)
 
-def update_parameters_from_toml(config, simulation_parameters, plotting_parameters, constants):
+def update_parameters_from_toml(config, static_parameters, dynamic_parameters, plotting_parameters):
     """
-    Update the simulation parameters with values from a TOML config file.
+    Update run parameters with values from a TOML config file.
 
     Args:
         config (dict): Dictionary containing the configuration values.
-        simulation_parameters (dict): Dictionary of default simulation parameters.
+        static_parameters (dict): Dictionary of default compile-time/run parameters.
+        dynamic_parameters (dict): Dictionary of default scalar/grid parameters.
         plotting_parameters (dict): Dictionary of default plotting parameters.
 
     Returns:
-        tuple: Updated simulation parameters and plotting parameters.
+        tuple: Updated static, dynamic, and plotting parameters.
     """
 
-    # Update the simulation parameters with values from the config file
-    for key, value in config["simulation_parameters"].items():
-        if key in simulation_parameters:
-            simulation_parameters[key] = value
+    for key, value in config.get("static_parameters", {}).items():
+        if key in static_parameters:
+            static_parameters[key] = value
 
-    for key, value in config["plotting"].items():
+    for key, value in config.get("dynamic_parameters", {}).items():
+        if key in dynamic_parameters:
+            dynamic_parameters[key] = value
+
+    for key, value in config.get("plotting", {}).items():
         if key in plotting_parameters:
             plotting_parameters[key] = value
 
-    if "constants" in config:
-        for key, value in config["constants"].items():
-            if key in constants:
-                constants[key] = value
+    return static_parameters, dynamic_parameters, plotting_parameters
 
-    return simulation_parameters, plotting_parameters, constants
-
-def dump_parameters_to_toml(simulation_stats, simulation_parameters, plasma_parameters, plotting_parameters, constants, particles):
+def dump_parameters_to_toml(simulation_stats, static_parameters, dynamic_parameters, plasma_parameters, plotting_parameters, particles):
     """
-    Dump the simulation, plotting parameters, and particle species into an output TOML file.
+    Dump run, plotting, and particle species data into an output TOML file.
 
     Args:
         simulation_stats (dict): Dictionary of simulation statistics.
-        simulation_parameters (dict): Dictionary of simulation parameters.
+        static_parameters (dict): Compile-time/run parameters.
+        dynamic_parameters (dict): Scalar/grid parameters.
         plotting_parameters (dict): Dictionary of plotting parameters.
-        constants (dict): Dictionary of constants.
         particles (TiledParticles): Tile-major particle storage.
     """
 
-    output_path = simulation_parameters["output_dir"]
+    output_path = static_parameters["output_dir"]
     output_file = os.path.join(output_path, "data/output.toml")
 
     config = {
         "simulation_stats": simulation_stats,
-        "simulation_parameters": jax.tree_util.tree_map(lambda x: x.tolist() if isinstance(x, jnp.ndarray) else x, simulation_parameters),
+        "static_parameters": static_parameters_for_output(static_parameters),
+        "dynamic_parameters": dynamic_parameters_for_output(dynamic_parameters),
         'plasma_parameters': jax.tree_util.tree_map(lambda x: x.tolist() if isinstance(x, jnp.ndarray) else x, plasma_parameters),
         "plotting": jax.tree_util.tree_map(lambda x: x.tolist() if isinstance(x, jnp.ndarray) else x, plotting_parameters),
-        "constants": jax.tree_util.tree_map(lambda x: x.tolist() if isinstance(x, jnp.ndarray) else x, constants),
         "particles": []
     }
 
     n_species = particles.active.shape[3]
-    species_names = simulation_parameters.get("particle_species_names")
-    species_metadata = simulation_parameters.get("particle_species_metadata")
+    species_names = static_parameters.get("particle_species_names")
+    species_metadata = static_parameters.get("particle_species_metadata")
     tile_shape = jax.tree_util.tree_map(
         lambda x: x.tolist() if isinstance(x, jnp.ndarray) else x,
-        simulation_parameters.get("tile_shape", ()),
+        static_parameters.get("tile_shape", ()),
     )
 
     for species_index in range(n_species):
@@ -718,10 +721,10 @@ def dump_parameters_to_toml(simulation_stats, simulation_parameters, plasma_para
     config["package_versions"] = package_versions
 
     # print("Simulation Stats:", simulation_stats)
-    # print("Simulation Parameters:", simulation_parameters)
+    # print("Static Parameters:", static_parameters)
+    # print("Dynamic Parameters:", dynamic_parameters)
     # print("Plasma Parameters:", plasma_parameters)
     # print("Plotting Parameters:", plotting_parameters)
-    # print("Constants:", constants)
 
     with open(output_file, 'w') as f:
         toml.dump(config, f)
@@ -749,7 +752,7 @@ def interpolate_field(field, grid, x, y, z):
     return interpolate(points)
 
 
-def courant_condition(courant_number, dx, dy, dz, simulation_parameters, constants):
+def courant_condition(courant_number, dx, dy, dz, dynamic_parameters):
     """
     Calculate the Courant condition for a given grid spacing and wave speed.
 
@@ -766,12 +769,12 @@ def courant_condition(courant_number, dx, dy, dz, simulation_parameters, constan
         float: The maximum allowable time step for stability.
     """
 
-    C = constants['C']
+    C = dynamic_parameters['C']
 
 
-    Nx = simulation_parameters["Nx"]
-    Ny = simulation_parameters["Ny"]
-    Nz = simulation_parameters["Nz"]
+    Nx = dynamic_parameters["Nx"]
+    Ny = dynamic_parameters["Ny"]
+    Nz = dynamic_parameters["Nz"]
     # get the number of grid points in each direction
     Ns  = [Nx, Ny, Nz]
     dxs = [dx, dy, dz]

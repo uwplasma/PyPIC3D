@@ -30,20 +30,8 @@ class TestStaticDynamicParameterCutover(unittest.TestCase):
         self.assertFalse(hasattr(parameters, "static_parameters_from_world"))
         self.assertFalse(hasattr(parameters, "dynamic_parameters_from_world"))
 
-    def test_jit_kernel_path_has_no_world_constants_contract(self):
-        kernel_paths = [
-            "PyPIC3D/evolve.py",
-            "PyPIC3D/parameters.py",
-            "PyPIC3D/deposition/J_from_rhov.py",
-            "PyPIC3D/deposition/Esirkepov.py",
-            "PyPIC3D/deposition/rho.py",
-            "PyPIC3D/pusher/particle_push.py",
-            "PyPIC3D/pusher/boris.py",
-            "PyPIC3D/pusher/higuera_cary.py",
-            "PyPIC3D/particles/particle_tile_communication.py",
-            "PyPIC3D/solvers/first_order_yee.py",
-            "PyPIC3D/solvers/electrostatic_yee.py",
-        ]
+    def test_production_path_has_no_world_constants_contract(self):
+        production_paths = sorted((REPO_ROOT / "PyPIC3D").rglob("*.py"))
         forbidden = (
             "world",
             "constants",
@@ -54,10 +42,10 @@ class TestStaticDynamicParameterCutover(unittest.TestCase):
             "dynamic_parameters_from_world",
         )
 
-        for relative_path in kernel_paths:
-            source = (REPO_ROOT / relative_path).read_text()
+        for path in production_paths:
+            source = path.read_text()
             for word in forbidden:
-                with self.subTest(path=relative_path, word=word):
+                with self.subTest(path=str(path.relative_to(REPO_ROOT)), word=word):
                     self.assertNotIn(word, source)
 
 

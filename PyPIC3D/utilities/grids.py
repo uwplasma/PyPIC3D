@@ -12,20 +12,20 @@ def _tile_axis_count(n_cells, cells_per_tile):
     return int(n_cells) // int(cells_per_tile)
 
 
-def build_collocated_grid(world):
+def build_collocated_grid(dynamic_parameters):
     """
     Build the collocated vertex/center grid including one ghost cell per side.
     """
 
-    dx = world["dx"]
-    dy = world["dy"]
-    dz = world["dz"]
-    x_wind = world["x_wind"]
-    y_wind = world["y_wind"]
-    z_wind = world["z_wind"]
-    Nx = world["Nx"]
-    Ny = world["Ny"]
-    Nz = world["Nz"]
+    dx = dynamic_parameters["dx"]
+    dy = dynamic_parameters["dy"]
+    dz = dynamic_parameters["dz"]
+    x_wind = dynamic_parameters["x_wind"]
+    y_wind = dynamic_parameters["y_wind"]
+    z_wind = dynamic_parameters["z_wind"]
+    Nx = dynamic_parameters["Nx"]
+    Ny = dynamic_parameters["Ny"]
+    Nz = dynamic_parameters["Nz"]
 
     grid = (
         build_collocated_axis(-x_wind / 2, dx, Nx),
@@ -36,20 +36,20 @@ def build_collocated_grid(world):
     return grid, grid
 
 
-def build_yee_grid(world):
+def build_yee_grid(dynamic_parameters):
     """
     Build the Yee vertex and center grids including one ghost cell per side.
     """
 
-    dx = world["dx"]
-    dy = world["dy"]
-    dz = world["dz"]
-    x_wind = world["x_wind"]
-    y_wind = world["y_wind"]
-    z_wind = world["z_wind"]
-    Nx = world["Nx"]
-    Ny = world["Ny"]
-    Nz = world["Nz"]
+    dx = dynamic_parameters["dx"]
+    dy = dynamic_parameters["dy"]
+    dz = dynamic_parameters["dz"]
+    x_wind = dynamic_parameters["x_wind"]
+    y_wind = dynamic_parameters["y_wind"]
+    z_wind = dynamic_parameters["z_wind"]
+    Nx = dynamic_parameters["Nx"]
+    Ny = dynamic_parameters["Ny"]
+    Nz = dynamic_parameters["Nz"]
 
     vertex_grid = (
         build_collocated_axis(-x_wind / 2, dx, Nx),
@@ -65,17 +65,17 @@ def build_yee_grid(world):
     return vertex_grid, center_grid
 
 
-def _tile_grid_axis(global_axis_grid, world, tile_shape, tile_counts, axis_index, num_guard_cells):
+def _tile_grid_axis(global_axis_grid, dynamic_parameters, tile_shape, tile_counts, axis_index, num_guard_cells):
     tile_width = int(tile_shape[axis_index])
     tile_count = int(tile_counts[axis_index])
     g = int(num_guard_cells)
 
     if axis_index == 0:
-        d = world["dx"]
+        d = dynamic_parameters["dx"]
     elif axis_index == 1:
-        d = world["dy"]
+        d = dynamic_parameters["dy"]
     else:
-        d = world["dz"]
+        d = dynamic_parameters["dz"]
 
     offsets = jnp.arange(tile_width + 2 * g, dtype=global_axis_grid.dtype)
     tile_indices = jnp.arange(tile_count, dtype=global_axis_grid.dtype)
@@ -90,7 +90,7 @@ def _tile_grid_axis(global_axis_grid, world, tile_shape, tile_counts, axis_index
     return jnp.broadcast_to(axis_lines.reshape(axis_shape), tiled_shape)
 
 
-def _tile_grid_axes(grid, world, tile_shape, num_guard_cells=2):
+def _tile_grid_axes(grid, dynamic_parameters, tile_shape, num_guard_cells=2):
     """
     Build tile-local coordinate lines for a center or vertex grid.
     """
@@ -106,30 +106,39 @@ def _tile_grid_axes(grid, world, tile_shape, num_guard_cells=2):
     )
 
     return tuple(
-        _tile_grid_axis(grid[axis], world, tile_shape, tile_counts, axis, num_guard_cells)
+        _tile_grid_axis(grid[axis], dynamic_parameters, tile_shape, tile_counts, axis, num_guard_cells)
         for axis in range(3)
     )
 
 
-def build_tiled_yee_grids(world, tile_shape=None, num_guard_cells=None):
+def build_tiled_yee_grids(static_parameters, dynamic_parameters=None, tile_shape=None, num_guard_cells=None):
     """
-    Build the tiled vertex and center grids from the untiled grids in world.
+    Build the tiled vertex and center grids from the untiled grids.
     """
+
+    if dynamic_parameters is not None and not isinstance(dynamic_parameters, dict):
+        requested_tile_shape = dynamic_parameters
+        requested_guard_cells = tile_shape
+        dynamic_parameters = static_parameters
+        tile_shape = requested_tile_shape
+        num_guard_cells = requested_guard_cells
+    if dynamic_parameters is None:
+        dynamic_parameters = static_parameters
 
     if tile_shape is None:
-        tile_shape = tuple(int(width) for width in world["tile_shape"])
+        tile_shape = tuple(int(width) for width in static_parameters["tile_shape"])
     if num_guard_cells is None:
-        num_guard_cells = int(world["guard_cells"])
+        num_guard_cells = int(static_parameters["guard_cells"])
 
     tiled_vertex_grid = _tile_grid_axes(
-        world["grids"]["vertex"],
-        world,
+        dynamic_parameters["grids"]["vertex"],
+        dynamic_parameters,
         tile_shape,
         num_guard_cells=num_guard_cells,
     )
     tiled_center_grid = _tile_grid_axes(
-        world["grids"]["center"],
-        world,
+        dynamic_parameters["grids"]["center"],
+        dynamic_parameters,
         tile_shape,
         num_guard_cells=num_guard_cells,
     )
