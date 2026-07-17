@@ -57,41 +57,32 @@ def run_PyPIC3D(config_file):
     dt = world['dt']
     output_dir = simulation_parameters['output_dir']
     particle_species_names = simulation_parameters.get("particle_species_names")
+    static_parameters = simulation_parameters["static_parameters"]
+    dynamic_parameters = simulation_parameters["dynamic_parameters"]
 
-    def loop_with_static_world(
+    def loop_with_static_parameters(
         particles,
         species_config,
         fields,
-        constants,
-        solver,
-        relativistic=True,
-        particle_pusher="boris",
+        dynamic_parameters,
     ):
         if electrostatic:
             return loop(
                 particles,
                 species_config,
                 fields,
-                world,
-                constants,
-                solver,
-                relativistic=relativistic,
-                particle_pusher=particle_pusher,
+                static_parameters,
+                dynamic_parameters,
             )
         return loop(
             particles,
             species_config,
             fields,
-            world,
-            constants,
-            relativistic=relativistic,
-            particle_pusher=particle_pusher,
+            static_parameters,
+            dynamic_parameters,
         )
 
-    jit_loop = jax.jit(
-        loop_with_static_world,
-        static_argnames=('solver', 'relativistic', 'particle_pusher'),
-    )
+    jit_loop = jax.jit(loop_with_static_parameters)
 
     E, B, J, rho, phi, external_fields, *rest = fields
     # unpack the fields
@@ -176,10 +167,7 @@ def run_PyPIC3D(config_file):
                 particles,
                 species_config,
                 fields,
-                constants,
-                solver,
-                relativistic=relativistic,
-                particle_pusher=particle_pusher,
+                dynamic_parameters,
             )
             # time loop to update the particles and fields
             _raise_if_tiled_particles_overflowed(fields, simulation_parameters)
@@ -250,7 +238,10 @@ def main():
         "time_per_iteration": duration / Nt
     }
 
-    dump_parameters_to_toml(simulation_stats, simulation_parameters, plasma_parameters, plotting_parameters, constants, particles)
+    simulation_parameters_for_output = dict(simulation_parameters)
+    simulation_parameters_for_output.pop("static_parameters", None)
+    simulation_parameters_for_output.pop("dynamic_parameters", None)
+    dump_parameters_to_toml(simulation_stats, simulation_parameters_for_output, plasma_parameters, plotting_parameters, constants, particles)
     # save the parameters to an output file
 
     print(f"\nSimulation Complete")

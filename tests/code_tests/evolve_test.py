@@ -8,6 +8,7 @@ from PyPIC3D.evolve import (
     time_loop_electrostatic,
 )
 from PyPIC3D.initialization import initialize_fields
+from PyPIC3D.parameters import build_dynamic_parameters, build_static_parameters
 from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 
@@ -130,6 +131,63 @@ class TestEvolveExternalFields(unittest.TestCase):
         # ensure the particle has gained velocity in the x-direction due to the external electric field, and has not gained velocity in the y or z directions
         self.assertTrue(jnp.allclose(external_after[0][0], external_fields[0][0]))
         # ensure the external electric field has not changed after the time step
+
+    def test_electrodynamic_step_accepts_split_kernel_parameters(self):
+        world = {
+            "Nx": 3,
+            "Ny": 1,
+            "Nz": 1,
+            "dx": 1.0 / 3.0,
+            "dy": 1.0,
+            "dz": 1.0,
+            "dt": 0.1,
+            "x_wind": 1.0,
+            "y_wind": 1.0,
+            "z_wind": 1.0,
+            "shape_factor": 1,
+            "current_deposition": "direct",
+            "current_filter": "none",
+            "boundary_conditions": {"x": 0, "y": 0, "z": 0},
+            "particle_boundary_conditions": {"x": 0, "y": 0, "z": 0},
+        }
+        center_grid, vertex_grid = build_yee_grid(world)
+        world["grids"] = {"center": center_grid, "vertex": vertex_grid}
+        constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
+
+        tile_shape = (world["Nx"], world["Ny"], world["Nz"])
+        world["guard_cells"] = 2
+        add_tiled_grids_to_world(world, tile_shape)
+        E, B, J, phi, rho = initialize_fields(world)
+        external_fields = (
+            tuple(jnp.zeros_like(comp) for comp in E),
+            tuple(jnp.zeros_like(comp) for comp in B),
+        )
+        fields = (E, B, J, rho, phi, external_fields, None, jnp.asarray(False))
+        tiled_particles, species_config = one_slot_tiled_particles(
+            x=jnp.array([0.0, 0.0, 0.0]),
+            u=jnp.array([0.05, 0.0, 0.0]),
+        )
+        static_parameters = build_static_parameters(
+            world,
+            solver="electrodynamic_yee",
+            electrostatic=False,
+            relativistic=False,
+            particle_pusher="boris",
+        )
+        dynamic_parameters = build_dynamic_parameters(world, constants)
+
+        step = jax.jit(lambda particles, fields, dynamic: time_loop_electrodynamic(
+            particles,
+            species_config,
+            fields,
+            static_parameters,
+            dynamic,
+        ))
+        tiled_particles, fields = step(tiled_particles, fields, dynamic_parameters)
+
+        self.assertFalse(bool(fields[-1]))
+        self.assertTrue(jnp.all(tiled_particles.active))
+        self.assertGreater(float(tiled_particles.x[0, 0, 0, 0, 0, 0]), 0.0)
 
     def test_absorbing_particle_mask_survives_jitted_electrodynamic_step(self):
         world = {

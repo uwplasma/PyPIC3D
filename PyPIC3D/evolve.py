@@ -9,6 +9,11 @@ import jax
 
 from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
+from PyPIC3D.parameters import (
+    constants_from_parameters,
+    kernel_parameters_from_inputs,
+    world_from_parameters,
+)
 from PyPIC3D.particles.particle_tile_communication import (
     refresh_tiled_particle_tiles,
     update_tiled_particle_positions,
@@ -33,8 +38,8 @@ def time_loop_electrodynamic(
     particles,
     species_config,
     fields,
-    world,
-    constants,
+    static_parameters,
+    dynamic_parameters,
     relativistic=True,
     particle_pusher="boris",
 ):
@@ -44,6 +49,18 @@ def time_loop_electrodynamic(
 
     E, B, J, rho, phi, external_fields, pml_state, overflow_previous = fields
     # unpack the tiled field state
+
+    static_parameters, dynamic_parameters = kernel_parameters_from_inputs(
+        static_parameters,
+        dynamic_parameters,
+        relativistic=relativistic,
+        particle_pusher=particle_pusher,
+    )
+    world = world_from_parameters(static_parameters, dynamic_parameters)
+    constants = constants_from_parameters(dynamic_parameters)
+    relativistic = static_parameters["relativistic"]
+    particle_pusher = static_parameters["particle_pusher"]
+    # unpack the split kernel parameters into the local numerical notation
 
     tile_shape = tuple(int(width) for width in world["tile_shape"])
     particle_world = _particle_kernel_world(world)
@@ -101,12 +118,10 @@ def time_loop_electrodynamic(
         return particles, J_tiles, overflow
     # if the Esirkepov deposition method is selected, first deposit current into the tiled J arrays, then refresh the particle tiles
 
-    particles, J, overflow = jax.lax.cond(
-        world["current_deposition"] == "esirkepov",
-        esirkepov_deposition_step,
-        direct_deposition_step,
-        (particles, J, overflow_previous),
-    )
+    if static_parameters["current_deposition"] == "esirkepov":
+        particles, J, overflow = esirkepov_deposition_step((particles, J, overflow_previous))
+    else:
+        particles, J, overflow = direct_deposition_step((particles, J, overflow_previous))
     # deposit current into the tiled J arrays using the selected deposition method
 
     E, pml_state = update_E(E, B, J, world, constants, pml_state)
@@ -127,9 +142,9 @@ def time_loop_electrostatic(
     particles,
     species_config,
     fields,
-    world,
-    constants,
-    solver,
+    static_parameters,
+    dynamic_parameters,
+    solver=None,
     relativistic=True,
     particle_pusher="boris",
 ):
@@ -144,6 +159,20 @@ def time_loop_electrostatic(
 
     E_tiles, B_tiles, J_tiles, rho_tiles, phi_tiles, external_fields, pml_state, overflow_previous = fields
     # unpack the tiled field state
+
+    static_parameters, dynamic_parameters = kernel_parameters_from_inputs(
+        static_parameters,
+        dynamic_parameters,
+        solver="electrostatic" if solver is None else solver,
+        electrostatic=True,
+        relativistic=relativistic,
+        particle_pusher=particle_pusher,
+    )
+    world = world_from_parameters(static_parameters, dynamic_parameters)
+    constants = constants_from_parameters(dynamic_parameters)
+    relativistic = static_parameters["relativistic"]
+    particle_pusher = static_parameters["particle_pusher"]
+    # unpack the split kernel parameters into the local numerical notation
 
     tile_shape = tuple(int(width) for width in world["tile_shape"])
     particle_world = _particle_kernel_world(world)

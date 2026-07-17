@@ -10,6 +10,11 @@ from PyPIC3D.boundary_conditions.ghost_cells import (
     fold_tiled_vector_ghost_cells,
     update_tiled_vector_ghost_cells,
 )
+from PyPIC3D.parameters import (
+    constants_from_parameters,
+    kernel_parameters_from_inputs,
+    world_from_parameters,
+)
 
 from PyPIC3D.utilities.filters import (
     bilinear_filter_vector,
@@ -37,6 +42,13 @@ def J_from_rhov(
 ):
     """Compute tile-local direct current from centered tiled particles."""
 
+
+    if world is not None and "tile_shape" not in world and "tile_shape" in constants:
+        static_parameters, dynamic_parameters = kernel_parameters_from_inputs(constants, world)
+        world = world_from_parameters(static_parameters, dynamic_parameters)
+        constants = constants_from_parameters(dynamic_parameters)
+        if filter is None:
+            filter = static_parameters["current_filter"]
 
     tile_shape = tuple(int(width) for width in world["tile_shape"])
     g = int(world["guard_cells"])

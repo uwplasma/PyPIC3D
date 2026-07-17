@@ -1,6 +1,11 @@
 import jax
 import jax.numpy as jnp
 
+from PyPIC3D.parameters import (
+    constants_from_parameters,
+    kernel_parameters_from_inputs,
+    world_from_parameters,
+)
 from PyPIC3D.particles.particle_class import TiledParticles
 from PyPIC3D.pusher.boris import (
     boris_single_particle,
@@ -18,6 +23,17 @@ def particle_push(particles, species_config, E_tiles, B_tiles, world, constants,
     position.  The configured field halos on each compact tile provide the
     neighboring Yee data needed by the interpolation stencil near tile faces.
     """
+
+    static_parameters, dynamic_parameters = kernel_parameters_from_inputs(
+        world,
+        constants,
+        relativistic=relativistic,
+        particle_pusher=particle_pusher,
+    )
+    world = world_from_parameters(static_parameters, dynamic_parameters)
+    constants = constants_from_parameters(dynamic_parameters)
+    relativistic = static_parameters["relativistic"]
+    particle_pusher = static_parameters["particle_pusher"]
 
     tile_shape = tuple(int(width) for width in world["tile_shape"])
     tile_nx, tile_ny, tile_nz = tile_shape
@@ -104,22 +120,20 @@ def particle_push(particles, species_config, E_tiles, B_tiles, world, constants,
         )
 
         if particle_pusher == "boris":
-            new_vx, new_vy, new_vz = jax.lax.cond(
-                relativistic,
-                lambda _: relativistic_boris_vmap(
+            if relativistic:
+                new_vx, new_vy, new_vz = relativistic_boris_vmap(
                     vx, vy, vz,
                     efield_atx, efield_aty, efield_atz,
                     bfield_atx, bfield_aty, bfield_atz,
                     q, m, dt, constants,
-                ),
-                lambda _: boris_vmap(
+                )
+            else:
+                new_vx, new_vy, new_vz = boris_vmap(
                     vx, vy, vz,
                     efield_atx, efield_aty, efield_atz,
                     bfield_atx, bfield_aty, bfield_atz,
                     q, m, dt, constants,
-                ),
-                operand=None,
-            )
+                )
         elif particle_pusher == "higuera_cary":
             new_vx, new_vy, new_vz = higuera_cary_vmap(
                 vx, vy, vz,

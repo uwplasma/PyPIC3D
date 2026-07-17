@@ -4,6 +4,11 @@ from jax import lax
 from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.utilities.filters import digital_filter
 from PyPIC3D.boundary_conditions import ghost_cells
+from PyPIC3D.parameters import (
+    constants_from_parameters,
+    kernel_parameters_from_inputs,
+    world_from_parameters,
+)
 
 
 def _active_slice(g):
@@ -63,6 +68,11 @@ def solve_poisson_with_conjugate_gradient(rho, phi, constants, world, tol=1e-12,
     Returns:
         ndarray: Electrostatic potential field with shape (Nx+2*g, Ny+2*g, Nz+2*g).
     """
+    if "tile_shape" not in world and "tile_shape" in constants:
+        static_parameters, dynamic_parameters = kernel_parameters_from_inputs(constants, world, solver="electrostatic", electrostatic=True)
+        world = world_from_parameters(static_parameters, dynamic_parameters)
+        constants = constants_from_parameters(dynamic_parameters)
+
     dx = world['dx']
     dy = world['dy']
     dz = world['dz']
@@ -235,6 +245,11 @@ def calculate_tiled_electrostatic_fields(world, particles, species_config, const
     on ``rho_tiles[0, 0, 0]`` and ``phi_tiles[0, 0, 0]`` without assembling a
     separate global representation.
     """
+
+    if "tile_shape" not in constants and "tile_shape" in world:
+        static_parameters, dynamic_parameters = kernel_parameters_from_inputs(world, constants, solver="electrostatic", electrostatic=True)
+        world = world_from_parameters(static_parameters, dynamic_parameters)
+        constants = constants_from_parameters(dynamic_parameters)
 
     tile_shape = tuple(int(width) for width in world["tile_shape"])
     g = int(world["guard_cells"])

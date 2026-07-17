@@ -3,6 +3,11 @@ from PyPIC3D.boundary_conditions.PML import (
     apply_tiled_pml_to_e_curl,
 )
 from PyPIC3D.boundary_conditions import ghost_cells
+from PyPIC3D.parameters import (
+    constants_from_parameters,
+    kernel_parameters_from_inputs,
+    world_from_parameters,
+)
 from PyPIC3D.utilities.filters import digital_filter_vector
 
 
@@ -13,6 +18,10 @@ def update_E(E_tiles, B_tiles, J_tiles, world, constants, pml_state=None):
     The Yee curl is evaluated on each tile's physical interior after B halos
     have been refreshed from neighbor tiles or field boundary conditions.
     """
+
+    static_parameters, dynamic_parameters = kernel_parameters_from_inputs(world, constants)
+    world = world_from_parameters(static_parameters, dynamic_parameters)
+    constants = constants_from_parameters(dynamic_parameters)
 
     Ex, Ey, Ez = E_tiles
     tile_shape = tuple(int(width) for width in world["tile_shape"])
@@ -85,6 +94,10 @@ def update_B(E_tiles, B_tiles, world, constants, pml_state=None):
     The Yee curl is evaluated on each tile's physical interior after E halos
     have been refreshed from neighbor tiles or field boundary conditions.
     """
+
+    static_parameters, dynamic_parameters = kernel_parameters_from_inputs(world, constants)
+    world = world_from_parameters(static_parameters, dynamic_parameters)
+    constants = constants_from_parameters(dynamic_parameters)
 
     Bx, By, Bz = B_tiles
     tile_shape = tuple(int(width) for width in world["tile_shape"])

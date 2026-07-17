@@ -52,6 +52,7 @@ from PyPIC3D.boundary_conditions.PML import (
     initialize_tiled_pml_state,
     load_pml_from_toml,
 )
+from PyPIC3D.parameters import build_dynamic_parameters, build_static_parameters
 
 
 def _encode_field_bc(bc_name):
@@ -559,6 +560,18 @@ def initialize_simulation(toml_file):
             species_config = jax.device_put(species_config, jax.devices("gpu")[0])
     # put the particles on the GPU if GPUs are enabled
 
+    static_parameters = build_static_parameters(
+        world,
+        solver=solver,
+        electrostatic=electrostatic,
+        relativistic=relativistic,
+        particle_pusher=particle_pusher,
+    )
+    dynamic_parameters = build_dynamic_parameters(world, constants)
+    simulation_parameters["static_parameters"] = static_parameters
+    simulation_parameters["dynamic_parameters"] = dynamic_parameters
+    # The jitted kernels use these split parameter groups.  The legacy world
+    # and constants dictionaries remain available to diagnostics and output.
 
     return evolve_loop, particles, fields, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, \
         solver, electrostatic, verbose, GPUs, Nt, relativistic, particle_pusher, species_config

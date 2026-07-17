@@ -8,6 +8,11 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
 )
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.boundary_conditions.ghost_cells import update_tiled_vector_ghost_cells
+from PyPIC3D.parameters import (
+    constants_from_parameters,
+    kernel_parameters_from_inputs,
+    world_from_parameters,
+)
 from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
 
 
@@ -214,6 +219,13 @@ def Esirkepov_current(
     predicted locally as ``x + u*dt``. Particle retile ownership is applied by
     the caller after deposition.
     """
+
+    if "tile_shape" not in world and "tile_shape" in constants:
+        static_parameters, dynamic_parameters = kernel_parameters_from_inputs(constants, world)
+        world = world_from_parameters(static_parameters, dynamic_parameters)
+        constants = constants_from_parameters(dynamic_parameters)
+        if filter is None:
+            filter = static_parameters["current_filter"]
 
     if not isinstance(particles, TiledParticles):
         raise ValueError("Public Esirkepov_current requires TiledParticles.")
