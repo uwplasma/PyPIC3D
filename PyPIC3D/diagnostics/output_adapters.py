@@ -1,5 +1,7 @@
-import jax.numpy as jnp
 from typing import NamedTuple
+
+import jax
+import jax.numpy as jnp
 
 from PyPIC3D.particles.particle_class import TiledParticles
 
@@ -38,8 +40,13 @@ def _guard_depth_from_world(world):
 def assemble_tiled_scalar_field(field_tiles, world, tile_shape, num_guard_cells=2):
     """
     Assemble compact field tiles back into one global ghost-celled field.
+
+    This is a diagnostic/output boundary.  Distributed runtime fields may be
+    sharded across devices, so gather them here before constructing the
+    ordinary global array expected by tests and file writers.
     """
 
+    field_tiles = jnp.asarray(jax.device_get(field_tiles))
     tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
     g = int(num_guard_cells)
     ntx, nty, ntz = field_tiles.shape[:3]

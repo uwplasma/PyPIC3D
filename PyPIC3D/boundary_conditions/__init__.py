@@ -6,12 +6,17 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
     BC_CONDUCTING,
 )
 
-from PyPIC3D.boundary_conditions.boundaryconditions import (
-    apply_supergaussian_boundary_condition,
-    apply_zero_boundary_condition,
-)
-
 from PyPIC3D.boundary_conditions.ghost_cells import (
+    MESH_AXES,
+    SCALAR_TILE_SPEC,
+    VECTOR_TILE_SPEC,
+    make_field_mesh,
+    make_distributed_ghost_updater,
+    make_distributed_vector_ghost_updater,
+    make_distributed_ghost_folder,
+    make_distributed_vector_ghost_folder,
+    make_distributed_conducting_bc,
+    make_distributed_electric_conducting_bc,
     update_tiled_ghost_cells,
     update_tiled_vector_ghost_cells,
     update_tiled_ghost_cells_for_pml,

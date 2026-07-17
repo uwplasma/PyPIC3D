@@ -36,6 +36,7 @@ from PyPIC3D.diagnostics.openPMD import (
 )
 
 from PyPIC3D.boundary_conditions.ghost_cells import (
+    make_field_mesh,
     update_tiled_vector_ghost_cells,
     update_tiled_vector_ghost_cells_for_pml,
 )
@@ -390,6 +391,12 @@ def initialize_simulation(toml_file):
     # set the grids in the world parameters
     tile_shape = _tile_shape_from_parameters(simulation_parameters)
     world["tile_shape"] = tile_shape
+    tile_grid_shape = (
+        int(Nx) // int(tile_shape[0]),
+        int(Ny) // int(tile_shape[1]),
+        int(Nz) // int(tile_shape[2]),
+    )
+    world["field_mesh"] = make_field_mesh(tile_grid_shape)
     tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world, tile_shape, guard_cells)
     world["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
     world["grids"]["tiled_center_grid"] = tiled_center_grid
