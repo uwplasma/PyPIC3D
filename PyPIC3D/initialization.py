@@ -415,6 +415,20 @@ def initialize_simulation(toml_file):
     simulation_parameters["tile_shape"] = tile_shape
     # set the shared tiled field/particle geometry before allocating fields
 
+    static_parameters = build_static_parameters(
+        {
+            **world,
+            "solver": solver,
+            "electrostatic": electrostatic,
+            "relativistic": relativistic,
+            "particle_pusher": particle_pusher,
+        }
+    )
+    dynamic_parameters = build_dynamic_parameters(world, constants)
+    simulation_parameters["static_parameters"] = static_parameters
+    simulation_parameters["dynamic_parameters"] = dynamic_parameters
+    # The jitted kernels use these split parameter groups.
+
     if not os.path.exists(f"{simulation_parameters['output_dir']}/data"):
         os.makedirs(f"{simulation_parameters['output_dir']}/data")
         # create the data directory if it doesn't exist
@@ -483,12 +497,12 @@ def initialize_simulation(toml_file):
     E, B, J = fields[:3], fields[3:6], fields[6:9]
     # convert the fields list back into tuples
 
-    E = update_tiled_vector_ghost_cells(E, world, num_guard_cells=guard_cells)
-    B = update_tiled_vector_ghost_cells(B, world, num_guard_cells=guard_cells)
+    E = update_tiled_vector_ghost_cells(E, static_parameters, num_guard_cells=guard_cells)
+    B = update_tiled_vector_ghost_cells(B, static_parameters, num_guard_cells=guard_cells)
     # fill ghost cells for the initial E and B fields
     external_E, external_B = external_fields
-    external_E = update_tiled_vector_ghost_cells(external_E, world, num_guard_cells=guard_cells)
-    external_B = update_tiled_vector_ghost_cells(external_B, world, num_guard_cells=guard_cells)
+    external_E = update_tiled_vector_ghost_cells(external_E, static_parameters, num_guard_cells=guard_cells)
+    external_B = update_tiled_vector_ghost_cells(external_B, static_parameters, num_guard_cells=guard_cells)
     external_fields = (external_E, external_B)
     # fill ghost cells for external fields before they are interpolated to particles
 
@@ -559,19 +573,6 @@ def initialize_simulation(toml_file):
         if species_config is not None:
             species_config = jax.device_put(species_config, jax.devices("gpu")[0])
     # put the particles on the GPU if GPUs are enabled
-
-    static_parameters = build_static_parameters(
-        world,
-        solver=solver,
-        electrostatic=electrostatic,
-        relativistic=relativistic,
-        particle_pusher=particle_pusher,
-    )
-    dynamic_parameters = build_dynamic_parameters(world, constants)
-    simulation_parameters["static_parameters"] = static_parameters
-    simulation_parameters["dynamic_parameters"] = dynamic_parameters
-    # The jitted kernels use these split parameter groups.  The legacy world
-    # and constants dictionaries remain available to diagnostics and output.
 
     return evolve_loop, particles, fields, world, simulation_parameters, constants, plotting_parameters, plasma_parameters, \
         solver, electrostatic, verbose, GPUs, Nt, relativistic, particle_pusher, species_config

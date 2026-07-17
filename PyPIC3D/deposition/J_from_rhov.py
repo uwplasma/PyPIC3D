@@ -10,11 +10,6 @@ from PyPIC3D.boundary_conditions.ghost_cells import (
     fold_tiled_vector_ghost_cells,
     update_tiled_vector_ghost_cells,
 )
-from PyPIC3D.parameters import (
-    constants_from_parameters,
-    kernel_parameters_from_inputs,
-    world_from_parameters,
-)
 
 from PyPIC3D.utilities.filters import (
     bilinear_filter_vector,
@@ -35,33 +30,26 @@ def _collapse_tiled_axis_stencil(points, weights, local_n, reduced_axis, g):
 def J_from_rhov(
     particles,
     species_config,
-    J=None,
-    constants=None,
-    world=None,
-    filter="bilinear",
+    J,
+    static_parameters,
+    dynamic_parameters,
 ):
     """Compute tile-local direct current from centered tiled particles."""
 
 
-    if world is not None and "tile_shape" not in world and "tile_shape" in constants:
-        static_parameters, dynamic_parameters = kernel_parameters_from_inputs(constants, world)
-        world = world_from_parameters(static_parameters, dynamic_parameters)
-        constants = constants_from_parameters(dynamic_parameters)
-        if filter is None:
-            filter = static_parameters["current_filter"]
-
-    tile_shape = tuple(int(width) for width in world["tile_shape"])
-    g = int(world["guard_cells"])
+    current_filter = static_parameters["current_filter"]
+    tile_shape = tuple(int(width) for width in static_parameters["tile_shape"])
+    g = int(static_parameters["guard_cells"])
     g = int(g)
     # determine the number of guard cells and the shape of each of the tiles
 
-    tiled_grid = world["grids"]["tiled_center_grid"]
+    tiled_grid = dynamic_parameters["grids"]["tiled_center_grid"]
     # get the grid for the tiles
 
-    dx = world["dx"]
-    dy = world["dy"]
-    dz = world["dz"]
-    # get the world resolution
+    dx = dynamic_parameters["dx"]
+    dy = dynamic_parameters["dy"]
+    dz = dynamic_parameters["dz"]
+    # get the grid spacing
 
     Jx_tiles, Jy_tiles, Jz_tiles = J
     # unpack the current density tiles
@@ -75,7 +63,7 @@ def J_from_rhov(
     local_Nz = tile_nz + 2 * g
     # piece together the total local tile shape
 
-    shape_factor = world["shape_factor"]
+    shape_factor = static_parameters["shape_factor"]
     # get the shape factor
 
     reduced_x = int(tile_nx) == 1 and int(ntx) == 1
@@ -233,20 +221,33 @@ def J_from_rhov(
     )
     # compute the current density contributions for all tiles by applying the vectorized deposit function to the particle data and tile indices
 
-    J = fold_tiled_vector_ghost_cells((Jx, Jy, Jz), world, g)
+    J = fold_tiled_vector_ghost_cells((Jx, Jy, Jz), static_parameters, g)
     # fold the ghost cells of the current density tiles to ensure continuity across tile boundaries
-    J = update_tiled_vector_ghost_cells(J, world, g)
+    J = update_tiled_vector_ghost_cells(J, static_parameters, g)
     # update the ghost cells of the current density tiles to reflect the contributions from neighboring tiles
 
-    if filter == "bilinear":
-        J = bilinear_filter_vector(J, num_guard_cells=g)
-        # apply a bilinear filter to the current density tiles if specified in the filter argument
-        J = update_tiled_vector_ghost_cells(J, world, g)
-        # update the ghost cells of the current density tiles to reflect the contributions from neighboring tiles
-    elif filter == "digital":
-        J = digital_filter_vector(J, constants["alpha"], num_guard_cells=g)
-        # apply a digital filter to the current density tiles if specified in the filter argument
-        J = update_tiled_vector_ghost_cells(J, world, num_guard_cells=g)
-        # update the ghost cells of the filtered current density tiles to ensure continuity across tile boundaries
 
+
+    ################# CURRENT FILTERING #################
+    def bilinear_filtered_current(J):
+        J = bilinear_filter_vector(J, num_guard_cells=g)
+        J = update_tiled_vector_ghost_cells(J, static_parameters, num_guard_cells=g)
+        return J
+    
+    def digital_filtered_current(J):
+        J = digital_filter_vector(J, dynamic_parameters["alpha"], num_guard_cells=g)
+        J = update_tiled_vector_ghost_cells(J, static_parameters, num_guard_cells=g)
+        return J
+
+    J = jax.lax.cond(
+        current_filter == "bilinear",
+        lambda J: bilinear_filtered_current(J),
+        lambda J: digital_filtered_current(J),
+        J,
+    )
+    # apply the specified filter to the current density tiles, either bilinear or digital, based on the current_filter argument
+    ########################################################
+
+
+    
     return J

@@ -28,41 +28,43 @@ def _species_slot_counts(tiled_particles):
     return jnp.where(species_counts > 0, species_counts, 1.0)
 
 
-def _diagnostic_mass_position(tiled_particles, world):
+def _diagnostic_mass_position(tiled_particles, static_parameters, dynamic_parameters):
     """
     Mirror the ordinary scalar-diagnostic particle position for tiled particles.
     """
 
-    x = tiled_particles.x[..., 0] - tiled_particles.u[..., 0] * world["dt"] / 2
-    y = tiled_particles.x[..., 1] - tiled_particles.u[..., 1] * world["dt"] / 2
-    z = tiled_particles.x[..., 2] - tiled_particles.u[..., 2] * world["dt"] / 2
+    x = tiled_particles.x[..., 0] - tiled_particles.u[..., 0] * dynamic_parameters["dt"] / 2
+    y = tiled_particles.x[..., 1] - tiled_particles.u[..., 1] * dynamic_parameters["dt"] / 2
+    z = tiled_particles.x[..., 2] - tiled_particles.u[..., 2] * dynamic_parameters["dt"] / 2
+
+    bc_x, bc_y, bc_z = static_parameters["boundary_conditions"]
 
     x = jax.lax.cond(
-        world["boundary_conditions"]["x"] == BC_PERIODIC,
+        bc_x == BC_PERIODIC,
         lambda value: jnp.where(
-            value > world["x_wind"] / 2,
-            value - world["x_wind"],
-            jnp.where(value < -world["x_wind"] / 2, value + world["x_wind"], value),
+            value > dynamic_parameters["x_wind"] / 2,
+            value - dynamic_parameters["x_wind"],
+            jnp.where(value < -dynamic_parameters["x_wind"] / 2, value + dynamic_parameters["x_wind"], value),
         ),
         lambda value: value,
         x,
     )
     y = jax.lax.cond(
-        world["boundary_conditions"]["y"] == BC_PERIODIC,
+        bc_y == BC_PERIODIC,
         lambda value: jnp.where(
-            value > world["y_wind"] / 2,
-            value - world["y_wind"],
-            jnp.where(value < -world["y_wind"] / 2, value + world["y_wind"], value),
+            value > dynamic_parameters["y_wind"] / 2,
+            value - dynamic_parameters["y_wind"],
+            jnp.where(value < -dynamic_parameters["y_wind"] / 2, value + dynamic_parameters["y_wind"], value),
         ),
         lambda value: value,
         y,
     )
     z = jax.lax.cond(
-        world["boundary_conditions"]["z"] == BC_PERIODIC,
+        bc_z == BC_PERIODIC,
         lambda value: jnp.where(
-            value > world["z_wind"] / 2,
-            value - world["z_wind"],
-            jnp.where(value < -world["z_wind"] / 2, value + world["z_wind"], value),
+            value > dynamic_parameters["z_wind"] / 2,
+            value - dynamic_parameters["z_wind"],
+            jnp.where(value < -dynamic_parameters["z_wind"] / 2, value + dynamic_parameters["z_wind"], value),
         ),
         lambda value: value,
         z,
@@ -74,24 +76,21 @@ def _diagnostic_mass_position(tiled_particles, world):
 def _deposit_tiled_scalar_moment_to_tiles(
     tiled_particles,
     rho_tiles,
-    world,
+    static_parameters,
+    dynamic_parameters,
     grid,
     scalar_weight,
-    tile_shape,
-    g,
     position=None,
     divide_by_volume=True,
 ):
-    dx = world["dx"]
-    dy = world["dy"]
-    dz = world["dz"]
-    bc_x = world["boundary_conditions"]["x"]
-    bc_y = world["boundary_conditions"]["y"]
-    bc_z = world["boundary_conditions"]["z"]
-    shape_factor = world["shape_factor"]
+    dx = dynamic_parameters["dx"]
+    dy = dynamic_parameters["dy"]
+    dz = dynamic_parameters["dz"]
+    bc_x, bc_y, bc_z = static_parameters["boundary_conditions"]
+    shape_factor = static_parameters["shape_factor"]
 
-    tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
-    g = int(g)
+    tile_nx, tile_ny, tile_nz = [int(width) for width in static_parameters["tile_shape"]]
+    g = int(static_parameters["guard_cells"])
     Nx = int(grid[0].shape[0]) - 2
     Ny = int(grid[1].shape[0]) - 2
     Nz = int(grid[2].shape[0]) - 2
@@ -115,7 +114,7 @@ def _deposit_tiled_scalar_moment_to_tiles(
         Nx + 2,
         shape_factor,
         bc_x,
-        wind=world["x_wind"],
+        wind=dynamic_parameters["x_wind"],
         ghost_cells=True,
     )
     y, _, deltay, ypts = prepare_particle_axis_stencil(
@@ -124,7 +123,7 @@ def _deposit_tiled_scalar_moment_to_tiles(
         Ny + 2,
         shape_factor,
         bc_y,
-        wind=world["y_wind"],
+        wind=dynamic_parameters["y_wind"],
         ghost_cells=True,
     )
     z, _, deltaz, zpts = prepare_particle_axis_stencil(
@@ -133,7 +132,7 @@ def _deposit_tiled_scalar_moment_to_tiles(
         Nz + 2,
         shape_factor,
         bc_z,
-        wind=world["z_wind"],
+        wind=dynamic_parameters["z_wind"],
         ghost_cells=True,
     )
 
@@ -196,14 +195,14 @@ def _deposit_tiled_scalar_moment_to_tiles(
                 )
                 rho_tiles = rho_tiles.at[tx, ty, tz, lx, ly, lz].add(value, mode="drop")
 
-    rho_tiles = update_tiled_ghost_cells(rho_tiles, world, g)
+    rho_tiles = update_tiled_ghost_cells(rho_tiles, static_parameters, g)
 
     return rho_tiles
 
 
-def _filter_tiled_scalar_with_halos(field_tiles, alpha, world, g):
+def _filter_tiled_scalar_with_halos(field_tiles, alpha, static_parameters, g):
     g = int(g)
-    field_tiles = update_tiled_ghost_cells(field_tiles, world, g)
+    field_tiles = update_tiled_ghost_cells(field_tiles, static_parameters, g)
     return digital_filter(field_tiles, alpha, num_guard_cells=g)
 
 
@@ -211,17 +210,16 @@ def compute_rho(
     particles,
     species_config,
     rho_tiles,
-    constants,
-    world,
+    static_parameters,
+    dynamic_parameters,
 ):
     """Compute charge density into tile-major vertex-grid scalar arrays."""
 
     if not isinstance(particles, TiledParticles):
         raise ValueError("Public compute_rho requires TiledParticles.")
 
-    tile_shape = tuple(int(width) for width in world["tile_shape"])
-    g = int(world["guard_cells"])
-    grid = world["grids"]["vertex"]
+    g = int(static_parameters["guard_cells"])
+    grid = dynamic_parameters["grids"]["vertex"]
 
     scalar_weight = _species_scalar_to_slots(
         particles,
@@ -230,38 +228,43 @@ def compute_rho(
     rho_tiles = _deposit_tiled_scalar_moment_to_tiles(
         particles,
         rho_tiles,
-        world,
+        static_parameters,
+        dynamic_parameters,
         grid,
         scalar_weight,
-        tile_shape,
-        g,
     )
 
-    alpha = constants["alpha"]
-    rho_tiles = _filter_tiled_scalar_with_halos(rho_tiles, alpha, world, g)
-    rho_tiles = update_tiled_ghost_cells(rho_tiles, world, g)
+    alpha = dynamic_parameters["alpha"]
+    rho_tiles = _filter_tiled_scalar_with_halos(rho_tiles, alpha, static_parameters, g)
+    rho_tiles = update_tiled_ghost_cells(rho_tiles, static_parameters, g)
 
     return rho_tiles
 
 
-def compute_tiled_mass_density_from_tiled_particles(tiled_particles, species_config, rho_tiles, world, grid=None, tile_shape=None, g=2):
+def compute_tiled_mass_density_from_tiled_particles(
+    tiled_particles,
+    species_config,
+    rho_tiles,
+    static_parameters,
+    dynamic_parameters,
+    grid=None,
+):
     """Compute mass density into tile-major vertex-grid scalar arrays."""
     if grid is None:
-        grid = world["grids"]["vertex"]
+        grid = dynamic_parameters["grids"]["vertex"]
 
     scalar_weight = _species_scalar_to_slots(
         tiled_particles,
         species_config.mass * species_config.weight,
     )
-    position = _diagnostic_mass_position(tiled_particles, world)
+    position = _diagnostic_mass_position(tiled_particles, static_parameters, dynamic_parameters)
     return _deposit_tiled_scalar_moment_to_tiles(
         tiled_particles,
         rho_tiles,
-        world,
+        static_parameters,
+        dynamic_parameters,
         grid,
         scalar_weight,
-        tile_shape,
-        g,
         position=position,
     )
 
@@ -271,28 +274,26 @@ def compute_tiled_velocity_field_from_tiled_particles(
     species_config,
     field_tiles,
     direction,
-    world,
+    static_parameters,
+    dynamic_parameters,
     grid=None,
-    tile_shape=None,
-    g=2,
 ):
     """Compute the legacy scalar velocity diagnostic into tile-major arrays."""
     if grid is None:
-        grid = world["grids"]["vertex"]
+        grid = dynamic_parameters["grids"]["vertex"]
 
     species_counts = _species_slot_counts(tiled_particles)
     species_counts = species_counts.reshape((1, 1, 1, species_counts.shape[0], 1))
     scalar_weight = tiled_particles.u[..., direction] / species_counts
-    position = _diagnostic_mass_position(tiled_particles, world)
+    position = _diagnostic_mass_position(tiled_particles, static_parameters, dynamic_parameters)
 
     return _deposit_tiled_scalar_moment_to_tiles(
         tiled_particles,
         field_tiles,
-        world,
+        static_parameters,
+        dynamic_parameters,
         grid,
         scalar_weight,
-        tile_shape,
-        g,
         position=position,
         divide_by_volume=False,
     )
@@ -304,29 +305,26 @@ def compute_tiled_pressure_field_from_tiled_particles(
     field_tiles,
     velocity_field_tiles,
     direction,
-    world,
+    static_parameters,
+    dynamic_parameters,
     grid=None,
-    tile_shape=None,
-    g=2,
 ):
     """Compute the legacy scalar pressure diagnostic into tile-major arrays."""
     if grid is None:
-        grid = world["grids"]["vertex"]
-    dx = world["dx"]
-    dy = world["dy"]
-    dz = world["dz"]
-    bc_x = world["boundary_conditions"]["x"]
-    bc_y = world["boundary_conditions"]["y"]
-    bc_z = world["boundary_conditions"]["z"]
-    shape_factor = world["shape_factor"]
+        grid = dynamic_parameters["grids"]["vertex"]
+    dx = dynamic_parameters["dx"]
+    dy = dynamic_parameters["dy"]
+    dz = dynamic_parameters["dz"]
+    bc_x, bc_y, bc_z = static_parameters["boundary_conditions"]
+    shape_factor = static_parameters["shape_factor"]
 
-    tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
-    g = int(g)
+    tile_nx, tile_ny, tile_nz = [int(width) for width in static_parameters["tile_shape"]]
+    g = int(static_parameters["guard_cells"])
     Nx = int(grid[0].shape[0]) - 2
     Ny = int(grid[1].shape[0]) - 2
     Nz = int(grid[2].shape[0]) - 2
 
-    position = _diagnostic_mass_position(tiled_particles, world)
+    position = _diagnostic_mass_position(tiled_particles, static_parameters, dynamic_parameters)
     x = position[0].reshape(-1)
     y = position[1].reshape(-1)
     z = position[2].reshape(-1)
@@ -339,7 +337,7 @@ def compute_tiled_pressure_field_from_tiled_particles(
         Nx + 2,
         shape_factor,
         bc_x,
-        wind=world["x_wind"],
+        wind=dynamic_parameters["x_wind"],
         ghost_cells=True,
     )
     y, _, deltay, ypts = prepare_particle_axis_stencil(
@@ -348,7 +346,7 @@ def compute_tiled_pressure_field_from_tiled_particles(
         Ny + 2,
         shape_factor,
         bc_y,
-        wind=world["y_wind"],
+        wind=dynamic_parameters["y_wind"],
         ghost_cells=True,
     )
     z, _, deltaz, zpts = prepare_particle_axis_stencil(
@@ -357,7 +355,7 @@ def compute_tiled_pressure_field_from_tiled_particles(
         Nz + 2,
         shape_factor,
         bc_z,
-        wind=world["z_wind"],
+        wind=dynamic_parameters["z_wind"],
         ghost_cells=True,
     )
 
@@ -422,5 +420,5 @@ def compute_tiled_pressure_field_from_tiled_particles(
                 )
                 field_tiles = field_tiles.at[tx, ty, tz, lx, ly, lz].add(value, mode="drop")
 
-    field_tiles = update_tiled_ghost_cells(field_tiles, world, g)
+    field_tiles = update_tiled_ghost_cells(field_tiles, static_parameters, g)
     return field_tiles

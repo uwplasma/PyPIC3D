@@ -1,11 +1,6 @@
 import jax
 import jax.numpy as jnp
 
-from PyPIC3D.parameters import (
-    constants_from_parameters,
-    kernel_parameters_from_inputs,
-    world_from_parameters,
-)
 from PyPIC3D.particles.particle_class import TiledParticles
 from PyPIC3D.pusher.boris import (
     boris_single_particle,
@@ -15,7 +10,7 @@ from PyPIC3D.pusher.boris import (
 from PyPIC3D.pusher.higuera_cary import higuera_cary_single_particle
 
 
-def particle_push(particles, species_config, E_tiles, B_tiles, world, constants, relativistic=True, particle_pusher="boris"):
+def particle_push(particles, species_config, E_tiles, B_tiles, static_parameters, dynamic_parameters):
     """
     Push tile-major particles with the selected pusher using compact tiled Yee fields.
 
@@ -24,25 +19,17 @@ def particle_push(particles, species_config, E_tiles, B_tiles, world, constants,
     neighboring Yee data needed by the interpolation stencil near tile faces.
     """
 
-    static_parameters, dynamic_parameters = kernel_parameters_from_inputs(
-        world,
-        constants,
-        relativistic=relativistic,
-        particle_pusher=particle_pusher,
-    )
-    world = world_from_parameters(static_parameters, dynamic_parameters)
-    constants = constants_from_parameters(dynamic_parameters)
     relativistic = static_parameters["relativistic"]
     particle_pusher = static_parameters["particle_pusher"]
 
-    tile_shape = tuple(int(width) for width in world["tile_shape"])
+    tile_shape = tuple(int(width) for width in static_parameters["tile_shape"])
     tile_nx, tile_ny, tile_nz = tile_shape
-    g = int(world["guard_cells"])
-    dt = world["dt"]
-    shape_factor = world["shape_factor"]
+    g = int(static_parameters["guard_cells"])
+    dt = dynamic_parameters["dt"]
+    shape_factor = static_parameters["shape_factor"]
 
-    tiled_center_grid = world["grids"]["tiled_center_grid"]
-    tiled_vertex_grid = world["grids"]["tiled_vertex_grid"]
+    tiled_center_grid = dynamic_parameters["grids"]["tiled_center_grid"]
+    tiled_vertex_grid = dynamic_parameters["grids"]["tiled_vertex_grid"]
 
     Ex_tiles, Ey_tiles, Ez_tiles = E_tiles
     Bx_tiles, By_tiles, Bz_tiles = B_tiles
@@ -125,21 +112,21 @@ def particle_push(particles, species_config, E_tiles, B_tiles, world, constants,
                     vx, vy, vz,
                     efield_atx, efield_aty, efield_atz,
                     bfield_atx, bfield_aty, bfield_atz,
-                    q, m, dt, constants,
+                    q, m, dt, dynamic_parameters,
                 )
             else:
                 new_vx, new_vy, new_vz = boris_vmap(
                     vx, vy, vz,
                     efield_atx, efield_aty, efield_atz,
                     bfield_atx, bfield_aty, bfield_atz,
-                    q, m, dt, constants,
+                    q, m, dt, dynamic_parameters,
                 )
         elif particle_pusher == "higuera_cary":
             new_vx, new_vy, new_vz = higuera_cary_vmap(
                 vx, vy, vz,
                 efield_atx, efield_aty, efield_atz,
                 bfield_atx, bfield_aty, bfield_atz,
-                q, m, dt, constants,
+                q, m, dt, dynamic_parameters,
             )
         else:
             raise ValueError(f"Unknown particle_pusher: {particle_pusher}")

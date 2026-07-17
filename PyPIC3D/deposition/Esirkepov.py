@@ -1,6 +1,5 @@
 import jax
 import jax.numpy as jnp
-from jax import lax
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import (
     compute_particle_anchor,
@@ -8,11 +7,6 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
 )
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.boundary_conditions.ghost_cells import update_tiled_vector_ghost_cells
-from PyPIC3D.parameters import (
-    constants_from_parameters,
-    kernel_parameters_from_inputs,
-    world_from_parameters,
-)
 from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
 
 
@@ -123,7 +117,7 @@ def _compact_2d_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, null_dim=2):
     return Wx, Wy, Wz
 
 
-def fold_tiled_esirkepov_ghost_cells(field_tiles, world, component_axis, num_guard_cells, tile_shape):
+def fold_tiled_esirkepov_ghost_cells(field_tiles, static_parameters, component_axis, num_guard_cells, tile_shape):
     """
     Fold Esirkepov current deposits using the configured guard depth.
 
@@ -140,7 +134,7 @@ def fold_tiled_esirkepov_ghost_cells(field_tiles, world, component_axis, num_gua
         int(nty) == 1 and tile_ny == 1,
         int(ntz) == 1 and tile_nz == 1,
     )
-    particle_bc = world.get("particle_boundary_conditions", {"x": 0, "y": 0, "z": 0})
+    particle_bc = static_parameters["particle_boundary_conditions"]
 
     def fold_axis(field_tiles, axis, bc, reduced_axis):
         tiles = jnp.moveaxis(field_tiles, (axis, 3 + axis), (0, 3))
@@ -189,16 +183,16 @@ def fold_tiled_esirkepov_ghost_cells(field_tiles, world, component_axis, num_gua
         tiles = tiles.at[:, :, :, -g:, :, :].set(0.0)
         return jnp.moveaxis(tiles, (0, 3), (axis, 3 + axis))
 
-    field_tiles = fold_axis(field_tiles, 0, particle_bc["x"], reduced_axes[0])
-    field_tiles = fold_axis(field_tiles, 1, particle_bc["y"], reduced_axes[1])
-    field_tiles = fold_axis(field_tiles, 2, particle_bc["z"], reduced_axes[2])
+    field_tiles = fold_axis(field_tiles, 0, particle_bc[0], reduced_axes[0])
+    field_tiles = fold_axis(field_tiles, 1, particle_bc[1], reduced_axes[1])
+    field_tiles = fold_axis(field_tiles, 2, particle_bc[2], reduced_axes[2])
 
     return field_tiles
 
 
-def fold_tiled_esirkepov_vector_ghost_cells(field_tiles, world, num_guard_cells, tile_shape):
+def fold_tiled_esirkepov_vector_ghost_cells(field_tiles, static_parameters, num_guard_cells, tile_shape):
     return tuple(
-        fold_tiled_esirkepov_ghost_cells(component, world, component_axis, num_guard_cells, tile_shape)
+        fold_tiled_esirkepov_ghost_cells(component, static_parameters, component_axis, num_guard_cells, tile_shape)
         for component_axis, component in enumerate(field_tiles)
     )
 
@@ -207,9 +201,8 @@ def Esirkepov_current(
     particles: TiledParticles,
     species_config: SpeciesConfig,
     J,
-    constants,
-    world,
-    filter=None,
+    static_parameters,
+    dynamic_parameters,
 ):
     """
     Deposit Esirkepov current into tile-local current buffers.
@@ -220,32 +213,20 @@ def Esirkepov_current(
     the caller after deposition.
     """
 
-    if "tile_shape" not in world and "tile_shape" in constants:
-        static_parameters, dynamic_parameters = kernel_parameters_from_inputs(constants, world)
-        world = world_from_parameters(static_parameters, dynamic_parameters)
-        constants = constants_from_parameters(dynamic_parameters)
-        if filter is None:
-            filter = static_parameters["current_filter"]
-
-    if not isinstance(particles, TiledParticles):
-        raise ValueError("Public Esirkepov_current requires TiledParticles.")
-    if filter not in (None, "none"):
-        raise ValueError("Esirkepov current filtering is not supported; use filter='none'.")
-
-    tile_shape = tuple(int(width) for width in world["tile_shape"])
+    tile_shape = tuple(int(width) for width in static_parameters["tile_shape"])
     # get the tile shape
-    g = int(world["guard_cells"])
+    g = int(static_parameters["guard_cells"])
     # get the number of guard cells on the tiles
-    tiled_grid = world["grids"]["tiled_center_grid"]
+    tiled_grid = dynamic_parameters["grids"]["tiled_center_grid"]
     # get the tile grid for the current deposition
 
-    dx = world["dx"]
-    dy = world["dy"]
-    dz = world["dz"]
+    dx = dynamic_parameters["dx"]
+    dy = dynamic_parameters["dy"]
+    dz = dynamic_parameters["dz"]
     # get spatial resolution
-    dt = world["dt"]
+    dt = dynamic_parameters["dt"]
     # get temporal resolution
-    shape_factor = world["shape_factor"]
+    shape_factor = static_parameters["shape_factor"]
     # get shape factor
 
     Jx, Jy, Jz = J
@@ -524,21 +505,10 @@ def Esirkepov_current(
     )
     # deposit the currents for all tiles in parallel using the vectorized deposit function
 
-    J = fold_tiled_esirkepov_vector_ghost_cells((Jx, Jy, Jz), world, num_guard_cells=g, tile_shape=tile_shape)
+    J = fold_tiled_esirkepov_vector_ghost_cells((Jx, Jy, Jz), static_parameters, num_guard_cells=g, tile_shape=tile_shape)
     # fold the deposited currents across tile boundaries, applying the appropriate boundary conditions for ghost cells
-    J = update_tiled_vector_ghost_cells(J, world, num_guard_cells=g)
+    J = update_tiled_vector_ghost_cells(J, static_parameters, num_guard_cells=g)
     # update the ghost cells of the folded currents to ensure consistency across tile boundaries
-
-    if filter == "bilinear":
-        J = bilinear_filter_vector(J, num_guard_cells=g)
-        # apply a bilinear filter to the current density tiles if specified in the filter argument
-        J = update_tiled_vector_ghost_cells(J, world, g)
-        # update the ghost cells of the current density tiles to reflect the contributions from neighboring tiles
-    elif filter == "digital":
-        J = digital_filter_vector(J, constants["alpha"], num_guard_cells=g)
-        # apply a digital filter to the current density tiles if specified in the filter argument
-        J = update_tiled_vector_ghost_cells(J, world, num_guard_cells=g)
-        # update the ghost cells of the filtered current density tiles to ensure continuity across tile boundaries
 
     return J
 

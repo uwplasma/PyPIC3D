@@ -36,13 +36,13 @@ class TestKernelParameters(unittest.TestCase):
         }
         constants = {"C": 1.0, "eps": 2.0, "mu": 3.0, "kb": 4.0, "alpha": 0.5}
 
-        static_parameters = build_static_parameters(
-            world,
-            solver="electrodynamic_yee",
-            electrostatic=False,
-            relativistic=False,
-            particle_pusher="boris",
-        )
+        static_parameters = build_static_parameters({
+            **world,
+            "solver": "electrodynamic_yee",
+            "electrostatic": False,
+            "relativistic": False,
+            "particle_pusher": "boris",
+        })
         dynamic_parameters = build_dynamic_parameters(world, constants)
 
         self.assertEqual(static_parameters["current_deposition"], "direct")

@@ -105,14 +105,21 @@ class TestEvolveExternalFields(unittest.TestCase):
             jnp.asarray(False),
         )
 
+        static_parameters = build_static_parameters({
+            **world,
+            "solver": "electrodynamic_yee",
+            "electrostatic": False,
+            "relativistic": False,
+            "particle_pusher": "boris",
+        })
+        dynamic_parameters = build_dynamic_parameters(world, constants)
+
         tiled_particles, fields = time_loop_electrodynamic(
             tiled_particles,
             species_config,
             fields,
-            world,
-            constants,
-            relativistic=False,
-            particle_pusher="boris",
+            static_parameters,
+            dynamic_parameters,
         ) # advance the simulation for one time step with the external electric field
 
         E_after, B_after, J_after, rho_after, phi_after, external_after, pml_state, overflow = fields
@@ -167,13 +174,13 @@ class TestEvolveExternalFields(unittest.TestCase):
             x=jnp.array([0.0, 0.0, 0.0]),
             u=jnp.array([0.05, 0.0, 0.0]),
         )
-        static_parameters = build_static_parameters(
-            world,
-            solver="electrodynamic_yee",
-            electrostatic=False,
-            relativistic=False,
-            particle_pusher="boris",
-        )
+        static_parameters = build_static_parameters({
+            **world,
+            "solver": "electrodynamic_yee",
+            "electrostatic": False,
+            "relativistic": False,
+            "particle_pusher": "boris",
+        })
         dynamic_parameters = build_dynamic_parameters(world, constants)
 
         step = jax.jit(lambda particles, fields, dynamic: time_loop_electrodynamic(
@@ -240,14 +247,21 @@ class TestEvolveExternalFields(unittest.TestCase):
         )
         # build the fields tuple with the initialized fields and external fields
 
+        static_parameters = build_static_parameters({
+            **world,
+            "solver": "electrodynamic_yee",
+            "electrostatic": False,
+            "relativistic": False,
+            "particle_pusher": "boris",
+        })
+        dynamic_parameters = build_dynamic_parameters(world, constants)
+
         tiled_particles, _ = time_loop_electrodynamic(
             tiled_particles,
             species_config,
             fields,
-            world,
-            constants,
-            relativistic=False,
-            particle_pusher="boris",
+            static_parameters,
+            dynamic_parameters,
         )
         # advance the simulation for one time step, which should cause the particle to cross the absorbing boundary and become inactive
 

@@ -347,7 +347,7 @@ def apply_pml_to_b_curl(derivatives, world, pml_state):
     return (curl_x, curl_y, curl_z), (e_memory, b_memory)
 
 
-def apply_tiled_pml_to_e_curl(derivatives, world, pml_state):
+def apply_tiled_pml_to_e_curl(derivatives, static_parameters, dynamic_parameters, pml_state):
     """
     Stretch tile-local B derivatives before assembling Ampere's-law curls.
     """
@@ -364,11 +364,11 @@ def apply_tiled_pml_to_e_curl(derivatives, world, pml_state):
     ) = e_memory
 
     sigma_x, sigma_y, sigma_z = tiled_profiles
-    g = int(world.get("guard_cells", 2))
+    g = int(static_parameters["guard_cells"])
     sigma_x = sigma_x[:, :, :, g:-g, g:-g, g:-g]
     sigma_y = sigma_y[:, :, :, g:-g, g:-g, g:-g]
     sigma_z = sigma_z[:, :, :, g:-g, g:-g, g:-g]
-    dt = world["dt"]
+    dt = dynamic_parameters["dt"]
 
     dBz_dy, memory_dBz_dy = stretch_spatial_derivative(dBz_dy, memory_dBz_dy, sigma_y, dt)
     dBy_dz, memory_dBy_dz = stretch_spatial_derivative(dBy_dz, memory_dBy_dz, sigma_z, dt)
@@ -393,7 +393,7 @@ def apply_tiled_pml_to_e_curl(derivatives, world, pml_state):
     return (curl_x, curl_y, curl_z), (e_memory, b_memory, tiled_profiles)
 
 
-def apply_tiled_pml_to_b_curl(derivatives, world, pml_state):
+def apply_tiled_pml_to_b_curl(derivatives, static_parameters, dynamic_parameters, pml_state):
     """
     Stretch tile-local E derivatives before assembling Faraday-law curls.
     """
@@ -410,11 +410,11 @@ def apply_tiled_pml_to_b_curl(derivatives, world, pml_state):
     ) = b_memory
 
     sigma_x, sigma_y, sigma_z = tiled_profiles
-    g = int(world.get("guard_cells", 2))
+    g = int(static_parameters["guard_cells"])
     sigma_x = sigma_x[:, :, :, g:-g, g:-g, g:-g]
     sigma_y = sigma_y[:, :, :, g:-g, g:-g, g:-g]
     sigma_z = sigma_z[:, :, :, g:-g, g:-g, g:-g]
-    dt = world["dt"]
+    dt = dynamic_parameters["dt"]
 
     dEz_dy, memory_dEz_dy = stretch_spatial_derivative(dEz_dy, memory_dEz_dy, sigma_y, dt)
     dEy_dz, memory_dEy_dz = stretch_spatial_derivative(dEy_dz, memory_dEy_dz, sigma_z, dt)
