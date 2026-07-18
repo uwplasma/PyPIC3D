@@ -13,6 +13,10 @@ from PyPIC3D.boundary_conditions.ghost_cells import update_tiled_ghost_cells
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.particles.particle_class import TiledParticles
 from PyPIC3D.utilities.filters import digital_filter
+from PyPIC3D.boundary_conditions.grid_and_stencil import (
+    collapse_axis_stencil,
+    prepare_particle_axis_stencil,
+)
 
 
 def _species_scalar_to_slots(tiled_particles, species_value):
@@ -21,404 +25,167 @@ def _species_scalar_to_slots(tiled_particles, species_value):
         tiled_particles.active.shape,
     )
 
-
 def _species_slot_counts(tiled_particles):
     occupied = tiled_particles.active | jnp.any(tiled_particles.x != 0.0, axis=-1) | jnp.any(tiled_particles.u != 0.0, axis=-1)
     species_counts = jnp.sum(occupied.astype(tiled_particles.x.dtype), axis=(0, 1, 2, 4))
     return jnp.where(species_counts > 0, species_counts, 1.0)
 
 
-def _diagnostic_mass_position(tiled_particles, static_parameters, dynamic_parameters):
-    """
-    Mirror the ordinary scalar-diagnostic particle position for tiled particles.
-    """
+def _collapse_tiled_axis_stencil(points, weights, local_n, reduced_axis, g):
+    if reduced_axis:
+        collapsed_points = jnp.full((1, points.shape[1]), int(g), dtype=points.dtype)
+        collapsed_weights = jnp.sum(weights, axis=0, keepdims=True)
+        return collapsed_points, collapsed_weights
+    return collapse_axis_stencil(points, weights, local_n, ghost_cells=True)
 
-    x = tiled_particles.x[..., 0] - tiled_particles.u[..., 0] * dynamic_parameters["dt"] / 2
-    y = tiled_particles.x[..., 1] - tiled_particles.u[..., 1] * dynamic_parameters["dt"] / 2
-    z = tiled_particles.x[..., 2] - tiled_particles.u[..., 2] * dynamic_parameters["dt"] / 2
-
-    bc_x, bc_y, bc_z = static_parameters["boundary_conditions"]
-
-    x = jax.lax.cond(
-        bc_x == BC_PERIODIC,
-        lambda value: jnp.where(
-            value > dynamic_parameters["x_wind"] / 2,
-            value - dynamic_parameters["x_wind"],
-            jnp.where(value < -dynamic_parameters["x_wind"] / 2, value + dynamic_parameters["x_wind"], value),
-        ),
-        lambda value: value,
-        x,
-    )
-    y = jax.lax.cond(
-        bc_y == BC_PERIODIC,
-        lambda value: jnp.where(
-            value > dynamic_parameters["y_wind"] / 2,
-            value - dynamic_parameters["y_wind"],
-            jnp.where(value < -dynamic_parameters["y_wind"] / 2, value + dynamic_parameters["y_wind"], value),
-        ),
-        lambda value: value,
-        y,
-    )
-    z = jax.lax.cond(
-        bc_z == BC_PERIODIC,
-        lambda value: jnp.where(
-            value > dynamic_parameters["z_wind"] / 2,
-            value - dynamic_parameters["z_wind"],
-            jnp.where(value < -dynamic_parameters["z_wind"] / 2, value + dynamic_parameters["z_wind"], value),
-        ),
-        lambda value: value,
-        z,
-    )
-
-    return x, y, z
-
-
-def _deposit_tiled_scalar_moment_to_tiles(
-    tiled_particles,
-    rho_tiles,
-    static_parameters,
-    dynamic_parameters,
-    grid,
-    scalar_weight,
-    position=None,
-    divide_by_volume=True,
+def charge_density(
+        particles,
+        species_config,
+        rho,
+        static_parameters,
+        dynamic_parameters,
 ):
+    
     dx = dynamic_parameters["dx"]
     dy = dynamic_parameters["dy"]
     dz = dynamic_parameters["dz"]
     bc_x, bc_y, bc_z = static_parameters["boundary_conditions"]
     shape_factor = static_parameters["shape_factor"]
+    # unpack grid and tile parameters
 
-    tile_nx, tile_ny, tile_nz = [int(width) for width in static_parameters["tile_shape"]]
-    g = int(static_parameters["guard_cells"])
-    Nx = int(grid[0].shape[0]) - 2
-    Ny = int(grid[1].shape[0]) - 2
-    Nz = int(grid[2].shape[0]) - 2
+    tile_nx, tile_ny, tile_nz = [ int(width) for width in static_parameters["tile_shape"] ]
+    # get the tile shape
+    g = static_parameters["guard_cells"]
 
-    if position is None:
-        x = tiled_particles.x[..., 0].reshape(-1)
-        y = tiled_particles.x[..., 1].reshape(-1)
-        z = tiled_particles.x[..., 2].reshape(-1)
-    else:
-        x = position[0].reshape(-1)
-        y = position[1].reshape(-1)
-        z = position[2].reshape(-1)
-    active = tiled_particles.active.reshape(-1).astype(x.dtype)
-    scalar_density = scalar_weight.reshape(-1)
-    if divide_by_volume:
-        scalar_density = scalar_density / (dx * dy * dz)
+    local_Nx = tile_nx + 2 * g
+    local_Ny = tile_ny + 2 * g
+    local_Nz = tile_nz + 2 * g
+    # piece together the total local tile shape
 
-    x, _, deltax, xpts = prepare_particle_axis_stencil(
-        x,
-        grid[0],
-        Nx + 2,
-        shape_factor,
-        bc_x,
-        wind=dynamic_parameters["x_wind"],
-        ghost_cells=True,
-    )
-    y, _, deltay, ypts = prepare_particle_axis_stencil(
-        y,
-        grid[1],
-        Ny + 2,
-        shape_factor,
-        bc_y,
-        wind=dynamic_parameters["y_wind"],
-        ghost_cells=True,
-    )
-    z, _, deltaz, zpts = prepare_particle_axis_stencil(
-        z,
-        grid[2],
-        Nz + 2,
-        shape_factor,
-        bc_z,
-        wind=dynamic_parameters["z_wind"],
-        ghost_cells=True,
-    )
+    x = particles.x[..., 0].reshape(-1)
+    y = particles.x[..., 1].reshape(-1)
+    z = particles.x[..., 2].reshape(-1)
+    # reshape the particle positions into 1D arrays for processing
 
-    x_weights, y_weights, z_weights = jax.lax.cond(
-        shape_factor == 1,
-        lambda _: get_first_order_weights(deltax, deltay, deltaz, dx, dy, dz),
-        lambda _: get_second_order_weights(deltax, deltay, deltaz, dx, dy, dz),
-        operand=None,
-    )
+    tiled_grid = dynamic_parameters["grids"]["tiled_center_grid"]
+    # get the grid for the tiles
 
-    xpts = jnp.asarray(xpts)
-    ypts = jnp.asarray(ypts)
-    zpts = jnp.asarray(zpts)
-    x_weights = jnp.asarray(x_weights)
-    y_weights = jnp.asarray(y_weights)
-    z_weights = jnp.asarray(z_weights)
+    local_bc = 2
 
-    xpts, x_weights = collapse_axis_stencil(xpts, x_weights, Nx + 2, ghost_cells=True)
-    ypts, y_weights = collapse_axis_stencil(ypts, y_weights, Ny + 2, ghost_cells=True)
-    zpts, z_weights = collapse_axis_stencil(zpts, z_weights, Nz + 2, ghost_cells=True)
+    species_weighted_charge = species_config.charge * species_config.weight
+    # compute the weighted charge for each species
 
-    rho_tiles = jnp.zeros_like(rho_tiles)
+    rho_template = jnp.zeros_like(rho[0, 0, 0])
 
-    def folded_owner(points, n_cells, cells_per_tile, bc):
-        folded = jax.lax.cond(
-            bc == BC_PERIODIC,
-            lambda p: jnp.where(p == 0, n_cells, jnp.where(p == n_cells + 1, 1, p)),
-            lambda p: jnp.where(p == 0, 1, jnp.where(p == n_cells + 1, n_cells, p)),
-            points,
+    ntx, nty, ntz = rho.shape[:3]
+    # get the number of tiles in each dimension
+
+    reduced_x = int(tile_nx) == 1 and int(ntx) == 1
+    reduced_y = int(tile_ny) == 1 and int(nty) == 1
+    reduced_z = int(tile_nz) == 1 and int(ntz) == 1
+    # determine if any of the axes are dummy axes
+
+    def deposit_one_tile(x_tile, active_tile, tx, ty, tz):
+        # deposit the current density for a single tile, given the particle positions, velocities, and active mask
+        x = x_tile[..., 0].reshape(-1)
+        y = x_tile[..., 1].reshape(-1)
+        z = x_tile[..., 2].reshape(-1)
+        # reshape the particle positions into 1D arrays for processing
+        active = active_tile.reshape(-1).astype(x.dtype)
+        # reshape the active particle mask into a 1D array for processing
+
+        x_grid = tiled_grid[0][tx, ty, tz]
+        y_grid = tiled_grid[1][tx, ty, tz]
+        z_grid = tiled_grid[2][tx, ty, tz]
+        # get the grid points for the current tile in each dimension
+
+        x, x0, deltax_node, xpts = prepare_particle_axis_stencil(
+            x,
+            x_grid,
+            local_Nx,
+            shape_factor,
+            local_bc,
+            wind=tile_nx * dx,
+            ghost_cells=True,
         )
-        sign = jax.lax.cond(
-            bc == BC_PERIODIC,
-            lambda p: jnp.ones_like(p, dtype=x.dtype),
-            lambda p: jnp.where((p == 0) | (p == n_cells + 1), -1.0, 1.0).astype(x.dtype),
-            points,
+        y, y0, deltay_node, ypts = prepare_particle_axis_stencil(
+            y,
+            y_grid,
+            local_Ny,
+            shape_factor,
+            local_bc,
+            wind=tile_ny * dy,
+            ghost_cells=True,
         )
-        valid = (points >= 0) & (points <= n_cells + 1)
-        folded = jnp.clip(folded, 1, n_cells)
-        tile = (folded - 1) // cells_per_tile
-        local = g + (folded - 1) - tile * cells_per_tile
-        return tile, local, sign, valid
-
-    for i in range(xpts.shape[0]):
-        tx, lx, sx, valid_x = folded_owner(xpts[i], Nx, tile_nx, bc_x)
-        for j in range(ypts.shape[0]):
-            ty, ly, sy, valid_y = folded_owner(ypts[j], Ny, tile_ny, bc_y)
-            for k in range(zpts.shape[0]):
-                tz, lz, sz, valid_z = folded_owner(zpts[k], Nz, tile_nz, bc_z)
-                valid = valid_x & valid_y & valid_z
-                value = (
-                    valid.astype(x.dtype)
-                    * active
-                    * sx
-                    * sy
-                    * sz
-                    * scalar_density
-                    * x_weights[i]
-                    * y_weights[j]
-                    * z_weights[k]
-                )
-                rho_tiles = rho_tiles.at[tx, ty, tz, lx, ly, lz].add(value, mode="drop")
-
-    rho_tiles = update_tiled_ghost_cells(rho_tiles, static_parameters, g)
-
-    return rho_tiles
-
-
-def _filter_tiled_scalar_with_halos(field_tiles, alpha, static_parameters, g):
-    g = int(g)
-    field_tiles = update_tiled_ghost_cells(field_tiles, static_parameters, g)
-    return digital_filter(field_tiles, alpha, num_guard_cells=g)
-
-
-def compute_rho(
-    particles,
-    species_config,
-    rho_tiles,
-    static_parameters,
-    dynamic_parameters,
-):
-    """Compute charge density into tile-major vertex-grid scalar arrays."""
-
-    if not isinstance(particles, TiledParticles):
-        raise ValueError("Public compute_rho requires TiledParticles.")
-
-    g = int(static_parameters["guard_cells"])
-    grid = dynamic_parameters["grids"]["vertex"]
-
-    scalar_weight = _species_scalar_to_slots(
-        particles,
-        species_config.charge * species_config.weight,
-    )
-    rho_tiles = _deposit_tiled_scalar_moment_to_tiles(
-        particles,
-        rho_tiles,
-        static_parameters,
-        dynamic_parameters,
-        grid,
-        scalar_weight,
-    )
-
-    alpha = dynamic_parameters["alpha"]
-    rho_tiles = _filter_tiled_scalar_with_halos(rho_tiles, alpha, static_parameters, g)
-    rho_tiles = update_tiled_ghost_cells(rho_tiles, static_parameters, g)
-
-    return rho_tiles
-
-
-def compute_tiled_mass_density_from_tiled_particles(
-    tiled_particles,
-    species_config,
-    rho_tiles,
-    static_parameters,
-    dynamic_parameters,
-    grid=None,
-):
-    """Compute mass density into tile-major vertex-grid scalar arrays."""
-    if grid is None:
-        grid = dynamic_parameters["grids"]["vertex"]
-
-    scalar_weight = _species_scalar_to_slots(
-        tiled_particles,
-        species_config.mass * species_config.weight,
-    )
-    position = _diagnostic_mass_position(tiled_particles, static_parameters, dynamic_parameters)
-    return _deposit_tiled_scalar_moment_to_tiles(
-        tiled_particles,
-        rho_tiles,
-        static_parameters,
-        dynamic_parameters,
-        grid,
-        scalar_weight,
-        position=position,
-    )
-
-
-def compute_tiled_velocity_field_from_tiled_particles(
-    tiled_particles,
-    species_config,
-    field_tiles,
-    direction,
-    static_parameters,
-    dynamic_parameters,
-    grid=None,
-):
-    """Compute the legacy scalar velocity diagnostic into tile-major arrays."""
-    if grid is None:
-        grid = dynamic_parameters["grids"]["vertex"]
-
-    species_counts = _species_slot_counts(tiled_particles)
-    species_counts = species_counts.reshape((1, 1, 1, species_counts.shape[0], 1))
-    scalar_weight = tiled_particles.u[..., direction] / species_counts
-    position = _diagnostic_mass_position(tiled_particles, static_parameters, dynamic_parameters)
-
-    return _deposit_tiled_scalar_moment_to_tiles(
-        tiled_particles,
-        field_tiles,
-        static_parameters,
-        dynamic_parameters,
-        grid,
-        scalar_weight,
-        position=position,
-        divide_by_volume=False,
-    )
-
-
-def compute_tiled_pressure_field_from_tiled_particles(
-    tiled_particles,
-    species_config,
-    field_tiles,
-    velocity_field_tiles,
-    direction,
-    static_parameters,
-    dynamic_parameters,
-    grid=None,
-):
-    """Compute the legacy scalar pressure diagnostic into tile-major arrays."""
-    if grid is None:
-        grid = dynamic_parameters["grids"]["vertex"]
-    dx = dynamic_parameters["dx"]
-    dy = dynamic_parameters["dy"]
-    dz = dynamic_parameters["dz"]
-    bc_x, bc_y, bc_z = static_parameters["boundary_conditions"]
-    shape_factor = static_parameters["shape_factor"]
-
-    tile_nx, tile_ny, tile_nz = [int(width) for width in static_parameters["tile_shape"]]
-    g = int(static_parameters["guard_cells"])
-    Nx = int(grid[0].shape[0]) - 2
-    Ny = int(grid[1].shape[0]) - 2
-    Nz = int(grid[2].shape[0]) - 2
-
-    position = _diagnostic_mass_position(tiled_particles, static_parameters, dynamic_parameters)
-    x = position[0].reshape(-1)
-    y = position[1].reshape(-1)
-    z = position[2].reshape(-1)
-    v = tiled_particles.u[..., direction].reshape(-1)
-    active = tiled_particles.active.reshape(-1).astype(x.dtype)
-
-    x, _, deltax, xpts = prepare_particle_axis_stencil(
-        x,
-        grid[0],
-        Nx + 2,
-        shape_factor,
-        bc_x,
-        wind=dynamic_parameters["x_wind"],
-        ghost_cells=True,
-    )
-    y, _, deltay, ypts = prepare_particle_axis_stencil(
-        y,
-        grid[1],
-        Ny + 2,
-        shape_factor,
-        bc_y,
-        wind=dynamic_parameters["y_wind"],
-        ghost_cells=True,
-    )
-    z, _, deltaz, zpts = prepare_particle_axis_stencil(
-        z,
-        grid[2],
-        Nz + 2,
-        shape_factor,
-        bc_z,
-        wind=dynamic_parameters["z_wind"],
-        ghost_cells=True,
-    )
-
-    x_weights, y_weights, z_weights = jax.lax.cond(
-        shape_factor == 1,
-        lambda _: get_first_order_weights(deltax, deltay, deltaz, dx, dy, dz),
-        lambda _: get_second_order_weights(deltax, deltay, deltaz, dx, dy, dz),
-        operand=None,
-    )
-
-    xpts = jnp.asarray(xpts)
-    ypts = jnp.asarray(ypts)
-    zpts = jnp.asarray(zpts)
-    x_weights = jnp.asarray(x_weights)
-    y_weights = jnp.asarray(y_weights)
-    z_weights = jnp.asarray(z_weights)
-
-    xpts, x_weights = collapse_axis_stencil(xpts, x_weights, Nx + 2, ghost_cells=True)
-    ypts, y_weights = collapse_axis_stencil(ypts, y_weights, Ny + 2, ghost_cells=True)
-    zpts, z_weights = collapse_axis_stencil(zpts, z_weights, Nz + 2, ghost_cells=True)
-
-    field_tiles = jnp.zeros_like(field_tiles)
-
-    def folded_owner(points, n_cells, cells_per_tile, bc):
-        folded = jax.lax.cond(
-            bc == BC_PERIODIC,
-            lambda p: jnp.where(p == 0, n_cells, jnp.where(p == n_cells + 1, 1, p)),
-            lambda p: jnp.where(p == 0, 1, jnp.where(p == n_cells + 1, n_cells, p)),
-            points,
+        z, z0, deltaz_node, zpts = prepare_particle_axis_stencil(
+            z,
+            z_grid,
+            local_Nz,
+            shape_factor,
+            local_bc,
+            wind=tile_nz * dz,
+            ghost_cells=True,
         )
-        sign = jax.lax.cond(
-            bc == BC_PERIODIC,
-            lambda p: jnp.ones_like(p, dtype=x.dtype),
-            lambda p: jnp.where((p == 0) | (p == n_cells + 1), -1.0, 1.0).astype(x.dtype),
-            points,
+        # prepare the particle positions and compute the stencil points and deltas for each axis
+
+        x_weights_node, y_weights_node, z_weights_node = jax.lax.cond(
+            shape_factor == 1,
+            lambda _: get_first_order_weights(deltax_node, deltay_node, deltaz_node, dx, dy, dz),
+            lambda _: get_second_order_weights(deltax_node, deltay_node, deltaz_node, dx, dy, dz),
+            operand=None,
         )
-        valid = (points >= 0) & (points <= n_cells + 1)
-        folded = jnp.clip(folded, 1, n_cells)
-        tile = (folded - 1) // cells_per_tile
-        local = g + (folded - 1) - tile * cells_per_tile
-        return tile, local, sign, valid
 
-    for i in range(xpts.shape[0]):
-        tx, lx, sx, valid_x = folded_owner(xpts[i], Nx, tile_nx, bc_x)
-        for j in range(ypts.shape[0]):
-            ty, ly, sy, valid_y = folded_owner(ypts[j], Ny, tile_ny, bc_y)
-            for k in range(zpts.shape[0]):
-                tz, lz, sz, valid_z = folded_owner(zpts[k], Nz, tile_nz, bc_z)
-                valid = valid_x & valid_y & valid_z
-                velocity_value = velocity_field_tiles[tx, ty, tz, lx, ly, lz]
-                vbar = v - velocity_value
-                value = (
-                    valid.astype(x.dtype)
-                    * active
-                    * sx
-                    * sy
-                    * sz
-                    * vbar**2
-                    * x_weights[i]
-                    * y_weights[j]
-                    * z_weights[k]
-                )
-                field_tiles = field_tiles.at[tx, ty, tz, lx, ly, lz].add(value, mode="drop")
+        # compute the weights for the node-centered stencil based on the deltas and shape factor
 
-    field_tiles = update_tiled_ghost_cells(field_tiles, static_parameters, g)
-    return field_tiles
+        xpts = jnp.asarray(xpts)
+        ypts = jnp.asarray(ypts)
+        zpts = jnp.asarray(zpts)
+        x_weights_node = jnp.asarray(x_weights_node)
+        y_weights_node = jnp.asarray(y_weights_node)
+        z_weights_node = jnp.asarray(z_weights_node)
+        # convert the stencil points and weights to JAX arrays for further processing
+
+        xpts, x_weights_node = _collapse_tiled_axis_stencil(xpts, x_weights_node, local_Nx, reduced_x, g)
+        ypts, y_weights_node = _collapse_tiled_axis_stencil(ypts, y_weights_node, local_Ny, reduced_y, g)
+        zpts, z_weights_node = _collapse_tiled_axis_stencil(zpts, z_weights_node, local_Nz, reduced_z, g)
+        # collapse the stencil points and weights for each axis, taking into account any reduced axes and guard cells
+
+        rho_tile = rho_template
+
+        for i in range(xpts.shape[0]):
+            for j in range(ypts.shape[0]):
+                for k in range(zpts.shape[0]):
+                    ix = xpts[i]
+                    iy = ypts[j]
+                    iz = zpts[k]
+                    rho_tile = rho_tile.at[ix, iy, iz].add(
+                        active * species_weighted_charge * x_weights_node[i] * y_weights_node[j] * z_weights_node[k],
+                        mode="drop",
+                    )
+        # deposit the charge density for each stencil point in the tile, accumulating contributions from all particles
+
+        return rho_tile
+
+
+
+    tx, ty, tz = jnp.meshgrid(
+        jnp.arange(ntx),
+        jnp.arange(nty),
+        jnp.arange(ntz),
+        indexing="ij",
+    )
+    # build the tile index arrays for each dimension
+
+    deposit_charge = deposit_one_tile
+    deposit_charge = jax.vmap(deposit_charge, in_axes=(0, 0, 0, 0, 0), out_axes=0)
+    deposit_charge = jax.vmap(deposit_charge, in_axes=(0, 0, 0, 0, 0), out_axes=0)
+    deposit_charge = jax.vmap(deposit_charge, in_axes=(0, 0, 0, 0, 0), out_axes=0)
+    # vectorize the deposit_one_tile function over the tile indices using jax.vmap
+
+    rho = deposit_charge(particles.x, particles.active, tx, ty, tz)
+    # deposit the charge density for all tiles by applying the vectorized deposit_charge function to the particle positions, active mask, and tile indices
+
+    rho = update_tiled_ghost_cells(rho, static_parameters, g)
+    # update the ghost cells of the charge density array to ensure proper boundary conditions
+    
+    return rho
