@@ -8,6 +8,7 @@ import jax.numpy as jnp
 from PyPIC3D.initialization import setup_write_dir, default_parameters, initialize_simulation, validate_field_solver
 from PyPIC3D.evolve import time_loop_electrodynamic, time_loop_electrostatic
 from PyPIC3D.particles.particle_class import TiledParticles
+from PyPIC3D.utilities.grids import build_yee_grid
 
 jax.config.update("jax_enable_x64", True)
 
@@ -97,6 +98,11 @@ class TestInitializationFunctions(unittest.TestCase):
             self.assertEqual(plotting_parameters["particle_species_metadata"][0]["name"], "electrons")
             self.assertIn("tiled_center_grid", dynamic_parameters.grids._asdict())
             self.assertIn("tiled_vertex_grid", dynamic_parameters.grids._asdict())
+            expected_vertex_grid, expected_center_grid = build_yee_grid(dynamic_parameters)
+            for axis, expected_axis in zip(dynamic_parameters.grids.vertex, expected_vertex_grid):
+                self.assertTrue(jnp.allclose(axis, expected_axis))
+            for axis, expected_axis in zip(dynamic_parameters.grids.center, expected_center_grid):
+                self.assertTrue(jnp.allclose(axis, expected_axis))
             E, B, J, rho, phi, external_fields, pml_state, overflow = fields
             self.assertEqual(E[0].ndim, 6)
             self.assertEqual(B[0].ndim, 6)

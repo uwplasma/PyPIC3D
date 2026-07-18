@@ -307,13 +307,13 @@ def initialize_simulation(toml_file):
     _apply_pml_field_boundaries(static_config, pml_config)
 
     if electrostatic:
-        B_grid, E_grid = build_collocated_grid(dynamic_setup)
+        vertex_grid, center_grid = build_collocated_grid(dynamic_setup)
     else:
-        B_grid, E_grid = build_yee_grid(dynamic_setup)
+        vertex_grid, center_grid = build_yee_grid(dynamic_setup)
 
     dynamic_config["grids"] = {
-        "vertex": E_grid,
-        "center": B_grid,
+        "vertex": vertex_grid,
+        "center": center_grid,
     }
 
     tile_shape = _tile_shape_from_static_config(static_config)
@@ -333,7 +333,7 @@ def initialize_simulation(toml_file):
     })
     grid_setup = SimpleNamespace(
         **grid_dynamic_config,
-        grids=SimpleNamespace(vertex=E_grid, center=B_grid),
+        grids=SimpleNamespace(vertex=vertex_grid, center=center_grid),
     )
     static_setup = SimpleNamespace(tile_shape=tile_shape, guard_cells=guard_cells)
     tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(static_setup, grid_setup)
