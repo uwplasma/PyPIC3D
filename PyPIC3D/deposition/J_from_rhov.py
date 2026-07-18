@@ -241,14 +241,19 @@ def J_from_rhov(
         J = update_tiled_vector_ghost_cells(J, static_parameters, num_guard_cells=g, bc_type=1)
         return J
 
+
     J = jax.lax.cond(
         current_filter == "bilinear",
-        lambda J: bilinear_filtered_current(J),
-        lambda J: digital_filtered_current(J),
+        bilinear_filtered_current,
+        lambda J: jax.lax.cond(
+            current_filter == "digital",
+            digital_filtered_current,
+            lambda J: J,
+            J,
+        ),
         J,
     )
-    # apply the specified filter to the current density tiles, either bilinear or digital, based on the current_filter argument
-    ########################################################
+    # apply current filtering
 
 
     

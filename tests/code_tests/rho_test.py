@@ -12,6 +12,7 @@ from PyPIC3D.diagnostics.output_adapters import assemble_tiled_scalar_field
 from tests.kernel_fixtures import build_tiled_particles, particle_parameters_from_tile_values, particle_species
 from tests.kernel_fixtures import kernel_parameters_from_values
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
+from PyPIC3D.utilities.filters import digital_filter
 
 
 jax.config.update("jax_enable_x64", True)
@@ -249,6 +250,51 @@ class TestTiledRho(unittest.TestCase):
 
     def test_tiled_rho_matches_compute_rho_after_digital_filter(self):
         self._compare_tiled_to_standard(shape_factor=2, alpha=0.55)
+
+    def test_tiled_rho_digital_filter_depends_on_alpha(self):
+        parameter_set = self._build_parameter_values(shape_factor=2)
+        simulation_parameters = self._simulation_parameters()
+        particles = self._particles(parameter_set)
+
+        rho_tiles_alpha_10, rho_alpha_10 = self._deposit_and_assemble(
+            particles,
+            parameter_set,
+            simulation_parameters,
+            {"alpha": 1.0},
+        )
+        rho_tiles_alpha_055, rho_alpha_055 = self._deposit_and_assemble(
+            particles,
+            parameter_set,
+            simulation_parameters,
+            {"alpha": 0.55},
+        )
+
+        parameter_set = self._parameters_with_tiled_grids(parameter_set, simulation_parameters)
+        static_parameters, _dynamic_parameters = kernel_parameters_from_values(parameter_set, {"alpha": 0.55})
+        g = int(parameter_set["guard_cells"])
+        filtered_reference_tiles = digital_filter(rho_tiles_alpha_10, 0.55, num_guard_cells=g)
+        filtered_reference_tiles = ghost_cells.update_tiled_ghost_cells(
+            filtered_reference_tiles,
+            static_parameters,
+            g,
+            bc_type=1,
+        )
+        filtered_reference = assemble_tiled_scalar_field(
+            filtered_reference_tiles,
+            parameter_set,
+            parameter_set["tile_shape"],
+            num_guard_cells=g,
+        )
+
+        self.assertGreater(float(jnp.max(jnp.abs(rho_alpha_055 - rho_alpha_10))), 1.0e-12)
+        self.assertTrue(
+            jnp.allclose(
+                rho_alpha_055,
+                filtered_reference,
+                rtol=1.0e-12,
+                atol=1.0e-12,
+            )
+        )
 
     def test_compute_rho_uses_particle_boundary_conditions_for_ghost_folding(self):
         dynamic_values = {"alpha": 1.0}

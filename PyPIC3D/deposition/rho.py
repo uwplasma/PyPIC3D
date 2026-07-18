@@ -177,4 +177,20 @@ def compute_rho(
     rho = update_tiled_ghost_cells(rho, static_parameters, g, bc_type=1)
     # update the ghost cells of the charge density array to ensure proper boundary conditions
     
+
+    def filter(rho):
+        rho = digital_filter(rho, dynamic_parameters.alpha, num_guard_cells=g)
+        rho = update_tiled_ghost_cells(rho, static_parameters, g, bc_type=1)
+        return rho
+
+    rho = jax.lax.cond(
+        dynamic_parameters.filter_rho,
+        filter,
+        lambda rho: rho,
+        rho,
+    )
+    # apply an additional digital filter to the charge density if specified in the dynamic parameters
+
+
+    
     return rho

@@ -823,6 +823,60 @@ class TestDirectDeposition(unittest.TestCase):
         self._compare_tiled_to_one_tile(particles, species_config, parameter_set, simulation_parameters, filter="digital", alpha=0.6)
         # test that the direct deposition from tiled particles with a digital filter matches the deposition from a single-tile representation, ensuring consistency between tiled and global deposition with filtering
 
+    def test_tiled_direct_deposition_none_filter_does_not_use_alpha(self):
+        parameter_set = self._build_parameter_values()
+        simulation_parameters = {
+            "particle_tile_nx": 2,
+            "particle_tile_ny": 2,
+            "particle_tile_nz": 2,
+        }
+        particles = self._particles_from_slots(
+            parameter_set,
+            simulation_parameters,
+            n_species=1,
+            n_slots=1,
+            slots=[
+                ((0, 0, 0), 0, 0, (-1.25, -1.0, -0.65), (0.2, 0.1, -0.05), True),
+                ((1, 1, 0), 0, 0, (-0.25, -0.25, -0.15), (-0.1, 0.15, 0.25), True),
+                ((2, 1, 1), 0, 0, (0.65, 0.35, 0.25), (0.05, -0.2, 0.1), True),
+            ],
+        )
+        species_config = self._species_config(charges=[-1.0], masses=[1.0], weights=[0.5])
+
+        _, raw_alpha_06 = self._assembled_tiled_current(
+            particles,
+            species_config,
+            parameter_set,
+            simulation_parameters,
+            {"C": 3.0e8, "alpha": 0.6},
+            filter="none",
+        )
+        _, raw_alpha_10 = self._assembled_tiled_current(
+            particles,
+            species_config,
+            parameter_set,
+            simulation_parameters,
+            {"C": 3.0e8, "alpha": 1.0},
+            filter="none",
+        )
+        _, digital_alpha_06 = self._assembled_tiled_current(
+            particles,
+            species_config,
+            parameter_set,
+            simulation_parameters,
+            {"C": 3.0e8, "alpha": 0.6},
+            filter="digital",
+        )
+
+        for raw_06_component, raw_10_component in zip(raw_alpha_06, raw_alpha_10):
+            self.assertTrue(jnp.allclose(raw_06_component, raw_10_component, rtol=1.0e-15, atol=1.0e-15))
+
+        digital_difference = max(
+            float(jnp.max(jnp.abs(raw_component - digital_component)))
+            for raw_component, digital_component in zip(raw_alpha_06, digital_alpha_06)
+        )
+        self.assertGreater(digital_difference, 1.0e-12)
+
     def test_tiled_direct_deposition_bilinear_filter_matches_J_from_rhov(self):
         parameter_set = self._build_parameter_values(Nx=8, Ny=6, Nz=4)
         simulation_parameters = {
