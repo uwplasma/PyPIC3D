@@ -10,15 +10,13 @@ import toml
 from PyPIC3D.evolve import time_loop_electrostatic
 from PyPIC3D.initialization import initialize_simulation
 from PyPIC3D.particles.particle_class import TiledParticles
-from tests.initial_particles import tiled_species
 from PyPIC3D.solvers.electrostatic_yee import (
     solve_poisson_with_conjugate_gradient,
     calculate_electrostatic_fields,
     _centered_finite_difference_gradient,
 )
-from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
-from PyPIC3D.boundary_conditions import ghost_cells
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
+from tests.kernel_fixtures import kernel_parameters, particle_species
 
 jax.config.update("jax_enable_x64", True)
 
@@ -48,72 +46,51 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
         z = jnp.linspace(0, self.z_wind, self.Nz, endpoint=False)
         self.X, self.Y, self.Z = jnp.meshgrid(x, y, z, indexing='ij')
 
-        self.constants = {
-            "eps": 1.0,
-            "alpha": 1.0,
-        }
-        self.world = {
-            "Nx": self.Nx,
-            "Ny": self.Ny,
-            "Nz": self.Nz,
-            "dx": self.dx,
-            "dy": self.dy,
-            "dz": self.dz,
-            "x_wind": self.x_wind,
-            "y_wind": self.y_wind,
-            "z_wind": self.z_wind,
-            "shape_factor": 1,
-            "guard_cells": 2,
-            "tile_shape": (self.Nx, self.Ny, self.Nz),
-            "field_mesh": ghost_cells.make_field_mesh((1, 1, 1)),
-            "boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},
-        }
-        vertex_grid, center_grid = build_yee_grid(self.world)
-        self.world["grids"] = {
-            "vertex": vertex_grid,
-            "center": center_grid,
-        }
-        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(self.world, self.world["tile_shape"], self.world["guard_cells"])
-        self.world["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
-        self.world["grids"]["tiled_center_grid"] = tiled_center_grid
+        self.static_parameters, self.dynamic_parameters = kernel_parameters(
+            Nx=self.Nx,
+            Ny=self.Ny,
+            Nz=self.Nz,
+            x_wind=self.x_wind,
+            y_wind=self.y_wind,
+            z_wind=self.z_wind,
+            dx=self.dx,
+            dy=self.dy,
+            dz=self.dz,
+            tile_shape=(self.Nx, self.Ny, self.Nz),
+            guard_cells=2,
+            shape_factor=1,
+            boundary_conditions=(BC_PERIODIC, BC_PERIODIC, BC_PERIODIC),
+            eps=1.0,
+            alpha=1.0,
+            electrostatic=True,
+            solver="electrostatic",
+        )
 
-        self.g = int(self.world["guard_cells"])
+        self.g = int(self.static_parameters.guard_cells)
         self.active = slice(self.g, -self.g)
-        # Single tile-local fields: shape (Nx+2*g, Ny+2*g, Nz+2*g)
+        # Single tile-local fields: shape (Nx+2*g, Ny+2*g, Nz+2*g).
         self.initial_rho = jnp.zeros((self.Nx + 2 * self.g, self.Ny + 2 * self.g, self.Nz + 2 * self.g))
         self.initial_phi = jnp.zeros((self.Nx + 2 * self.g, self.Ny + 2 * self.g, self.Nz + 2 * self.g))
 
         self.particles = [
-            tiled_species(
+            particle_species(
                 name="test",
-                N_particles=1,
                 charge=1.0,
                 mass=1.0,
-                T=1.0,
                 v1=jnp.zeros(1),
                 v2=jnp.zeros(1),
                 v3=jnp.zeros(1),
                 x1=jnp.array([0.1]),
                 x2=jnp.array([0.2]),
                 x3=jnp.array([0.3]),
-                xwind=self.x_wind,
-                ywind=self.y_wind,
-                zwind=self.z_wind,
-                dx=self.dx,
-                dy=self.dy,
-                dz=self.dz,
                 weight=1.0,
-                x_bc="periodic",
-                y_bc="periodic",
-                z_bc="periodic",
-                dt=0.0,
             )
         ]
 
     def test_solve_poisson_with_conjugate_gradient_single_mode(self):
         phi_true_interior = jnp.sin(self.X + self.Y + self.Z)
         rhs = apply_negative_laplacian(phi_true_interior, self.dx, self.dy, self.dz)
-        rho_interior = rhs * self.constants["eps"]
+        rho_interior = rhs * self.dynamic_parameters.eps
 
         # Place rho into ghost-celled array
         rho = jnp.zeros_like(self.initial_rho)
@@ -122,8 +99,8 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
         phi = solve_poisson_with_conjugate_gradient(
             rho,
             self.initial_phi,
-            self.constants,
-            self.world,
+            self.static_parameters,
+            self.dynamic_parameters,
             tol=1e-10,
             max_iter=4000,
         )
@@ -136,14 +113,14 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
         self.assertEqual(phi_num.shape, phi_true.shape)
         self.assertTrue(jnp.allclose(phi_num, phi_true, atol=1e-7, rtol=1e-6))
 
-        residual = apply_negative_laplacian(phi_num, self.dx, self.dy, self.dz) - rho_interior / self.constants["eps"]
+        residual = apply_negative_laplacian(phi_num, self.dx, self.dy, self.dz) - rho_interior / self.dynamic_parameters.eps
         self.assertLess(jnp.max(jnp.abs(residual)), 1e-6)
 
     def test_electrostatic_field_solve_uses_local_centered_gradient(self):
         E, phi, rho = calculate_electrostatic_fields(
-            self.world,
+            self.static_parameters,
+            self.dynamic_parameters,
             self.particles,
-            self.constants,
             self.initial_rho,
             self.initial_phi,
             "electrostatic",
@@ -153,8 +130,8 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
         expected_phi = solve_poisson_with_conjugate_gradient(
             rho,
             self.initial_phi,
-            self.constants,
-            self.world,
+            self.static_parameters,
+            self.dynamic_parameters,
         )
         expected_Ex, expected_Ey, expected_Ez = _centered_finite_difference_gradient(
             -1.0 * expected_phi[self.active, self.active, self.active],
@@ -216,20 +193,16 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
                 },
             }
 
-            loop, particles, fields, world, simulation_parameters, *_ = initialize_simulation(toml.loads(toml.dumps(config)))
+            loop, particles, fields, static_parameters, dynamic_parameters, *_ = initialize_simulation(toml.loads(toml.dumps(config)))
 
             self.assertIs(loop, time_loop_electrostatic)
             self.assertIsInstance(particles, TiledParticles)
-            self.assertEqual(tuple(world["tile_shape"]), (8, 1, 1))
-            self.assertEqual(tuple(simulation_parameters["tile_shape"]), (8, 1, 1))
-            self.assertEqual(int(simulation_parameters["particle_tile_nx"]), 8)
-            self.assertEqual(int(simulation_parameters["particle_tile_ny"]), 1)
-            self.assertEqual(int(simulation_parameters["particle_tile_nz"]), 1)
-            for vertex_axis, center_axis in zip(world["grids"]["vertex"], world["grids"]["center"]):
+            self.assertEqual(tuple(static_parameters.tile_shape), (8, 1, 1))
+            for vertex_axis, center_axis in zip(dynamic_parameters.grids.vertex, dynamic_parameters.grids.center):
                 self.assertTrue(jnp.allclose(vertex_axis, center_axis))
             for tiled_vertex_axis, tiled_center_axis in zip(
-                world["grids"]["tiled_vertex_grid"],
-                world["grids"]["tiled_center_grid"],
+                dynamic_parameters.grids.tiled_vertex_grid,
+                dynamic_parameters.grids.tiled_center_grid,
             ):
                 self.assertTrue(jnp.allclose(tiled_vertex_axis, tiled_center_axis))
             self.assertEqual(fields[0][0].shape[:3], (1, 1, 1))

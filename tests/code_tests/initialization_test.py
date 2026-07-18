@@ -13,7 +13,7 @@ jax.config.update("jax_enable_x64", True)
 
 class TestInitializationFunctions(unittest.TestCase):
     def setUp(self):
-        self.plotting_parameters, self.simulation_parameters, self.constants = default_parameters()
+        self.plotting_parameters, self.simulation_parameters, self.dynamic_values = default_parameters()
         self.simulation_parameters['output_dir'] = 'test_output'
         self.plotting_parameters['plotfields'] = False
         # check the  default parameters are set correctly
@@ -85,14 +85,14 @@ class TestInitializationFunctions(unittest.TestCase):
             with open(config_path, "w") as f:
                 toml.dump(config, f)
 
-            loop, particles, fields, world, dynamic_parameters, plotting_parameters, *_rest = initialize_simulation(toml.load(config_path))
+            loop, particles, fields, parameter_set, dynamic_parameters, plotting_parameters, *_rest = initialize_simulation(toml.load(config_path))
 
             self.assertIs(loop, time_loop_electrodynamic)
             self.assertIsInstance(particles, TiledParticles)
-            self.assertEqual(world.solver, "electrodynamic_yee")
-            self.assertEqual(tuple(world.tile_shape), (2, 1, 1))
-            self.assertNotIn("particle_species_names", world)
-            self.assertNotIn("particle_species_metadata", world)
+            self.assertEqual(parameter_set.solver, "electrodynamic_yee")
+            self.assertEqual(tuple(parameter_set.tile_shape), (2, 1, 1))
+            self.assertNotIn("particle_species_names", parameter_set)
+            self.assertNotIn("particle_species_metadata", parameter_set)
             self.assertEqual(plotting_parameters["particle_species_names"], ("electrons",))
             self.assertEqual(plotting_parameters["particle_species_metadata"][0]["name"], "electrons")
             self.assertIn("tiled_center_grid", dynamic_parameters.grids._asdict())
@@ -148,11 +148,11 @@ class TestInitializationFunctions(unittest.TestCase):
             with open(config_path, "w") as f:
                 toml.dump(config, f)
 
-            _, particles, _, world, *_ = initialize_simulation(toml.load(config_path))
+            _, particles, _, parameter_set, *_ = initialize_simulation(toml.load(config_path))
 
-            self.assertEqual(world.particle_boundary_conditions, (1, 2, 0))
+            self.assertEqual(parameter_set.particle_boundary_conditions, (1, 2, 0))
             self.assertIsInstance(particles, TiledParticles)
-            # check that the global particle boundary conditions are encoded correctly in the world dictionary
+            # check that the global particle boundary conditions are encoded correctly in the parameter_set dictionary
 
     def test_initialize_simulation_uses_collocated_grid_for_electrostatic(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -188,7 +188,7 @@ class TestInitializationFunctions(unittest.TestCase):
                 },
             }
 
-            loop, particles, fields, world, dynamic_parameters, *_ = initialize_simulation(config)
+            loop, particles, fields, parameter_set, dynamic_parameters, *_ = initialize_simulation(config)
 
             self.assertIs(loop, time_loop_electrostatic)
             self.assertIsInstance(particles, TiledParticles)

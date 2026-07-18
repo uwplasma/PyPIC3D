@@ -26,7 +26,7 @@ def _mesh(mesh_shape):
     return Mesh(np.asarray(devices[:n_devices]).reshape(mesh_shape), ghost_cells.MESH_AXES)
 
 
-def _world(boundary_conditions, tile_shape):
+def _parameter_values(boundary_conditions, tile_shape):
     return {
         "tile_shape": tuple(int(width) for width in tile_shape),
         "guard_cells": 1,

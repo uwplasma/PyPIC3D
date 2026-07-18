@@ -23,23 +23,23 @@ class TestStaticDynamicParameterCutover(unittest.TestCase):
             ["particles", "species_config", "fields", "static_parameters", "dynamic_parameters"],
         )
 
-    def test_parameter_module_does_not_preserve_world_constants_compatibility(self):
+    def test_parameter_module_does_not_preserve_legacy_parameter_compatibility(self):
         self.assertFalse(hasattr(parameters, "world_from_parameters"))
         self.assertFalse(hasattr(parameters, "constants_from_parameters"))
         self.assertFalse(hasattr(parameters, "kernel_parameters_from_inputs"))
-        self.assertFalse(hasattr(parameters, "static_parameters_from_world"))
-        self.assertFalse(hasattr(parameters, "dynamic_parameters_from_world"))
+        self.assertFalse(hasattr(parameters, "static_parameters_from_legacy_mapping"))
+        self.assertFalse(hasattr(parameters, "dynamic_parameters_from_legacy_mapping"))
 
-    def test_production_path_has_no_world_constants_contract(self):
+    def test_production_path_has_no_legacy_parameter_contract(self):
         production_paths = sorted((REPO_ROOT / "PyPIC3D").rglob("*.py"))
         forbidden = (
-            "world",
-            "constants",
+            "parameter_set",
+            "dynamic_values",
             "world_from_parameters",
             "constants_from_parameters",
             "kernel_parameters_from_inputs",
-            "static_parameters_from_world",
-            "dynamic_parameters_from_world",
+            "static_parameters_from_legacy_mapping",
+            "dynamic_parameters_from_legacy_mapping",
         )
 
         for path in production_paths:

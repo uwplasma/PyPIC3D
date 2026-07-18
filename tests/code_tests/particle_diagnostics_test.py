@@ -4,14 +4,19 @@ import jax
 import jax.numpy as jnp
 
 from PyPIC3D.diagnostics.output_adapters import particles_for_output
-from tests.initial_particles import build_tiled_particles, species_names, tiled_species
+from tests.kernel_fixtures import (
+    build_tiled_particles,
+    particle_parameters_from_tile_values,
+    particle_species,
+    species_names,
+)
 
 
 jax.config.update("jax_enable_x64", True)
 
 
 class TestTiledParticleDiagnostics(unittest.TestCase):
-    def _world(self):
+    def _parameter_values(self):
         return {
             "Nx": 4,
             "Ny": 2,
@@ -32,57 +37,45 @@ class TestTiledParticleDiagnostics(unittest.TestCase):
             "particle_tile_nz": 1,
         }
 
+    def _particle_parameters(self, parameter_set=None):
+        if parameter_set is None:
+            parameter_set = self._parameter_values()
+        return particle_parameters_from_tile_values(parameter_set, self._simulation_parameters())
+
     def _species(self):
-        world = self._world()
-        ions = tiled_species(
+        parameter_set = self._parameter_values()
+        ions = particle_species(
             name="ions",
-            N_particles=4,
             charge=2.0,
             mass=3.0,
             weight=4.0,
-            T=1.0,
             x1=jnp.array([-1.5, -0.5, 0.5, 1.5]),
             x2=jnp.array([-0.5, -0.5, 0.5, 0.5]),
             x3=jnp.array([0.0, 0.0, 0.0, 0.0]),
             v1=jnp.array([0.1, 0.2, 0.3, 0.4]),
             v2=jnp.array([1.0, 1.1, 1.2, 1.3]),
             v3=jnp.array([2.0, 2.1, 2.2, 2.3]),
-            xwind=world["x_wind"],
-            ywind=world["y_wind"],
-            zwind=world["z_wind"],
-            dx=world["dx"],
-            dy=world["dy"],
-            dz=world["dz"],
             active_mask=jnp.array([True, False, True, True]),
-            dt=world["dt"],
         )
-        electrons = tiled_species(
+        electrons = particle_species(
             name="electrons",
-            N_particles=3,
             charge=-1.0,
             mass=0.5,
             weight=8.0,
-            T=1.0,
             x1=jnp.array([-1.25, 0.25, 1.25]),
             x2=jnp.array([0.25, -0.25, 0.25]),
             x3=jnp.array([0.0, 0.0, 0.0]),
             v1=jnp.array([-0.1, -0.2, -0.3]),
             v2=jnp.array([-1.0, -1.1, -1.2]),
             v3=jnp.array([-2.0, -2.1, -2.2]),
-            xwind=world["x_wind"],
-            ywind=world["y_wind"],
-            zwind=world["z_wind"],
-            dx=world["dx"],
-            dy=world["dy"],
-            dz=world["dz"],
             active_mask=jnp.array([False, True, True]),
-            dt=world["dt"],
         )
         return [ions, electrons]
 
     def test_flatten_tiled_particles_matches_active_original_species(self):
         species_list = self._species()
-        tiled_particles, species_config = build_tiled_particles(species_list, self._world(), self._simulation_parameters())
+        static_parameters, dynamic_parameters = self._particle_parameters()
+        tiled_particles, species_config = build_tiled_particles(species_list, static_parameters, dynamic_parameters)
 
         flattened_species = particles_for_output(tiled_particles, species_config=species_config)
 
@@ -104,7 +97,8 @@ class TestTiledParticleDiagnostics(unittest.TestCase):
 
     def test_inactive_tiled_slots_are_not_flattened(self):
         species_list = self._species()
-        tiled_particles, species_config = build_tiled_particles(species_list, self._world(), self._simulation_parameters())
+        static_parameters, dynamic_parameters = self._particle_parameters()
+        tiled_particles, species_config = build_tiled_particles(species_list, static_parameters, dynamic_parameters)
 
         flattened_species = particles_for_output(tiled_particles, species_config=species_config)
 
@@ -115,7 +109,8 @@ class TestTiledParticleDiagnostics(unittest.TestCase):
 
     def test_absorbed_particles_do_not_appear_in_flattened_output(self):
         species_list = self._species()
-        tiled_particles, species_config = build_tiled_particles(species_list, self._world(), self._simulation_parameters())
+        static_parameters, dynamic_parameters = self._particle_parameters()
+        tiled_particles, species_config = build_tiled_particles(species_list, static_parameters, dynamic_parameters)
 
         tiled_particles = tiled_particles._replace(
             active=tiled_particles.active.at[1, 1, 0, 0, 1].set(False)
@@ -127,32 +122,33 @@ class TestTiledParticleDiagnostics(unittest.TestCase):
 
     def test_flattened_diagnostic_positions_match_original_half_step_positions(self):
         species_list = self._species()
-        world = self._world()
-        world["particle_boundary_conditions"] = {
+        parameter_set = self._parameter_values()
+        parameter_set["particle_boundary_conditions"] = {
             "x": 0,
             "y": 0,
             "z": 0,
         }
-        tiled_particles, species_config = build_tiled_particles(species_list, world, self._simulation_parameters())
-        static_parameters = {"particle_boundary_conditions": (0, 0, 0)}
+        static_parameters, dynamic_parameters = self._particle_parameters(parameter_set)
+        tiled_particles, species_config = build_tiled_particles(species_list, static_parameters, dynamic_parameters)
 
         flattened_species = particles_for_output(
             tiled_particles,
             species_config=species_config,
             static_parameters=static_parameters,
-            dynamic_parameters=world,
+            dynamic_parameters=dynamic_parameters,
         )
 
         for original, flattened in zip(species_list, flattened_species):
             active = original["active"]
-            original_position = original["x"][active] - 0.5 * original["u"][active] * world["dt"]
+            original_position = original["x"][active] - 0.5 * original["u"][active] * dynamic_parameters.dt
             flattened_position = flattened.x_diagnostic
 
             self.assertTrue(jnp.allclose(flattened_position, original_position))
 
     def test_species_names_are_preserved_when_metadata_is_available(self):
         species_list = self._species()
-        tiled_particles, species_config = build_tiled_particles(species_list, self._world(), self._simulation_parameters())
+        static_parameters, dynamic_parameters = self._particle_parameters()
+        tiled_particles, species_config = build_tiled_particles(species_list, static_parameters, dynamic_parameters)
         names = species_names(species_list)
 
         flattened_species = particles_for_output(tiled_particles, species_config=species_config, species_names=names)

@@ -9,6 +9,7 @@ from functools import partial
 from PyPIC3D.pusher.boris import boris_single_particle, interpolate_field_to_particles
 from PyPIC3D.pusher.higuera_cary import higuera_cary_single_particle
 from PyPIC3D.utils import mae, convergence_test
+from tests.kernel_fixtures import kernel_parameters
 
 jax.config.update("jax_enable_x64", True)
 
@@ -39,6 +40,7 @@ class TestBorisMethods(unittest.TestCase):
         self.staggered_grid = jnp.arange(-1/2 + (1/5)/2, 1/2 + (1/5)/2, (1/5)), jnp.arange(-1/2 + (1/5)/2, 1/2 + (1/5)/2, (1/5)), jnp.arange(-1/2 + (1/5)/2, 1/2 + (1/5)/2, (1/5))
         self.dt = 0.1
         # grid and staggered grid for a 5x5x5 grid with a spacing of 1/5 and a timestep of 0.1
+        _, self.dynamic_parameters = kernel_parameters(C=10.0)
 
     def test_boris(self):
 
@@ -186,7 +188,7 @@ class TestBorisMethods(unittest.TestCase):
             0.0, 0.0, 0.0,
             0.0, 0.0, 0.0,
             1.0, 1.0, 0.1,
-            {"C": 10.0},
+            self.dynamic_parameters,
         )
         # zero fields should not change the particle velocity
         self.assertTrue(jnp.allclose(jnp.array([vx, vy, vz]), jnp.array([0.2, -0.1, 0.05])))
@@ -198,7 +200,7 @@ class TestBorisMethods(unittest.TestCase):
             0.0, 0.0, 0.0,
             0.0, 0.0, 1.0,
             1.0, 1.0, 0.1,
-            {"C": 10.0},
+            self.dynamic_parameters,
         )
         # magnetic rotation should conserve speed
         old_speed = jnp.sqrt(vx0**2 + vy0**2 + vz0**2)
@@ -211,7 +213,7 @@ class TestBorisMethods(unittest.TestCase):
             1.0, 0.0, 0.0,
             0.0, 0.0, 0.0,
             1.0, 1.0, 0.1,
-            {"C": 10.0},
+            self.dynamic_parameters,
         )
         # electric field in x should accelerate the particle in x only
         self.assertGreater(vx, 0.0)
@@ -235,7 +237,7 @@ class TestBorisMethods(unittest.TestCase):
             jnp.array([1.0, 2.0]),
             jnp.array([1.0, 1.0]),
             0.1,
-            {"C": 10.0},
+            self.dynamic_parameters,
         )
         # per-particle charge and mass should work through the vectorized path
         self.assertEqual(newvx.shape, (2,))

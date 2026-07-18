@@ -5,6 +5,7 @@ import jax
 
 from PyPIC3D.pusher.boris import relativistic_boris_single_particle
 from PyPIC3D.pusher.higuera_cary import higuera_cary_single_particle
+from tests.kernel_fixtures import kernel_parameters
 
 
 jax.config.update("jax_enable_x64", True)
@@ -19,9 +20,20 @@ class TestSchmitzParticlePusherBenchmarks(unittest.TestCase):
     update maps and preserve the paper's normalised parameters where possible.
     """
 
-    constants = {"C": 1.0}
     q = 1.0
     m = 1.0
+
+    @classmethod
+    def setUpClass(cls):
+        _static_parameters, cls.dynamic_parameters = kernel_parameters(
+            Nx=1,
+            Ny=1,
+            Nz=1,
+            x_wind=1.0,
+            y_wind=1.0,
+            z_wind=1.0,
+            C=1.0,
+        )
 
     def _gamma(self, v):
         v2 = sum(component * component for component in v)
@@ -45,7 +57,7 @@ class TestSchmitzParticlePusherBenchmarks(unittest.TestCase):
             self.q,
             self.m,
             dt,
-            self.constants,
+            self.dynamic_parameters,
         )
         return float(vx), float(vy), float(vz)
 

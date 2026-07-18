@@ -13,30 +13,30 @@ from PyPIC3D.initialization import initialize_fields
 from PyPIC3D.parameters import build_dynamic_parameters, build_static_parameters
 from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
-from tests.parameter_helpers import field_initialization_parameters
+from tests.kernel_fixtures import kernel_parameters_from_values
 
 jax.config.update("jax_enable_x64", True)
 
 
-def add_tiled_grids_to_world(world, tile_shape):
-    g = int(world["guard_cells"])
-    world["tile_shape"] = tile_shape
+def add_tiled_grids_to_parameters(parameter_set, tile_shape):
+    g = int(parameter_set["guard_cells"])
+    parameter_set["tile_shape"] = tile_shape
     tile_grid_shape = (
-        int(world["Nx"]) // int(tile_shape[0]),
-        int(world["Ny"]) // int(tile_shape[1]),
-        int(world["Nz"]) // int(tile_shape[2]),
+        int(parameter_set["Nx"]) // int(tile_shape[0]),
+        int(parameter_set["Ny"]) // int(tile_shape[1]),
+        int(parameter_set["Nz"]) // int(tile_shape[2]),
     )
-    world["field_mesh"] = make_field_mesh(tile_grid_shape)
+    parameter_set["field_mesh"] = make_field_mesh(tile_grid_shape)
     static_parameters = SimpleNamespace(tile_shape=tile_shape, guard_cells=g)
     dynamic_parameters = SimpleNamespace(
-        dx=world["dx"],
-        dy=world["dy"],
-        dz=world["dz"],
-        grids=SimpleNamespace(vertex=world["grids"]["vertex"], center=world["grids"]["center"]),
+        dx=parameter_set["dx"],
+        dy=parameter_set["dy"],
+        dz=parameter_set["dz"],
+        grids=SimpleNamespace(vertex=parameter_set["grids"]["vertex"], center=parameter_set["grids"]["center"]),
     )
     tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(static_parameters, dynamic_parameters)
-    world["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
-    world["grids"]["tiled_center_grid"] = tiled_center_grid
+    parameter_set["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
+    parameter_set["grids"]["tiled_center_grid"] = tiled_center_grid
     # make tiled versions of the grids for the parallelized particle pushers to use
 
 
@@ -73,7 +73,7 @@ class TestEvolveExternalFields(unittest.TestCase):
         # test that both these methods exist in the public API and are not private methods
 
     def test_external_electric_field_pushes_particles_without_evolving_maxwell_fields(self):
-        world = {
+        parameter_set = {
             "Nx": 3,
             "Ny": 3,
             "Nz": 3,
@@ -90,15 +90,15 @@ class TestEvolveExternalFields(unittest.TestCase):
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
             "particle_boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
-        vertex_grid, center_grid = build_yee_grid(SimpleNamespace(**world))
-        world["grids"] = {"center": center_grid, "vertex": vertex_grid}
-        constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
-        # build world and grids, and set constants for the simulation
+        vertex_grid, center_grid = build_yee_grid(SimpleNamespace(**parameter_set))
+        parameter_set["grids"] = {"center": center_grid, "vertex": vertex_grid}
+        dynamic_values = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
+        # build parameter_set and grids, and set dynamic_values for the simulation
 
-        tile_shape = (world["Nx"], world["Ny"], world["Nz"])
-        world["guard_cells"] = 2
-        add_tiled_grids_to_world(world, tile_shape)
-        field_static, field_dynamic = field_initialization_parameters(world, constants)
+        tile_shape = (parameter_set["Nx"], parameter_set["Ny"], parameter_set["Nz"])
+        parameter_set["guard_cells"] = 2
+        add_tiled_grids_to_parameters(parameter_set, tile_shape)
+        field_static, field_dynamic = kernel_parameters_from_values(parameter_set, dynamic_values)
         E, B, J, phi, rho = initialize_fields(field_static, field_dynamic)
         external_E = tuple(jnp.zeros_like(comp) for comp in E)
         external_B = tuple(jnp.zeros_like(comp) for comp in B)
@@ -123,13 +123,13 @@ class TestEvolveExternalFields(unittest.TestCase):
         )
 
         static_parameters = build_static_parameters({
-            **world,
+            **parameter_set,
             "solver": "electrodynamic_yee",
             "electrostatic": False,
             "relativistic": False,
             "particle_pusher": "boris",
         })
-        dynamic_parameters = build_dynamic_parameters(world, constants)
+        dynamic_parameters = build_dynamic_parameters(parameter_set, dynamic_values)
 
         tiled_particles, fields = time_loop_electrodynamic(
             tiled_particles,
@@ -157,7 +157,7 @@ class TestEvolveExternalFields(unittest.TestCase):
         # ensure the external electric field has not changed after the time step
 
     def test_electrodynamic_step_accepts_split_kernel_parameters(self):
-        world = {
+        parameter_set = {
             "Nx": 3,
             "Ny": 1,
             "Nz": 1,
@@ -174,14 +174,14 @@ class TestEvolveExternalFields(unittest.TestCase):
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
             "particle_boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
-        vertex_grid, center_grid = build_yee_grid(SimpleNamespace(**world))
-        world["grids"] = {"center": center_grid, "vertex": vertex_grid}
-        constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
+        vertex_grid, center_grid = build_yee_grid(SimpleNamespace(**parameter_set))
+        parameter_set["grids"] = {"center": center_grid, "vertex": vertex_grid}
+        dynamic_values = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
 
-        tile_shape = (world["Nx"], world["Ny"], world["Nz"])
-        world["guard_cells"] = 2
-        add_tiled_grids_to_world(world, tile_shape)
-        field_static, field_dynamic = field_initialization_parameters(world, constants)
+        tile_shape = (parameter_set["Nx"], parameter_set["Ny"], parameter_set["Nz"])
+        parameter_set["guard_cells"] = 2
+        add_tiled_grids_to_parameters(parameter_set, tile_shape)
+        field_static, field_dynamic = kernel_parameters_from_values(parameter_set, dynamic_values)
         E, B, J, phi, rho = initialize_fields(field_static, field_dynamic)
         external_fields = (
             tuple(jnp.zeros_like(comp) for comp in E),
@@ -193,13 +193,13 @@ class TestEvolveExternalFields(unittest.TestCase):
             u=jnp.array([0.05, 0.0, 0.0]),
         )
         static_parameters = build_static_parameters({
-            **world,
+            **parameter_set,
             "solver": "electrodynamic_yee",
             "electrostatic": False,
             "relativistic": False,
             "particle_pusher": "boris",
         })
-        dynamic_parameters = build_dynamic_parameters(world, constants)
+        dynamic_parameters = build_dynamic_parameters(parameter_set, dynamic_values)
 
         step = jax.jit(lambda particles, fields, dynamic: time_loop_electrodynamic(
             particles,
@@ -215,7 +215,7 @@ class TestEvolveExternalFields(unittest.TestCase):
         self.assertGreater(float(tiled_particles.x[0, 0, 0, 0, 0, 0]), 0.0)
 
     def test_absorbing_particle_mask_survives_jitted_electrodynamic_step(self):
-        world = {
+        parameter_set = {
             "Nx": 3,
             "Ny": 1,
             "Nz": 1,
@@ -232,15 +232,15 @@ class TestEvolveExternalFields(unittest.TestCase):
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
             "particle_boundary_conditions": {"x": 2, "y": 0, "z": 0},
         }
-        vertex_grid, center_grid = build_yee_grid(SimpleNamespace(**world))
-        world["grids"] = {"center": center_grid, "vertex": vertex_grid}
-        constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
-        # build world and grids, and set constants for the simulation
+        vertex_grid, center_grid = build_yee_grid(SimpleNamespace(**parameter_set))
+        parameter_set["grids"] = {"center": center_grid, "vertex": vertex_grid}
+        dynamic_values = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
+        # build parameter_set and grids, and set dynamic_values for the simulation
 
-        tile_shape = (world["Nx"], world["Ny"], world["Nz"])
-        world["guard_cells"] = 2
-        add_tiled_grids_to_world(world, tile_shape)
-        field_static, field_dynamic = field_initialization_parameters(world, constants)
+        tile_shape = (parameter_set["Nx"], parameter_set["Ny"], parameter_set["Nz"])
+        parameter_set["guard_cells"] = 2
+        add_tiled_grids_to_parameters(parameter_set, tile_shape)
+        field_static, field_dynamic = kernel_parameters_from_values(parameter_set, dynamic_values)
         E, B, J, phi, rho = initialize_fields(field_static, field_dynamic)
         external_fields = (
             tuple(jnp.zeros_like(comp) for comp in E),
@@ -267,13 +267,13 @@ class TestEvolveExternalFields(unittest.TestCase):
         # build the fields tuple with the initialized fields and external fields
 
         static_parameters = build_static_parameters({
-            **world,
+            **parameter_set,
             "solver": "electrodynamic_yee",
             "electrostatic": False,
             "relativistic": False,
             "particle_pusher": "boris",
         })
-        dynamic_parameters = build_dynamic_parameters(world, constants)
+        dynamic_parameters = build_dynamic_parameters(parameter_set, dynamic_values)
 
         tiled_particles, _ = time_loop_electrodynamic(
             tiled_particles,
