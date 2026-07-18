@@ -122,17 +122,18 @@ def compute_energy(particles, E, B, static_parameters, dynamic_parameters=None, 
 
     if dynamic_parameters is None:
         dynamic_parameters = static_parameters
-    elif "dx" not in dynamic_parameters:
-        dynamic_parameters = {**static_parameters, **dynamic_parameters}
+    elif not hasattr(dynamic_parameters, "dx") and "dx" not in dynamic_parameters:
+        static_items = static_parameters._asdict() if hasattr(static_parameters, "_asdict") else static_parameters
+        dynamic_parameters = {**static_items, **dynamic_parameters}
 
-    dx = dynamic_parameters['dx']
-    dy = dynamic_parameters['dy']
-    dz = dynamic_parameters['dz']
+    dx = dynamic_parameters.dx
+    dy = dynamic_parameters.dy
+    dz = dynamic_parameters.dz
     # get the resolution of the grid
 
-    Nx = dynamic_parameters['Nx']
-    Ny = dynamic_parameters['Ny']
-    Nz = dynamic_parameters['Nz']
+    Nx = dynamic_parameters.Nx
+    Ny = dynamic_parameters.Ny
+    Nz = dynamic_parameters.Nz
     # get the number of grid points in each direction
 
     def nd_trapezoid(arr, dxs):
@@ -151,7 +152,7 @@ def compute_energy(particles, E, B, static_parameters, dynamic_parameters=None, 
     # integral.  Tiled fields have leading tile axes followed by local
     # ghost-celled Yee arrays.
     if Ex.ndim == 6:
-        g = int(static_parameters.get("guard_cells", 2))
+        g = static_parameters.guard_cells
         interior = (
             slice(None),
             slice(None),
@@ -167,10 +168,10 @@ def compute_energy(particles, E, B, static_parameters, dynamic_parameters=None, 
     E2_integral = jnp.sum(Ex[interior]**2 + Ey[interior]**2 + Ez[interior]**2) * dV
     B2_integral = jnp.sum(Bx[interior]**2 + By[interior]**2 + Bz[interior]**2) * dV
     # Integrate E^2 and B^2 over the grid using trapezoidal rule
-    e_energy = 0.5 * dynamic_parameters['eps'] * E2_integral
-    b_energy = 0.5 / dynamic_parameters['mu'] * B2_integral
+    e_energy = 0.5 * dynamic_parameters.eps * E2_integral
+    b_energy = 0.5 / dynamic_parameters.mu * B2_integral
     # Electric and magnetic field energy
-    C = dynamic_parameters['C']
+    C = dynamic_parameters.C
     # speed of light
     vx = particles.u[..., 0]
     vy = particles.u[..., 1]
@@ -329,14 +330,14 @@ def print_stats(static_parameters, dynamic_parameters):
         The time window, x window, y window, z window, and resolution details (dx, dy, dz, dt, Nt).
     """
 
-    Nt = static_parameters['Nt']
-    dx = dynamic_parameters['dx']
-    dy = dynamic_parameters['dy']
-    dz = dynamic_parameters['dz']
-    dt = dynamic_parameters['dt']
-    x_wind = dynamic_parameters['x_wind']
-    y_wind = dynamic_parameters['y_wind']
-    z_wind = dynamic_parameters['z_wind']
+    Nt = static_parameters.Nt
+    dx = dynamic_parameters.dx
+    dy = dynamic_parameters.dy
+    dz = dynamic_parameters.dz
+    dt = dynamic_parameters.dt
+    x_wind = dynamic_parameters.x_wind
+    y_wind = dynamic_parameters.y_wind
+    z_wind = dynamic_parameters.z_wind
     t_wind = Nt*dt
     print(f'\ntime window: {t_wind} s with {Nt} time steps of {dt} s')
     print(f'x window: {x_wind} m with dx: {dx} m')
@@ -405,13 +406,13 @@ def build_plasma_parameters_dict(static_parameters, dynamic_parameters, electron
     N = electrons["N_particles"]
     q = electrons["charge"]
     weight = electrons["weight"]
-    kb = dynamic_parameters['kb']
-    dx, dy, dz = dynamic_parameters['dx'], dynamic_parameters['dy'], dynamic_parameters['dz']
+    kb = dynamic_parameters.kb
+    dx, dy, dz = dynamic_parameters.dx, dynamic_parameters.dy, dynamic_parameters.dz
 
-    volume = dynamic_parameters["x_wind"] * dynamic_parameters["y_wind"] * dynamic_parameters["z_wind"]
+    volume = dynamic_parameters.x_wind * dynamic_parameters.y_wind * dynamic_parameters.z_wind
     density = weight * N / volume
-    theoretical_freq = jnp.sqrt(density) * jnp.abs(q) / jnp.sqrt(dynamic_parameters["eps"] * me)
-    debye = jnp.sqrt(dynamic_parameters["eps"] * kb * Te / (density * q**2))
+    theoretical_freq = jnp.sqrt(density) * jnp.abs(q) / jnp.sqrt(dynamic_parameters.eps * me)
+    debye = jnp.sqrt(dynamic_parameters.eps * kb * Te / (density * q**2))
     thermal_velocity = jnp.sqrt(3*kb*Te/me)
 
     plasma_parameters = {
@@ -515,10 +516,10 @@ def _add_external_field_to_tiled_component(component, external_field, static_par
     Add one physical field array into the active interiors of a tiled component.
     """
 
-    tile_nx, tile_ny, tile_nz = [int(width) for width in static_parameters["tile_shape"]]
-    g = int(static_parameters["guard_cells"])
+    tile_nx, tile_ny, tile_nz = [int(width) for width in static_parameters.tile_shape]
+    g = int(static_parameters.guard_cells)
     ntx, nty, ntz = component.shape[:3]
-    interior_shape = (int(dynamic_parameters["Nx"]), int(dynamic_parameters["Ny"]), int(dynamic_parameters["Nz"]))
+    interior_shape = (int(dynamic_parameters.Nx), int(dynamic_parameters.Ny), int(dynamic_parameters.Nz))
     if external_field.shape != interior_shape:
         raise ValueError(
             f"Shape mismatch for field '{field_name}': external field shape {external_field.shape} "
@@ -669,7 +670,7 @@ def dump_parameters_to_toml(simulation_stats, static_parameters, dynamic_paramet
         particles (TiledParticles): Tile-major particle storage.
     """
 
-    output_path = static_parameters["output_dir"]
+    output_path = static_parameters.output_dir
     output_file = os.path.join(output_path, "data/output.toml")
     plotting_parameters_for_output = {
         key: value
@@ -689,10 +690,10 @@ def dump_parameters_to_toml(simulation_stats, static_parameters, dynamic_paramet
     n_species = particles.active.shape[3]
     species_names = plotting_parameters.get("particle_species_names")
     species_metadata = plotting_parameters.get("particle_species_metadata")
-    tile_shape = jax.tree_util.tree_map(
-        lambda x: x.tolist() if isinstance(x, jnp.ndarray) else x,
-        static_parameters.get("tile_shape", ()),
-    )
+    tile_shape = static_parameters.tile_shape
+    tile_shape = [int(width) for width in tile_shape]
+    # get the number of species and their names and metadata
+
 
     for species_index in range(n_species):
         if species_names is None:
@@ -780,12 +781,12 @@ def courant_condition(courant_number, dx, dy, dz, dynamic_parameters):
         float: The maximum allowable time step for stability.
     """
 
-    C = dynamic_parameters['C']
+    C = dynamic_parameters.C
 
 
-    Nx = dynamic_parameters["Nx"]
-    Ny = dynamic_parameters["Ny"]
-    Nz = dynamic_parameters["Nz"]
+    Nx = dynamic_parameters.Nx
+    Ny = dynamic_parameters.Ny
+    Nz = dynamic_parameters.Nz
     # get the number of grid points in each direction
     Ns  = [Nx, Ny, Nz]
     dxs = [dx, dy, dz]
