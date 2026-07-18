@@ -1,4 +1,5 @@
 import os
+from types import SimpleNamespace
 
 import jax
 import jax.numpy as jnp
@@ -206,8 +207,8 @@ def default_parameters():
     return plotting_parameters, static_parameters, dynamic_parameters
 
 
-def setup_write_dir(static_parameters, plotting_parameters):
-    output_dir = static_parameters["output_dir"]
+def setup_write_dir(static_config, plotting_parameters):
+    output_dir = static_config["output_dir"]
     make_dir(f"{output_dir}/data")
 
 
@@ -299,11 +300,12 @@ def initialize_simulation(toml_file):
         raise ValueError("PML is only supported for the electrodynamic_yee solver")
 
     _validate_tiled_yee_configuration(static_config, dynamic_config)
-    pml_config = load_pml_from_toml(raw_pml, static_config, dynamic_config)
+
+    dynamic_setup = SimpleNamespace(**convert_to_jax_compatible(dynamic_config))
+    pml_config = load_pml_from_toml(raw_pml, None, dynamic_setup)
     static_config["pml_active"] = pml_config[0]
     _apply_pml_field_boundaries(static_config, pml_config)
 
-    dynamic_setup = convert_to_jax_compatible(dynamic_config)
     if electrostatic:
         B_grid, E_grid = build_collocated_grid(dynamic_setup)
     else:
@@ -326,12 +328,15 @@ def initialize_simulation(toml_file):
     )
     static_config["field_mesh"] = make_field_mesh(tile_grid_shape)
 
-    tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(
-        static_config,
-        dynamic_config,
-        tile_shape,
-        guard_cells,
+    grid_dynamic_config = convert_to_jax_compatible({
+        key: value for key, value in dynamic_config.items() if key != "grids"
+    })
+    grid_setup = SimpleNamespace(
+        **grid_dynamic_config,
+        grids=SimpleNamespace(vertex=E_grid, center=B_grid),
     )
+    static_setup = SimpleNamespace(tile_shape=tile_shape, guard_cells=guard_cells)
+    tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(static_setup, grid_setup)
     dynamic_config["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
     dynamic_config["grids"]["tiled_center_grid"] = tiled_center_grid
 
@@ -362,7 +367,7 @@ def initialize_simulation(toml_file):
         plot_initial_histograms(
             particle_record,
             dynamic_parameters,
-            path=f"{static_parameters['output_dir']}/data",
+            path=f"{static_parameters.output_dir}/data",
             name=name,
         )
 
@@ -380,7 +385,7 @@ def initialize_simulation(toml_file):
             particles,
             static_parameters,
             dynamic_parameters,
-            static_parameters["output_dir"],
+            static_parameters.output_dir,
             species_config=species_config,
             species_names=particle_species_names,
         )
@@ -422,11 +427,11 @@ def initialize_simulation(toml_file):
     print(f"Initial Kinetic Energy: {kinetic_energy:.2e} J")
     print(f"Total Initial Energy: {e_energy + b_energy + kinetic_energy:.2e} J\n")
 
-    if static_parameters["relativistic"]:
+    if static_parameters.relativistic:
         print("Relativistic simulation")
     else:
         print("Non-relativistic simulation")
-    print(f"Using {static_parameters['particle_pusher']} particle pusher")
+    print(f"Using {static_parameters.particle_pusher} particle pusher")
 
     if electrostatic:
         print("Using electrostatic solver")
@@ -462,11 +467,11 @@ def initialize_simulation(toml_file):
             fields,
             static_parameters,
             dynamic_parameters,
-            static_parameters["output_dir"],
+            static_parameters.output_dir,
             filename="initial_fields.h5",
         )
 
-    if static_parameters["GPUs"]:
+    if static_parameters.GPUs:
         print("GPUs Detected! Using GPUs for simulation\n")
         particles = jax.device_put(particles, jax.devices("gpu")[0])
         if species_config is not None:
@@ -484,19 +489,16 @@ def initialize_simulation(toml_file):
     )
 
 
-def build_tiled_array(static_parameters, dynamic_parameters=None, dtype=jnp.float64):
+def build_tiled_array(static_parameters, dynamic_parameters, dtype=jnp.float64):
     """
     Build one zero-filled tiled field component from the split geometry.
     """
 
-    if dynamic_parameters is None:
-        dynamic_parameters = static_parameters
-
-    tile_nx, tile_ny, tile_nz = [int(width) for width in static_parameters["tile_shape"]]
-    Nx = int(dynamic_parameters["Nx"])
-    Ny = int(dynamic_parameters["Ny"])
-    Nz = int(dynamic_parameters["Nz"])
-    g = int(static_parameters["guard_cells"])
+    tile_nx, tile_ny, tile_nz = [int(width) for width in static_parameters.tile_shape]
+    Nx = int(dynamic_parameters.Nx)
+    Ny = int(dynamic_parameters.Ny)
+    Nz = int(dynamic_parameters.Nz)
+    g = int(static_parameters.guard_cells)
     ntx = Nx // tile_nx
     nty = Ny // tile_ny
     ntz = Nz // tile_nz
@@ -504,13 +506,10 @@ def build_tiled_array(static_parameters, dynamic_parameters=None, dtype=jnp.floa
     return jnp.zeros(shape=tiled_shape, dtype=dtype)
 
 
-def initialize_fields(static_parameters, dynamic_parameters=None):
+def initialize_fields(static_parameters, dynamic_parameters):
     """
     Initialize tiled electric, magnetic, current, potential, and charge arrays.
     """
-
-    if dynamic_parameters is None:
-        dynamic_parameters = static_parameters
 
     Ex = build_tiled_array(static_parameters, dynamic_parameters)
     Ey = build_tiled_array(static_parameters, dynamic_parameters)

@@ -1,13 +1,16 @@
 import math
 import unittest
+from types import SimpleNamespace
 
 import jax
 import jax.numpy as jnp
 
+from PyPIC3D.boundary_conditions.ghost_cells import make_field_mesh
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
 from PyPIC3D.initialization import initialize_fields
 from PyPIC3D.solvers.first_order_yee import update_B
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
+from tests.parameter_helpers import field_initialization_parameters
 
 
 jax.config.update("jax_enable_x64", True)
@@ -37,17 +40,24 @@ class TestYeeConvergence(unittest.TestCase):
             "field_boundary_conditions": (BC_PERIODIC, BC_PERIODIC, BC_PERIODIC),
             "grids": {},
         }
-        vertex_grid, center_grid = build_yee_grid(world)
+        vertex_grid, center_grid = build_yee_grid(SimpleNamespace(**world))
         world["grids"]["vertex"] = vertex_grid
         world["grids"]["center"] = center_grid
-        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world)
+        world["field_mesh"] = make_field_mesh((
+            int(world["Nx"]) // int(tile_shape[0]),
+            int(world["Ny"]) // int(tile_shape[1]),
+            int(world["Nz"]) // int(tile_shape[2]),
+        ))
+        static_parameters, dynamic_parameters = field_initialization_parameters(world, {"alpha": 1.0})
+        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(static_parameters, dynamic_parameters)
         world["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
         world["grids"]["tiled_center_grid"] = tiled_center_grid
         return world
 
     def call_updateB(self, Nx, tile_shape):
         world = self._world(Nx, tile_shape)
-        E, B, _J, _phi, _rho = initialize_fields(world)
+        static_parameters, dynamic_parameters = field_initialization_parameters(world, {"alpha": 1.0})
+        E, B, _J, _phi, _rho = initialize_fields(static_parameters, dynamic_parameters)
         Ex, Ey, Ez = E
         g = int(world["guard_cells"])
         active = slice(g, -g)
@@ -56,7 +66,7 @@ class TestYeeConvergence(unittest.TestCase):
         Ez_values = jnp.sin(x_center)[:, :, :, :, jnp.newaxis, jnp.newaxis]
         Ez = Ez.at[:, :, :, active, active, active].set(Ez_values)
 
-        _Bx, By, _Bz = update_B((Ex, Ey, Ez), B, world, {"alpha": 1.0})[0]
+        _Bx, By, _Bz = update_B((Ex, Ey, Ez), B, static_parameters, dynamic_parameters)[0]
 
         x_vertex = world["grids"]["tiled_vertex_grid"][0][:, :, :, active]
         exact_By = world["dt"] * jnp.cos(x_vertex)

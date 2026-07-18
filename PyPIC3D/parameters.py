@@ -1,9 +1,61 @@
 import jax.numpy as jnp
+from typing import NamedTuple
 
 from PyPIC3D.boundary_conditions.ghost_cells import make_field_mesh
 
 
+class GridParameters(NamedTuple):
+    vertex: tuple
+    center: tuple
+    tiled_vertex_grid: tuple
+    tiled_center_grid: tuple
+
+
+class StaticParameters(NamedTuple):
+    name: str
+    output_dir: str
+    Nt: int
+    verbose: bool
+    GPUs: bool
+    benchmark: bool
+    solver: str
+    electrostatic: bool
+    relativistic: bool
+    particle_pusher: str
+    current_deposition: str
+    current_filter: str
+    shape_factor: int
+    guard_cells: int
+    tile_shape: tuple
+    particle_tile_capacity_factor: float
+    pml_active: bool
+    boundary_conditions: tuple
+    particle_boundary_conditions: tuple
+    field_mesh: object
+
+
+class DynamicParameters(NamedTuple):
+    dt: jnp.ndarray
+    dx: jnp.ndarray
+    dy: jnp.ndarray
+    dz: jnp.ndarray
+    Nx: jnp.ndarray
+    Ny: jnp.ndarray
+    Nz: jnp.ndarray
+    x_wind: jnp.ndarray
+    y_wind: jnp.ndarray
+    z_wind: jnp.ndarray
+    C: jnp.ndarray
+    eps: jnp.ndarray
+    mu: jnp.ndarray
+    kb: jnp.ndarray
+    alpha: jnp.ndarray
+    grids: GridParameters
+
+
 def _axis_tuple(axis_values):
+    if isinstance(axis_values, tuple):
+        return tuple(int(value) for value in axis_values)
     return (
         int(axis_values["x"]),
         int(axis_values["y"]),
@@ -45,30 +97,30 @@ def build_static_parameters(static_config):
 
     tile_shape = _tile_shape(static_config)
 
-    return {
-        "name": static_config.get("name", "Default Simulation"),
-        "output_dir": static_config.get("output_dir", "."),
-        "Nt": int(static_config.get("Nt", 0)),
-        "verbose": bool(static_config.get("verbose", False)),
-        "GPUs": bool(static_config.get("GPUs", False)),
-        "benchmark": bool(static_config.get("benchmark", False)),
-        "solver": static_config.get("solver", "electrodynamic_yee"),
-        "electrostatic": bool(static_config.get("electrostatic", False)),
-        "relativistic": bool(static_config.get("relativistic", True)),
-        "particle_pusher": static_config.get("particle_pusher", "boris"),
-        "current_deposition": static_config.get("current_deposition", "direct"),
-        "current_filter": static_config.get("current_filter", "none"),
-        "shape_factor": int(static_config["shape_factor"]),
-        "guard_cells": int(static_config["guard_cells"]),
-        "tile_shape": tile_shape,
-        "particle_tile_capacity_factor": float(static_config.get("particle_tile_capacity_factor", 1.0)),
-        "pml_active": bool(static_config.get("pml_active", False)),
-        "boundary_conditions": _axis_tuple(static_config["boundary_conditions"]),
-        "particle_boundary_conditions": _axis_tuple(
+    return StaticParameters(
+        name=static_config.get("name", "Default Simulation"),
+        output_dir=static_config.get("output_dir", "."),
+        Nt=int(static_config.get("Nt", 0)),
+        verbose=bool(static_config.get("verbose", False)),
+        GPUs=bool(static_config.get("GPUs", False)),
+        benchmark=bool(static_config.get("benchmark", False)),
+        solver=static_config.get("solver", "electrodynamic_yee"),
+        electrostatic=bool(static_config.get("electrostatic", False)),
+        relativistic=bool(static_config.get("relativistic", True)),
+        particle_pusher=static_config.get("particle_pusher", "boris"),
+        current_deposition=static_config.get("current_deposition", "direct"),
+        current_filter=static_config.get("current_filter", "none"),
+        shape_factor=int(static_config["shape_factor"]),
+        guard_cells=int(static_config["guard_cells"]),
+        tile_shape=tile_shape,
+        particle_tile_capacity_factor=float(static_config.get("particle_tile_capacity_factor", 1.0)),
+        pml_active=bool(static_config.get("pml_active", False)),
+        boundary_conditions=_axis_tuple(static_config["boundary_conditions"]),
+        particle_boundary_conditions=_axis_tuple(
             static_config.get("particle_boundary_conditions", {"x": 0, "y": 0, "z": 0})
         ),
-        "field_mesh": _field_mesh(static_config, tile_shape),
-    }
+        field_mesh=_field_mesh(static_config, tile_shape),
+    )
 
 
 def build_dynamic_parameters(dynamic_config, extra_dynamic_config=None):
@@ -79,24 +131,34 @@ def build_dynamic_parameters(dynamic_config, extra_dynamic_config=None):
     if extra_dynamic_config is None:
         extra_dynamic_config = {}
 
-    return {
-        "dt": jnp.asarray(dynamic_config["dt"]),
-        "dx": jnp.asarray(dynamic_config["dx"]),
-        "dy": jnp.asarray(dynamic_config["dy"]),
-        "dz": jnp.asarray(dynamic_config["dz"]),
-        "Nx": jnp.asarray(dynamic_config["Nx"]),
-        "Ny": jnp.asarray(dynamic_config["Ny"]),
-        "Nz": jnp.asarray(dynamic_config["Nz"]),
-        "x_wind": jnp.asarray(dynamic_config["x_wind"]),
-        "y_wind": jnp.asarray(dynamic_config["y_wind"]),
-        "z_wind": jnp.asarray(dynamic_config["z_wind"]),
-        "C": jnp.asarray(dynamic_config.get("C", extra_dynamic_config.get("C", 1.0))),
-        "eps": jnp.asarray(dynamic_config.get("eps", extra_dynamic_config.get("eps", 1.0))),
-        "mu": jnp.asarray(dynamic_config.get("mu", extra_dynamic_config.get("mu", 1.0))),
-        "kb": jnp.asarray(dynamic_config.get("kb", extra_dynamic_config.get("kb", 1.0))),
-        "alpha": jnp.asarray(dynamic_config.get("alpha", extra_dynamic_config.get("alpha", 1.0))),
-        "grids": dynamic_config["grids"],
-    }
+    grids = dynamic_config["grids"]
+    if hasattr(grids, "_asdict"):
+        grids = grids._asdict()
+    grids = GridParameters(
+        vertex=grids["vertex"],
+        center=grids["center"],
+        tiled_vertex_grid=grids["tiled_vertex_grid"],
+        tiled_center_grid=grids["tiled_center_grid"],
+    )
+
+    return DynamicParameters(
+        dt=jnp.asarray(dynamic_config["dt"]),
+        dx=jnp.asarray(dynamic_config["dx"]),
+        dy=jnp.asarray(dynamic_config["dy"]),
+        dz=jnp.asarray(dynamic_config["dz"]),
+        Nx=jnp.asarray(dynamic_config["Nx"]),
+        Ny=jnp.asarray(dynamic_config["Ny"]),
+        Nz=jnp.asarray(dynamic_config["Nz"]),
+        x_wind=jnp.asarray(dynamic_config["x_wind"]),
+        y_wind=jnp.asarray(dynamic_config["y_wind"]),
+        z_wind=jnp.asarray(dynamic_config["z_wind"]),
+        C=jnp.asarray(dynamic_config.get("C", extra_dynamic_config.get("C", 1.0))),
+        eps=jnp.asarray(dynamic_config.get("eps", extra_dynamic_config.get("eps", 1.0))),
+        mu=jnp.asarray(dynamic_config.get("mu", extra_dynamic_config.get("mu", 1.0))),
+        kb=jnp.asarray(dynamic_config.get("kb", extra_dynamic_config.get("kb", 1.0))),
+        alpha=jnp.asarray(dynamic_config.get("alpha", extra_dynamic_config.get("alpha", 1.0))),
+        grids=grids,
+    )
 
 
 def _output_value(value):
@@ -113,27 +175,29 @@ def _output_value(value):
 
 def static_parameters_for_output(static_parameters):
     skip = {"field_mesh"}
+    static_items = static_parameters._asdict()
     return {
         key: _output_value(value)
-        for key, value in static_parameters.items()
+        for key, value in static_items.items()
         if key not in skip
     }
 
 
 def dynamic_parameters_for_output(dynamic_parameters):
     skip = {"grids"}
+    dynamic_items = dynamic_parameters._asdict()
     return {
         key: _output_value(value)
-        for key, value in dynamic_parameters.items()
+        for key, value in dynamic_items.items()
         if key not in skip
     }
 
 
 def boundary_dict(static_parameters):
-    bc_x, bc_y, bc_z = static_parameters["boundary_conditions"]
+    bc_x, bc_y, bc_z = static_parameters.boundary_conditions
     return {"x": bc_x, "y": bc_y, "z": bc_z}
 
 
 def particle_boundary_dict(static_parameters):
-    bc_x, bc_y, bc_z = static_parameters["particle_boundary_conditions"]
+    bc_x, bc_y, bc_z = static_parameters.particle_boundary_conditions
     return {"x": bc_x, "y": bc_y, "z": bc_z}

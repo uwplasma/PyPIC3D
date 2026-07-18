@@ -1,4 +1,5 @@
 import unittest
+from types import SimpleNamespace
 
 import jax
 import jax.numpy as jnp
@@ -6,7 +7,7 @@ import numpy as np
 
 from PyPIC3D.boundary_conditions import ghost_cells
 from tests.initial_particles import build_tiled_particles, tiled_species
-from tests.parameter_helpers import split_test_parameters
+from tests.parameter_helpers import field_initialization_parameters, split_test_parameters
 from PyPIC3D.pusher.particle_push import particle_push
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 
@@ -53,7 +54,8 @@ def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
         world = dict(world)
         world["tile_shape"] = tuple(int(width) for width in tile_shape)
         world["field_mesh"] = ghost_cells.make_field_mesh((ntx, nty, ntz))
-        return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g)
+        static_parameters, _ = field_initialization_parameters(world)
+        return ghost_cells.update_tiled_ghost_cells(field_tiles, static_parameters, g)
 
     def tile_at(tx, ty, tz):
         start = (tx * tile_nx, ty * tile_ny, tz * tile_nz)
@@ -95,7 +97,7 @@ class TestTiledParticlePusher(unittest.TestCase):
             "shape_factor": shape_factor,
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
-        vertex_grid, center_grid = build_yee_grid(world)
+        vertex_grid, center_grid = build_yee_grid(SimpleNamespace(**world))
         world["grids"] = {"vertex": vertex_grid, "center": center_grid}
         return world
 
@@ -107,7 +109,8 @@ class TestTiledParticlePusher(unittest.TestCase):
             int(world["Ny"]) // int(tile_shape[1]),
             int(world["Nz"]) // int(tile_shape[2]),
         ))
-        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world, tile_shape, g)
+        static_parameters, dynamic_parameters = field_initialization_parameters(world)
+        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(static_parameters, dynamic_parameters)
         world["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
         world["grids"]["tiled_center_grid"] = tiled_center_grid
         return world
@@ -132,8 +135,10 @@ class TestTiledParticlePusher(unittest.TestCase):
         )
         g = int(world["guard_cells"])
         static_parameters, dynamic_parameters = split_test_parameters(world, constants)
-        static_parameters["relativistic"] = bool(relativistic)
-        static_parameters["particle_pusher"] = particle_pusher
+        static_parameters = static_parameters._replace(
+            relativistic=bool(relativistic),
+            particle_pusher=particle_pusher,
+        )
         return particle_push(
             tiled_particles,
             species_config,
@@ -320,8 +325,7 @@ class TestTiledParticlePusher(unittest.TestCase):
         tiled_particles, species_config = build_tiled_particles([species], world, simulation_parameters)
 
         static_parameters, dynamic_parameters = split_test_parameters(world, constants)
-        static_parameters["relativistic"] = False
-        static_parameters["particle_pusher"] = "boris"
+        static_parameters = static_parameters._replace(relativistic=False, particle_pusher="boris")
         pushed = particle_push(
             tiled_particles,
             species_config,

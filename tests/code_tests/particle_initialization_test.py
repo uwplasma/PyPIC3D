@@ -2,6 +2,7 @@ import os
 import inspect
 import tempfile
 import unittest
+from types import SimpleNamespace
 
 import jax
 import jax.numpy as jnp
@@ -20,6 +21,31 @@ class TestTiledParticleInitialization(unittest.TestCase):
         path = os.path.join(tmpdir, name)
         np.save(path, np.asarray(values, dtype=float))
         return path
+
+    def _particle_parameters(self, simulation_parameters, world, constants):
+        static_parameters = SimpleNamespace(
+            tile_shape=(
+                simulation_parameters["particle_tile_nx"],
+                simulation_parameters["particle_tile_ny"],
+                simulation_parameters["particle_tile_nz"],
+            ),
+            particle_tile_capacity_factor=simulation_parameters.get("particle_tile_capacity_factor", 1.0),
+        )
+        dynamic_parameters = SimpleNamespace(
+            Nx=world["Nx"],
+            Ny=world["Ny"],
+            Nz=world["Nz"],
+            dx=world["dx"],
+            dy=world["dy"],
+            dz=world["dz"],
+            dt=world["dt"],
+            x_wind=world["x_wind"],
+            y_wind=world["y_wind"],
+            z_wind=world["z_wind"],
+            kb=constants.get("kb", 1.0),
+            eps=constants.get("eps", 1.0),
+        )
+        return static_parameters, dynamic_parameters
 
     def test_direct_tiled_particles_preserve_inactive_slots_and_metadata(self):
         world = {
@@ -262,7 +288,12 @@ class TestTiledParticleInitialization(unittest.TestCase):
                 }
             }
 
-            particles, species_config, species_names, metadata = load_particles_from_toml(config, simulation_parameters, world, constants)
+            static_parameters, dynamic_parameters = self._particle_parameters(simulation_parameters, world, constants)
+            particles, species_config, species_names, metadata = load_particles_from_toml(
+                config,
+                static_parameters,
+                dynamic_parameters,
+            )
 
             self.assertIsInstance(particles, TiledParticles)
             self.assertIsInstance(species_config, SpeciesConfig)
@@ -348,7 +379,12 @@ class TestTiledParticleInitialization(unittest.TestCase):
                 },
             }
 
-            particles, species_config, species_names, metadata = load_particles_from_toml(config, simulation_parameters, world, constants)
+            static_parameters, dynamic_parameters = self._particle_parameters(simulation_parameters, world, constants)
+            particles, species_config, species_names, metadata = load_particles_from_toml(
+                config,
+                static_parameters,
+                dynamic_parameters,
+            )
 
             self.assertEqual(species_names, ("electrons", "ions"))
             self.assertEqual(tuple(item["name"] for item in metadata), ("electrons", "ions"))
@@ -425,7 +461,12 @@ class TestTiledParticleInitialization(unittest.TestCase):
                 }
             }
 
-            particles, species_config, species_names, metadata = load_particles_from_toml(config, simulation_parameters, world, constants)
+            static_parameters, dynamic_parameters = self._particle_parameters(simulation_parameters, world, constants)
+            particles, species_config, species_names, metadata = load_particles_from_toml(
+                config,
+                static_parameters,
+                dynamic_parameters,
+            )
 
             self.assertTrue(bool(species_config.update_x[0, 0]))
             self.assertFalse(bool(species_config.update_x[0, 1]))

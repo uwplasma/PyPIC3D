@@ -2,6 +2,7 @@ import unittest
 import os
 import tempfile
 import importlib.util
+from types import SimpleNamespace
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -12,12 +13,14 @@ from PyPIC3D.initialization import initialize_fields
 from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
 from tests.initial_particles import build_tiled_particles, tiled_species
 from PyPIC3D.diagnostics import plotting
+from PyPIC3D.parameters import build_dynamic_parameters, build_static_parameters
 from PyPIC3D.utilities.grids import build_collocated_grid, build_yee_grid
 from PyPIC3D.utils import (
     print_stats, check_stability,
     particle_sanity_check, load_external_fields_from_toml, add_external_fields,
     compute_energy, dump_parameters_to_toml,
 )
+from tests.parameter_helpers import field_initialization_parameters
 
 jax.config.update("jax_enable_x64", True)
 
@@ -61,7 +64,8 @@ def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
         world = dict(world)
         world["tile_shape"] = tuple(int(width) for width in tile_shape)
         world["field_mesh"] = ghost_cells.make_field_mesh((ntx, nty, ntz))
-        return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g)
+        static_parameters, _ = field_initialization_parameters(world)
+        return ghost_cells.update_tiled_ghost_cells(field_tiles, static_parameters, g)
 
     def tile_at(tx, ty, tz):
         start = (tx * tile_nx, ty * tile_ny, tz * tile_nz)
@@ -84,11 +88,11 @@ def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
 
 
 def _field_world(Nx, Ny, Nz):
-    return {
-        "Nx": Nx,
-        "Ny": Ny,
-        "Nz": Nz,
-        "tile_shape": (Nx, Ny, Nz),
+        return {
+            "Nx": Nx,
+            "Ny": Ny,
+            "Nz": Nz,
+            "tile_shape": (Nx, Ny, Nz),
         "guard_cells": 2,
         "boundary_conditions": {"x": 0, "y": 0, "z": 0},
     }
@@ -133,7 +137,7 @@ class TestUtilsFunctions(unittest.TestCase):
         }
 
     def test_build_yee_grid(self):
-        grid, staggered = build_yee_grid(self.world)
+        grid, staggered = build_yee_grid(SimpleNamespace(**self.world))
         self.assertEqual(len(grid), 3)
         self.assertEqual(len(staggered), 3)
         self.assertEqual(len(grid[0]), self.world['Nx'] + 2)
@@ -176,7 +180,8 @@ class TestUtilsFunctions(unittest.TestCase):
 
     def test_load_external_fields_defaults_to_evolved_fields(self):
         world = _field_world(2, 2, 2)
-        E, B, J, phi, rho = initialize_fields(world)
+        static_parameters, dynamic_parameters = field_initialization_parameters(world)
+        E, B, J, phi, rho = initialize_fields(static_parameters, dynamic_parameters)
         fields = [component for field in [E, B, J] for component in field]
         external_fields = (tuple(jnp.zeros_like(comp) for comp in E), tuple(jnp.zeros_like(comp) for comp in B))
 
@@ -185,7 +190,7 @@ class TestUtilsFunctions(unittest.TestCase):
             np.save(path, np.ones((2, 2, 2)))
             config = {"field1": {"name": "Ex", "type": 0, "path": path}}
 
-            fields, external_fields = load_external_fields_from_toml(fields, external_fields, config, world, world)
+            fields, external_fields = load_external_fields_from_toml(fields, external_fields, config, static_parameters, dynamic_parameters)
 
         interior = _active_interior(world)
         self.assertTrue(jnp.allclose(fields[0][interior], 1.0))
@@ -193,7 +198,8 @@ class TestUtilsFunctions(unittest.TestCase):
 
     def test_load_external_fields_evolve_true_uses_evolved_fields(self):
         world = _field_world(2, 2, 2)
-        E, B, J, phi, rho = initialize_fields(world)
+        static_parameters, dynamic_parameters = field_initialization_parameters(world)
+        E, B, J, phi, rho = initialize_fields(static_parameters, dynamic_parameters)
         fields = [component for field in [E, B, J] for component in field]
         external_fields = (tuple(jnp.zeros_like(comp) for comp in E), tuple(jnp.zeros_like(comp) for comp in B))
 
@@ -202,7 +208,7 @@ class TestUtilsFunctions(unittest.TestCase):
             np.save(path, np.ones((2, 2, 2)) * 3)
             config = {"field1": {"name": "By", "type": 4, "path": path, "evolve": True}}
 
-            fields, external_fields = load_external_fields_from_toml(fields, external_fields, config, world, world)
+            fields, external_fields = load_external_fields_from_toml(fields, external_fields, config, static_parameters, dynamic_parameters)
 
         interior = _active_interior(world)
         self.assertTrue(jnp.allclose(fields[4][interior], 3.0))
@@ -210,7 +216,8 @@ class TestUtilsFunctions(unittest.TestCase):
 
     def test_load_external_fields_evolve_false_uses_external_fields(self):
         world = _field_world(2, 2, 2)
-        E, B, J, phi, rho = initialize_fields(world)
+        static_parameters, dynamic_parameters = field_initialization_parameters(world)
+        E, B, J, phi, rho = initialize_fields(static_parameters, dynamic_parameters)
         fields = [component for field in [E, B, J] for component in field]
         external_fields = (tuple(jnp.zeros_like(comp) for comp in E), tuple(jnp.zeros_like(comp) for comp in B))
 
@@ -219,7 +226,7 @@ class TestUtilsFunctions(unittest.TestCase):
             np.save(path, np.ones((2, 2, 2)) * 5)
             config = {"field1": {"name": "external Bz", "type": 5, "path": path, "evolve": False}}
 
-            fields, external_fields = load_external_fields_from_toml(fields, external_fields, config, world, world)
+            fields, external_fields = load_external_fields_from_toml(fields, external_fields, config, static_parameters, dynamic_parameters)
 
         interior = _active_interior(world)
         self.assertTrue(jnp.allclose(fields[5][interior], 0.0))
@@ -227,7 +234,8 @@ class TestUtilsFunctions(unittest.TestCase):
 
     def test_load_external_fields_rejects_external_current(self):
         world = _field_world(2, 2, 2)
-        E, B, J, phi, rho = initialize_fields(world)
+        static_parameters, dynamic_parameters = field_initialization_parameters(world)
+        E, B, J, phi, rho = initialize_fields(static_parameters, dynamic_parameters)
         fields = [component for field in [E, B, J] for component in field]
         external_fields = (tuple(jnp.zeros_like(comp) for comp in E), tuple(jnp.zeros_like(comp) for comp in B))
 
@@ -237,11 +245,12 @@ class TestUtilsFunctions(unittest.TestCase):
             config = {"field1": {"name": "external Jx", "type": 6, "path": path, "evolve": False}}
 
             with self.assertRaisesRegex(ValueError, "External-only fields must be electric or magnetic"):
-                load_external_fields_from_toml(fields, external_fields, config, world, world)
+                load_external_fields_from_toml(fields, external_fields, config, static_parameters, dynamic_parameters)
 
     def test_load_external_fields_preserves_shape_validation(self):
         world = _field_world(2, 2, 2)
-        E, B, J, phi, rho = initialize_fields(world)
+        static_parameters, dynamic_parameters = field_initialization_parameters(world)
+        E, B, J, phi, rho = initialize_fields(static_parameters, dynamic_parameters)
         fields = [component for field in [E, B, J] for component in field]
         external_fields = (tuple(jnp.zeros_like(comp) for comp in E), tuple(jnp.zeros_like(comp) for comp in B))
 
@@ -251,11 +260,12 @@ class TestUtilsFunctions(unittest.TestCase):
             config = {"field1": {"name": "wrong Ex", "type": 0, "path": path, "evolve": False}}
 
             with self.assertRaisesRegex(ValueError, "Shape mismatch"):
-                load_external_fields_from_toml(fields, external_fields, config, world, world)
+                load_external_fields_from_toml(fields, external_fields, config, static_parameters, dynamic_parameters)
 
     def test_energy_can_include_external_fields(self):
         world = _field_world(1, 1, 1)
-        E, B, J, phi, rho = initialize_fields(world)
+        static_parameters, dynamic_parameters = field_initialization_parameters(world)
+        E, B, J, phi, rho = initialize_fields(static_parameters, dynamic_parameters)
         external_E = tuple(jnp.zeros_like(comp) for comp in E)
         external_B = tuple(jnp.zeros_like(comp) for comp in B)
         interior = _active_interior(world)
@@ -265,6 +275,7 @@ class TestUtilsFunctions(unittest.TestCase):
 
         world = world | {"dx": 1.0, "dy": 1.0, "dz": 1.0}
         constants = {"eps": 2.0, "mu": 4.0, "C": 10.0}
+        static_parameters, dynamic_parameters = field_initialization_parameters(world, constants)
         particles = TiledParticles(
             x=jnp.zeros((1, 1, 1, 1, 0, 3)),
             u=jnp.zeros((1, 1, 1, 1, 0, 3)),
@@ -277,7 +288,7 @@ class TestUtilsFunctions(unittest.TestCase):
             update_x=jnp.ones((1, 3), dtype=bool),
             update_u=jnp.ones((1, 3), dtype=bool),
         )
-        e_energy, b_energy, kinetic_energy = compute_energy(particles, total_E, total_B, world, constants, species_config=species_config)
+        e_energy, b_energy, kinetic_energy = compute_energy(particles, total_E, total_B, static_parameters, dynamic_parameters, species_config=species_config)
 
         self.assertTrue(jnp.allclose(e_energy, 4.0))
         self.assertTrue(jnp.allclose(b_energy, 1.125))
@@ -292,8 +303,9 @@ class TestUtilsFunctions(unittest.TestCase):
             "y_wind": 1.0,
             "z_wind": 1.0,
         }
-        E, B, J, phi, rho = initialize_fields(world)
         constants = {"eps": 1.0, "mu": 1.0, "C": 10.0}
+        static_parameters, dynamic_parameters = field_initialization_parameters(world, constants)
+        E, B, J, phi, rho = initialize_fields(static_parameters, dynamic_parameters)
         tiled_particles = TiledParticles(
             x=jnp.asarray([[[[[[0.6, 0.0, 0.0]]]]]], dtype=float),
             u=jnp.asarray([[[[[[1.0, 0.0, 0.0]]]]]], dtype=float),
@@ -308,7 +320,7 @@ class TestUtilsFunctions(unittest.TestCase):
         )
         # Keep a nonzero inactive velocity so this checks the kinetic-energy mask.
 
-        _, _, kinetic_energy = compute_energy(tiled_particles, E, B, world, constants, species_config=species_config)
+        _, _, kinetic_energy = compute_energy(tiled_particles, E, B, static_parameters, dynamic_parameters, species_config=species_config)
 
         self.assertTrue(jnp.allclose(kinetic_energy, 0.0))
 
@@ -323,10 +335,37 @@ class TestUtilsFunctions(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             os.makedirs(os.path.join(tmpdir, "data"))
-            static_parameters = {
+            static_parameters = build_static_parameters({
+                "name": "dump test",
                 "output_dir": tmpdir,
+                "shape_factor": 1,
+                "guard_cells": 2,
                 "tile_shape": (2, 1, 1),
-            }
+                "boundary_conditions": {"x": 0, "y": 0, "z": 0},
+                "particle_boundary_conditions": {"x": 0, "y": 0, "z": 0},
+                "field_mesh": object(),
+            })
+            dynamic_parameters = build_dynamic_parameters(
+                {
+                    "dt": 0.1,
+                    "dx": 1.0,
+                    "dy": 1.0,
+                    "dz": 1.0,
+                    "Nx": 2,
+                    "Ny": 1,
+                    "Nz": 1,
+                    "x_wind": 2.0,
+                    "y_wind": 1.0,
+                    "z_wind": 1.0,
+                    "grids": {
+                        "vertex": (jnp.zeros(4), jnp.zeros(3), jnp.zeros(3)),
+                        "center": (jnp.zeros(4), jnp.zeros(3), jnp.zeros(3)),
+                        "tiled_vertex_grid": (jnp.zeros((1, 1, 1, 6)),) * 3,
+                        "tiled_center_grid": (jnp.zeros((1, 1, 1, 6)),) * 3,
+                    },
+                },
+                {},
+            )
             plotting_parameters = {
                 "particle_species_names": ("electrons", "ions"),
                 "particle_species_metadata": (
@@ -338,7 +377,7 @@ class TestUtilsFunctions(unittest.TestCase):
             dump_parameters_to_toml(
                 {"total_time": 1.0},
                 static_parameters,
-                {},
+                dynamic_parameters,
                 {},
                 plotting_parameters,
                 particles,
@@ -397,9 +436,8 @@ class TestUtilsFunctions(unittest.TestCase):
             "particle_tile_nz": 1,
         }
         tiled_particles, species_config = build_tiled_particles([species], world, simulation_parameters=simulation_parameters)
-        static_parameters = {
-            "particle_boundary_conditions": (0, 0, 0),
-        }
+        static_parameters, dynamic_parameters = field_initialization_parameters(world)
+        static_parameters.particle_boundary_conditions = (0, 0, 0)
 
         class FakeFigure:
             def __init__(self):
@@ -421,7 +459,7 @@ class TestUtilsFunctions(unittest.TestCase):
                     tiled_particles,
                     0,
                     static_parameters,
-                    world,
+                    dynamic_parameters,
                     tmpdir,
                     species_config=species_config,
                     species_names=("beam electrons",),
@@ -462,9 +500,8 @@ class TestUtilsFunctions(unittest.TestCase):
             "particle_tile_nz": 1,
         }
         tiled_particles, species_config = build_tiled_particles([species], world, simulation_parameters=simulation_parameters)
-        static_parameters = {
-            "particle_boundary_conditions": (0, 0, 0),
-        }
+        static_parameters, dynamic_parameters = field_initialization_parameters(world)
+        static_parameters.particle_boundary_conditions = (0, 0, 0)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             os.makedirs(os.path.join(tmpdir, "data/phase_space/x"))
@@ -475,7 +512,7 @@ class TestUtilsFunctions(unittest.TestCase):
                     plotting.particles_phase_space(
                         tiled_particles,
                         static_parameters,
-                        world,
+                        dynamic_parameters,
                         0,
                         "electrons",
                         tmpdir,

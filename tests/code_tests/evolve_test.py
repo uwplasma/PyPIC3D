@@ -1,8 +1,10 @@
 import unittest
+from types import SimpleNamespace
 
 import jax
 import jax.numpy as jnp
 
+from PyPIC3D.boundary_conditions.ghost_cells import make_field_mesh
 from PyPIC3D.evolve import (
     time_loop_electrodynamic,
     time_loop_electrostatic,
@@ -11,6 +13,7 @@ from PyPIC3D.initialization import initialize_fields
 from PyPIC3D.parameters import build_dynamic_parameters, build_static_parameters
 from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
+from tests.parameter_helpers import field_initialization_parameters
 
 jax.config.update("jax_enable_x64", True)
 
@@ -18,7 +21,20 @@ jax.config.update("jax_enable_x64", True)
 def add_tiled_grids_to_world(world, tile_shape):
     g = int(world["guard_cells"])
     world["tile_shape"] = tile_shape
-    tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world, tile_shape, g)
+    tile_grid_shape = (
+        int(world["Nx"]) // int(tile_shape[0]),
+        int(world["Ny"]) // int(tile_shape[1]),
+        int(world["Nz"]) // int(tile_shape[2]),
+    )
+    world["field_mesh"] = make_field_mesh(tile_grid_shape)
+    static_parameters = SimpleNamespace(tile_shape=tile_shape, guard_cells=g)
+    dynamic_parameters = SimpleNamespace(
+        dx=world["dx"],
+        dy=world["dy"],
+        dz=world["dz"],
+        grids=SimpleNamespace(vertex=world["grids"]["vertex"], center=world["grids"]["center"]),
+    )
+    tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(static_parameters, dynamic_parameters)
     world["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
     world["grids"]["tiled_center_grid"] = tiled_center_grid
     # make tiled versions of the grids for the parallelized particle pushers to use
@@ -74,7 +90,7 @@ class TestEvolveExternalFields(unittest.TestCase):
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
             "particle_boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
-        center_grid, vertex_grid = build_yee_grid(world)
+        vertex_grid, center_grid = build_yee_grid(SimpleNamespace(**world))
         world["grids"] = {"center": center_grid, "vertex": vertex_grid}
         constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         # build world and grids, and set constants for the simulation
@@ -82,7 +98,8 @@ class TestEvolveExternalFields(unittest.TestCase):
         tile_shape = (world["Nx"], world["Ny"], world["Nz"])
         world["guard_cells"] = 2
         add_tiled_grids_to_world(world, tile_shape)
-        E, B, J, phi, rho = initialize_fields(world)
+        field_static, field_dynamic = field_initialization_parameters(world, constants)
+        E, B, J, phi, rho = initialize_fields(field_static, field_dynamic)
         external_E = tuple(jnp.zeros_like(comp) for comp in E)
         external_B = tuple(jnp.zeros_like(comp) for comp in B)
         external_E = (jnp.ones_like(external_E[0]), external_E[1], external_E[2])
@@ -157,14 +174,15 @@ class TestEvolveExternalFields(unittest.TestCase):
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
             "particle_boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
-        center_grid, vertex_grid = build_yee_grid(world)
+        vertex_grid, center_grid = build_yee_grid(SimpleNamespace(**world))
         world["grids"] = {"center": center_grid, "vertex": vertex_grid}
         constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
 
         tile_shape = (world["Nx"], world["Ny"], world["Nz"])
         world["guard_cells"] = 2
         add_tiled_grids_to_world(world, tile_shape)
-        E, B, J, phi, rho = initialize_fields(world)
+        field_static, field_dynamic = field_initialization_parameters(world, constants)
+        E, B, J, phi, rho = initialize_fields(field_static, field_dynamic)
         external_fields = (
             tuple(jnp.zeros_like(comp) for comp in E),
             tuple(jnp.zeros_like(comp) for comp in B),
@@ -214,7 +232,7 @@ class TestEvolveExternalFields(unittest.TestCase):
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
             "particle_boundary_conditions": {"x": 2, "y": 0, "z": 0},
         }
-        center_grid, vertex_grid = build_yee_grid(world)
+        vertex_grid, center_grid = build_yee_grid(SimpleNamespace(**world))
         world["grids"] = {"center": center_grid, "vertex": vertex_grid}
         constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         # build world and grids, and set constants for the simulation
@@ -222,7 +240,8 @@ class TestEvolveExternalFields(unittest.TestCase):
         tile_shape = (world["Nx"], world["Ny"], world["Nz"])
         world["guard_cells"] = 2
         add_tiled_grids_to_world(world, tile_shape)
-        E, B, J, phi, rho = initialize_fields(world)
+        field_static, field_dynamic = field_initialization_parameters(world, constants)
+        E, B, J, phi, rho = initialize_fields(field_static, field_dynamic)
         external_fields = (
             tuple(jnp.zeros_like(comp) for comp in E),
             tuple(jnp.zeros_like(comp) for comp in B),

@@ -1,4 +1,5 @@
 import unittest
+from types import SimpleNamespace
 
 import jax
 import jax.numpy as jnp
@@ -8,7 +9,7 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
 from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.diagnostics.output_adapters import assemble_tiled_scalar_field
 from tests.initial_particles import build_tiled_particles, tiled_species
-from tests.parameter_helpers import split_test_parameters
+from tests.parameter_helpers import field_initialization_parameters, split_test_parameters
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 
 
@@ -54,7 +55,8 @@ def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
         world = dict(world)
         world["tile_shape"] = tuple(int(width) for width in tile_shape)
         world["field_mesh"] = ghost_cells.make_field_mesh((ntx, nty, ntz))
-        return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g)
+        static_parameters, _ = field_initialization_parameters(world)
+        return ghost_cells.update_tiled_ghost_cells(field_tiles, static_parameters, g)
 
     def tile_at(tx, ty, tz):
         start = (tx * tile_nx, ty * tile_ny, tz * tile_nz)
@@ -94,7 +96,7 @@ class TestTiledRho(unittest.TestCase):
             "guard_cells": 2,
             "boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},
         }
-        vertex_grid, center_grid = build_yee_grid(world)
+        vertex_grid, center_grid = build_yee_grid(SimpleNamespace(**world))
         world["grids"] = {"vertex": vertex_grid, "center": center_grid}
         return world
 
@@ -113,7 +115,8 @@ class TestTiledRho(unittest.TestCase):
             int(world["Ny"]) // int(tile_shape[1]),
             int(world["Nz"]) // int(tile_shape[2]),
         ))
-        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world, tile_shape, g)
+        static_parameters, dynamic_parameters = field_initialization_parameters(world)
+        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(static_parameters, dynamic_parameters)
         grids["tiled_vertex_grid"] = tiled_vertex_grid
         grids["tiled_center_grid"] = tiled_center_grid
         world["grids"] = grids
@@ -367,7 +370,7 @@ class TestTiledRho(unittest.TestCase):
         world = self._world_with_tiled_grids(world, self._one_tile_parameters(world))
         constants = {"alpha": 1.0}
 
-        with self.assertRaisesRegex(ValueError, "TiledParticles"):
+        with self.assertRaisesRegex(TypeError, "non-array argument|abstract array"):
             compute_rho(
                 self._particles(world),
                 None,

@@ -105,7 +105,7 @@ def convergence_test(func):
 
     return slope
 
-def compute_energy(particles, E, B, static_parameters, dynamic_parameters=None, species_config=None):
+def compute_energy(particles, E, B, static_parameters, dynamic_parameters, species_config=None):
     """
     Compute the total energy of the system, including electric field energy, magnetic field energy, and kinetic energy of particles.
 
@@ -119,12 +119,6 @@ def compute_energy(particles, E, B, static_parameters, dynamic_parameters=None, 
     Returns:
         None
     """
-
-    if dynamic_parameters is None:
-        dynamic_parameters = static_parameters
-    elif not hasattr(dynamic_parameters, "dx") and "dx" not in dynamic_parameters:
-        static_items = static_parameters._asdict() if hasattr(static_parameters, "_asdict") else static_parameters
-        dynamic_parameters = {**static_items, **dynamic_parameters}
 
     dx = dynamic_parameters.dx
     dy = dynamic_parameters.dy

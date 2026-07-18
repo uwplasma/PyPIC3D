@@ -3,7 +3,16 @@ import unittest
 import jax
 import jax.numpy as jnp
 
-from PyPIC3D.parameters import build_dynamic_parameters, build_static_parameters
+from PyPIC3D.deposition.Esirkepov import Esirkepov_current
+from PyPIC3D.deposition.J_from_rhov import J_from_rhov
+from PyPIC3D.deposition.rho import compute_rho
+from PyPIC3D.parameters import (
+    DynamicParameters,
+    GridParameters,
+    StaticParameters,
+    build_dynamic_parameters,
+    build_static_parameters,
+)
 
 
 class TestKernelParameters(unittest.TestCase):
@@ -47,25 +56,38 @@ class TestKernelParameters(unittest.TestCase):
         })
         dynamic_parameters = build_dynamic_parameters(world, constants)
 
-        self.assertEqual(static_parameters["current_deposition"], "direct")
-        self.assertEqual(static_parameters["current_filter"], "none")
-        self.assertEqual(static_parameters["particle_pusher"], "boris")
-        self.assertEqual(static_parameters["tile_shape"], (4, 2, 1))
-        self.assertEqual(static_parameters["boundary_conditions"], (0, 0, 0))
-        self.assertEqual(static_parameters["particle_boundary_conditions"], (0, 1, 2))
-        self.assertIs(static_parameters["field_mesh"], world["field_mesh"])
-        self.assertNotIn("particle_species_names", static_parameters)
-        self.assertNotIn("particle_species_metadata", static_parameters)
+        self.assertIsInstance(static_parameters, StaticParameters)
+        self.assertEqual(static_parameters.current_deposition, "direct")
+        self.assertEqual(static_parameters.current_filter, "none")
+        self.assertEqual(static_parameters.particle_pusher, "boris")
+        self.assertEqual(static_parameters.tile_shape, (4, 2, 1))
+        self.assertEqual(static_parameters.boundary_conditions, (0, 0, 0))
+        self.assertEqual(static_parameters.particle_boundary_conditions, (0, 1, 2))
+        self.assertIs(static_parameters.field_mesh, world["field_mesh"])
+        self.assertNotIn("particle_species_names", static_parameters._asdict())
+        self.assertNotIn("particle_species_metadata", static_parameters._asdict())
+        self.assertIsInstance(hash(static_parameters), int)
+        with self.assertRaises(TypeError):
+            static_parameters["current_deposition"]
 
-        self.assertNotIn("current_deposition", dynamic_parameters)
-        self.assertNotIn("current_filter", dynamic_parameters)
-        self.assertNotIn("field_mesh", dynamic_parameters)
-        self.assertAlmostEqual(float(dynamic_parameters["dt"]), 0.1)
-        self.assertAlmostEqual(float(dynamic_parameters["C"]), 1.0)
-        self.assertIs(dynamic_parameters["grids"]["tiled_center_grid"], world["grids"]["tiled_center_grid"])
+        self.assertIsInstance(dynamic_parameters, DynamicParameters)
+        self.assertIsInstance(dynamic_parameters.grids, GridParameters)
+        self.assertNotIn("current_deposition", dynamic_parameters._asdict())
+        self.assertNotIn("current_filter", dynamic_parameters._asdict())
+        self.assertNotIn("field_mesh", dynamic_parameters._asdict())
+        self.assertAlmostEqual(float(dynamic_parameters.dt), 0.1)
+        self.assertAlmostEqual(float(dynamic_parameters.C), 1.0)
+        self.assertIs(dynamic_parameters.grids.tiled_center_grid, world["grids"]["tiled_center_grid"])
+        with self.assertRaises(TypeError):
+            dynamic_parameters["dt"]
 
         flattened, _ = jax.tree_util.tree_flatten(dynamic_parameters)
         self.assertTrue(all(hasattr(leaf, "shape") for leaf in flattened))
+
+    def test_public_deposition_methods_are_jitted_static_parameter_boundaries(self):
+        self.assertTrue(hasattr(J_from_rhov, "lower"))
+        self.assertTrue(hasattr(Esirkepov_current, "lower"))
+        self.assertTrue(hasattr(compute_rho, "lower"))
 
 
 if __name__ == "__main__":

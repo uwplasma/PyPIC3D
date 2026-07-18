@@ -48,6 +48,14 @@ class TestStaticDynamicParameterCutover(unittest.TestCase):
                 with self.subTest(path=str(path.relative_to(REPO_ROOT)), word=word):
                     self.assertNotIn(word, source)
 
+    def test_production_path_does_not_use_parameter_value_fallback(self):
+        production_paths = sorted((REPO_ROOT / "PyPIC3D").rglob("*.py"))
+
+        for path in production_paths:
+            source = path.read_text()
+            with self.subTest(path=str(path.relative_to(REPO_ROOT))):
+                self.assertNotIn("_parameter_value", source)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,4 +1,5 @@
 import unittest
+from types import SimpleNamespace
 
 import jax
 import jax.numpy as jnp
@@ -9,6 +10,7 @@ from PyPIC3D.diagnostics.fluid_quantities import compute_velocity_field, fluid_v
 from PyPIC3D.diagnostics.output_adapters import assemble_tiled_scalar_field
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 from tests.initial_particles import build_tiled_particles, tiled_species
+from tests.parameter_helpers import field_initialization_parameters
 
 
 jax.config.update("jax_enable_x64", True)
@@ -50,7 +52,8 @@ def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
     world = dict(world)
     world["tile_shape"] = tuple(int(width) for width in tile_shape)
     world["field_mesh"] = ghost_cells.make_field_mesh((ntx, nty, ntz))
-    return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g)
+    static_parameters, _ = field_initialization_parameters(world)
+    return ghost_cells.update_tiled_ghost_cells(field_tiles, static_parameters, g)
 
 
 class TestTiledFluidQuantities(unittest.TestCase):
@@ -71,7 +74,7 @@ class TestTiledFluidQuantities(unittest.TestCase):
             "guard_cells": 2,
             "boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},
         }
-        vertex_grid, center_grid = build_yee_grid(world)
+        vertex_grid, center_grid = build_yee_grid(SimpleNamespace(**world))
         world["grids"] = {"vertex": vertex_grid, "center": center_grid}
         return self._world_with_tiled_grids(world, tile_shape=tile_shape)
 
@@ -88,7 +91,8 @@ class TestTiledFluidQuantities(unittest.TestCase):
             int(world["Ny"]) // int(tile_shape[1]),
             int(world["Nz"]) // int(tile_shape[2]),
         ))
-        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world, tile_shape, g)
+        static_parameters, dynamic_parameters = field_initialization_parameters(world)
+        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(static_parameters, dynamic_parameters)
         grids["tiled_vertex_grid"] = tiled_vertex_grid
         grids["tiled_center_grid"] = tiled_center_grid
         world["grids"] = grids
@@ -104,6 +108,9 @@ class TestTiledFluidQuantities(unittest.TestCase):
             world["tile_shape"],
             num_guard_cells=int(world["guard_cells"]),
         )
+
+    def _field_parameters(self, world):
+        return field_initialization_parameters(world)
 
     def _weighted_average_particles(self, world):
         electrons = tiled_species(
@@ -164,14 +171,15 @@ class TestTiledFluidQuantities(unittest.TestCase):
         world = self._build_world(shape_factor=1)
         particles = self._weighted_average_particles(world)
         tiled_particles, species_config = build_tiled_particles(particles, world, tile_shape=world["tile_shape"])
+        static_parameters, dynamic_parameters = self._field_parameters(world)
 
         velocity_tiles = fluid_velocity(
             tiled_particles,
             species_config,
             self._scalar_tiles(world),
             0,
-            world,
-            world,
+            static_parameters,
+            dynamic_parameters,
         )
 
         occupied = jnp.abs(velocity_tiles) > 0.0
@@ -182,14 +190,15 @@ class TestTiledFluidQuantities(unittest.TestCase):
         world = self._build_world(shape_factor=1)
         particles = self._weighted_average_particles(world)
         tiled_particles, species_config = build_tiled_particles(particles, world, tile_shape=world["tile_shape"])
+        static_parameters, dynamic_parameters = self._field_parameters(world)
 
         velocity_tiles = fluid_velocity(
             tiled_particles,
             species_config,
             self._scalar_tiles(world),
             1,
-            world,
-            world,
+            static_parameters,
+            dynamic_parameters,
         )
 
         occupied = jnp.abs(velocity_tiles) > 0.0
@@ -212,14 +221,15 @@ class TestTiledFluidQuantities(unittest.TestCase):
         x = x.at[inactive, 2].set(0.0)
         u = tiled_particles.u.at[inactive, 0].set(1000.0)
         noisy_tiled_particles = tiled_particles._replace(x=x, u=u)
+        static_parameters, dynamic_parameters = self._field_parameters(world)
 
         velocity_tiles = fluid_velocity(
             noisy_tiled_particles,
             species_config,
             self._scalar_tiles(world),
             0,
-            world,
-            world,
+            static_parameters,
+            dynamic_parameters,
         )
 
         occupied = jnp.abs(velocity_tiles) > 0.0
@@ -230,14 +240,15 @@ class TestTiledFluidQuantities(unittest.TestCase):
         world = self._build_world(shape_factor=1)
         particles = self._weighted_average_particles(world)
         tiled_particles, species_config = build_tiled_particles(particles, world, tile_shape=world["tile_shape"])
+        static_parameters, dynamic_parameters = self._field_parameters(world)
 
         velocity_tiles = fluid_velocity(
             tiled_particles,
             species_config,
             self._scalar_tiles(world),
             0,
-            world,
-            world,
+            static_parameters,
+            dynamic_parameters,
         )
 
         self.assertTrue(jnp.any(velocity_tiles == 0.0))
@@ -259,14 +270,16 @@ class TestTiledFluidQuantities(unittest.TestCase):
             reference_world,
             tile_shape=reference_world["tile_shape"],
         )
+        static_parameters, dynamic_parameters = self._field_parameters(world)
+        reference_static_parameters, reference_dynamic_parameters = self._field_parameters(reference_world)
 
         velocity_tiles = fluid_velocity(
             tiled_particles,
             species_config,
             self._scalar_tiles(world),
             0,
-            world,
-            world,
+            static_parameters,
+            dynamic_parameters,
         )
 
         reference_tiles = fluid_velocity(
@@ -274,8 +287,8 @@ class TestTiledFluidQuantities(unittest.TestCase):
             reference_species_config,
             self._scalar_tiles(reference_world),
             0,
-            reference_world,
-            reference_world,
+            reference_static_parameters,
+            reference_dynamic_parameters,
         )
 
 

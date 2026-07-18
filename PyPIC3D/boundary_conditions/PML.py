@@ -42,9 +42,9 @@ def load_pml_from_toml(raw_pml, static_parameters, dynamic_parameters):
         axis = _AXIS_FOR_WALL[wall]
         thickness = int(raw.get("thickness", 0))
 
-        if axis == "x": active_cells = static_parameters.Nx
-        elif axis == "y": active_cells = static_parameters.Ny
-        else: active_cells = static_parameters.Nz
+        if axis == "x": active_cells = dynamic_parameters.Nx
+        elif axis == "y": active_cells = dynamic_parameters.Ny
+        else: active_cells = dynamic_parameters.Nz
         # get the number of active cells along the axis of the PML wall
 
 
@@ -138,9 +138,9 @@ def initialize_pml_state(dynamic_parameters, pml_profiles):
     finite-difference arrays that enter the Yee curl.
     """
     shape = (
-        dynamic_parameters.Nx + 2,
-        dynamic_parameters.Ny + 2,
-        dynamic_parameters.Nz + 2,
+        dynamic_parameters.Nx,
+        dynamic_parameters.Ny,
+        dynamic_parameters.Nz,
     )
 
     e_memory = tuple(jnp.zeros(shape) for _ in range(6))

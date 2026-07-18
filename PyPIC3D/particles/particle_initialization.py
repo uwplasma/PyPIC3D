@@ -87,13 +87,13 @@ def _tile_axis_count(n_cells, cells_per_tile):
 
 
 def _particle_tile_indices(x1, x2, x3, dynamic_parameters, tile_nx, tile_ny, tile_nz):
-    Nx = _as_int(dynamic_parameters["Nx"])
-    Ny = _as_int(dynamic_parameters["Ny"])
-    Nz = _as_int(dynamic_parameters["Nz"])
+    Nx = _as_int(dynamic_parameters.Nx)
+    Ny = _as_int(dynamic_parameters.Ny)
+    Nz = _as_int(dynamic_parameters.Nz)
 
-    x_cell = np.floor((np.asarray(x1) + float(dynamic_parameters["x_wind"]) / 2) / float(dynamic_parameters["dx"])).astype(int)
-    y_cell = np.floor((np.asarray(x2) + float(dynamic_parameters["y_wind"]) / 2) / float(dynamic_parameters["dy"])).astype(int)
-    z_cell = np.floor((np.asarray(x3) + float(dynamic_parameters["z_wind"]) / 2) / float(dynamic_parameters["dz"])).astype(int)
+    x_cell = np.floor((np.asarray(x1) + float(dynamic_parameters.x_wind) / 2) / float(dynamic_parameters.dx)).astype(int)
+    y_cell = np.floor((np.asarray(x2) + float(dynamic_parameters.y_wind) / 2) / float(dynamic_parameters.dy)).astype(int)
+    z_cell = np.floor((np.asarray(x3) + float(dynamic_parameters.z_wind) / 2) / float(dynamic_parameters.dz)).astype(int)
 
     x_cell = np.clip(x_cell, 0, Nx - 1)
     y_cell = np.clip(y_cell, 0, Ny - 1)
@@ -104,9 +104,9 @@ def _particle_tile_indices(x1, x2, x3, dynamic_parameters, tile_nx, tile_ny, til
 
 def _prepare_species_tile_data(species_arrays, dynamic_parameters, tile_shape):
     tile_nx, tile_ny, tile_nz = tile_shape
-    ntx = _tile_axis_count(dynamic_parameters["Nx"], tile_nx)
-    nty = _tile_axis_count(dynamic_parameters["Ny"], tile_ny)
-    ntz = _tile_axis_count(dynamic_parameters["Nz"], tile_nz)
+    ntx = _tile_axis_count(dynamic_parameters.Nx, tile_nx)
+    nty = _tile_axis_count(dynamic_parameters.Ny, tile_ny)
+    ntz = _tile_axis_count(dynamic_parameters.Nz, tile_nz)
     n_tiles = ntx * nty * ntz
 
     tile_counts = np.zeros((ntx, nty, ntz, len(species_arrays)), dtype=int)
@@ -139,9 +139,9 @@ def _prepare_species_tile_data(species_arrays, dynamic_parameters, tile_shape):
 
 def _pack_species_arrays_into_tiles(species_arrays, dynamic_parameters, tile_shape, capacity_factor):
     tile_nx, tile_ny, tile_nz = tile_shape
-    ntx = _tile_axis_count(dynamic_parameters["Nx"], tile_nx)
-    nty = _tile_axis_count(dynamic_parameters["Ny"], tile_ny)
-    ntz = _tile_axis_count(dynamic_parameters["Nz"], tile_nz)
+    ntx = _tile_axis_count(dynamic_parameters.Nx, tile_nx)
+    nty = _tile_axis_count(dynamic_parameters.Ny, tile_ny)
+    ntz = _tile_axis_count(dynamic_parameters.Nz, tile_nz)
     n_species = len(species_arrays)
 
     tile_counts, species_tile_data = _prepare_species_tile_data(species_arrays, dynamic_parameters, tile_shape)
@@ -192,9 +192,9 @@ def _pack_species_arrays_into_tiles(species_arrays, dynamic_parameters, tile_sha
 
 
 def _plasma_frequency(N_per_cell, charge, mass, weight, dynamic_parameters):
-    dx, dy, dz = dynamic_parameters["dx"], dynamic_parameters["dy"], dynamic_parameters["dz"]
+    dx, dy, dz = dynamic_parameters.dx, dynamic_parameters.dy, dynamic_parameters.dz
     # get spatial resolution of the simulation domain
-    eps = dynamic_parameters["eps"]
+    eps = dynamic_parameters.eps
     n = N_per_cell * weight / (dx * dy * dz)
     # define the number density
     sqrt_n = jnp.sqrt(n)
@@ -205,38 +205,31 @@ def _plasma_frequency(N_per_cell, charge, mass, weight, dynamic_parameters):
 
 
 def _debye_length(N_per_cell, charge, temperature, weight, dynamic_parameters):
-    eps = dynamic_parameters["eps"]
-    kb = dynamic_parameters["kb"]
-    dx, dy, dz = dynamic_parameters["dx"], dynamic_parameters["dy"], dynamic_parameters["dz"]
+    eps = dynamic_parameters.eps
+    kb = dynamic_parameters.kb
+    dx, dy, dz = dynamic_parameters.dx, dynamic_parameters.dy, dynamic_parameters.dz
     n = N_per_cell * weight / (dx * dy * dz)
     # define the number density
 
     return jnp.sqrt(eps * kb * temperature / (n * charge**2))
 
 
-def load_particles_from_toml(config, static_parameters, dynamic_parameters=None, *extra_parameters):
+def load_particles_from_toml(config, static_parameters, dynamic_parameters):
     if config is None:
         config = {}
-    if dynamic_parameters is not None and "tile_shape" not in static_parameters:
-        static_parameters = {**static_parameters, **dynamic_parameters}
-    if extra_parameters:
-        scalar_parameters = extra_parameters[0]
-        dynamic_parameters = {**dynamic_parameters, **scalar_parameters}
-    if dynamic_parameters is None:
-        dynamic_parameters = static_parameters
 
-    x_wind = dynamic_parameters["x_wind"]
-    y_wind = dynamic_parameters["y_wind"]
-    z_wind = dynamic_parameters["z_wind"]
-    Nx = dynamic_parameters["Nx"]
-    Ny = dynamic_parameters["Ny"]
-    Nz = dynamic_parameters["Nz"]
-    dx = dynamic_parameters["dx"]
-    dy = dynamic_parameters["dy"]
-    dz = dynamic_parameters["dz"]
-    dt = dynamic_parameters["dt"]
-    kb = dynamic_parameters["kb"]
-    eps = dynamic_parameters["eps"]
+    x_wind = dynamic_parameters.x_wind
+    y_wind = dynamic_parameters.y_wind
+    z_wind = dynamic_parameters.z_wind
+    Nx = dynamic_parameters.Nx
+    Ny = dynamic_parameters.Ny
+    Nz = dynamic_parameters.Nz
+    dx = dynamic_parameters.dx
+    dy = dynamic_parameters.dy
+    dz = dynamic_parameters.dz
+    dt = dynamic_parameters.dt
+    kb = dynamic_parameters.kb
+    eps = dynamic_parameters.eps
     # get the simulation domain dimensions, grid sizes, spatial resolution, and thermal scalar values
 
     i = 0
@@ -402,10 +395,10 @@ def load_particles_from_toml(config, static_parameters, dynamic_parameters=None,
         print(f"Particle Species Scaled Charge: {charge * weight}")
         print(f"Particle Species Scaled Mass: {mass * weight}")
 
-    tile_nx, tile_ny, tile_nz = [_as_int(width) for width in static_parameters["tile_shape"]]
+    tile_nx, tile_ny, tile_nz = [_as_int(width) for width in static_parameters.tile_shape]
     # determine the number of tiles in each dimension based on the tile shape and simulation domain dimensions
 
-    capacity_factor = float(static_parameters.get("particle_tile_capacity_factor", 1.0))
+    capacity_factor = float(static_parameters.particle_tile_capacity_factor)
     # determine the maximum number of particles per tile across all species and tiles, and apply a capacity factor to allow for some buffer
 
     x_tiles, u_tiles, active_tiles, _tile_counts = _pack_species_arrays_into_tiles(

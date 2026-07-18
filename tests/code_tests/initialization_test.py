@@ -89,14 +89,14 @@ class TestInitializationFunctions(unittest.TestCase):
 
             self.assertIs(loop, time_loop_electrodynamic)
             self.assertIsInstance(particles, TiledParticles)
-            self.assertEqual(world["solver"], "electrodynamic_yee")
-            self.assertEqual(tuple(world["tile_shape"]), (2, 1, 1))
+            self.assertEqual(world.solver, "electrodynamic_yee")
+            self.assertEqual(tuple(world.tile_shape), (2, 1, 1))
             self.assertNotIn("particle_species_names", world)
             self.assertNotIn("particle_species_metadata", world)
             self.assertEqual(plotting_parameters["particle_species_names"], ("electrons",))
             self.assertEqual(plotting_parameters["particle_species_metadata"][0]["name"], "electrons")
-            self.assertIn("tiled_center_grid", dynamic_parameters["grids"])
-            self.assertIn("tiled_vertex_grid", dynamic_parameters["grids"])
+            self.assertIn("tiled_center_grid", dynamic_parameters.grids._asdict())
+            self.assertIn("tiled_vertex_grid", dynamic_parameters.grids._asdict())
             E, B, J, rho, phi, external_fields, pml_state, overflow = fields
             self.assertEqual(E[0].ndim, 6)
             self.assertEqual(B[0].ndim, 6)
@@ -150,7 +150,7 @@ class TestInitializationFunctions(unittest.TestCase):
 
             _, particles, _, world, *_ = initialize_simulation(toml.load(config_path))
 
-            self.assertEqual(world["particle_boundary_conditions"], (1, 2, 0))
+            self.assertEqual(world.particle_boundary_conditions, (1, 2, 0))
             self.assertIsInstance(particles, TiledParticles)
             # check that the global particle boundary conditions are encoded correctly in the world dictionary
 
@@ -193,7 +193,7 @@ class TestInitializationFunctions(unittest.TestCase):
             self.assertIs(loop, time_loop_electrostatic)
             self.assertIsInstance(particles, TiledParticles)
             self.assertEqual(fields[0][0].ndim, 6)
-            for vertex_axis, center_axis in zip(dynamic_parameters["grids"]["vertex"], dynamic_parameters["grids"]["center"]):
+            for vertex_axis, center_axis in zip(dynamic_parameters.grids.vertex, dynamic_parameters.grids.center):
                 self.assertTrue(jnp.allclose(vertex_axis, center_axis))
         # test the initialize_simulation function with an electrostatic solver and check that it uses a collocated grid
 
