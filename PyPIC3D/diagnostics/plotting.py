@@ -5,6 +5,7 @@ import jax.numpy as jnp
 import os
 import plotly.graph_objects as go
 import jax
+import numpy as np
 from functools import partial
 
 from PyPIC3D.diagnostics.output_adapters import particles_for_output
@@ -254,11 +255,9 @@ def plot_initial_histograms(particle_record, dynamic_parameters, name, path):
     plt.close()
 
 
-@partial(jax.jit, static_argnums=(0))
 def write_data(filename, time, data):
     """
-    Write the given time and data to a file using JAX's callback mechanism.
-    This function is designed to be used with JAX's just-in-time compilation (jit) to optimize performance.
+    Write one scalar diagnostic sample.
 
     Args:
         filename (str): The name of the file to write to.
@@ -269,8 +268,12 @@ def write_data(filename, time, data):
         None
     """
 
-    def write_to_file(filename, time, data):
-        with open(filename, "a") as f:
-            f.write(f"{time}, {data}\n")
+    time_value = np.asarray(jax.device_get(time)).item()
+    data_value = np.asarray(jax.device_get(data))
+    if data_value.ndim == 0:
+        data_value = data_value.item()
+    else:
+        data_value = data_value.tolist()
 
-    return jax.debug.callback(write_to_file, filename, time, data, ordered=True)
+    with open(filename, "a") as f:
+        f.write(f"{time_value}, {data_value}\n")
