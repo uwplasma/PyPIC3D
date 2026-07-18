@@ -18,6 +18,7 @@ from PyPIC3D.utilities.filters import (
 
 import jax
 import jax.numpy as jnp
+from functools import partial
 
 def _collapse_tiled_axis_stencil(points, weights, local_n, reduced_axis, g):
     if reduced_axis:
@@ -27,6 +28,7 @@ def _collapse_tiled_axis_stencil(points, weights, local_n, reduced_axis, g):
     return collapse_axis_stencil(points, weights, local_n, ghost_cells=True)
 
 
+@partial(jax.jit, static_argnames="static_parameters")
 def J_from_rhov(
     particles,
     species_config,
@@ -37,18 +39,18 @@ def J_from_rhov(
     """Compute tile-local direct current from centered tiled particles."""
 
 
-    current_filter = static_parameters["current_filter"]
-    tile_shape = tuple(int(width) for width in static_parameters["tile_shape"])
-    g = int(static_parameters["guard_cells"])
+    current_filter = static_parameters.current_filter
+    tile_shape = tuple(int(width) for width in static_parameters.tile_shape)
+    g = int(static_parameters.guard_cells)
     g = int(g)
     # determine the number of guard cells and the shape of each of the tiles
 
-    tiled_grid = dynamic_parameters["grids"]["tiled_center_grid"]
+    tiled_grid = dynamic_parameters.grids.tiled_center_grid
     # get the grid for the tiles
 
-    dx = dynamic_parameters["dx"]
-    dy = dynamic_parameters["dy"]
-    dz = dynamic_parameters["dz"]
+    dx = dynamic_parameters.dx
+    dy = dynamic_parameters.dy
+    dz = dynamic_parameters.dz
     # get the grid spacing
 
     Jx_tiles, Jy_tiles, Jz_tiles = J
@@ -63,7 +65,7 @@ def J_from_rhov(
     local_Nz = tile_nz + 2 * g
     # piece together the total local tile shape
 
-    shape_factor = static_parameters["shape_factor"]
+    shape_factor = static_parameters.shape_factor
     # get the shape factor
 
     reduced_x = int(tile_nx) == 1 and int(ntx) == 1
@@ -235,7 +237,7 @@ def J_from_rhov(
         return J
     
     def digital_filtered_current(J):
-        J = digital_filter_vector(J, dynamic_parameters["alpha"], num_guard_cells=g)
+        J = digital_filter_vector(J, dynamic_parameters.alpha, num_guard_cells=g)
         J = update_tiled_vector_ghost_cells(J, static_parameters, num_guard_cells=g)
         return J
 

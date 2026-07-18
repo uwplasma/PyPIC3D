@@ -30,11 +30,11 @@ def _is_tiled_vector(field):
 
 
 def _tile_shape_from_static_parameters(static_parameters):
-    return tuple(int(width) for width in static_parameters["tile_shape"])
+    return tuple(int(width) for width in static_parameters.tile_shape)
 
 
 def _guard_depth_from_static_parameters(static_parameters):
-    return int(static_parameters["guard_cells"])
+    return int(static_parameters.guard_cells)
 
 
 def assemble_tiled_scalar_field(field_tiles, static_parameters, tile_shape, num_guard_cells=2):
@@ -158,11 +158,11 @@ def _axis_diagnostic_position(x, u, dt, wind, bc):
 
 
 def _diagnostic_position(x, u, static_parameters, dynamic_parameters):
-    particle_bc = static_parameters["particle_boundary_conditions"]
-    dt = dynamic_parameters["dt"]
-    x_diagnostic = _axis_diagnostic_position(x[:, 0], u[:, 0], dt, dynamic_parameters["x_wind"], particle_bc[0])
-    y_diagnostic = _axis_diagnostic_position(x[:, 1], u[:, 1], dt, dynamic_parameters["y_wind"], particle_bc[1])
-    z_diagnostic = _axis_diagnostic_position(x[:, 2], u[:, 2], dt, dynamic_parameters["z_wind"], particle_bc[2])
+    particle_bc = static_parameters.particle_boundary_conditions
+    dt = dynamic_parameters.dt
+    x_diagnostic = _axis_diagnostic_position(x[:, 0], u[:, 0], dt, dynamic_parameters.x_wind, particle_bc[0])
+    y_diagnostic = _axis_diagnostic_position(x[:, 1], u[:, 1], dt, dynamic_parameters.y_wind, particle_bc[1])
+    z_diagnostic = _axis_diagnostic_position(x[:, 2], u[:, 2], dt, dynamic_parameters.z_wind, particle_bc[2])
 
     return jnp.stack((x_diagnostic, y_diagnostic, z_diagnostic), axis=-1)
 

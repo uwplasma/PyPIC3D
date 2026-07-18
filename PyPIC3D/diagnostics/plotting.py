@@ -25,9 +25,9 @@ def plot_positions(particles, t, static_parameters, dynamic_parameters, path, sp
     """
     fig = go.Figure()
 
-    x_wind = dynamic_parameters["x_wind"]
-    y_wind = dynamic_parameters["y_wind"]
-    z_wind = dynamic_parameters["z_wind"]
+    x_wind = dynamic_parameters.x_wind
+    y_wind = dynamic_parameters.y_wind
+    z_wind = dynamic_parameters.z_wind
 
     particles = particles_for_output(
         particles,
@@ -122,9 +122,9 @@ def particles_phase_space(particles, static_parameters, dynamic_parameters, t, n
         None
     """
 
-    x_wind = dynamic_parameters['x_wind']
-    y_wind = dynamic_parameters['y_wind']
-    z_wind = dynamic_parameters['z_wind']
+    x_wind = dynamic_parameters.x_wind
+    y_wind = dynamic_parameters.y_wind
+    z_wind = dynamic_parameters.z_wind
 
     colors = ['r', 'b', 'g', 'c', 'm', 'y', 'k']
     idx = 0
@@ -204,9 +204,9 @@ def plot_initial_histograms(particle_record, dynamic_parameters, name, path):
     x, y, z = particle_record.x_diagnostic[:, 0], particle_record.x_diagnostic[:, 1], particle_record.x_diagnostic[:, 2]
     vx, vy, vz = particle_record.u[:, 0], particle_record.u[:, 1], particle_record.u[:, 2]
 
-    x_wind = dynamic_parameters['x_wind']
-    y_wind = dynamic_parameters['y_wind']
-    z_wind = dynamic_parameters['z_wind']
+    x_wind = dynamic_parameters.x_wind
+    y_wind = dynamic_parameters.y_wind
+    z_wind = dynamic_parameters.z_wind
 
 
     plt.hist(x, bins=50)

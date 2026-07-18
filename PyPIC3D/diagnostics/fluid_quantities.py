@@ -27,22 +27,22 @@ def fluid_velocity(
         dynamic_parameters,
 ):
 
-    dx = dynamic_parameters["dx"]
-    dy = dynamic_parameters["dy"]
-    dz = dynamic_parameters["dz"]
-    shape_factor = static_parameters["shape_factor"]
+    dx = dynamic_parameters.dx
+    dy = dynamic_parameters.dy
+    dz = dynamic_parameters.dz
+    shape_factor = static_parameters.shape_factor
     # unpack grid and tile parameters
 
-    tile_nx, tile_ny, tile_nz = [int(width) for width in static_parameters["tile_shape"]]
+    tile_nx, tile_ny, tile_nz = [int(width) for width in static_parameters.tile_shape]
     # get the tile shape
-    g = static_parameters["guard_cells"]
+    g = static_parameters.guard_cells
 
     local_Nx = tile_nx + 2 * g
     local_Ny = tile_ny + 2 * g
     local_Nz = tile_nz + 2 * g
     # piece together the total local tile shape
 
-    tiled_grid = dynamic_parameters["grids"]["tiled_center_grid"]
+    tiled_grid = dynamic_parameters.grids.tiled_center_grid
     # get the grid for the tiles
 
     local_bc = 2

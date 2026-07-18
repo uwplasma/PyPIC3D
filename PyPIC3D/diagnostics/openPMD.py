@@ -39,8 +39,11 @@ def _split_output_parameters(static_parameters, dynamic_parameters):
         return static_parameters, static_parameters
     if isinstance(dynamic_parameters, str):
         return static_parameters, static_parameters
+    if hasattr(dynamic_parameters, "dx"):
+        return static_parameters, dynamic_parameters
     if "dx" not in dynamic_parameters:
-        return static_parameters, {**static_parameters, **dynamic_parameters}
+        static_items = static_parameters._asdict() if hasattr(static_parameters, "_asdict") else static_parameters
+        return static_parameters, {**static_items, **dynamic_parameters}
     return static_parameters, dynamic_parameters
 
 
@@ -65,16 +68,16 @@ def _configure_openpmd_mesh(mesh, dynamic_parameters, active_dims=(1,1,1)):
     # initialize lists for axes, spacings, and offsets
     if active_dims[0]:
         axes.append("x")
-        ds.append(float(dynamic_parameters["dx"]))
-        offsets.append(-float(dynamic_parameters["x_wind"]) / 2.0)
+        ds.append(float(dynamic_parameters.dx))
+        offsets.append(-float(dynamic_parameters.x_wind) / 2.0)
     if active_dims[1]:
         axes.append("y")
-        ds.append(float(dynamic_parameters["dy"]))
-        offsets.append(-float(dynamic_parameters["y_wind"]) / 2.0)
+        ds.append(float(dynamic_parameters.dy))
+        offsets.append(-float(dynamic_parameters.y_wind) / 2.0)
     if active_dims[2]:
         axes.append("z")
-        ds.append(float(dynamic_parameters["dz"]))
-        offsets.append(-float(dynamic_parameters["z_wind"]) / 2.0)
+        ds.append(float(dynamic_parameters.dz))
+        offsets.append(-float(dynamic_parameters.z_wind) / 2.0)
     # determine the active axes being used and set them
 
     mesh.axis_labels = axes
@@ -274,7 +277,7 @@ def write_tiled_field_snapshot_openpmd(
     try:
         iteration = series.iterations[int(snapshot.step)]
         iteration.time = float(snapshot.time)
-        iteration.dt = float(dynamic_parameters["dt"])
+        iteration.dt = float(dynamic_parameters.dt)
         iteration.time_unit_SI = 1.0
 
         for name, value in snapshot.fields.items():
@@ -331,7 +334,7 @@ def write_openpmd_particles_to_iteration(
     if not particles:
         return
 
-    C = float(dynamic_parameters["C"])
+    C = float(dynamic_parameters.C)
 
     for species in particles:
         species_name = species.name.replace(" ", "_")
@@ -430,14 +433,14 @@ def _axis_diagnostic_position_array(x, u, dt, wind, bc):
 
 
 def _diagnostic_position_array(x, u, static_parameters, dynamic_parameters):
-    particle_bc = static_parameters["particle_boundary_conditions"]
-    dt = float(dynamic_parameters["dt"])
+    particle_bc = static_parameters.particle_boundary_conditions
+    dt = float(dynamic_parameters.dt)
 
     return np.stack(
         (
-            _axis_diagnostic_position_array(x[:, 0], u[:, 0], dt, float(dynamic_parameters["x_wind"]), particle_bc[0]),
-            _axis_diagnostic_position_array(x[:, 1], u[:, 1], dt, float(dynamic_parameters["y_wind"]), particle_bc[1]),
-            _axis_diagnostic_position_array(x[:, 2], u[:, 2], dt, float(dynamic_parameters["z_wind"]), particle_bc[2]),
+            _axis_diagnostic_position_array(x[:, 0], u[:, 0], dt, float(dynamic_parameters.x_wind), particle_bc[0]),
+            _axis_diagnostic_position_array(x[:, 1], u[:, 1], dt, float(dynamic_parameters.y_wind), particle_bc[1]),
+            _axis_diagnostic_position_array(x[:, 2], u[:, 2], dt, float(dynamic_parameters.z_wind), particle_bc[2]),
         ),
         axis=-1,
     )
@@ -464,7 +467,7 @@ def _iter_snapshot_particle_chunks(snapshot, static_parameters, dynamic_paramete
     if len(snapshot.x_shards) != len(snapshot.u_shards) or len(snapshot.x_shards) != len(snapshot.active_shards):
         raise ValueError("Particle snapshot x, u, and active shard lists must have the same length.")
 
-    C = float(dynamic_parameters["C"])
+    C = float(dynamic_parameters.C)
     species_charge = np.asarray(snapshot.species_charge, dtype=np.float64)
     species_mass = np.asarray(snapshot.species_mass, dtype=np.float64)
     species_weight = np.asarray(snapshot.species_weight, dtype=np.float64)
@@ -608,7 +611,7 @@ def write_tiled_particle_snapshot_openpmd(
     try:
         iteration = series.iterations[int(snapshot.step)]
         iteration.time = float(snapshot.time)
-        iteration.dt = float(dynamic_parameters["dt"])
+        iteration.dt = float(dynamic_parameters.dt)
         iteration.time_unit_SI = 1.0
 
         write_tiled_particle_snapshot_to_iteration(
@@ -655,9 +658,9 @@ def write_openpmd_fields(fields, static_parameters, dynamic_parameters=None, out
     # open or create the openPMD series
     iteration = series.iterations[int(plot_t)]
     # specify the iteration using the plot number
-    iteration.time = float(t * dynamic_parameters["dt"])
+    iteration.time = float(t * dynamic_parameters.dt)
     # set the physical time
-    iteration.dt = float(dynamic_parameters["dt"])
+    iteration.dt = float(dynamic_parameters.dt)
     # set the time step
     iteration.time_unit_SI = 1.0
     # set the time unit
@@ -697,9 +700,9 @@ def write_openpmd_particles(
     # open or create the openPMD series
     iteration = series.iterations[int(plot_t)]
     # specify the iteration using the plot number
-    iteration.time = float(t * dynamic_parameters["dt"])
+    iteration.time = float(t * dynamic_parameters.dt)
     # set the physical time
-    iteration.dt = float(dynamic_parameters["dt"])
+    iteration.dt = float(dynamic_parameters.dt)
     # set the time step
     iteration.time_unit_SI = 1.0
     # set the time unit
@@ -752,7 +755,7 @@ def write_openpmd_initial_particles(
     if not particles:
         return
     
-    C = dynamic_parameters['C']
+    C = dynamic_parameters.C
     # speed of light
 
     output_path = os.path.join(output_dir, "data", "initial_particles")
@@ -774,7 +777,7 @@ def write_openpmd_initial_particles(
 
         iteration = series.iterations[0]
         iteration.time = 0.0
-        iteration.dt = float(dynamic_parameters["dt"])
+        iteration.dt = float(dynamic_parameters.dt)
         iteration.time_unit_SI = 1.0
 
         species_group = iteration.particles[species_name]
@@ -890,7 +893,7 @@ def write_openpmd_initial_fields(fields, static_parameters, dynamic_parameters=N
 
     iteration = series.iterations[0]
     iteration.time = 0.0
-    iteration.dt = float(dynamic_parameters["dt"])
+    iteration.dt = float(dynamic_parameters.dt)
     iteration.time_unit_SI = 1.0
     write_openpmd_fields_to_iteration(iteration, field_map, dynamic_parameters, active_dims)
     series.flush()
