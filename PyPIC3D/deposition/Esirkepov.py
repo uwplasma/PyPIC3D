@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+from functools import partial
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import (
     compute_particle_anchor,
@@ -134,7 +135,7 @@ def fold_tiled_esirkepov_ghost_cells(field_tiles, static_parameters, component_a
         int(nty) == 1 and tile_ny == 1,
         int(ntz) == 1 and tile_nz == 1,
     )
-    particle_bc = static_parameters["particle_boundary_conditions"]
+    particle_bc = static_parameters.particle_boundary_conditions
 
     def fold_axis(field_tiles, axis, bc, reduced_axis):
         tiles = jnp.moveaxis(field_tiles, (axis, 3 + axis), (0, 3))
@@ -153,6 +154,25 @@ def fold_tiled_esirkepov_ghost_cells(field_tiles, static_parameters, component_a
 
             def reflecting_boundary(tiles):
                 return tiles.at[:, :, :, g:g + 1, :, :].add(sign * ghost_sum)
+
+            def absorbing_boundary(tiles):
+                return tiles
+
+            tiles = jax.lax.switch(bc, (periodic_boundary, reflecting_boundary, absorbing_boundary), tiles)
+            tiles = tiles.at[:, :, :, :g, :, :].set(0.0)
+            tiles = tiles.at[:, :, :, -g:, :, :].set(0.0)
+            return jnp.moveaxis(tiles, (0, 3), (axis, 3 + axis))
+
+        if int(tiles.shape[0]) == 1:
+            def periodic_boundary(tiles):
+                tiles = tiles.at[0, :, :, -2 * g:-g, :, :].add(lower_ghost[0, :, :, :, :, :])
+                tiles = tiles.at[0, :, :, g:2 * g, :, :].add(upper_ghost[0, :, :, :, :, :])
+                return tiles
+
+            def reflecting_boundary(tiles):
+                tiles = tiles.at[0, :, :, g:2 * g, :, :].add(sign * lower_ghost[0, :, :, :, :, :])
+                tiles = tiles.at[0, :, :, -2 * g:-g, :, :].add(sign * upper_ghost[0, :, :, :, :, :])
+                return tiles
 
             def absorbing_boundary(tiles):
                 return tiles
@@ -197,6 +217,7 @@ def fold_tiled_esirkepov_vector_ghost_cells(field_tiles, static_parameters, num_
     )
 
 
+@partial(jax.jit, static_argnames="static_parameters")
 def Esirkepov_current(
     particles: TiledParticles,
     species_config: SpeciesConfig,
@@ -213,20 +234,20 @@ def Esirkepov_current(
     the caller after deposition.
     """
 
-    tile_shape = tuple(int(width) for width in static_parameters["tile_shape"])
+    tile_shape = tuple(int(width) for width in static_parameters.tile_shape)
     # get the tile shape
-    g = int(static_parameters["guard_cells"])
+    g = int(static_parameters.guard_cells)
     # get the number of guard cells on the tiles
-    tiled_grid = dynamic_parameters["grids"]["tiled_center_grid"]
+    tiled_grid = dynamic_parameters.grids.tiled_center_grid
     # get the tile grid for the current deposition
 
-    dx = dynamic_parameters["dx"]
-    dy = dynamic_parameters["dy"]
-    dz = dynamic_parameters["dz"]
+    dx = dynamic_parameters.dx
+    dy = dynamic_parameters.dy
+    dz = dynamic_parameters.dz
     # get spatial resolution
-    dt = dynamic_parameters["dt"]
+    dt = dynamic_parameters.dt
     # get temporal resolution
-    shape_factor = static_parameters["shape_factor"]
+    shape_factor = static_parameters.shape_factor
     # get shape factor
 
     Jx, Jy, Jz = J

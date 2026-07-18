@@ -27,17 +27,17 @@ def _apply_tiled_axis_boundary(x, u, active, wind, bc):
 
 
 def _particle_tile_indices(x, y, z, static_parameters, dynamic_parameters, tile_counts):
-    tile_shape = static_parameters["tile_shape"]
+    tile_shape = static_parameters.tile_shape
     tile_nx, tile_ny, tile_nz = tile_shape
     ntx, nty, ntz = tile_counts
 
-    x_cell = jnp.floor((x + 0.5 * dynamic_parameters["x_wind"]) / dynamic_parameters["dx"]).astype(int)
-    y_cell = jnp.floor((y + 0.5 * dynamic_parameters["y_wind"]) / dynamic_parameters["dy"]).astype(int)
-    z_cell = jnp.floor((z + 0.5 * dynamic_parameters["z_wind"]) / dynamic_parameters["dz"]).astype(int)
+    x_cell = jnp.floor((x + 0.5 * dynamic_parameters.x_wind) / dynamic_parameters.dx).astype(int)
+    y_cell = jnp.floor((y + 0.5 * dynamic_parameters.y_wind) / dynamic_parameters.dy).astype(int)
+    z_cell = jnp.floor((z + 0.5 * dynamic_parameters.z_wind) / dynamic_parameters.dz).astype(int)
 
-    x_cell = jnp.clip(x_cell, 0, dynamic_parameters["Nx"] - 1)
-    y_cell = jnp.clip(y_cell, 0, dynamic_parameters["Ny"] - 1)
-    z_cell = jnp.clip(z_cell, 0, dynamic_parameters["Nz"] - 1)
+    x_cell = jnp.clip(x_cell, 0, dynamic_parameters.Nx - 1)
+    y_cell = jnp.clip(y_cell, 0, dynamic_parameters.Ny - 1)
+    z_cell = jnp.clip(z_cell, 0, dynamic_parameters.Nz - 1)
 
     return (
         jnp.clip(x_cell // tile_nx, 0, ntx - 1),
@@ -104,7 +104,7 @@ def _bounded_state_and_tile_offsets(tiled_particles, static_parameters, dynamic_
     ntx, nty, ntz, n_species, n_slots = tiled_particles.active.shape
     tile_counts = (ntx, nty, ntz)
 
-    particle_bc = static_parameters["particle_boundary_conditions"]
+    particle_bc = static_parameters.particle_boundary_conditions
     bounded_x = tiled_particles.x
     bounded_u = tiled_particles.u
     bounded_active = tiled_particles.active
@@ -113,21 +113,21 @@ def _bounded_state_and_tile_offsets(tiled_particles, static_parameters, dynamic_
         bounded_x[..., 0],
         bounded_u[..., 0],
         bounded_active,
-        dynamic_parameters["x_wind"],
+        dynamic_parameters.x_wind,
         particle_bc[0],
     )
     x2, u2, bounded_active = _apply_tiled_axis_boundary(
         bounded_x[..., 1],
         bounded_u[..., 1],
         bounded_active,
-        dynamic_parameters["y_wind"],
+        dynamic_parameters.y_wind,
         particle_bc[1],
     )
     x3, u3, bounded_active = _apply_tiled_axis_boundary(
         bounded_x[..., 2],
         bounded_u[..., 2],
         bounded_active,
-        dynamic_parameters["z_wind"],
+        dynamic_parameters.z_wind,
         particle_bc[2],
     )
 
