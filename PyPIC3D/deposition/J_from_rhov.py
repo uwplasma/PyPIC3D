@@ -28,13 +28,14 @@ def _collapse_tiled_axis_stencil(points, weights, local_n, reduced_axis, g):
     return collapse_axis_stencil(points, weights, local_n, ghost_cells=True)
 
 
-@partial(jax.jit, static_argnames="static_parameters")
+@partial(jax.jit, static_argnames=("static_parameters", "bc_type"))
 def J_from_rhov(
     particles,
     species_config,
     J,
     static_parameters,
     dynamic_parameters,
+    bc_type=1,
 ):
     """Compute tile-local direct current from centered tiled particles."""
 
@@ -223,9 +224,9 @@ def J_from_rhov(
     )
     # compute the current density contributions for all tiles by applying the vectorized deposit function to the particle data and tile indices
 
-    J = fold_tiled_vector_ghost_cells((Jx, Jy, Jz), static_parameters, g)
+    J = fold_tiled_vector_ghost_cells((Jx, Jy, Jz), static_parameters, g, bc_type=bc_type)
     # fold the ghost cells of the current density tiles to ensure continuity across tile boundaries
-    J = update_tiled_vector_ghost_cells(J, static_parameters, g)
+    J = update_tiled_vector_ghost_cells(J, static_parameters, g, bc_type=bc_type)
     # update the ghost cells of the current density tiles to reflect the contributions from neighboring tiles
 
 
@@ -233,12 +234,12 @@ def J_from_rhov(
     ################# CURRENT FILTERING #################
     def bilinear_filtered_current(J):
         J = bilinear_filter_vector(J, num_guard_cells=g)
-        J = update_tiled_vector_ghost_cells(J, static_parameters, num_guard_cells=g)
+        J = update_tiled_vector_ghost_cells(J, static_parameters, num_guard_cells=g, bc_type=bc_type)
         return J
     
     def digital_filtered_current(J):
         J = digital_filter_vector(J, dynamic_parameters.alpha, num_guard_cells=g)
-        J = update_tiled_vector_ghost_cells(J, static_parameters, num_guard_cells=g)
+        J = update_tiled_vector_ghost_cells(J, static_parameters, num_guard_cells=g, bc_type=bc_type)
         return J
 
     J = jax.lax.cond(

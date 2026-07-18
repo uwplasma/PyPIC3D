@@ -12,6 +12,8 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIO
 MESH_AXES = ("tile_x", "tile_y", "tile_z")
 SCALAR_TILE_SPEC = P("tile_x", "tile_y", "tile_z", None, None, None)
 VECTOR_TILE_SPEC = P(None, "tile_x", "tile_y", "tile_z", None, None, None)
+BC_TYPE_FIELD = 0
+BC_TYPE_PARTICLE = 1
 
 
 def _as_python_int(value):
@@ -26,6 +28,15 @@ def _boundary_tuple(boundary_conditions):
         _as_python_int(boundary_conditions["y"]),
         _as_python_int(boundary_conditions["z"]),
     )
+
+
+def _boundary_conditions_for_type(static_parameters, bc_type):
+    bc_type = int(bc_type)
+    if bc_type == BC_TYPE_FIELD:
+        return _boundary_tuple(static_parameters.boundary_conditions)
+    if bc_type == BC_TYPE_PARTICLE:
+        return _boundary_tuple(static_parameters.particle_boundary_conditions)
+    raise ValueError("bc_type must be 0 for field boundaries or 1 for particle boundaries.")
 
 
 def _reduced_axes_from_tile_shape(tile_shape, mesh_shape):
@@ -138,10 +149,10 @@ def _local_refresh_reduced_axis(tile, axis, g, boundary_condition):
     upper_slice = [slice(None), slice(None), slice(None)]
     upper_slice[axis] = slice(-g, None)
 
-    tile = tile.at[tuple(lower_slice)].set(jnp.broadcast_to(interior, tile[tuple(lower_slice)].shape))
-    tile = tile.at[tuple(upper_slice)].set(jnp.broadcast_to(interior, tile[tuple(upper_slice)].shape))
-
-    if boundary_condition == BC_CONDUCTING:
+    if boundary_condition == BC_PERIODIC:
+        tile = tile.at[tuple(lower_slice)].set(jnp.broadcast_to(interior, tile[tuple(lower_slice)].shape))
+        tile = tile.at[tuple(upper_slice)].set(jnp.broadcast_to(interior, tile[tuple(upper_slice)].shape))
+    else:
         tile = tile.at[tuple(lower_slice)].set(0.0)
         tile = tile.at[tuple(upper_slice)].set(0.0)
 
@@ -214,9 +225,10 @@ def _local_fold_reduced_axis(tile, axis, g, boundary_condition):
 
     ghost_sum = jnp.sum(tile[tuple(lower_slice)], axis=axis, keepdims=True)
     ghost_sum = ghost_sum + jnp.sum(tile[tuple(upper_slice)], axis=axis, keepdims=True)
-    sign = -1.0 if boundary_condition == BC_CONDUCTING else 1.0
-
-    tile = tile.at[tuple(interior_slice)].add(sign * ghost_sum)
+    if boundary_condition == BC_PERIODIC:
+        tile = tile.at[tuple(interior_slice)].add(ghost_sum)
+    elif boundary_condition == BC_CONDUCTING:
+        tile = tile.at[tuple(interior_slice)].add(-ghost_sum)
     tile = tile.at[tuple(lower_slice)].set(0.0)
     tile = tile.at[tuple(upper_slice)].set(0.0)
 
@@ -576,7 +588,7 @@ def make_distributed_electric_conducting_bc(mesh, tile_shape, boundary_condition
     return apply
 
 
-def update_tiled_ghost_cells(field_tiles, static_parameters, num_guard_cells=2):
+def update_tiled_ghost_cells(field_tiles, static_parameters, num_guard_cells=2, bc_type=BC_TYPE_FIELD):
     """
     Refresh scalar tile halos with one logical tile per JAX device.
 
@@ -592,13 +604,13 @@ def update_tiled_ghost_cells(field_tiles, static_parameters, num_guard_cells=2):
     updater = make_distributed_ghost_updater(
         mesh,
         tile_shape,
-        _boundary_tuple(static_parameters.boundary_conditions),
+        _boundary_conditions_for_type(static_parameters, bc_type),
         num_guard_cells,
     )
     return updater(field_tiles)
 
 
-def update_tiled_vector_ghost_cells(field_tiles, static_parameters, num_guard_cells=2):
+def update_tiled_vector_ghost_cells(field_tiles, static_parameters, num_guard_cells=2, bc_type=BC_TYPE_FIELD):
     """
     Refresh tiled vector-field halos, preserving stacked or tuple layout.
     """
@@ -608,7 +620,7 @@ def update_tiled_vector_ghost_cells(field_tiles, static_parameters, num_guard_ce
     updater = make_distributed_vector_ghost_updater(
         mesh,
         tile_shape,
-        _boundary_tuple(static_parameters.boundary_conditions),
+        _boundary_conditions_for_type(static_parameters, bc_type),
         num_guard_cells,
     )
     return updater(field_tiles)
@@ -646,7 +658,7 @@ def apply_tiled_scalar_conducting_bc(field_tiles, static_parameters, num_guard_c
     return apply_bc(field_tiles)
 
 
-def fold_tiled_ghost_cells(field_tiles, static_parameters, num_guard_cells=2):
+def fold_tiled_ghost_cells(field_tiles, static_parameters, num_guard_cells=2, bc_type=BC_TYPE_FIELD):
     """
     Add tile-ghost deposits into owning interiors, then clear ghost cells.
 
@@ -660,13 +672,13 @@ def fold_tiled_ghost_cells(field_tiles, static_parameters, num_guard_cells=2):
     folder = make_distributed_ghost_folder(
         mesh,
         tile_shape,
-        _boundary_tuple(static_parameters.boundary_conditions),
+        _boundary_conditions_for_type(static_parameters, bc_type),
         num_guard_cells,
     )
     return folder(field_tiles)
 
 
-def fold_tiled_vector_ghost_cells(field_tiles, static_parameters, num_guard_cells=2):
+def fold_tiled_vector_ghost_cells(field_tiles, static_parameters, num_guard_cells=2, bc_type=BC_TYPE_FIELD):
     """
     Fold tile-ghost deposits for a tiled vector field.
     """
@@ -676,7 +688,7 @@ def fold_tiled_vector_ghost_cells(field_tiles, static_parameters, num_guard_cell
     folder = make_distributed_vector_ghost_folder(
         mesh,
         tile_shape,
-        _boundary_tuple(static_parameters.boundary_conditions),
+        _boundary_conditions_for_type(static_parameters, bc_type),
         num_guard_cells,
     )
     return folder(field_tiles)

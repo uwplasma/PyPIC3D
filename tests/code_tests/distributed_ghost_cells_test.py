@@ -38,11 +38,14 @@ def _world(boundary_conditions, tile_shape):
     }
 
 
-def _static_parameters(boundary_conditions, tile_shape, mesh_shape, g=1):
+def _static_parameters(boundary_conditions, tile_shape, mesh_shape, g=1, particle_boundary_conditions=None):
+    if particle_boundary_conditions is None:
+        particle_boundary_conditions = boundary_conditions
     return SimpleNamespace(
         tile_shape=tuple(int(width) for width in tile_shape),
         guard_cells=int(g),
         boundary_conditions=tuple(int(bc) for bc in boundary_conditions),
+        particle_boundary_conditions=tuple(int(bc) for bc in particle_boundary_conditions),
         field_mesh=_mesh(mesh_shape),
     )
 
@@ -82,7 +85,7 @@ def _reference_update(field_tiles, boundary_conditions, tile_shape, g=1):
         upper = jnp.broadcast_to(field_tiles[:, :, :, g:g + 1, :, :], field_tiles[:, :, :, -g:, :, :].shape)
         field_tiles = field_tiles.at[:, :, :, :g, :, :].set(lower)
         field_tiles = field_tiles.at[:, :, :, -g:, :, :].set(upper)
-        if bc_x == BC_CONDUCTING:
+        if bc_x != BC_PERIODIC:
             field_tiles = field_tiles.at[:, :, :, :g, :, :].set(0.0)
             field_tiles = field_tiles.at[:, :, :, -g:, :, :].set(0.0)
     else:
@@ -102,7 +105,7 @@ def _reference_update(field_tiles, boundary_conditions, tile_shape, g=1):
         upper = jnp.broadcast_to(field_tiles[:, :, :, :, g:g + 1, :], field_tiles[:, :, :, :, -g:, :].shape)
         field_tiles = field_tiles.at[:, :, :, :, :g, :].set(lower)
         field_tiles = field_tiles.at[:, :, :, :, -g:, :].set(upper)
-        if bc_y == BC_CONDUCTING:
+        if bc_y != BC_PERIODIC:
             field_tiles = field_tiles.at[:, :, :, :, :g, :].set(0.0)
             field_tiles = field_tiles.at[:, :, :, :, -g:, :].set(0.0)
     else:
@@ -122,7 +125,7 @@ def _reference_update(field_tiles, boundary_conditions, tile_shape, g=1):
         upper = jnp.broadcast_to(field_tiles[:, :, :, :, :, g:g + 1], field_tiles[:, :, :, :, :, -g:].shape)
         field_tiles = field_tiles.at[:, :, :, :, :, :g].set(lower)
         field_tiles = field_tiles.at[:, :, :, :, :, -g:].set(upper)
-        if bc_z == BC_CONDUCTING:
+        if bc_z != BC_PERIODIC:
             field_tiles = field_tiles.at[:, :, :, :, :, :g].set(0.0)
             field_tiles = field_tiles.at[:, :, :, :, :, -g:].set(0.0)
     else:
@@ -152,8 +155,10 @@ def _reference_fold(field_tiles, boundary_conditions, tile_shape, g=1):
     if reduced_x:
         ghost_sum = jnp.sum(field_tiles[:, :, :, :g, :, :], axis=3, keepdims=True)
         ghost_sum = ghost_sum + jnp.sum(field_tiles[:, :, :, -g:, :, :], axis=3, keepdims=True)
-        sign = -1.0 if bc_x == BC_CONDUCTING else 1.0
-        field_tiles = field_tiles.at[:, :, :, g:g + 1, :, :].add(sign * ghost_sum)
+        if bc_x == BC_PERIODIC:
+            field_tiles = field_tiles.at[:, :, :, g:g + 1, :, :].add(ghost_sum)
+        elif bc_x == BC_CONDUCTING:
+            field_tiles = field_tiles.at[:, :, :, g:g + 1, :, :].add(-ghost_sum)
     else:
         lower_ghost = field_tiles[:, :, :, :g, :, :]
         upper_ghost = field_tiles[:, :, :, -g:, :, :]
@@ -163,16 +168,19 @@ def _reference_fold(field_tiles, boundary_conditions, tile_shape, g=1):
         else:
             field_tiles = field_tiles.at[:-1, :, :, -2 * g:-g, :, :].add(lower_ghost[1:, :, :, :, :, :])
             field_tiles = field_tiles.at[1:, :, :, g:2 * g, :, :].add(upper_ghost[:-1, :, :, :, :, :])
-            field_tiles = field_tiles.at[0, :, :, g:2 * g, :, :].add(-lower_ghost[0, :, :, :, :, :])
-            field_tiles = field_tiles.at[-1, :, :, -2 * g:-g, :, :].add(-upper_ghost[-1, :, :, :, :, :])
+            if bc_x == BC_CONDUCTING:
+                field_tiles = field_tiles.at[0, :, :, g:2 * g, :, :].add(-lower_ghost[0, :, :, :, :, :])
+                field_tiles = field_tiles.at[-1, :, :, -2 * g:-g, :, :].add(-upper_ghost[-1, :, :, :, :, :])
     field_tiles = field_tiles.at[:, :, :, :g, :, :].set(0.0)
     field_tiles = field_tiles.at[:, :, :, -g:, :, :].set(0.0)
 
     if reduced_y:
         ghost_sum = jnp.sum(field_tiles[:, :, :, :, :g, :], axis=4, keepdims=True)
         ghost_sum = ghost_sum + jnp.sum(field_tiles[:, :, :, :, -g:, :], axis=4, keepdims=True)
-        sign = -1.0 if bc_y == BC_CONDUCTING else 1.0
-        field_tiles = field_tiles.at[:, :, :, :, g:g + 1, :].add(sign * ghost_sum)
+        if bc_y == BC_PERIODIC:
+            field_tiles = field_tiles.at[:, :, :, :, g:g + 1, :].add(ghost_sum)
+        elif bc_y == BC_CONDUCTING:
+            field_tiles = field_tiles.at[:, :, :, :, g:g + 1, :].add(-ghost_sum)
     else:
         lower_ghost = field_tiles[:, :, :, :, :g, :]
         upper_ghost = field_tiles[:, :, :, :, -g:, :]
@@ -182,16 +190,19 @@ def _reference_fold(field_tiles, boundary_conditions, tile_shape, g=1):
         else:
             field_tiles = field_tiles.at[:, :-1, :, :, -2 * g:-g, :].add(lower_ghost[:, 1:, :, :, :, :])
             field_tiles = field_tiles.at[:, 1:, :, :, g:2 * g, :].add(upper_ghost[:, :-1, :, :, :, :])
-            field_tiles = field_tiles.at[:, 0, :, :, g:2 * g, :].add(-lower_ghost[:, 0, :, :, :, :])
-            field_tiles = field_tiles.at[:, -1, :, :, -2 * g:-g, :].add(-upper_ghost[:, -1, :, :, :, :])
+            if bc_y == BC_CONDUCTING:
+                field_tiles = field_tiles.at[:, 0, :, :, g:2 * g, :].add(-lower_ghost[:, 0, :, :, :, :])
+                field_tiles = field_tiles.at[:, -1, :, :, -2 * g:-g, :].add(-upper_ghost[:, -1, :, :, :, :])
     field_tiles = field_tiles.at[:, :, :, :, :g, :].set(0.0)
     field_tiles = field_tiles.at[:, :, :, :, -g:, :].set(0.0)
 
     if reduced_z:
         ghost_sum = jnp.sum(field_tiles[:, :, :, :, :, :g], axis=5, keepdims=True)
         ghost_sum = ghost_sum + jnp.sum(field_tiles[:, :, :, :, :, -g:], axis=5, keepdims=True)
-        sign = -1.0 if bc_z == BC_CONDUCTING else 1.0
-        field_tiles = field_tiles.at[:, :, :, :, :, g:g + 1].add(sign * ghost_sum)
+        if bc_z == BC_PERIODIC:
+            field_tiles = field_tiles.at[:, :, :, :, :, g:g + 1].add(ghost_sum)
+        elif bc_z == BC_CONDUCTING:
+            field_tiles = field_tiles.at[:, :, :, :, :, g:g + 1].add(-ghost_sum)
     else:
         lower_ghost = field_tiles[:, :, :, :, :, :g]
         upper_ghost = field_tiles[:, :, :, :, :, -g:]
@@ -201,8 +212,9 @@ def _reference_fold(field_tiles, boundary_conditions, tile_shape, g=1):
         else:
             field_tiles = field_tiles.at[:, :, :-1, :, :, -2 * g:-g].add(lower_ghost[:, :, 1:, :, :, :])
             field_tiles = field_tiles.at[:, :, 1:, :, :, g:2 * g].add(upper_ghost[:, :, :-1, :, :, :])
-            field_tiles = field_tiles.at[:, :, 0, :, :, g:2 * g].add(-lower_ghost[:, :, 0, :, :, :])
-            field_tiles = field_tiles.at[:, :, -1, :, :, -2 * g:-g].add(-upper_ghost[:, :, -1, :, :, :])
+            if bc_z == BC_CONDUCTING:
+                field_tiles = field_tiles.at[:, :, 0, :, :, g:2 * g].add(-lower_ghost[:, :, 0, :, :, :])
+                field_tiles = field_tiles.at[:, :, -1, :, :, -2 * g:-g].add(-upper_ghost[:, :, -1, :, :, :])
     field_tiles = field_tiles.at[:, :, :, :, :, :g].set(0.0)
     field_tiles = field_tiles.at[:, :, :, :, :, -g:].set(0.0)
 
@@ -380,6 +392,82 @@ class TestDistributedGhostCells(unittest.TestCase):
         self.assert_allclose(actual, _reference_update(tiles, bcs, tile_shape))
         self.assert_allclose(actual[:, :, :, :, :, 0], actual[:, :, :, :, :, 1])
         self.assert_allclose(actual[:, :, :, :, :, -1], actual[:, :, :, :, :, 1])
+
+    def test_public_update_bc_type_selects_field_or_particle_boundaries(self):
+        mesh_shape = (1, 1, 1)
+        tile_shape = (3, 2, 2)
+        field_bcs = (BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
+        particle_bcs = (2, BC_PERIODIC, BC_PERIODIC)
+        tiles = _coordinate_tiles(mesh_shape, tile_shape)
+        static_parameters = _static_parameters(
+            field_bcs,
+            tile_shape,
+            mesh_shape,
+            particle_boundary_conditions=particle_bcs,
+        )
+
+        field_bc_actual = ghost_cells.update_tiled_ghost_cells(tiles, static_parameters, 1, bc_type=0)
+        particle_bc_actual = ghost_cells.update_tiled_ghost_cells(tiles, static_parameters, 1, bc_type=1)
+
+        self.assert_allclose(field_bc_actual, _reference_update(tiles, field_bcs, tile_shape))
+        self.assert_allclose(particle_bc_actual, _reference_update(tiles, particle_bcs, tile_shape))
+        self.assert_allclose(field_bc_actual[0, 0, 0, 0, 1:-1, 1:-1], tiles[0, 0, 0, -2, 1:-1, 1:-1])
+        self.assert_allclose(particle_bc_actual[0, 0, 0, 0, :, :], 0.0)
+        self.assert_allclose(particle_bc_actual[0, 0, 0, -1, :, :], 0.0)
+
+    def test_public_fold_bc_type_selects_absorbing_particle_boundaries(self):
+        mesh_shape = (1, 1, 1)
+        tile_shape = (3, 2, 2)
+        field_bcs = (BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
+        particle_bcs = (2, BC_PERIODIC, BC_PERIODIC)
+        tiles = jnp.zeros(mesh_shape + (5, 4, 4), dtype=jnp.float64)
+        tiles = tiles.at[0, 0, 0, 0, 1:-1, 1:-1].set(3.0)
+        tiles = tiles.at[0, 0, 0, -1, 1:-1, 1:-1].set(5.0)
+        static_parameters = _static_parameters(
+            field_bcs,
+            tile_shape,
+            mesh_shape,
+            particle_boundary_conditions=particle_bcs,
+        )
+
+        field_bc_actual = ghost_cells.fold_tiled_ghost_cells(tiles, static_parameters, 1, bc_type=0)
+        particle_bc_actual = ghost_cells.fold_tiled_ghost_cells(tiles, static_parameters, 1, bc_type=1)
+
+        self.assert_allclose(field_bc_actual, _reference_fold(tiles, field_bcs, tile_shape))
+        self.assert_allclose(particle_bc_actual, _reference_fold(tiles, particle_bcs, tile_shape))
+        self.assert_allclose(field_bc_actual[0, 0, 0, -2, 1:-1, 1:-1], 3.0)
+        self.assert_allclose(field_bc_actual[0, 0, 0, 1, 1:-1, 1:-1], 5.0)
+        self.assert_allclose(particle_bc_actual[0, 0, 0, 1:-1, 1:-1, 1:-1], 0.0)
+        self.assert_allclose(particle_bc_actual[0, 0, 0, 0, :, :], 0.0)
+        self.assert_allclose(particle_bc_actual[0, 0, 0, -1, :, :], 0.0)
+
+    def test_reduced_absorbing_particle_axis_discards_ghosts(self):
+        mesh_shape = (1, 1, 1)
+        tile_shape = (1, 2, 2)
+        field_bcs = (BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
+        particle_bcs = (2, BC_PERIODIC, BC_PERIODIC)
+        tiles = _coordinate_tiles(mesh_shape, tile_shape)
+        static_parameters = _static_parameters(
+            field_bcs,
+            tile_shape,
+            mesh_shape,
+            particle_boundary_conditions=particle_bcs,
+        )
+
+        refreshed = ghost_cells.update_tiled_ghost_cells(tiles, static_parameters, 1, bc_type=1)
+        self.assert_allclose(refreshed, _reference_update(tiles, particle_bcs, tile_shape))
+        self.assert_allclose(refreshed[0, 0, 0, 0, :, :], 0.0)
+        self.assert_allclose(refreshed[0, 0, 0, -1, :, :], 0.0)
+
+        deposits = jnp.zeros(mesh_shape + (3, 4, 4), dtype=jnp.float64)
+        deposits = deposits.at[0, 0, 0, 0, 1:-1, 1:-1].set(3.0)
+        deposits = deposits.at[0, 0, 0, -1, 1:-1, 1:-1].set(5.0)
+        folded = ghost_cells.fold_tiled_ghost_cells(deposits, static_parameters, 1, bc_type=1)
+
+        self.assert_allclose(folded, _reference_fold(deposits, particle_bcs, tile_shape))
+        self.assert_allclose(folded[0, 0, 0, 1, :, :], 0.0)
+        self.assert_allclose(folded[0, 0, 0, 0, :, :], 0.0)
+        self.assert_allclose(folded[0, 0, 0, -1, :, :], 0.0)
 
     def test_stacked_and_tuple_vector_halo_refresh_preserve_layouts(self):
         mesh_shape = (2, 1, 1)

@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -32,6 +33,8 @@ from tests.parameter_helpers import field_initialization_parameters, split_test_
 jax.config.update("jax_enable_x64", True)
 
 os.environ["XLA_FLAGS"] = "--xla_force_host_platform_device_count=32"
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _tile_axis_count(n_cells, cells_per_tile):
@@ -305,6 +308,14 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         ]
         for token in banned_tokens:
             self.assertNotIn(token, source)
+
+    def test_esirkepov_uses_shared_ghost_cell_folding(self):
+        source = (REPO_ROOT / "PyPIC3D" / "deposition" / "Esirkepov.py").read_text()
+
+        self.assertNotIn("fold_tiled_esirkepov_ghost_cells", source)
+        self.assertNotIn("fold_tiled_esirkepov_vector_ghost_cells", source)
+        self.assertIn("fold_tiled_vector_ghost_cells", source)
+        self.assertIn("bc_type=bc_type", source)
 
     def _world_with_tiled_grids(self, world, tile_shape):
         g = int(world["guard_cells"])
@@ -603,38 +614,71 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
 
         self._assert_tiled_current_matches_reference(world, x_old, u, tile_shape=(2, 1, 1))
 
-    def test_tiled_esirkepov_matches_global_current_with_particle_boundaries(self):
-        cases = [
-            (
-                {"x": BC_CONDUCTING, "y": BC_PERIODIC, "z": BC_PERIODIC},
-                {"x": 1, "y": 0, "z": 0},
-                jnp.array([[1.75, 0.0, 0.0], [-1.75, 0.0, 0.0]]),
-                jnp.array([[0.6, 0.0, 0.0], [-0.6, 0.0, 0.0]]),
-                (8, 1, 1),
-            ),
-            (
-                {"x": BC_CONDUCTING, "y": BC_PERIODIC, "z": BC_CONDUCTING},
-                {"x": 1, "y": 0, "z": 2},
-                jnp.array([[1.75, -0.50, 1.75], [-1.75, 0.50, -1.75]]),
-                jnp.array([[0.6, 0.4, 0.6], [-0.6, -0.4, -0.6]]),
-                (8, 4, 4),
-            ),
-        ]
-        for field_bc, particle_bc, x_old, u_cells, shape in cases:
-            with self.subTest(field_bc=field_bc, particle_bc=particle_bc, shape=shape):
-                world = self._build_world(
-                    Nx=shape[0],
-                    Ny=shape[1],
-                    Nz=shape[2],
-                    dt=0.05,
-                    boundary_conditions=field_bc,
-                    particle_boundary_conditions=particle_bc,
-                )
-                world["guard_cells"] = 2
-                u = u_cells.at[:, 0].set(u_cells[:, 0] * world["dx"] / world["dt"])
-                u = u.at[:, 1].set(u_cells[:, 1] * world["dy"] / world["dt"])
-                u = u.at[:, 2].set(u_cells[:, 2] * world["dz"] / world["dt"])
-                self._assert_tiled_current_matches_reference(world, x_old, u)
+    def test_tiled_esirkepov_bc_type_selects_field_or_particle_boundaries(self):
+        tile_shape = (2, 1, 1)
+        periodic_particle_world = self._build_world(
+            Nx=4,
+            Ny=1,
+            Nz=1,
+            dt=0.05,
+            boundary_conditions={"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},
+            particle_boundary_conditions={"x": 0, "y": 0, "z": 0},
+        )
+        absorbing_particle_world = self._build_world(
+            Nx=4,
+            Ny=1,
+            Nz=1,
+            dt=0.05,
+            boundary_conditions={"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},
+            particle_boundary_conditions={"x": 2, "y": 0, "z": 0},
+        )
+        periodic_particle_world["guard_cells"] = 2
+        absorbing_particle_world["guard_cells"] = 2
+        periodic_particle_world = self._world_with_tiled_grids(periodic_particle_world, tile_shape)
+        absorbing_particle_world = self._world_with_tiled_grids(absorbing_particle_world, tile_shape)
+
+        dx = periodic_particle_world["dx"]
+        dt = periodic_particle_world["dt"]
+        x_old = jnp.array([[1.75, 0.0, 0.0], [-1.75, 0.0, 0.0]])
+        u = jnp.array([[0.6 * dx / dt, 0.0, 0.0], [-0.6 * dx / dt, 0.0, 0.0]])
+        particles, species_config = self._particles_from_arrays(periodic_particle_world, tile_shape, x_old, u)
+        constants = {"C": 1.0, "eps": 1.0, "alpha": 1.0}
+
+        _, _, J_template, _, _ = self._initialize_fields(periodic_particle_world, constants)
+        static_periodic, dynamic_periodic = split_test_parameters(periodic_particle_world, constants)
+        static_absorbing, dynamic_absorbing = split_test_parameters(absorbing_particle_world, constants)
+
+        field_bc_current = Esirkepov_current(
+            particles,
+            species_config,
+            J_template,
+            static_absorbing,
+            dynamic_absorbing,
+        )
+        same_field_bc_current = Esirkepov_current(
+            particles,
+            species_config,
+            J_template,
+            static_periodic,
+            dynamic_periodic,
+        )
+        particle_bc_current = Esirkepov_current(
+            particles,
+            species_config,
+            J_template,
+            static_absorbing,
+            dynamic_absorbing,
+            bc_type=1,
+        )
+
+        for actual_component, expected_component in zip(field_bc_current, same_field_bc_current):
+            self.assertTrue(jnp.allclose(actual_component, expected_component, rtol=1.0e-12, atol=1.0e-12))
+
+        max_difference = max(
+            float(jnp.max(jnp.abs(field_component - particle_component)))
+            for field_component, particle_component in zip(field_bc_current, particle_bc_current)
+        )
+        self.assertGreater(max_difference, 1.0e-12)
 
     def test_tiled_esirkepov_satisfies_tile_local_discrete_continuity(self):
         world = self._build_world(Nx=8, Ny=1, Nz=1, dt=0.05, shape_factor=1)
