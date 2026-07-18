@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 
 import jax
@@ -14,6 +15,9 @@ from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 
 
 jax.config.update("jax_enable_x64", True)
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _tile_axis_count(n_cells, cells_per_tile):
@@ -79,8 +83,16 @@ def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
 
 
 class TestTiledRho(unittest.TestCase):
-    def _build_world(self, shape_factor, dt=0.08):
+    def test_compute_rho_hard_codes_particle_bc_for_ghost_cells(self):
+        source = (REPO_ROOT / "PyPIC3D" / "deposition" / "rho.py").read_text()
+
+        self.assertIn("fold_tiled_ghost_cells(rho, static_parameters, g, bc_type=1)", source)
+        self.assertIn("update_tiled_ghost_cells(rho, static_parameters, g, bc_type=1)", source)
+
+    def _build_world(self, shape_factor, dt=0.08, particle_boundary_conditions=None):
         x_wind, y_wind, z_wind = 4.0, 3.0, 2.0
+        if particle_boundary_conditions is None:
+            particle_boundary_conditions = {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC}
         world = {
             "dx": x_wind / 8,
             "dy": y_wind / 6,
@@ -95,6 +107,7 @@ class TestTiledRho(unittest.TestCase):
             "shape_factor": shape_factor,
             "guard_cells": 2,
             "boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},
+            "particle_boundary_conditions": particle_boundary_conditions,
         }
         vertex_grid, center_grid = build_yee_grid(SimpleNamespace(**world))
         world["grids"] = {"vertex": vertex_grid, "center": center_grid}
@@ -253,6 +266,34 @@ class TestTiledRho(unittest.TestCase):
 
     def test_tiled_rho_matches_compute_rho_after_digital_filter(self):
         self._compare_tiled_to_standard(shape_factor=2, alpha=0.55)
+
+    def test_compute_rho_uses_particle_boundary_conditions_for_ghost_folding(self):
+        constants = {"alpha": 1.0}
+        periodic_world = self._build_world(
+            shape_factor=1,
+            particle_boundary_conditions={"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},
+        )
+        absorbing_world = self._build_world(
+            shape_factor=1,
+            particle_boundary_conditions={"x": 2, "y": BC_PERIODIC, "z": BC_PERIODIC},
+        )
+        particles = self._particles(periodic_world)
+
+        _, periodic_rho = self._deposit_and_assemble(
+            particles,
+            periodic_world,
+            self._one_tile_parameters(periodic_world),
+            constants,
+        )
+        _, absorbing_rho = self._deposit_and_assemble(
+            particles,
+            absorbing_world,
+            self._one_tile_parameters(absorbing_world),
+            constants,
+        )
+
+        max_difference = float(jnp.max(jnp.abs(periodic_rho - absorbing_rho)))
+        self.assertGreater(max_difference, 1.0e-12)
 
     def test_compute_rho_uses_current_positions_not_half_step_back_positions(self):
         world = self._build_world(shape_factor=2)

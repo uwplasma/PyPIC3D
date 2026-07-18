@@ -10,10 +10,7 @@ import numpy as np
 import toml
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
-from PyPIC3D.deposition.Esirkepov import (
-    Esirkepov_current,
-    get_3D_esirkepov_weights,
-)
+from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.boundary_conditions import ghost_cells
 from PyPIC3D.diagnostics.output_adapters import assemble_tiled_vector_field, fields_for_output
@@ -314,8 +311,17 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
 
         self.assertNotIn("fold_tiled_esirkepov_ghost_cells", source)
         self.assertNotIn("fold_tiled_esirkepov_vector_ghost_cells", source)
+        self.assertNotIn('static_argnames=("static_parameters", "bc_type")', source)
+        self.assertNotIn("bc_type=bc_type", source)
         self.assertIn("fold_tiled_vector_ghost_cells", source)
-        self.assertIn("bc_type=bc_type", source)
+        self.assertIn(
+            "fold_tiled_vector_ghost_cells((Jx, Jy, Jz), static_parameters, num_guard_cells=g, bc_type=1)",
+            source,
+        )
+        self.assertIn(
+            "update_tiled_vector_ghost_cells(J, static_parameters, num_guard_cells=g, bc_type=1)",
+            source,
+        )
 
     def _world_with_tiled_grids(self, world, tile_shape):
         g = int(world["guard_cells"])
@@ -614,7 +620,7 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
 
         self._assert_tiled_current_matches_reference(world, x_old, u, tile_shape=(2, 1, 1))
 
-    def test_tiled_esirkepov_bc_type_selects_field_or_particle_boundaries(self):
+    def test_tiled_esirkepov_uses_particle_boundaries_for_current_ghosts(self):
         tile_shape = (2, 1, 1)
         periodic_particle_world = self._build_world(
             Nx=4,
@@ -648,35 +654,24 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         static_periodic, dynamic_periodic = split_test_parameters(periodic_particle_world, constants)
         static_absorbing, dynamic_absorbing = split_test_parameters(absorbing_particle_world, constants)
 
-        field_bc_current = Esirkepov_current(
-            particles,
-            species_config,
-            J_template,
-            static_absorbing,
-            dynamic_absorbing,
-        )
-        same_field_bc_current = Esirkepov_current(
+        periodic_bc_current = Esirkepov_current(
             particles,
             species_config,
             J_template,
             static_periodic,
             dynamic_periodic,
         )
-        particle_bc_current = Esirkepov_current(
+        absorbing_bc_current = Esirkepov_current(
             particles,
             species_config,
             J_template,
             static_absorbing,
             dynamic_absorbing,
-            bc_type=1,
         )
 
-        for actual_component, expected_component in zip(field_bc_current, same_field_bc_current):
-            self.assertTrue(jnp.allclose(actual_component, expected_component, rtol=1.0e-12, atol=1.0e-12))
-
         max_difference = max(
-            float(jnp.max(jnp.abs(field_component - particle_component)))
-            for field_component, particle_component in zip(field_bc_current, particle_bc_current)
+            float(jnp.max(jnp.abs(periodic_component - absorbing_component)))
+            for periodic_component, absorbing_component in zip(periodic_bc_current, absorbing_bc_current)
         )
         self.assertGreater(max_difference, 1.0e-12)
 

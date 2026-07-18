@@ -128,13 +128,15 @@ def _fold_ghost_cells(field, bc_x, bc_y, bc_z):
 
 
 class TestDirectDeposition(unittest.TestCase):
-    def test_J_from_rhov_passes_bc_type_to_shared_ghost_cells(self):
+    def test_J_from_rhov_hard_codes_particle_bc_for_shared_ghost_cells(self):
         source = (REPO_ROOT / "PyPIC3D" / "deposition" / "J_from_rhov.py").read_text()
 
-        self.assertIn("bc_type=0", source)
-        self.assertIn("fold_tiled_vector_ghost_cells((Jx, Jy, Jz), static_parameters, g, bc_type=bc_type)", source)
-        self.assertIn("update_tiled_vector_ghost_cells(J, static_parameters, g, bc_type=bc_type)", source)
-        self.assertIn("update_tiled_vector_ghost_cells(J, static_parameters, num_guard_cells=g, bc_type=bc_type)", source)
+        self.assertNotIn('static_argnames=("static_parameters", "bc_type")', source)
+        self.assertNotIn("bc_type=bc_type", source)
+        self.assertNotIn("bc_type=0", source)
+        self.assertIn("fold_tiled_vector_ghost_cells((Jx, Jy, Jz), static_parameters, g, bc_type=1)", source)
+        self.assertIn("update_tiled_vector_ghost_cells(J, static_parameters, g, bc_type=1)", source)
+        self.assertIn("update_tiled_vector_ghost_cells(J, static_parameters, num_guard_cells=g, bc_type=1)", source)
 
     def _build_world(self, Nx=8, Ny=6, Nz=4, dt=0.05, boundary_conditions=None):
         x_wind, y_wind, z_wind = 4.0, 3.0, 2.0

@@ -171,10 +171,10 @@ def compute_rho(
     rho = deposit_charge(particles.x, particles.active, tx, ty, tz)
     # deposit the charge density for all tiles by applying the vectorized deposit_charge function to the particle positions, active mask, and tile indices
 
-    rho = fold_tiled_ghost_cells(rho, static_parameters, g)
+    rho = fold_tiled_ghost_cells(rho, static_parameters, g, bc_type=1)
     # fold charge deposited into tile ghost cells back to the owner interiors
 
-    rho = update_tiled_ghost_cells(rho, static_parameters, g)
+    rho = update_tiled_ghost_cells(rho, static_parameters, g, bc_type=1)
     # update the ghost cells of the charge density array to ensure proper boundary conditions
     
     return rho

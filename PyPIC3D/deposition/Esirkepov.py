@@ -45,14 +45,13 @@ def collapse_redundant_axis(points, current_weights, old_weights, axis_active, e
     return collapsed_points, collapsed_current, collapsed_old
 
 
-@partial(jax.jit, static_argnames=("static_parameters", "bc_type"))
+@partial(jax.jit, static_argnames="static_parameters")
 def Esirkepov_current(
     particles: TiledParticles,
     species_config: SpeciesConfig,
     J,
     static_parameters,
     dynamic_parameters,
-    bc_type=1,
 ):
     """
     Deposit Esirkepov current into tile-local current buffers.
@@ -355,9 +354,9 @@ def Esirkepov_current(
     )
     # deposit the currents for all tiles in parallel using the vectorized deposit function
 
-    J = fold_tiled_vector_ghost_cells((Jx, Jy, Jz), static_parameters, num_guard_cells=g, bc_type=bc_type)
+    J = fold_tiled_vector_ghost_cells((Jx, Jy, Jz), static_parameters, num_guard_cells=g, bc_type=1)
     # fold the deposited currents across tile boundaries, applying the appropriate boundary conditions for ghost cells
-    J = update_tiled_vector_ghost_cells(J, static_parameters, num_guard_cells=g, bc_type=bc_type)
+    J = update_tiled_vector_ghost_cells(J, static_parameters, num_guard_cells=g, bc_type=1)
     # update the ghost cells of the folded currents to ensure consistency across tile boundaries
 
     return J
