@@ -1,4 +1,6 @@
 import unittest
+from types import SimpleNamespace
+
 import jax
 import jax.numpy as jnp
 
@@ -25,7 +27,16 @@ class TestGhostCells(unittest.TestCase):
             world["field_mesh"] = ghost_cells.make_field_mesh(tile_grid_shape)
         except ValueError as exc:
             self.skipTest(str(exc))
-        return world
+        return SimpleNamespace(
+            tile_shape=tuple(int(width) for width in world["tile_shape"]),
+            guard_cells=self.g,
+            boundary_conditions=(
+                int(world["boundary_conditions"]["x"]),
+                int(world["boundary_conditions"]["y"]),
+                int(world["boundary_conditions"]["z"]),
+            ),
+            field_mesh=world["field_mesh"],
+        )
 
     def test_update_tiled_ghost_cells_periodic_refreshes_neighbor_halos(self):
         # this tests the communication of ghost cells between two tiles in a periodic domain
@@ -51,9 +62,13 @@ class TestGhostCells(unittest.TestCase):
 
         field_tiles = jnp.zeros((1, 1, 1, 4, 4, 4))
 
-        incomplete_world = dict(self.world)
+        incomplete_world = SimpleNamespace(
+            tile_shape=self.tile_shape,
+            guard_cells=self.g,
+            boundary_conditions=(BC_PERIODIC, BC_PERIODIC, BC_PERIODIC),
+        )
 
-        with self.assertRaises(KeyError):
+        with self.assertRaises(AttributeError):
             ghost_cells.update_tiled_ghost_cells(field_tiles, incomplete_world, self.g)
 
     def test_fold_tiled_ghost_cells_periodic_adds_to_owner_tile(self):
@@ -82,11 +97,12 @@ class TestGhostCells(unittest.TestCase):
     def test_apply_tiled_conducting_bc_zeros_global_tangential_faces(self):
         # this tests the application of conducting boundary conditions to a tiled electric field in a periodic domain
 
-        world = {
-            "tile_shape": self.tile_shape,
-            "field_mesh": ghost_cells.make_field_mesh((1, 1, 1)),
-            "boundary_conditions": {"x": BC_CONDUCTING, "y": BC_CONDUCTING, "z": BC_CONDUCTING},
-        }
+        world = SimpleNamespace(
+            tile_shape=self.tile_shape,
+            guard_cells=self.g,
+            field_mesh=ghost_cells.make_field_mesh((1, 1, 1)),
+            boundary_conditions=(BC_CONDUCTING, BC_CONDUCTING, BC_CONDUCTING),
+        )
         # create a world with conducting boundary conditions in all directions
 
         E = tuple(jnp.ones((1, 1, 1, 4, 4, 4)) for _ in range(3))
@@ -105,7 +121,6 @@ class TestGhostCells(unittest.TestCase):
 
     def test_apply_tiled_scalar_conducting_bc_periodic_noop(self):
         world = self._world_with_field_mesh((1, 1, 1))
-        world["tile_shape"] = self.tile_shape
         field = jnp.arange(4 * 4 * 4, dtype=float).reshape((1, 1, 1, 4, 4, 4))
         # create a scalar field with shape (1, 1, 1, 4, 4, 4) and values from 0 to 63
         result = ghost_cells.apply_tiled_scalar_conducting_bc(field, world, self.g)

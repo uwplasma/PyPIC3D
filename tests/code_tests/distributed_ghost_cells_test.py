@@ -1,16 +1,21 @@
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 
 import jax
 import jax.numpy as jnp
-from jax.sharding import Mesh
+from jax.sharding import Mesh, NamedSharding
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 from PyPIC3D.boundary_conditions import ghost_cells
 
 
 jax.config.update("jax_enable_x64", True)
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _mesh(mesh_shape):
@@ -31,6 +36,15 @@ def _world(boundary_conditions, tile_shape):
             "z": boundary_conditions[2],
         },
     }
+
+
+def _static_parameters(boundary_conditions, tile_shape, mesh_shape, g=1):
+    return SimpleNamespace(
+        tile_shape=tuple(int(width) for width in tile_shape),
+        guard_cells=int(g),
+        boundary_conditions=tuple(int(bc) for bc in boundary_conditions),
+        field_mesh=_mesh(mesh_shape),
+    )
 
 
 def _coordinate_tiles(mesh_shape, tile_shape, g=1):
@@ -56,7 +70,12 @@ def _coordinate_tiles(mesh_shape, tile_shape, g=1):
 
 def _reference_update(field_tiles, boundary_conditions, tile_shape, g=1):
     bc_x, bc_y, bc_z = boundary_conditions
-    reduced_x, reduced_y, reduced_z = (int(tile_shape[0]) == 1, int(tile_shape[1]) == 1, int(tile_shape[2]) == 1)
+    mesh_shape = tuple(int(width) for width in field_tiles.shape[:3])
+    reduced_x, reduced_y, reduced_z = (
+        int(tile_shape[0]) == 1 and mesh_shape[0] == 1,
+        int(tile_shape[1]) == 1 and mesh_shape[1] == 1,
+        int(tile_shape[2]) == 1 and mesh_shape[2] == 1,
+    )
 
     if reduced_x:
         lower = jnp.broadcast_to(field_tiles[:, :, :, g:g + 1, :, :], field_tiles[:, :, :, :g, :, :].shape)
@@ -123,7 +142,12 @@ def _reference_update(field_tiles, boundary_conditions, tile_shape, g=1):
 
 def _reference_fold(field_tiles, boundary_conditions, tile_shape, g=1):
     bc_x, bc_y, bc_z = boundary_conditions
-    reduced_x, reduced_y, reduced_z = (int(tile_shape[0]) == 1, int(tile_shape[1]) == 1, int(tile_shape[2]) == 1)
+    mesh_shape = tuple(int(width) for width in field_tiles.shape[:3])
+    reduced_x, reduced_y, reduced_z = (
+        int(tile_shape[0]) == 1 and mesh_shape[0] == 1,
+        int(tile_shape[1]) == 1 and mesh_shape[1] == 1,
+        int(tile_shape[2]) == 1 and mesh_shape[2] == 1,
+    )
 
     if reduced_x:
         ghost_sum = jnp.sum(field_tiles[:, :, :, :g, :, :], axis=3, keepdims=True)
@@ -188,6 +212,124 @@ def _reference_fold(field_tiles, boundary_conditions, tile_shape, g=1):
 class TestDistributedGhostCells(unittest.TestCase):
     def assert_allclose(self, actual, expected):
         self.assertTrue(jnp.allclose(actual, expected, rtol=1.0e-12, atol=1.0e-12), msg=f"\n{actual}\n!=\n{expected}")
+
+    def test_no_single_device_fast_paths_remain_in_tiled_ghost_module(self):
+        source = (REPO_ROOT / "PyPIC3D" / "boundary_conditions" / "ghost_cells.py").read_text()
+
+        self.assertNotIn("_local_refresh_single_tile_axis", source)
+        self.assertNotIn("_local_fold_single_tile_axis", source)
+        self.assertNotIn("mesh_shape == (1, 1, 1)", source)
+        self.assertNotIn("elif mesh_shape[0] == 1", source)
+        self.assertNotIn("elif mesh_shape[1] == 1", source)
+        self.assertNotIn("elif mesh_shape[2] == 1", source)
+
+    def test_public_scalar_update_on_one_device_uses_mapped_periodic_self_exchange(self):
+        mesh_shape = (1, 1, 1)
+        tile_shape = (3, 2, 2)
+        bcs = (BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
+        tiles = _coordinate_tiles(mesh_shape, tile_shape)
+        static_parameters = _static_parameters(bcs, tile_shape, mesh_shape)
+        sharding = NamedSharding(static_parameters.field_mesh, ghost_cells.SCALAR_TILE_SPEC)
+
+        sharded_tiles = jax.device_put(tiles, sharding)
+        actual = jax.jit(lambda field: ghost_cells.update_tiled_ghost_cells(field, static_parameters, 1))(sharded_tiles)
+
+        self.assertEqual(actual.sharding, sharding)
+        self.assert_allclose(actual, _reference_update(tiles, bcs, tile_shape))
+        self.assert_allclose(actual[0, 0, 0, 0, 1:-1, 1:-1], tiles[0, 0, 0, -2, 1:-1, 1:-1])
+        self.assert_allclose(actual[0, 0, 0, -1, 1:-1, 1:-1], tiles[0, 0, 0, 1, 1:-1, 1:-1])
+
+    def test_public_vector_update_on_one_device_preserves_stacked_and_tuple_layouts(self):
+        mesh_shape = (1, 1, 1)
+        tile_shape = (3, 2, 2)
+        bcs = (BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
+        tiles = _coordinate_tiles(mesh_shape, tile_shape)
+        stacked = jnp.stack((tiles, tiles + 1000.0, tiles + 2000.0), axis=0)
+        static_parameters = _static_parameters(bcs, tile_shape, mesh_shape)
+        sharding = NamedSharding(static_parameters.field_mesh, ghost_cells.VECTOR_TILE_SPEC)
+
+        sharded_stacked = jax.device_put(stacked, sharding)
+        stacked_actual = jax.jit(
+            lambda field: ghost_cells.update_tiled_vector_ghost_cells(field, static_parameters, 1)
+        )(sharded_stacked)
+        tuple_actual = ghost_cells.update_tiled_vector_ghost_cells((stacked[0], stacked[1], stacked[2]), static_parameters, 1)
+
+        self.assertEqual(stacked_actual.sharding, sharding)
+        self.assertEqual(stacked_actual.shape, stacked.shape)
+        self.assertIsInstance(tuple_actual, tuple)
+        for i in range(3):
+            self.assert_allclose(stacked_actual[i], _reference_update(stacked[i], bcs, tile_shape))
+            self.assert_allclose(tuple_actual[i], stacked_actual[i])
+
+    def test_one_device_periodic_fold_uses_self_exchange_and_clears_ghosts(self):
+        mesh_shape = (1, 1, 1)
+        tile_shape = (3, 2, 2)
+        bcs = (BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
+        tiles = jnp.zeros(mesh_shape + (5, 4, 4), dtype=jnp.float64)
+        tiles = tiles.at[0, 0, 0, 0, 1:-1, 1:-1].set(3.0)
+        tiles = tiles.at[0, 0, 0, -1, 1:-1, 1:-1].set(5.0)
+        static_parameters = _static_parameters(bcs, tile_shape, mesh_shape)
+        sharding = NamedSharding(static_parameters.field_mesh, ghost_cells.SCALAR_TILE_SPEC)
+
+        sharded_tiles = jax.device_put(tiles, sharding)
+        actual = jax.jit(lambda field: ghost_cells.fold_tiled_ghost_cells(field, static_parameters, 1))(sharded_tiles)
+
+        self.assertEqual(actual.sharding, sharding)
+        self.assert_allclose(actual, _reference_fold(tiles, bcs, tile_shape))
+        self.assert_allclose(actual[0, 0, 0, -2, 1:-1, 1:-1], 3.0)
+        self.assert_allclose(actual[0, 0, 0, 1, 1:-1, 1:-1], 5.0)
+        self.assert_allclose(actual[0, 0, 0, 0, :, :], 0.0)
+        self.assert_allclose(actual[0, 0, 0, -1, :, :], 0.0)
+
+    def test_one_device_conducting_fold_keeps_physical_reflection_sign(self):
+        mesh_shape = (1, 1, 1)
+        tile_shape = (3, 2, 2)
+        bcs = (BC_CONDUCTING, BC_PERIODIC, BC_PERIODIC)
+        tiles = jnp.zeros(mesh_shape + (5, 4, 4), dtype=jnp.float64)
+        tiles = tiles.at[0, 0, 0, 0, 1:-1, 1:-1].set(3.0)
+        tiles = tiles.at[0, 0, 0, -1, 1:-1, 1:-1].set(5.0)
+        static_parameters = _static_parameters(bcs, tile_shape, mesh_shape)
+
+        actual = jax.jit(lambda field: ghost_cells.fold_tiled_ghost_cells(field, static_parameters, 1))(tiles)
+
+        self.assert_allclose(actual, _reference_fold(tiles, bcs, tile_shape))
+        self.assert_allclose(actual[0, 0, 0, 1, 1:-1, 1:-1], -3.0)
+        self.assert_allclose(actual[0, 0, 0, -2, 1:-1, 1:-1], -5.0)
+        self.assert_allclose(actual[0, 0, 0, 0, :, :], 0.0)
+        self.assert_allclose(actual[0, 0, 0, -1, :, :], 0.0)
+
+    def test_reduced_axis_on_one_device_does_not_use_periodic_self_exchange(self):
+        mesh_shape = (1, 1, 1)
+        tile_shape = (1, 3, 2)
+        bcs = (BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
+        tiles = _coordinate_tiles(mesh_shape, tile_shape)
+        tiles = tiles.at[0, 0, 0, 0, :, :].set(-100.0)
+        tiles = tiles.at[0, 0, 0, -1, :, :].set(100.0)
+        static_parameters = _static_parameters(bcs, tile_shape, mesh_shape)
+
+        actual = ghost_cells.update_tiled_ghost_cells(tiles, static_parameters, 1)
+
+        self.assert_allclose(actual, _reference_update(tiles, bcs, tile_shape))
+        self.assert_allclose(actual[0, 0, 0, 0, :, :], actual[0, 0, 0, 1, :, :])
+        self.assert_allclose(actual[0, 0, 0, -1, :, :], actual[0, 0, 0, 1, :, :])
+
+    def test_public_scalar_conducting_bc_on_one_device_runs_inside_mapped_path(self):
+        mesh_shape = (1, 1, 1)
+        tile_shape = (3, 2, 2)
+        bcs = (BC_CONDUCTING, BC_PERIODIC, BC_PERIODIC)
+        field = jnp.ones(mesh_shape + (5, 4, 4), dtype=jnp.float64)
+        static_parameters = _static_parameters(bcs, tile_shape, mesh_shape)
+        sharding = NamedSharding(static_parameters.field_mesh, ghost_cells.SCALAR_TILE_SPEC)
+
+        sharded_field = jax.device_put(field, sharding)
+        actual = jax.jit(lambda tiles: ghost_cells.apply_tiled_scalar_conducting_bc(tiles, static_parameters, 1))(
+            sharded_field
+        )
+
+        self.assertEqual(actual.sharding, sharding)
+        self.assert_allclose(actual[0, 0, 0, 1, :, :], 0.0)
+        self.assert_allclose(actual[0, 0, 0, -2, :, :], 0.0)
+        self.assert_allclose(actual[0, 0, 0, 2, :, :], 1.0)
 
     def test_scalar_halo_refresh_matches_reference_on_2x2x2_periodic_mesh(self):
         mesh_shape = (2, 2, 2)
@@ -298,11 +440,10 @@ class TestDistributedGhostCells(unittest.TestCase):
     def test_standard_refresh_uses_initialization_owned_nonwrapping_axis(self):
         mesh_shape = (2, 1, 1)
         tile_shape = (2, 2, 2)
-        world = _world((BC_CONDUCTING, BC_PERIODIC, BC_PERIODIC), tile_shape)
-        world["field_mesh"] = _mesh(mesh_shape)
+        static_parameters = _static_parameters((BC_CONDUCTING, BC_PERIODIC, BC_PERIODIC), tile_shape, mesh_shape)
         tiles = _coordinate_tiles(mesh_shape, tile_shape)
 
-        actual = ghost_cells.update_tiled_ghost_cells(tiles, world, 1)
+        actual = ghost_cells.update_tiled_ghost_cells(tiles, static_parameters, 1)
         expected = _reference_update(tiles, (BC_CONDUCTING, BC_PERIODIC, BC_PERIODIC), tile_shape)
 
         self.assert_allclose(actual, expected)

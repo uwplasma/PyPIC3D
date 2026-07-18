@@ -148,64 +148,58 @@ def _local_refresh_reduced_axis(tile, axis, g, boundary_condition):
     return tile
 
 
-def _local_refresh_single_tile_axis(tile, axis, g, boundary_condition):
-    lower_slice = [slice(None), slice(None), slice(None)]
-    upper_slice = [slice(None), slice(None), slice(None)]
-    lower_source = [slice(None), slice(None), slice(None)]
-    upper_source = [slice(None), slice(None), slice(None)]
+def _axis_slices(axis, g):
+    lower_ghost = [slice(None), slice(None), slice(None)]
+    upper_ghost = [slice(None), slice(None), slice(None)]
+    lower_interior = [slice(None), slice(None), slice(None)]
+    upper_interior = [slice(None), slice(None), slice(None)]
 
-    lower_slice[axis] = slice(0, g)
-    upper_slice[axis] = slice(-g, None)
-    lower_source[axis] = slice(-2 * g, -g)
-    upper_source[axis] = slice(g, 2 * g)
+    lower_ghost[axis] = slice(0, g)
+    upper_ghost[axis] = slice(-g, None)
+    lower_interior[axis] = slice(g, 2 * g)
+    upper_interior[axis] = slice(-2 * g, -g)
 
-    if boundary_condition == BC_PERIODIC:
-        tile = tile.at[tuple(lower_slice)].set(tile[tuple(lower_source)])
-        tile = tile.at[tuple(upper_slice)].set(tile[tuple(upper_source)])
-    else:
-        tile = tile.at[tuple(lower_slice)].set(0.0)
-        tile = tile.at[tuple(upper_slice)].set(0.0)
+    return (
+        tuple(lower_ghost),
+        tuple(upper_ghost),
+        tuple(lower_interior),
+        tuple(upper_interior),
+    )
+
+
+def _refresh_axis(tile, axis, g, axis_name, send_positive, send_negative):
+    lower_ghost, upper_ghost, lower_interior, upper_interior = _axis_slices(axis, g)
+
+    # Source i sends its upper interior to destination i + 1, filling the
+    # receiver's lower ghost.  With a one-device periodic axis the permutation
+    # is ((0, 0),), so this is the same self-exchange used on larger meshes.
+    lower_values = jax.lax.ppermute(tile[upper_interior], axis_name, send_positive)
+    # Source i sends its lower interior to destination i - 1, filling the
+    # receiver's upper ghost.  Empty nonperiodic permutations naturally produce
+    # zeros where no neighbor exists.
+    upper_values = jax.lax.ppermute(tile[lower_interior], axis_name, send_negative)
+
+    tile = tile.at[lower_ghost].set(lower_values)
+    tile = tile.at[upper_ghost].set(upper_values)
 
     return tile
 
 
 def _local_refresh_scalar_tile(tile, g, boundary_conditions, reduced_axes, mesh_shape, send_positive, send_negative):
-    bc_x, bc_y, bc_z = boundary_conditions
-    reduced_x, reduced_y, reduced_z = reduced_axes
+    del mesh_shape
 
-    if reduced_x:
-        tile = _local_refresh_reduced_axis(tile, 0, g, bc_x)
-    elif mesh_shape[0] == 1:
-        tile = _local_refresh_single_tile_axis(tile, 0, g, bc_x)
-    else:
-        # Halo refresh: source i sends its +x interior to destination i + 1,
-        # so this device receives its lower x ghost from the left neighbor.
-        lower_x = jax.lax.ppermute(tile[-2 * g:-g, :, :], "tile_x", send_positive[0])
-        # Source i sends its -x interior to destination i - 1, filling the
-        # receiver's upper x ghost from the right neighbor.
-        upper_x = jax.lax.ppermute(tile[g:2 * g, :, :], "tile_x", send_negative[0])
-        tile = tile.at[:g, :, :].set(lower_x)
-        tile = tile.at[-g:, :, :].set(upper_x)
-
-    if reduced_y:
-        tile = _local_refresh_reduced_axis(tile, 1, g, bc_y)
-    elif mesh_shape[1] == 1:
-        tile = _local_refresh_single_tile_axis(tile, 1, g, bc_y)
-    else:
-        lower_y = jax.lax.ppermute(tile[:, -2 * g:-g, :], "tile_y", send_positive[1])
-        upper_y = jax.lax.ppermute(tile[:, g:2 * g, :], "tile_y", send_negative[1])
-        tile = tile.at[:, :g, :].set(lower_y)
-        tile = tile.at[:, -g:, :].set(upper_y)
-
-    if reduced_z:
-        tile = _local_refresh_reduced_axis(tile, 2, g, bc_z)
-    elif mesh_shape[2] == 1:
-        tile = _local_refresh_single_tile_axis(tile, 2, g, bc_z)
-    else:
-        lower_z = jax.lax.ppermute(tile[:, :, -2 * g:-g], "tile_z", send_positive[2])
-        upper_z = jax.lax.ppermute(tile[:, :, g:2 * g], "tile_z", send_negative[2])
-        tile = tile.at[:, :, :g].set(lower_z)
-        tile = tile.at[:, :, -g:].set(upper_z)
+    for axis, axis_name, boundary_condition, reduced_axis, positive, negative in zip(
+        range(3),
+        MESH_AXES,
+        boundary_conditions,
+        reduced_axes,
+        send_positive,
+        send_negative,
+    ):
+        if reduced_axis:
+            tile = _local_refresh_reduced_axis(tile, axis, g, boundary_condition)
+        else:
+            tile = _refresh_axis(tile, axis, g, axis_name, positive, negative)
 
     return tile
 
@@ -223,33 +217,6 @@ def _local_fold_reduced_axis(tile, axis, g, boundary_condition):
     sign = -1.0 if boundary_condition == BC_CONDUCTING else 1.0
 
     tile = tile.at[tuple(interior_slice)].add(sign * ghost_sum)
-    tile = tile.at[tuple(lower_slice)].set(0.0)
-    tile = tile.at[tuple(upper_slice)].set(0.0)
-
-    return tile
-
-
-def _local_fold_single_tile_axis(tile, axis, g, boundary_condition):
-    lower_slice = [slice(None), slice(None), slice(None)]
-    upper_slice = [slice(None), slice(None), slice(None)]
-    lower_target = [slice(None), slice(None), slice(None)]
-    upper_target = [slice(None), slice(None), slice(None)]
-
-    lower_slice[axis] = slice(0, g)
-    upper_slice[axis] = slice(-g, None)
-    lower_target[axis] = slice(-2 * g, -g)
-    upper_target[axis] = slice(g, 2 * g)
-
-    lower_ghost = tile[tuple(lower_slice)]
-    upper_ghost = tile[tuple(upper_slice)]
-
-    if boundary_condition == BC_PERIODIC:
-        tile = tile.at[tuple(lower_target)].add(lower_ghost)
-        tile = tile.at[tuple(upper_target)].add(upper_ghost)
-    else:
-        tile = tile.at[tuple(upper_target)].add(-lower_ghost)
-        tile = tile.at[tuple(lower_target)].add(-upper_ghost)
-
     tile = tile.at[tuple(lower_slice)].set(0.0)
     tile = tile.at[tuple(upper_slice)].set(0.0)
 
@@ -281,60 +248,58 @@ def _add_exterior_conducting_fold(tile, axis, g, lower_ghost, upper_ghost, axis_
     return tile
 
 
+def _fold_axis(tile, axis, g, axis_name, axis_size, boundary_condition, send_positive, send_negative):
+    lower_ghost, upper_ghost, lower_interior, upper_interior = _axis_slices(axis, g)
+
+    lower_values = tile[lower_ghost]
+    upper_values = tile[upper_ghost]
+    # Folding reverses halo refresh ownership: a lower ghost belongs to the
+    # negative neighbor's upper interior, and an upper ghost belongs to the
+    # positive neighbor's lower interior.
+    from_positive_neighbor = jax.lax.ppermute(lower_values, axis_name, send_negative)
+    from_negative_neighbor = jax.lax.ppermute(upper_values, axis_name, send_positive)
+
+    tile = tile.at[upper_interior].add(from_positive_neighbor)
+    tile = tile.at[lower_interior].add(from_negative_neighbor)
+    if boundary_condition == BC_CONDUCTING:
+        tile = _add_exterior_conducting_fold(
+            tile,
+            axis,
+            g,
+            lower_values,
+            upper_values,
+            axis_name,
+            axis_size,
+        )
+    tile = tile.at[lower_ghost].set(0.0)
+    tile = tile.at[upper_ghost].set(0.0)
+
+    return tile
+
+
 def _local_fold_scalar_tile(tile, g, boundary_conditions, reduced_axes, mesh_shape, send_positive, send_negative):
-    bc_x, bc_y, bc_z = boundary_conditions
-    reduced_x, reduced_y, reduced_z = reduced_axes
-
-    if reduced_x:
-        tile = _local_fold_reduced_axis(tile, 0, g, bc_x)
-    elif mesh_shape[0] == 1:
-        tile = _local_fold_single_tile_axis(tile, 0, g, bc_x)
-    else:
-        lower_ghost = tile[:g, :, :]
-        upper_ghost = tile[-g:, :, :]
-        # Folding reverses halo refresh ownership: a lower ghost belongs to the
-        # left neighbor's upper interior, so it is sent in the negative direction.
-        from_right = jax.lax.ppermute(lower_ghost, "tile_x", send_negative[0])
-        # An upper ghost belongs to the right neighbor's lower interior.
-        from_left = jax.lax.ppermute(upper_ghost, "tile_x", send_positive[0])
-        tile = tile.at[-2 * g:-g, :, :].add(from_right)
-        tile = tile.at[g:2 * g, :, :].add(from_left)
-        if bc_x == BC_CONDUCTING:
-            tile = _add_exterior_conducting_fold(tile, 0, g, lower_ghost, upper_ghost, "tile_x", mesh_shape[0])
-        tile = tile.at[:g, :, :].set(0.0)
-        tile = tile.at[-g:, :, :].set(0.0)
-
-    if reduced_y:
-        tile = _local_fold_reduced_axis(tile, 1, g, bc_y)
-    elif mesh_shape[1] == 1:
-        tile = _local_fold_single_tile_axis(tile, 1, g, bc_y)
-    else:
-        lower_ghost = tile[:, :g, :]
-        upper_ghost = tile[:, -g:, :]
-        from_right = jax.lax.ppermute(lower_ghost, "tile_y", send_negative[1])
-        from_left = jax.lax.ppermute(upper_ghost, "tile_y", send_positive[1])
-        tile = tile.at[:, -2 * g:-g, :].add(from_right)
-        tile = tile.at[:, g:2 * g, :].add(from_left)
-        if bc_y == BC_CONDUCTING:
-            tile = _add_exterior_conducting_fold(tile, 1, g, lower_ghost, upper_ghost, "tile_y", mesh_shape[1])
-        tile = tile.at[:, :g, :].set(0.0)
-        tile = tile.at[:, -g:, :].set(0.0)
-
-    if reduced_z:
-        tile = _local_fold_reduced_axis(tile, 2, g, bc_z)
-    elif mesh_shape[2] == 1:
-        tile = _local_fold_single_tile_axis(tile, 2, g, bc_z)
-    else:
-        lower_ghost = tile[:, :, :g]
-        upper_ghost = tile[:, :, -g:]
-        from_right = jax.lax.ppermute(lower_ghost, "tile_z", send_negative[2])
-        from_left = jax.lax.ppermute(upper_ghost, "tile_z", send_positive[2])
-        tile = tile.at[:, :, -2 * g:-g].add(from_right)
-        tile = tile.at[:, :, g:2 * g].add(from_left)
-        if bc_z == BC_CONDUCTING:
-            tile = _add_exterior_conducting_fold(tile, 2, g, lower_ghost, upper_ghost, "tile_z", mesh_shape[2])
-        tile = tile.at[:, :, :g].set(0.0)
-        tile = tile.at[:, :, -g:].set(0.0)
+    for axis, axis_name, axis_size, boundary_condition, reduced_axis, positive, negative in zip(
+        range(3),
+        MESH_AXES,
+        mesh_shape,
+        boundary_conditions,
+        reduced_axes,
+        send_positive,
+        send_negative,
+    ):
+        if reduced_axis:
+            tile = _local_fold_reduced_axis(tile, axis, g, boundary_condition)
+        else:
+            tile = _fold_axis(
+                tile,
+                axis,
+                g,
+                axis_name,
+                axis_size,
+                boundary_condition,
+                positive,
+                negative,
+            )
 
     return tile
 
@@ -361,6 +326,14 @@ def _apply_local_scalar_conducting(tile, g, boundary_conditions, mesh_shape):
 
 
 def make_distributed_ghost_updater(mesh, tile_shape, boundary_conditions, num_guard_cells):
+    """
+    Build a shard-mapped scalar halo refresher.
+
+    Timestepping code should construct this once during simulation setup when
+    possible, then reuse the returned updater instead of rebuilding it every
+    step.
+    """
+
     g = int(num_guard_cells)
     tile_shape = tuple(int(width) for width in tile_shape)
     boundary_conditions = tuple(int(bc) for bc in boundary_conditions)
@@ -397,6 +370,14 @@ def make_distributed_ghost_updater(mesh, tile_shape, boundary_conditions, num_gu
 
 
 def make_distributed_vector_ghost_updater(mesh, tile_shape, boundary_conditions, num_guard_cells):
+    """
+    Build a shard-mapped vector halo refresher.
+
+    Timestepping code should construct this once during simulation setup when
+    possible, then reuse the returned updater instead of rebuilding it every
+    step.
+    """
+
     g = int(num_guard_cells)
     tile_shape = tuple(int(width) for width in tile_shape)
     boundary_conditions = tuple(int(bc) for bc in boundary_conditions)
@@ -438,6 +419,14 @@ def make_distributed_vector_ghost_updater(mesh, tile_shape, boundary_conditions,
 
 
 def make_distributed_ghost_folder(mesh, tile_shape, boundary_conditions, num_guard_cells):
+    """
+    Build a shard-mapped scalar ghost-deposit folder.
+
+    Timestepping code should construct this once during simulation setup when
+    possible, then reuse the returned folder instead of rebuilding it every
+    step.
+    """
+
     g = int(num_guard_cells)
     tile_shape = tuple(int(width) for width in tile_shape)
     boundary_conditions = tuple(int(bc) for bc in boundary_conditions)
@@ -466,6 +455,14 @@ def make_distributed_ghost_folder(mesh, tile_shape, boundary_conditions, num_gua
 
 
 def make_distributed_vector_ghost_folder(mesh, tile_shape, boundary_conditions, num_guard_cells):
+    """
+    Build a shard-mapped vector ghost-deposit folder.
+
+    Timestepping code should construct this once during simulation setup when
+    possible, then reuse the returned folder instead of rebuilding it every
+    step.
+    """
+
     g = int(num_guard_cells)
     tile_shape = tuple(int(width) for width in tile_shape)
     boundary_conditions = tuple(int(bc) for bc in boundary_conditions)
@@ -592,21 +589,6 @@ def update_tiled_ghost_cells(field_tiles, static_parameters, num_guard_cells=2):
 
     tile_shape = tuple(int(width) for width in static_parameters.tile_shape)
     mesh = static_parameters.field_mesh
-    mesh_shape = tuple(int(width) for width in mesh.devices.shape)
-    if mesh_shape == (1, 1, 1):
-        boundary_conditions = _boundary_tuple(static_parameters.boundary_conditions)
-        reduced_axes = _reduced_axes_from_tile_shape(tile_shape, mesh_shape)
-        tile = _local_refresh_scalar_tile(
-            field_tiles[0, 0, 0],
-            int(num_guard_cells),
-            boundary_conditions,
-            reduced_axes,
-            mesh_shape,
-            None,
-            None,
-        )
-        return tile[jnp.newaxis, jnp.newaxis, jnp.newaxis, :, :, :]
-
     updater = make_distributed_ghost_updater(
         mesh,
         tile_shape,
@@ -623,27 +605,6 @@ def update_tiled_vector_ghost_cells(field_tiles, static_parameters, num_guard_ce
 
     tile_shape = tuple(int(width) for width in static_parameters.tile_shape)
     mesh = static_parameters.field_mesh
-    mesh_shape = tuple(int(width) for width in mesh.devices.shape)
-    if mesh_shape == (1, 1, 1):
-        boundary_conditions = _boundary_tuple(static_parameters.boundary_conditions)
-        reduced_axes = _reduced_axes_from_tile_shape(tile_shape, mesh_shape)
-
-        def update_component(component_tiles):
-            tile = _local_refresh_scalar_tile(
-                component_tiles[0, 0, 0],
-                int(num_guard_cells),
-                boundary_conditions,
-                reduced_axes,
-                mesh_shape,
-                None,
-                None,
-            )
-            return tile[jnp.newaxis, jnp.newaxis, jnp.newaxis, :, :, :]
-
-        stacked_tiles = _stack_tiled_vector_field(field_tiles)
-        refreshed = jax.vmap(update_component, in_axes=0, out_axes=0)(stacked_tiles)
-        return _restore_tiled_vector_layout(refreshed, field_tiles)
-
     updater = make_distributed_vector_ghost_updater(
         mesh,
         tile_shape,
@@ -676,17 +637,6 @@ def apply_tiled_scalar_conducting_bc(field_tiles, static_parameters, num_guard_c
 
     tile_shape = tuple(int(width) for width in static_parameters.tile_shape)
     mesh = static_parameters.field_mesh
-    mesh_shape = tuple(int(width) for width in mesh.devices.shape)
-    if mesh_shape == (1, 1, 1):
-        boundary_conditions = _boundary_tuple(static_parameters.boundary_conditions)
-        tile = _apply_local_scalar_conducting(
-            field_tiles[0, 0, 0],
-            int(num_guard_cells),
-            boundary_conditions,
-            mesh_shape,
-        )
-        return tile[jnp.newaxis, jnp.newaxis, jnp.newaxis, :, :, :]
-
     apply_bc = make_distributed_conducting_bc(
         mesh,
         tile_shape,
@@ -707,21 +657,6 @@ def fold_tiled_ghost_cells(field_tiles, static_parameters, num_guard_cells=2):
 
     tile_shape = tuple(int(width) for width in static_parameters.tile_shape)
     mesh = static_parameters.field_mesh
-    mesh_shape = tuple(int(width) for width in mesh.devices.shape)
-    if mesh_shape == (1, 1, 1):
-        boundary_conditions = _boundary_tuple(static_parameters.boundary_conditions)
-        reduced_axes = _reduced_axes_from_tile_shape(tile_shape, mesh_shape)
-        tile = _local_fold_scalar_tile(
-            field_tiles[0, 0, 0],
-            int(num_guard_cells),
-            boundary_conditions,
-            reduced_axes,
-            mesh_shape,
-            None,
-            None,
-        )
-        return tile[jnp.newaxis, jnp.newaxis, jnp.newaxis, :, :, :]
-
     folder = make_distributed_ghost_folder(
         mesh,
         tile_shape,
@@ -738,27 +673,6 @@ def fold_tiled_vector_ghost_cells(field_tiles, static_parameters, num_guard_cell
 
     tile_shape = tuple(int(width) for width in static_parameters.tile_shape)
     mesh = static_parameters.field_mesh
-    mesh_shape = tuple(int(width) for width in mesh.devices.shape)
-    if mesh_shape == (1, 1, 1):
-        boundary_conditions = _boundary_tuple(static_parameters.boundary_conditions)
-        reduced_axes = _reduced_axes_from_tile_shape(tile_shape, mesh_shape)
-
-        def fold_component(component_tiles):
-            tile = _local_fold_scalar_tile(
-                component_tiles[0, 0, 0],
-                int(num_guard_cells),
-                boundary_conditions,
-                reduced_axes,
-                mesh_shape,
-                None,
-                None,
-            )
-            return tile[jnp.newaxis, jnp.newaxis, jnp.newaxis, :, :, :]
-
-        stacked_tiles = _stack_tiled_vector_field(field_tiles)
-        folded = jax.vmap(fold_component, in_axes=0, out_axes=0)(stacked_tiles)
-        return _restore_tiled_vector_layout(folded, field_tiles)
-
     folder = make_distributed_vector_ghost_folder(
         mesh,
         tile_shape,
