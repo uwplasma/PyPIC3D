@@ -184,7 +184,7 @@ def compute_rho(
         return rho
 
     rho = jax.lax.cond(
-        dynamic_parameters.filter_rho,
+        dynamic_parameters.alpha != 1.0,
         filter,
         lambda rho: rho,
         rho,
