@@ -106,6 +106,53 @@ class TestInitializationFunctions(unittest.TestCase):
             # dump a dummy config file to tmp directory and confirm it can be read
             # in correctly
 
+    def test_initialize_simulation_computes_courant_dt_before_runtime_parameters_exist(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            zeros_path = os.path.join(tmpdir, "zeros.npy")
+            x_path = os.path.join(tmpdir, "x.npy")
+            np.save(x_path, np.array([-0.375, -0.125, 0.125, 0.375]))
+            np.save(zeros_path, np.zeros(4))
+            config = {
+                "simulation_parameters": {
+                    "name": "courant dt tiled runtime test",
+                    "output_dir": tmpdir,
+                    "Nx": 4,
+                    "Ny": 1,
+                    "Nz": 1,
+                    "x_wind": 1.0,
+                    "y_wind": 1.0,
+                    "z_wind": 1.0,
+                    "Nt": 1,
+                    "particle_tile_nx": 4,
+                    "particle_tile_ny": 1,
+                    "particle_tile_nz": 1,
+                    "filter_j": "none",
+                },
+                "plotting": {"plotting": False},
+                "particle1": {
+                    "name": "electrons",
+                    "N_particles": 4,
+                    "charge": -1.0,
+                    "mass": 1.0,
+                    "temperature": 1.0,
+                    "initial_x": x_path,
+                    "initial_y": zeros_path,
+                    "initial_z": zeros_path,
+                    "initial_vx": zeros_path,
+                    "initial_vy": zeros_path,
+                    "initial_vz": zeros_path,
+                },
+            }
+
+            config_path = os.path.join(tmpdir, "courant_dt.toml")
+            with open(config_path, "w") as f:
+                toml.dump(config, f)
+
+            result = initialize_simulation(toml.load(config_path))
+            dynamic_parameters = result[4]
+
+            self.assertGreater(float(dynamic_parameters.dt), 0.0)
+
     def test_initialize_simulation_encodes_global_particle_boundary_conditions(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             zeros_path = os.path.join(tmpdir, "zeros.npy")

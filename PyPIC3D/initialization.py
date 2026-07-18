@@ -267,7 +267,7 @@ def initialize_simulation(toml_file):
         print(f"Using user defined dt: {dynamic_config['dt']}")
         dt = dynamic_config["dt"]
     else:
-        dt = courant_condition(static_config["cfl"], dx, dy, dz, dynamic_config)
+        dt = courant_condition(static_config["cfl"], dx, dy, dz, SimpleNamespace(**dynamic_config))
         dynamic_config["dt"] = dt
 
     if static_config["Nt"] is not None:
