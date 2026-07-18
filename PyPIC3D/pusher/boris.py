@@ -87,7 +87,7 @@ def relativistic_boris_single_particle(vx, vy, vz, efield_atx, efield_aty, efiel
     """
 
 
-    C = dynamic_parameters['C']
+    C = dynamic_parameters.C
     # speed of light
 
     v = jnp.array([vx, vy, vz])

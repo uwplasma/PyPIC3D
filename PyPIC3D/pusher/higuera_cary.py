@@ -7,7 +7,7 @@ def gamma_from_u(u, dynamic_parameters):
     """
     Calculate gamma from the relativistic velocity-like momentum u = gamma * v.
     """
-    C = dynamic_parameters["C"]
+    C = dynamic_parameters.C
     # speed of light
 
     return jnp.sqrt(1.0 + jnp.dot(u, u) / C**2)
@@ -29,7 +29,7 @@ def u_from_v(v, dynamic_parameters):
     """
     Convert velocity to the relativistic velocity-like momentum u = gamma * v.
     """
-    C = dynamic_parameters["C"]
+    C = dynamic_parameters.C
     # speed of light
 
     gamma = 1.0 / jnp.sqrt(1.0 - jnp.dot(v, v) / C**2)
@@ -43,7 +43,7 @@ def gamma_higuera_cary(u_e, beta, dynamic_parameters):
     """
     Calculate the Higuera-Cary gamma used in the magnetic rotation.
     """
-    C = dynamic_parameters["C"]
+    C = dynamic_parameters.C
     # speed of light
 
     beta_squared = jnp.dot(beta, beta)

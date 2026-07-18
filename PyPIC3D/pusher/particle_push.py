@@ -19,17 +19,17 @@ def particle_push(particles, species_config, E_tiles, B_tiles, static_parameters
     neighboring Yee data needed by the interpolation stencil near tile faces.
     """
 
-    relativistic = static_parameters["relativistic"]
-    particle_pusher = static_parameters["particle_pusher"]
+    relativistic = static_parameters.relativistic
+    particle_pusher = static_parameters.particle_pusher
 
-    tile_shape = tuple(int(width) for width in static_parameters["tile_shape"])
+    tile_shape = tuple(int(width) for width in static_parameters.tile_shape)
     tile_nx, tile_ny, tile_nz = tile_shape
-    g = int(static_parameters["guard_cells"])
-    dt = dynamic_parameters["dt"]
-    shape_factor = static_parameters["shape_factor"]
+    g = int(static_parameters.guard_cells)
+    dt = dynamic_parameters.dt
+    shape_factor = static_parameters.shape_factor
 
-    tiled_center_grid = dynamic_parameters["grids"]["tiled_center_grid"]
-    tiled_vertex_grid = dynamic_parameters["grids"]["tiled_vertex_grid"]
+    tiled_center_grid = dynamic_parameters.grids.tiled_center_grid
+    tiled_vertex_grid = dynamic_parameters.grids.tiled_vertex_grid
 
     Ex_tiles, Ey_tiles, Ez_tiles = E_tiles
     Bx_tiles, By_tiles, Bz_tiles = B_tiles
