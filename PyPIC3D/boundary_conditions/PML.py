@@ -41,7 +41,14 @@ def load_pml_from_toml(raw_pml, static_parameters, dynamic_parameters):
 
         axis = _AXIS_FOR_WALL[wall]
         thickness = int(raw.get("thickness", 0))
-        active_cells = int(dynamic_parameters[_COUNT_KEY[axis]])
+
+        if axis == "x": active_cells = static_parameters.Nx
+        elif axis == "y": active_cells = static_parameters.Ny
+        else: active_cells = static_parameters.Nz
+        # get the number of active cells along the axis of the PML wall
+
+
+
         if thickness <= 0:
             raise ValueError(f"PML thickness for {wall} must be positive")
         if thickness > active_cells:
@@ -51,11 +58,17 @@ def load_pml_from_toml(raw_pml, static_parameters, dynamic_parameters):
 
         order = float(raw.get("order", 3.0))
         target_reflection = float(raw.get("target_reflection", 1.0e-8))
+        
+        if axis == "x": ds = dynamic_parameters.dx
+        elif axis == "y": ds = dynamic_parameters.dy
+        else: ds = dynamic_parameters.dz
+
+
         if "sigma_max" in raw:
-            sigma_max = float(raw["sigma_max"])
+            sigma_max = raw["sigma_max"]
         else:
-            layer_width = thickness * float(dynamic_parameters[_SPACING_KEY[axis]])
-            sigma_max = -((order + 1.0) * float(dynamic_parameters["C"]) * math.log(target_reflection)) / (
+            layer_width = thickness * ds
+            sigma_max = -((order + 1.0) * dynamic_parameters.C * math.log(target_reflection)) / (
                 2.0 * layer_width
             )
 
@@ -77,7 +90,11 @@ def build_pml(dynamic_parameters, pml_layers):
     physical domain and grows toward the outer wall, so the outgoing wave sees a
     gradual coordinate stretch rather than a sharp jump.
     """
-    shape = (int(dynamic_parameters["Nx"]) + 2, int(dynamic_parameters["Ny"]) + 2, int(dynamic_parameters["Nz"]) + 2)
+    shape = (
+        dynamic_parameters.Nx + 2,
+        dynamic_parameters.Ny + 2,
+        dynamic_parameters.Nz + 2,
+    )
 
     sigma_x = jnp.zeros(shape)
     sigma_y = jnp.zeros(shape)
@@ -120,7 +137,11 @@ def initialize_pml_state(dynamic_parameters, pml_profiles):
     Each memory array has physical-interior shape `(Nx, Ny, Nz)`, matching the
     finite-difference arrays that enter the Yee curl.
     """
-    shape = (int(dynamic_parameters["Nx"]), int(dynamic_parameters["Ny"]), int(dynamic_parameters["Nz"]))
+    shape = (
+        dynamic_parameters.Nx + 2,
+        dynamic_parameters.Ny + 2,
+        dynamic_parameters.Nz + 2,
+    )
 
     e_memory = tuple(jnp.zeros(shape) for _ in range(6))
     b_memory = tuple(jnp.zeros(shape) for _ in range(6))
@@ -198,7 +219,7 @@ def tile_pml_profiles(static_parameters, pml_profiles, tile_shape):
     the same guard-cell depth as the field tiles.
     """
 
-    g = int(static_parameters.get("guard_cells", 2))
+    g = static_parameters.guard_cells
     return tuple(_tile_scalar_profile(profile, tile_shape, num_guard_cells=g) for profile in pml_profiles)
 
 
@@ -212,13 +233,12 @@ def initialize_tiled_pml_state(static_parameters, dynamic_parameters, pml_profil
     stencil values.
     """
 
-    if tile_shape is None:
-        tile_shape = static_parameters["tile_shape"]
+    tile_shape = static_parameters.tile_shape
 
     tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
-    ntx = _tile_axis_count(int(dynamic_parameters["Nx"]), tile_nx)
-    nty = _tile_axis_count(int(dynamic_parameters["Ny"]), tile_ny)
-    ntz = _tile_axis_count(int(dynamic_parameters["Nz"]), tile_nz)
+    ntx = _tile_axis_count( dynamic_parameters.Nx, tile_nx )
+    nty = _tile_axis_count( dynamic_parameters.Ny, tile_ny )
+    ntz = _tile_axis_count( dynamic_parameters.Nz, tile_nz )
     shape = (ntx, nty, ntz, tile_nx, tile_ny, tile_nz)
 
     e_memory = tuple(jnp.zeros(shape) for _ in range(6))
@@ -247,107 +267,6 @@ def stretch_spatial_derivative(derivative, memory, sigma, dt):
     memory_new = b * memory + (b - 1.0) * derivative
     return derivative + memory_new, memory_new
 
-
-def apply_pml_to_e_curl(derivatives, dynamic_parameters, pml_state):
-    """
-    Stretch the B derivatives before assembling the curl used in Ampere's law.
-    """
-    dBz_dy, dBy_dz, dBx_dz, dBz_dx, dBy_dx, dBx_dy = derivatives
-    # The PML state is (E_memory, B_memory, profiles), but the E curl only
-    # updates the E memory.
-    e_memory, b_memory, profiles = pml_state
-    (
-        memory_dBz_dy,
-        memory_dBy_dz,
-        memory_dBx_dz,
-        memory_dBz_dx,
-        memory_dBy_dx,
-        memory_dBx_dy,
-    ) = e_memory
-    # unpack the memory in the same order as the derivatives, so we can apply stretch_spatial_derivative
-
-    sigma_x, sigma_y, sigma_z = profiles
-    sigma_x = sigma_x[1:-1, 1:-1, 1:-1]
-    sigma_y = sigma_y[1:-1, 1:-1, 1:-1]
-    sigma_z = sigma_z[1:-1, 1:-1, 1:-1]
-    dt = dynamic_parameters["dt"]
-    # unpack the profiles and select only interior cells (no ghost cells)
-
-    dBz_dy, memory_dBz_dy = stretch_spatial_derivative(dBz_dy, memory_dBz_dy, sigma_y, dt)
-    dBy_dz, memory_dBy_dz = stretch_spatial_derivative(dBy_dz, memory_dBy_dz, sigma_z, dt)
-    dBx_dz, memory_dBx_dz = stretch_spatial_derivative(dBx_dz, memory_dBx_dz, sigma_z, dt)
-    dBz_dx, memory_dBz_dx = stretch_spatial_derivative(dBz_dx, memory_dBz_dx, sigma_x, dt)
-    dBy_dx, memory_dBy_dx = stretch_spatial_derivative(dBy_dx, memory_dBy_dx, sigma_x, dt)
-    dBx_dy, memory_dBx_dy = stretch_spatial_derivative(dBx_dy, memory_dBx_dy, sigma_y, dt)
-    # apply the stretch to each derivative and update the memory
-
-    curl_x = dBz_dy - dBy_dz
-    curl_y = dBx_dz - dBz_dx
-    curl_z = dBy_dx - dBx_dy
-    # assemble the curl from the stretched derivatives
-
-    e_memory = (
-        memory_dBz_dy,
-        memory_dBy_dz,
-        memory_dBx_dz,
-        memory_dBz_dx,
-        memory_dBy_dx,
-        memory_dBx_dy,
-    )
-    # pack the updated memory in the same order as the derivatives
-
-    return (curl_x, curl_y, curl_z), (e_memory, b_memory, profiles)
-    # return the curl and the updated PML state (with the new E memory and unchanged B memory)
-
-
-def apply_pml_to_b_curl(derivatives, dynamic_parameters, pml_state):
-    """
-    Stretch the E derivatives before assembling the curl used in Faraday's law.
-    """
-    dEz_dy, dEy_dz, dEx_dz, dEz_dx, dEy_dx, dEx_dy = derivatives
-    e_memory, b_memory, profiles = pml_state
-    (
-        memory_dEz_dy,
-        memory_dEy_dz,
-        memory_dEx_dz,
-        memory_dEz_dx,
-        memory_dEy_dx,
-        memory_dEx_dy,
-    ) = b_memory
-    # unpack the memory in the same order as the derivatives, so we can apply stretch_spatial_derivative
-
-    sigma_x, sigma_y, sigma_z = profiles
-    sigma_x = sigma_x[1:-1, 1:-1, 1:-1]
-    sigma_y = sigma_y[1:-1, 1:-1, 1:-1]
-    sigma_z = sigma_z[1:-1, 1:-1, 1:-1]
-    dt = dynamic_parameters["dt"]
-    # unpack the profiles and select only interior cells (no ghost cells)
-
-    dEz_dy, memory_dEz_dy = stretch_spatial_derivative(dEz_dy, memory_dEz_dy, sigma_y, dt)
-    dEy_dz, memory_dEy_dz = stretch_spatial_derivative(dEy_dz, memory_dEy_dz, sigma_z, dt)
-    dEx_dz, memory_dEx_dz = stretch_spatial_derivative(dEx_dz, memory_dEx_dz, sigma_z, dt)
-    dEz_dx, memory_dEz_dx = stretch_spatial_derivative(dEz_dx, memory_dEz_dx, sigma_x, dt)
-    dEy_dx, memory_dEy_dx = stretch_spatial_derivative(dEy_dx, memory_dEy_dx, sigma_x, dt)
-    dEx_dy, memory_dEx_dy = stretch_spatial_derivative(dEx_dy, memory_dEx_dy, sigma_y, dt)
-    # apply the stretch to each derivative and update the memory
-
-    curl_x = dEz_dy - dEy_dz
-    curl_y = dEx_dz - dEz_dx
-    curl_z = dEy_dx - dEx_dy
-    # assemble the curl from the stretched derivatives
-
-    b_memory = (
-        memory_dEz_dy,
-        memory_dEy_dz,
-        memory_dEx_dz,
-        memory_dEz_dx,
-        memory_dEy_dx,
-        memory_dEx_dy,
-    )
-
-    return (curl_x, curl_y, curl_z), (e_memory, b_memory, profiles)
-
-
 def apply_tiled_pml_to_e_curl(derivatives, static_parameters, dynamic_parameters, pml_state):
     """
     Stretch tile-local B derivatives before assembling Ampere's-law curls.
@@ -365,11 +284,11 @@ def apply_tiled_pml_to_e_curl(derivatives, static_parameters, dynamic_parameters
     ) = e_memory
 
     sigma_x, sigma_y, sigma_z = tiled_profiles
-    g = int(static_parameters["guard_cells"])
+    g = int(static_parameters.guard_cells)
     sigma_x = sigma_x[:, :, :, g:-g, g:-g, g:-g]
     sigma_y = sigma_y[:, :, :, g:-g, g:-g, g:-g]
     sigma_z = sigma_z[:, :, :, g:-g, g:-g, g:-g]
-    dt = dynamic_parameters["dt"]
+    dt = dynamic_parameters.dt
 
     dBz_dy, memory_dBz_dy = stretch_spatial_derivative(dBz_dy, memory_dBz_dy, sigma_y, dt)
     dBy_dz, memory_dBy_dz = stretch_spatial_derivative(dBy_dz, memory_dBy_dz, sigma_z, dt)
@@ -411,11 +330,11 @@ def apply_tiled_pml_to_b_curl(derivatives, static_parameters, dynamic_parameters
     ) = b_memory
 
     sigma_x, sigma_y, sigma_z = tiled_profiles
-    g = int(static_parameters["guard_cells"])
+    g = int(static_parameters.guard_cells)
     sigma_x = sigma_x[:, :, :, g:-g, g:-g, g:-g]
     sigma_y = sigma_y[:, :, :, g:-g, g:-g, g:-g]
     sigma_z = sigma_z[:, :, :, g:-g, g:-g, g:-g]
-    dt = dynamic_parameters["dt"]
+    dt = dynamic_parameters.dt
 
     dEz_dy, memory_dEz_dy = stretch_spatial_derivative(dEz_dy, memory_dEz_dy, sigma_y, dt)
     dEy_dz, memory_dEy_dz = stretch_spatial_derivative(dEy_dz, memory_dEy_dz, sigma_z, dt)
