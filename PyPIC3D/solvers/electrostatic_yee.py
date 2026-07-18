@@ -62,12 +62,12 @@ def solve_poisson_with_conjugate_gradient(rho, phi, static_parameters, dynamic_p
     Returns:
         ndarray: Electrostatic potential field with shape (Nx+2*g, Ny+2*g, Nz+2*g).
     """
-    dx = dynamic_parameters['dx']
-    dy = dynamic_parameters['dy']
-    dz = dynamic_parameters['dz']
-    eps = dynamic_parameters['eps']
+    dx = dynamic_parameters.dx
+    dy = dynamic_parameters.dy
+    dz = dynamic_parameters.dz
+    eps = dynamic_parameters.eps
 
-    g = int(static_parameters["guard_cells"])
+    g = static_parameters.guard_cells
     active = _active_slice(g)
     forward = _forward_slice(g)
     backward = _backward_slice(g)
@@ -152,10 +152,10 @@ def calculate_electrostatic_fields(static_parameters, dynamic_parameters, partic
     Returns:
         tuple: ``((Ex, Ey, Ez), phi, rho)``.
     """
-    dx = dynamic_parameters['dx']
-    dy = dynamic_parameters['dy']
-    dz = dynamic_parameters['dz']
-    g = int(static_parameters["guard_cells"])
+    dx = dynamic_parameters.dx
+    dy = dynamic_parameters.dy
+    dz = dynamic_parameters.dz
+    g = static_parameters.guard_cells
     active = _active_slice(g)
 
     phi = solve_poisson_with_conjugate_gradient(rho, phi, static_parameters, dynamic_parameters)
@@ -163,7 +163,7 @@ def calculate_electrostatic_fields(static_parameters, dynamic_parameters, partic
     phi = _refresh_single_tile_scalar(phi, static_parameters, g)
     # refresh ghost cells before any stencil-based post-processing
 
-    alpha = dynamic_parameters['alpha']
+    alpha = dynamic_parameters.alpha
     phi = digital_filter(phi, alpha, num_guard_cells=g)
     phi = _refresh_single_tile_scalar(phi, static_parameters, g, apply_conducting=True)
     # update ghost cells after filtering
@@ -197,9 +197,9 @@ def _centered_tiled_electrostatic_gradient(phi_tiles, static_parameters, dynamic
     interpolation.
     """
 
-    dx = dynamic_parameters["dx"]
-    dy = dynamic_parameters["dy"]
-    dz = dynamic_parameters["dz"]
+    dx = dynamic_parameters.dx
+    dy = dynamic_parameters.dy
+    dz = dynamic_parameters.dz
     g = int(g)
     active = slice(g, -g)
     forward = slice(g + 1, None if g == 1 else -g + 1)
@@ -234,7 +234,7 @@ def calculate_tiled_electrostatic_fields(static_parameters, dynamic_parameters, 
     separate global representation.
     """
 
-    g = int(static_parameters["guard_cells"])
+    g = static_parameters.guard_cells
     rho_tiles = compute_rho(particles, species_config, rho_tiles, static_parameters, dynamic_parameters)
     rho = rho_tiles[0, 0, 0]
     phi = phi_tiles[0, 0, 0]
@@ -244,7 +244,7 @@ def calculate_tiled_electrostatic_fields(static_parameters, dynamic_parameters, 
     phi_tiles = ghost_cells.update_tiled_ghost_cells(phi_tiles, static_parameters, g)
     # refresh ghost cells before filtering and tiled differentiation
 
-    alpha = dynamic_parameters["alpha"]
+    alpha = dynamic_parameters.alpha
     phi_tiles = digital_filter(phi_tiles, alpha, num_guard_cells=g)
     phi_tiles = ghost_cells.apply_tiled_scalar_conducting_bc(phi_tiles, static_parameters, num_guard_cells=g)
     phi_tiles = ghost_cells.update_tiled_ghost_cells(phi_tiles, static_parameters, g)

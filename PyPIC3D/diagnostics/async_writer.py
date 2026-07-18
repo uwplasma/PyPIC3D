@@ -424,9 +424,9 @@ def create_async_tiled_openpmd_field_writer(
         filename=filename,
         static_parameters=static_parameters,
         dynamic_parameters=dynamic_parameters,
-        global_shape=(int(dynamic_parameters["Nx"]), int(dynamic_parameters["Ny"]), int(dynamic_parameters["Nz"])),
-        tile_shape=tuple(int(width) for width in static_parameters["tile_shape"]),
-        guard_cells=int(static_parameters["guard_cells"]),
+        global_shape=(int(dynamic_parameters.Nx), int(dynamic_parameters.Ny), int(dynamic_parameters.Nz)),
+        tile_shape=tuple(int(width) for width in static_parameters.tile_shape),
+        guard_cells=int(static_parameters.guard_cells),
         active_dims=(1, 1, 1),
         file_extension=file_extension,
         queue_size=queue_size,
@@ -462,7 +462,7 @@ def enqueue_openpmd_field_output(field_writer, fields, dynamic_parameters, plot_
     return field_writer.enqueue_fields(
         field_map,
         step=int(plot_t),
-        time=float(t * dynamic_parameters["dt"]),
+        time=float(t * dynamic_parameters.dt),
         block=block,
     )
 
@@ -482,7 +482,7 @@ def enqueue_openpmd_particle_output(
     return particle_writer.enqueue_particles(
         particles,
         step=int(plot_t),
-        time=float(t * dynamic_parameters["dt"]),
+        time=float(t * dynamic_parameters.dt),
         species_config=species_config,
         species_names=species_names,
         block=block,

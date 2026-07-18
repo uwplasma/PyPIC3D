@@ -27,7 +27,7 @@ def time_loop_electrodynamic(
     E, B, J, rho, phi, external_fields, pml_state, overflow_previous = fields
     # unpack the tiled field state
 
-    dt = dynamic_parameters["dt"]
+    dt = dynamic_parameters.dt
     # get the dynamic timestep used by the tiled push/deposition sequence
 
     push_E, push_B = add_external_fields(E, B, external_fields)
@@ -79,7 +79,7 @@ def time_loop_electrodynamic(
         return particles, J_tiles, overflow
     # if the Esirkepov deposition method is selected, first deposit current into the tiled J arrays, then refresh the particle tiles
 
-    if static_parameters["current_deposition"] == "esirkepov":
+    if static_parameters.current_deposition == "esirkepov":
         particles, J, overflow = esirkepov_deposition_step((particles, J, overflow_previous))
     else:
         particles, J, overflow = direct_deposition_step((particles, J, overflow_previous))
@@ -118,7 +118,7 @@ def time_loop_electrostatic(
     E_tiles, B_tiles, J_tiles, rho_tiles, phi_tiles, external_fields, pml_state, overflow_previous = fields
     # unpack the tiled field state
 
-    dt = dynamic_parameters["dt"]
+    dt = dynamic_parameters.dt
     # get the dynamic timestep used by the tiled electrostatic step
 
     push_E_tiles, push_B_tiles = add_external_fields(E_tiles, B_tiles, external_fields)

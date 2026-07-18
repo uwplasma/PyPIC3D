@@ -15,8 +15,8 @@ def update_E(E_tiles, B_tiles, J_tiles, static_parameters, dynamic_parameters, p
     """
 
     Ex, Ey, Ez = E_tiles
-    tile_shape = tuple(int(width) for width in static_parameters["tile_shape"])
-    g = int(static_parameters["guard_cells"])
+    tile_shape = tuple(int(width) for width in static_parameters.tile_shape)
+    g = static_parameters.guard_cells
     # get the tile information
     del tile_shape
 
@@ -29,10 +29,10 @@ def update_E(E_tiles, B_tiles, J_tiles, static_parameters, dynamic_parameters, p
     Jx, Jy, Jz = J_tiles
     current = slice(g, -g) #_active_slice(g)
 
-    dt = dynamic_parameters["dt"]
-    dx, dy, dz = dynamic_parameters["dx"], dynamic_parameters["dy"], dynamic_parameters["dz"]
-    C = dynamic_parameters["C"]
-    eps = dynamic_parameters["eps"]
+    dt = dynamic_parameters.dt
+    dx, dy, dz = dynamic_parameters.dx, dynamic_parameters.dy, dynamic_parameters.dz
+    C = dynamic_parameters.C
+    eps = dynamic_parameters.eps
 
     # Forward differences use each tile's + side guard cell.  Those guards now
     # contain the adjacent tile's interior value, including periodic wrap at
@@ -73,7 +73,7 @@ def update_E(E_tiles, B_tiles, J_tiles, static_parameters, dynamic_parameters, p
     # refresh tile halos before the digital field filter, matching the global
     # ghost-cell order in the standard Yee solver.
 
-    Ex, Ey, Ez = digital_filter_vector((Ex, Ey, Ez), dynamic_parameters["alpha"], num_guard_cells=g)
+    Ex, Ey, Ez = digital_filter_vector((Ex, Ey, Ez), dynamic_parameters.alpha, num_guard_cells=g)
 
     Ex, Ey, Ez = ghost_cells.apply_tiled_conducting_bc((Ex, Ey, Ez), static_parameters, num_guard_cells=g)
 
@@ -89,9 +89,9 @@ def update_B(E_tiles, B_tiles, static_parameters, dynamic_parameters, pml_state=
     """
 
     Bx, By, Bz = B_tiles
-    tile_shape = tuple(int(width) for width in static_parameters["tile_shape"])
+    tile_shape = tuple(int(width) for width in static_parameters.tile_shape)
     tile_nx, tile_ny, tile_nz = tile_shape
-    g = int(static_parameters["guard_cells"])
+    g = static_parameters.guard_cells
     g = int(g)
     del tile_nx, tile_ny, tile_nz
     active = slice(g, -g)
@@ -100,8 +100,8 @@ def update_B(E_tiles, B_tiles, static_parameters, dynamic_parameters, pml_state=
     # build backward slice for active axes, used for backward differences
 
     Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells(E_tiles, static_parameters, g)
-    dt = dynamic_parameters["dt"]
-    dx, dy, dz = dynamic_parameters["dx"], dynamic_parameters["dy"], dynamic_parameters["dz"]
+    dt = dynamic_parameters.dt
+    dx, dy, dz = dynamic_parameters.dx, dynamic_parameters.dy, dynamic_parameters.dz
 
     # Backward differences use each tile's - side guard cell.  Those guards now
     # contain the adjacent tile's interior value, including periodic wrap at
@@ -133,6 +133,6 @@ def update_B(E_tiles, B_tiles, static_parameters, dynamic_parameters, pml_state=
     # refresh tile halos before the digital field filter, matching the global
     # ghost-cell order in the standard Yee solver.
 
-    Bx, By, Bz = digital_filter_vector((Bx, By, Bz), dynamic_parameters["alpha"], num_guard_cells=g)
+    Bx, By, Bz = digital_filter_vector((Bx, By, Bz), dynamic_parameters.alpha, num_guard_cells=g)
 
     return ghost_cells.update_tiled_vector_ghost_cells((Bx, By, Bz), static_parameters, g), pml_state
