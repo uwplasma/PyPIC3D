@@ -671,19 +671,24 @@ def dump_parameters_to_toml(simulation_stats, static_parameters, dynamic_paramet
 
     output_path = static_parameters["output_dir"]
     output_file = os.path.join(output_path, "data/output.toml")
+    plotting_parameters_for_output = {
+        key: value
+        for key, value in plotting_parameters.items()
+        if key not in ("particle_species_names", "particle_species_metadata")
+    }
 
     config = {
         "simulation_stats": simulation_stats,
         "static_parameters": static_parameters_for_output(static_parameters),
         "dynamic_parameters": dynamic_parameters_for_output(dynamic_parameters),
         'plasma_parameters': jax.tree_util.tree_map(lambda x: x.tolist() if isinstance(x, jnp.ndarray) else x, plasma_parameters),
-        "plotting": jax.tree_util.tree_map(lambda x: x.tolist() if isinstance(x, jnp.ndarray) else x, plotting_parameters),
+        "plotting": jax.tree_util.tree_map(lambda x: x.tolist() if isinstance(x, jnp.ndarray) else x, plotting_parameters_for_output),
         "particles": []
     }
 
     n_species = particles.active.shape[3]
-    species_names = static_parameters.get("particle_species_names")
-    species_metadata = static_parameters.get("particle_species_metadata")
+    species_names = plotting_parameters.get("particle_species_names")
+    species_metadata = plotting_parameters.get("particle_species_metadata")
     tile_shape = jax.tree_util.tree_map(
         lambda x: x.tolist() if isinstance(x, jnp.ndarray) else x,
         static_parameters.get("tile_shape", ()),

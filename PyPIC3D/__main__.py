@@ -50,7 +50,7 @@ def run_PyPIC3D(config_file):
     dt = dynamic_parameters["dt"]
     Nt = int(static_parameters["Nt"])
     output_dir = static_parameters["output_dir"]
-    particle_species_names = static_parameters.get("particle_species_names")
+    particle_species_names = plotting_parameters.get("particle_species_names")
 
     def loop_with_static_parameters(
         particles,

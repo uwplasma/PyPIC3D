@@ -24,6 +24,8 @@ class TestKernelParameters(unittest.TestCase):
             "tile_shape": (4, 2, 1),
             "current_deposition": "direct",
             "current_filter": "none",
+            "particle_species_names": ("electrons",),
+            "particle_species_metadata": ({"name": "electrons"},),
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
             "particle_boundary_conditions": {"x": 0, "y": 1, "z": 2},
             "grids": {
@@ -52,6 +54,8 @@ class TestKernelParameters(unittest.TestCase):
         self.assertEqual(static_parameters["boundary_conditions"], (0, 0, 0))
         self.assertEqual(static_parameters["particle_boundary_conditions"], (0, 1, 2))
         self.assertIs(static_parameters["field_mesh"], world["field_mesh"])
+        self.assertNotIn("particle_species_names", static_parameters)
+        self.assertNotIn("particle_species_metadata", static_parameters)
 
         self.assertNotIn("current_deposition", dynamic_parameters)
         self.assertNotIn("current_filter", dynamic_parameters)

@@ -34,12 +34,6 @@ def _field_mesh(static_config, tile_shape):
     return make_field_mesh(tile_grid_shape)
 
 
-def _copy_optional(static_config, key, default=None):
-    if key in static_config:
-        return static_config[key]
-    return default
-
-
 def build_static_parameters(static_config):
     """
     Collect compile-time PIC choices for the timestep kernels.
@@ -68,8 +62,6 @@ def build_static_parameters(static_config):
         "guard_cells": int(static_config["guard_cells"]),
         "tile_shape": tile_shape,
         "particle_tile_capacity_factor": float(static_config.get("particle_tile_capacity_factor", 1.0)),
-        "particle_species_names": _copy_optional(static_config, "particle_species_names"),
-        "particle_species_metadata": _copy_optional(static_config, "particle_species_metadata"),
         "pml_active": bool(static_config.get("pml_active", False)),
         "boundary_conditions": _axis_tuple(static_config["boundary_conditions"]),
         "particle_boundary_conditions": _axis_tuple(

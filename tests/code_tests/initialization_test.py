@@ -24,8 +24,8 @@ class TestInitializationFunctions(unittest.TestCase):
         # check that the output directory is created
 
     def test_default_parameters(self):
-        plotting, sim, const = default_parameters()
-        self.assertIn('Nx', sim)
+        plotting, sim, dynamic = default_parameters()
+        self.assertIn('Nx', dynamic)
         self.assertIn('particle_pusher', sim)
         self.assertEqual(sim['particle_pusher'], 'boris')
         self.assertEqual(sim["solver"], "electrodynamic_yee")
@@ -38,7 +38,7 @@ class TestInitializationFunctions(unittest.TestCase):
         self.assertNotIn("plot_vtk_particles", plotting)
         self.assertNotIn("plot_vtk_scalars", plotting)
         self.assertNotIn("plot_vtk_vectors", plotting)
-        self.assertIn('eps', const)
+        self.assertIn('eps', dynamic)
         self.assertIn('plotfields', plotting)
         # check that the default parameters contain expected keys
 
@@ -85,14 +85,18 @@ class TestInitializationFunctions(unittest.TestCase):
             with open(config_path, "w") as f:
                 toml.dump(config, f)
 
-            loop, particles, fields, world, simulation_parameters, *_rest = initialize_simulation(toml.load(config_path))
+            loop, particles, fields, world, dynamic_parameters, plotting_parameters, *_rest = initialize_simulation(toml.load(config_path))
 
             self.assertIs(loop, time_loop_electrodynamic)
             self.assertIsInstance(particles, TiledParticles)
-            self.assertEqual(simulation_parameters["solver"], "electrodynamic_yee")
+            self.assertEqual(world["solver"], "electrodynamic_yee")
             self.assertEqual(tuple(world["tile_shape"]), (2, 1, 1))
-            self.assertIn("tiled_center_grid", world["grids"])
-            self.assertIn("tiled_vertex_grid", world["grids"])
+            self.assertNotIn("particle_species_names", world)
+            self.assertNotIn("particle_species_metadata", world)
+            self.assertEqual(plotting_parameters["particle_species_names"], ("electrons",))
+            self.assertEqual(plotting_parameters["particle_species_metadata"][0]["name"], "electrons")
+            self.assertIn("tiled_center_grid", dynamic_parameters["grids"])
+            self.assertIn("tiled_vertex_grid", dynamic_parameters["grids"])
             E, B, J, rho, phi, external_fields, pml_state, overflow = fields
             self.assertEqual(E[0].ndim, 6)
             self.assertEqual(B[0].ndim, 6)
@@ -146,7 +150,7 @@ class TestInitializationFunctions(unittest.TestCase):
 
             _, particles, _, world, *_ = initialize_simulation(toml.load(config_path))
 
-            self.assertEqual(world["particle_boundary_conditions"], {"x": 1, "y": 2, "z": 0})
+            self.assertEqual(world["particle_boundary_conditions"], (1, 2, 0))
             self.assertIsInstance(particles, TiledParticles)
             # check that the global particle boundary conditions are encoded correctly in the world dictionary
 
@@ -184,12 +188,12 @@ class TestInitializationFunctions(unittest.TestCase):
                 },
             }
 
-            loop, particles, fields, world, *_ = initialize_simulation(config)
+            loop, particles, fields, world, dynamic_parameters, *_ = initialize_simulation(config)
 
             self.assertIs(loop, time_loop_electrostatic)
             self.assertIsInstance(particles, TiledParticles)
             self.assertEqual(fields[0][0].ndim, 6)
-            for vertex_axis, center_axis in zip(world["grids"]["vertex"], world["grids"]["center"]):
+            for vertex_axis, center_axis in zip(dynamic_parameters["grids"]["vertex"], dynamic_parameters["grids"]["center"]):
                 self.assertTrue(jnp.allclose(vertex_axis, center_axis))
         # test the initialize_simulation function with an electrostatic solver and check that it uses a collocated grid
 

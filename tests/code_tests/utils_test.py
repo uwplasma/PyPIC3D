@@ -323,27 +323,39 @@ class TestUtilsFunctions(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             os.makedirs(os.path.join(tmpdir, "data"))
-            simulation_parameters = {
+            static_parameters = {
                 "output_dir": tmpdir,
-                "particle_species_names": ("electrons", "ions"),
                 "tile_shape": (2, 1, 1),
+            }
+            plotting_parameters = {
+                "particle_species_names": ("electrons", "ions"),
+                "particle_species_metadata": (
+                    {"name": "electrons", "charge": -1.0},
+                    {"name": "ions", "charge": 1.0},
+                ),
             }
 
             dump_parameters_to_toml(
                 {"total_time": 1.0},
-                simulation_parameters,
+                static_parameters,
                 {},
                 {},
-                {},
+                plotting_parameters,
                 particles,
             )
 
             config = toml.load(os.path.join(tmpdir, "data/output.toml"))
 
+        self.assertNotIn("particle_species_names", config["static_parameters"])
+        self.assertNotIn("particle_species_metadata", config["static_parameters"])
+        self.assertNotIn("particle_species_names", config.get("plotting", {}))
+        self.assertNotIn("particle_species_metadata", config.get("plotting", {}))
         self.assertEqual(config["particles"][0]["name"], "electrons")
+        self.assertEqual(config["particles"][0]["charge"], -1.0)
         self.assertEqual(config["particles"][0]["storage"], "tiled")
         self.assertEqual(config["particles"][0]["active_particles"], 2)
         self.assertEqual(config["particles"][1]["name"], "ions")
+        self.assertEqual(config["particles"][1]["charge"], 1.0)
         self.assertEqual(config["particles"][1]["storage"], "tiled")
         self.assertEqual(config["particles"][1]["active_particles"], 1)
         self.assertEqual(config["particles"][0]["tile_shape"], [2, 1, 1])

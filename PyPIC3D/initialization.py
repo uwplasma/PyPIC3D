@@ -344,8 +344,8 @@ def initialize_simulation(toml_file):
         static_parameters,
         dynamic_parameters,
     )
-    static_parameters = {
-        **static_parameters,
+    plotting_parameters = {
+        **plotting_parameters,
         "particle_species_names": particle_species_names,
         "particle_species_metadata": particle_metadata,
     }
