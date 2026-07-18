@@ -6,6 +6,7 @@ import numpy as np
 
 from PyPIC3D.boundary_conditions import ghost_cells
 from tests.initial_particles import build_tiled_particles, tiled_species
+from tests.parameter_helpers import split_test_parameters
 from PyPIC3D.pusher.particle_push import particle_push
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 
@@ -130,15 +131,16 @@ class TestTiledParticlePusher(unittest.TestCase):
             self._simulation_parameters_for_tile_shape(tile_shape),
         )
         g = int(world["guard_cells"])
+        static_parameters, dynamic_parameters = split_test_parameters(world, constants)
+        static_parameters["relativistic"] = bool(relativistic)
+        static_parameters["particle_pusher"] = particle_pusher
         return particle_push(
             tiled_particles,
             species_config,
             tile_vector_field(E, world, tile_shape, num_guard_cells=g),
             tile_vector_field(B, world, tile_shape, num_guard_cells=g),
-            world,
-            constants,
-            relativistic=relativistic,
-            particle_pusher=particle_pusher,
+            static_parameters,
+            dynamic_parameters,
         )
 
     def _deterministic_vector_field(self, world, scale):
@@ -317,14 +319,16 @@ class TestTiledParticlePusher(unittest.TestCase):
         )
         tiled_particles, species_config = build_tiled_particles([species], world, simulation_parameters)
 
+        static_parameters, dynamic_parameters = split_test_parameters(world, constants)
+        static_parameters["relativistic"] = False
+        static_parameters["particle_pusher"] = "boris"
         pushed = particle_push(
             tiled_particles,
             species_config,
             tile_vector_field(E, world, tile_shape, num_guard_cells=1),
             tile_vector_field(B, world, tile_shape, num_guard_cells=1),
-            world,
-            constants,
-            relativistic=False,
+            static_parameters,
+            dynamic_parameters,
         )
 
         self.assertTrue(jnp.allclose(pushed.u[..., 0], tiled_particles.u[..., 0]))

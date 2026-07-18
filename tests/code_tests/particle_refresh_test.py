@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 
 from tests.initial_particles import build_tiled_particles, tiled_species
+from tests.parameter_helpers import split_test_parameters
 from PyPIC3D.particles.particle_tile_communication import (
     _adjacent_tile_offset,
     refresh_tiled_particle_tiles,
@@ -67,6 +68,11 @@ class TestTiledParticleRefresh(unittest.TestCase):
             "particle_tile_nz": 1,
         }
 
+    def _split_parameters(self, world, tile_shape):
+        world = dict(world)
+        world["tile_shape"] = tuple(int(width) for width in tile_shape)
+        return split_test_parameters(world)
+
     def _active_rows(self, tiled_particles):
         active = tiled_particles.active.reshape(-1)
         x = tiled_particles.x.reshape(-1, 3)[active]
@@ -110,7 +116,7 @@ class TestTiledParticleRefresh(unittest.TestCase):
         moved_x = tiled_particles.x.at[0, 0, 0, 0, 1, 0].set(0.25)
         moved = tiled_particles._replace(x=moved_x)
 
-        refreshed, overflow = refresh_tiled_particle_tiles(moved, world, tile_shape=(2, 1, 1))
+        refreshed, overflow = refresh_tiled_particle_tiles(moved, *self._split_parameters(world, (2, 1, 1)))
 
         self.assertEqual(refreshed.x.shape, tiled_particles.x.shape)
         self.assertFalse(bool(overflow))
@@ -126,7 +132,7 @@ class TestTiledParticleRefresh(unittest.TestCase):
         tiled_particles, species_config = build_tiled_particles([species], world, self._simulation_parameters())
         moved = tiled_particles._replace(x=tiled_particles.x.at[1, 0, 0, 0, 0, 0].set(2.25))
 
-        refreshed, overflow = refresh_tiled_particle_tiles(moved, world, tile_shape=(2, 1, 1))
+        refreshed, overflow = refresh_tiled_particle_tiles(moved, *self._split_parameters(world, (2, 1, 1)))
 
         self.assertFalse(bool(overflow))
         self.assertTrue(bool(refreshed.active[0, 0, 0, 0, 0]))
@@ -143,7 +149,7 @@ class TestTiledParticleRefresh(unittest.TestCase):
             .at[0, 0, 0, 0, 0, 0].set(-2.10)
         )
 
-        refreshed, overflow = refresh_tiled_particle_tiles(moved, world, tile_shape=(2, 1, 1))
+        refreshed, overflow = refresh_tiled_particle_tiles(moved, *self._split_parameters(world, (2, 1, 1)))
 
         self.assertFalse(bool(overflow))
         x, u = self._active_rows(refreshed)
@@ -157,7 +163,7 @@ class TestTiledParticleRefresh(unittest.TestCase):
         tiled_particles, species_config = build_tiled_particles([species], world, self._simulation_parameters())
         moved = tiled_particles._replace(x=tiled_particles.x.at[1, 0, 0, 0, 0, 0].set(2.25))
 
-        refreshed, overflow = refresh_tiled_particle_tiles(moved, world, tile_shape=(2, 1, 1))
+        refreshed, overflow = refresh_tiled_particle_tiles(moved, *self._split_parameters(world, (2, 1, 1)))
 
         self.assertFalse(bool(overflow))
         self.assertEqual(int(jnp.sum(refreshed.active)), 1)
@@ -171,7 +177,7 @@ class TestTiledParticleRefresh(unittest.TestCase):
         tiled_particles, species_config = build_tiled_particles([species], world, self._simulation_parameters())
         moved = tiled_particles._replace(x=tiled_particles.x.at[0, 0, 0, 0, 0, 0].set(0.25))
 
-        refreshed, overflow = refresh_tiled_particle_tiles(moved, world, tile_shape=(2, 1, 1))
+        refreshed, overflow = refresh_tiled_particle_tiles(moved, *self._split_parameters(world, (2, 1, 1)))
 
         self.assertEqual(refreshed.x.shape, tiled_particles.x.shape)
         self.assertTrue(bool(overflow))

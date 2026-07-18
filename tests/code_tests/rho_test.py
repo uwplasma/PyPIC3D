@@ -8,6 +8,7 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
 from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.diagnostics.output_adapters import assemble_tiled_scalar_field
 from tests.initial_particles import build_tiled_particles, tiled_species
+from tests.parameter_helpers import split_test_parameters
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 
 
@@ -124,7 +125,7 @@ class TestTiledRho(unittest.TestCase):
     def _simulation_parameters(self):
         return {
             "particle_tile_nx": 2,
-            "particle_tile_ny": 2,
+            "particle_tile_ny": 3,
             "particle_tile_nz": 2,
         }
 
@@ -181,8 +182,14 @@ class TestTiledRho(unittest.TestCase):
         )
         return [electrons, ions]
 
-    def _tiled_with_noisy_inactive_slots(self, particles, world):
-        tiled_particles, species_config = build_tiled_particles(particles, world, self._simulation_parameters())
+    def _tiled_with_noisy_inactive_slots(self, particles, world, simulation_parameters=None):
+        if simulation_parameters is None:
+            simulation_parameters = {
+                "particle_tile_nx": world["tile_shape"][0],
+                "particle_tile_ny": world["tile_shape"][1],
+                "particle_tile_nz": world["tile_shape"][2],
+            }
+        tiled_particles, species_config = build_tiled_particles(particles, world, simulation_parameters)
 
         inactive = ~tiled_particles.active
         x = tiled_particles.x.at[inactive, 0].set(0.33)
@@ -202,14 +209,15 @@ class TestTiledRho(unittest.TestCase):
 
     def _deposit_and_assemble(self, particles, world, simulation_parameters, constants):
         world = self._world_with_tiled_grids(world, simulation_parameters)
-        tiled_particles, species_config = self._tiled_with_noisy_inactive_slots(particles, world)
+        tiled_particles, species_config = self._tiled_with_noisy_inactive_slots(particles, world, simulation_parameters)
         rho_tiles = tile_scalar_field(
             self._empty_scalar(world),
             world,
             world["tile_shape"],
             num_guard_cells=int(world["guard_cells"]),
         )
-        rho_tiles = compute_rho(tiled_particles, species_config, rho_tiles, constants, world)
+        static_parameters, dynamic_parameters = split_test_parameters(world, constants)
+        rho_tiles = compute_rho(tiled_particles, species_config, rho_tiles, static_parameters, dynamic_parameters)
         rho = assemble_tiled_scalar_field(
             rho_tiles,
             world,
@@ -270,8 +278,9 @@ class TestTiledRho(unittest.TestCase):
         zero_velocity_tiled_particles = self._zero_tiled_velocities(tiled_particles)
         rho_tiles = tile_scalar_field(self._empty_scalar(world), world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))
 
-        rho_with_velocity_tiles = compute_rho(tiled_particles, species_config, rho_tiles, constants, world)
-        rho_with_zero_velocity_tiles = compute_rho(zero_velocity_tiled_particles, species_config, rho_tiles, constants, world)
+        static_parameters, dynamic_parameters = split_test_parameters(world, constants)
+        rho_with_velocity_tiles = compute_rho(tiled_particles, species_config, rho_tiles, static_parameters, dynamic_parameters)
+        rho_with_zero_velocity_tiles = compute_rho(zero_velocity_tiled_particles, species_config, rho_tiles, static_parameters, dynamic_parameters)
         rho_with_velocity = assemble_tiled_scalar_field(rho_with_velocity_tiles, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))
         rho_with_zero_velocity = assemble_tiled_scalar_field(rho_with_zero_velocity_tiles, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))
 
@@ -297,15 +306,13 @@ class TestTiledRho(unittest.TestCase):
             tiled_particles,
             species_config,
             rho_tiles,
-            constants,
-            world,
+            *split_test_parameters(world, constants),
         )
         rho_tiles_with_zero_velocity = compute_rho(
             zero_velocity_tiled_particles,
             species_config,
             rho_tiles,
-            constants,
-            world,
+            *split_test_parameters(world, constants),
         )
         rho_with_velocity = assemble_tiled_scalar_field(rho_tiles_with_velocity, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))
         rho_with_zero_velocity = assemble_tiled_scalar_field(rho_tiles_with_zero_velocity, world, world["tile_shape"], num_guard_cells=int(world["guard_cells"]))
@@ -336,8 +343,7 @@ class TestTiledRho(unittest.TestCase):
             tiled_particles,
             species_config,
             rho_tiles,
-            constants,
-            world,
+            *split_test_parameters(world, constants),
         )
         rho_from_tiles = assemble_tiled_scalar_field(
             rho_tiles,
@@ -358,10 +364,16 @@ class TestTiledRho(unittest.TestCase):
 
     def test_public_compute_rho_rejects_flat_particles(self):
         world = self._build_world(shape_factor=2)
+        world = self._world_with_tiled_grids(world, self._one_tile_parameters(world))
         constants = {"alpha": 1.0}
 
         with self.assertRaisesRegex(ValueError, "TiledParticles"):
-            compute_rho(self._particles(world), None, self._empty_scalar(world), constants, world)
+            compute_rho(
+                self._particles(world),
+                None,
+                self._empty_scalar(world),
+                *split_test_parameters(world, constants),
+            )
 
 
 if __name__ == "__main__":

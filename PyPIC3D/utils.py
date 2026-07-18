@@ -637,6 +637,12 @@ def update_parameters_from_toml(config, static_parameters, dynamic_parameters, p
         tuple: Updated static, dynamic, and plotting parameters.
     """
 
+    for key, value in config.get("simulation_parameters", {}).items():
+        if key in static_parameters:
+            static_parameters[key] = value
+        if key in dynamic_parameters:
+            dynamic_parameters[key] = value
+
     for key, value in config.get("static_parameters", {}).items():
         if key in static_parameters:
             static_parameters[key] = value

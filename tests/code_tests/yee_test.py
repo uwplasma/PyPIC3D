@@ -11,6 +11,7 @@ from PyPIC3D.diagnostics.output_adapters import assemble_tiled_vector_field
 from PyPIC3D.boundary_conditions import ghost_cells
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
+from tests.parameter_helpers import split_test_parameters
 
 
 jax.config.update("jax_enable_x64", True)
@@ -181,15 +182,19 @@ class TestYeeTiled(unittest.TestCase):
         ))
         return reference_world
 
+    def _split_parameters(self, world, constants):
+        return split_test_parameters(world, constants)
+
     def _reference_update_E(self, E, B, J, world, constants):
         tile_shape = (world["Nx"], world["Ny"], world["Nz"])
         reference_world = self._copy_world_for_tile_shape(world, tile_shape, int(world["guard_cells"]))
+        static_parameters, dynamic_parameters = self._split_parameters(reference_world, constants)
         E_reference, pml_state = update_E(
             tile_vector_field(E, reference_world, tile_shape, num_guard_cells=int(reference_world["guard_cells"])),
             tile_vector_field(B, reference_world, tile_shape, num_guard_cells=int(reference_world["guard_cells"])),
             tile_vector_field(J, reference_world, tile_shape, num_guard_cells=int(reference_world["guard_cells"])),
-            reference_world,
-            constants,
+            static_parameters,
+            dynamic_parameters,
         )
         return assemble_tiled_vector_field(
             E_reference,
@@ -201,11 +206,12 @@ class TestYeeTiled(unittest.TestCase):
     def _reference_update_B(self, E, B, world, constants):
         tile_shape = (world["Nx"], world["Ny"], world["Nz"])
         reference_world = self._copy_world_for_tile_shape(world, tile_shape, int(world["guard_cells"]))
+        static_parameters, dynamic_parameters = self._split_parameters(reference_world, constants)
         B_reference, pml_state = update_B(
             tile_vector_field(E, reference_world, tile_shape, num_guard_cells=int(reference_world["guard_cells"])),
             tile_vector_field(B, reference_world, tile_shape, num_guard_cells=int(reference_world["guard_cells"])),
-            reference_world,
-            constants,
+            static_parameters,
+            dynamic_parameters,
         )
         return assemble_tiled_vector_field(
             B_reference,
@@ -450,14 +456,15 @@ class TestYeeTiled(unittest.TestCase):
         E = self._deterministic_vector_field(world, scale=1.0)
         B = self._deterministic_vector_field(world, scale=0.2)
         J = self._deterministic_vector_field(world, scale=0.05)
+        static_parameters, dynamic_parameters = self._split_parameters(world, constants)
 
         E_reference, _ = self._reference_update_E(E, B, J, world, constants)
         E_tiled, pml_state = update_E(
             tile_vector_field(E, world, tile_shape),
             tile_vector_field(B, world, tile_shape),
             tile_vector_field(J, world, tile_shape),
-            world,
-            constants,
+            static_parameters,
+            dynamic_parameters,
         )
         self.assertIsNone(pml_state)
         E_from_tiles = assemble_tiled_vector_field(E_tiled, world, tile_shape)
@@ -476,8 +483,9 @@ class TestYeeTiled(unittest.TestCase):
         E_tiles = tile_vector_field(E, world, tile_shape, num_guard_cells=2)
         B_tiles = tile_vector_field(B, world, tile_shape, num_guard_cells=2)
         J_tiles = tile_vector_field(J, world, tile_shape, num_guard_cells=2)
+        static_parameters, dynamic_parameters = self._split_parameters(world, constants)
 
-        E_public, pml_state = update_E(E_tiles, B_tiles, J_tiles, world, constants)
+        E_public, pml_state = update_E(E_tiles, B_tiles, J_tiles, static_parameters, dynamic_parameters)
 
         self.assertIsNone(pml_state)
         self.assertEqual(E_public[0].ndim, 6)
@@ -491,14 +499,15 @@ class TestYeeTiled(unittest.TestCase):
         E = self._deterministic_vector_field(world, scale=1.0)
         B = self._deterministic_vector_field(world, scale=0.2)
         J = self._deterministic_vector_field(world, scale=0.05)
+        static_parameters, dynamic_parameters = self._split_parameters(world, constants)
 
         E_reference, _ = self._reference_update_E(E, B, J, world, constants)
         E_tiled, pml_state = update_E(
             tile_vector_field(E, world, tile_shape),
             tile_vector_field(B, world, tile_shape),
             tile_vector_field(J, world, tile_shape),
-            world,
-            constants,
+            static_parameters,
+            dynamic_parameters,
         )
         self.assertIsNone(pml_state)
         E_from_tiles = assemble_tiled_vector_field(E_tiled, world, tile_shape)
@@ -513,13 +522,14 @@ class TestYeeTiled(unittest.TestCase):
         world = self._with_tile_metadata(world, tile_shape)
         E = self._deterministic_vector_field(world, scale=1.0)
         B = self._deterministic_vector_field(world, scale=0.2)
+        static_parameters, dynamic_parameters = self._split_parameters(world, constants)
 
         B_reference, _ = self._reference_update_B(E, B, world, constants)
         B_tiled, pml_state = update_B(
             tile_vector_field(E, world, tile_shape),
             tile_vector_field(B, world, tile_shape),
-            world,
-            constants,
+            static_parameters,
+            dynamic_parameters,
         )
         self.assertIsNone(pml_state)
         B_from_tiles = assemble_tiled_vector_field(B_tiled, world, tile_shape)
@@ -536,8 +546,9 @@ class TestYeeTiled(unittest.TestCase):
         B = self._deterministic_vector_field(world, scale=0.2)
         E_tiles = tile_vector_field(E, world, tile_shape, num_guard_cells=2)
         B_tiles = tile_vector_field(B, world, tile_shape, num_guard_cells=2)
+        static_parameters, dynamic_parameters = self._split_parameters(world, constants)
 
-        B_public, pml_state = update_B(E_tiles, B_tiles, world, constants)
+        B_public, pml_state = update_B(E_tiles, B_tiles, static_parameters, dynamic_parameters)
 
         self.assertIsNone(pml_state)
         self.assertEqual(B_public[0].ndim, 6)
@@ -550,13 +561,14 @@ class TestYeeTiled(unittest.TestCase):
         world = self._with_tile_metadata(world, tile_shape)
         E = self._deterministic_vector_field(world, scale=1.0)
         B = self._deterministic_vector_field(world, scale=0.2)
+        static_parameters, dynamic_parameters = self._split_parameters(world, constants)
 
         B_reference, _ = self._reference_update_B(E, B, world, constants)
         B_tiled, pml_state = update_B(
             tile_vector_field(E, world, tile_shape),
             tile_vector_field(B, world, tile_shape),
-            world,
-            constants,
+            static_parameters,
+            dynamic_parameters,
         )
         self.assertIsNone(pml_state)
         B_from_tiles = assemble_tiled_vector_field(B_tiled, world, tile_shape)
@@ -578,8 +590,9 @@ class TestYeeTiled(unittest.TestCase):
         E_tiles = tile_vector_field(E, world, tile_shape)
         B_tiles = tile_vector_field(B, world, tile_shape)
         J_tiles = tile_vector_field(J, world, tile_shape)
-        E_tiles, pml_state = update_E(E_tiles, B_tiles, J_tiles, world, constants)
-        B_tiles, pml_state = update_B(E_tiles, B_tiles, world, constants, pml_state)
+        static_parameters, dynamic_parameters = self._split_parameters(world, constants)
+        E_tiles, pml_state = update_E(E_tiles, B_tiles, J_tiles, static_parameters, dynamic_parameters)
+        B_tiles, pml_state = update_B(E_tiles, B_tiles, static_parameters, dynamic_parameters, pml_state)
         self.assertIsNone(pml_state)
 
         E_from_tiles = assemble_tiled_vector_field(E_tiles, world, tile_shape)
@@ -604,8 +617,9 @@ class TestYeeTiled(unittest.TestCase):
         E_tiles = tile_vector_field(E, world, tile_shape)
         B_tiles = tile_vector_field(B, world, tile_shape)
         J_tiles = tile_vector_field(J, world, tile_shape)
-        E_tiles, pml_state = update_E(E_tiles, B_tiles, J_tiles, world, constants)
-        B_tiles, pml_state = update_B(E_tiles, B_tiles, world, constants, pml_state)
+        static_parameters, dynamic_parameters = self._split_parameters(world, constants)
+        E_tiles, pml_state = update_E(E_tiles, B_tiles, J_tiles, static_parameters, dynamic_parameters)
+        B_tiles, pml_state = update_B(E_tiles, B_tiles, static_parameters, dynamic_parameters, pml_state)
         self.assertIsNone(pml_state)
 
         E_from_tiles = assemble_tiled_vector_field(E_tiles, world, tile_shape)
@@ -629,8 +643,9 @@ class TestYeeTiled(unittest.TestCase):
         E_tiles = tile_vector_field(E, world, tile_shape)
         B_tiles = tile_vector_field(B, world, tile_shape)
         J_tiles = tile_vector_field(J, world, tile_shape)
-        E_tiles, pml_state = update_E(E_tiles, B_tiles, J_tiles, world, constants)
-        B_tiles, pml_state = update_B(E_tiles, B_tiles, world, constants, pml_state)
+        static_parameters, dynamic_parameters = self._split_parameters(world, constants)
+        E_tiles, pml_state = update_E(E_tiles, B_tiles, J_tiles, static_parameters, dynamic_parameters)
+        B_tiles, pml_state = update_B(E_tiles, B_tiles, static_parameters, dynamic_parameters, pml_state)
 
         E_from_tiles = assemble_tiled_vector_field(E_tiles, world, tile_shape)
         B_from_tiles = assemble_tiled_vector_field(B_tiles, world, tile_shape)

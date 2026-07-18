@@ -23,6 +23,7 @@ from PyPIC3D.solvers.first_order_yee import (
 )
 from PyPIC3D.utilities.grids import build_yee_grid
 from PyPIC3D.utils import compute_energy
+from tests.parameter_helpers import split_test_parameters
 
 jax.config.update("jax_enable_x64", True)
 
@@ -152,6 +153,27 @@ def _empty_config(tmpdir, solver="electrodynamic_yee", pml=None):
     return config
 
 
+def _load_pml(raw_pml, world, constants):
+    static_parameters, dynamic_parameters = split_test_parameters(world, constants)
+    return load_pml_from_toml(raw_pml, static_parameters, dynamic_parameters)
+
+
+def _initialize_pml_state(world, constants=None):
+    static_parameters, dynamic_parameters = split_test_parameters(world, constants)
+    del static_parameters
+    return initialize_pml_state(dynamic_parameters, world["pml"][-1])
+
+
+def _initialize_tiled_pml_state(world, tile_shape, constants=None):
+    static_parameters, dynamic_parameters = split_test_parameters(world, constants)
+    return initialize_tiled_pml_state(static_parameters, dynamic_parameters, world["pml"][-1], tile_shape)
+
+
+def _tile_pml_profiles(world, tile_shape, constants=None):
+    static_parameters, _ = split_test_parameters(world, constants)
+    return tile_pml_profiles(static_parameters, world["pml"][-1], tile_shape)
+
+
 class TestPMLConfiguration(unittest.TestCase):
     def test_load_pml_from_toml_accepts_all_six_walls(self):
         raw = [
@@ -159,7 +181,7 @@ class TestPMLConfiguration(unittest.TestCase):
             for wall in PML_WALLS
         ]
 
-        active, pml_x, pml_y, pml_z, profiles = load_pml_from_toml(
+        active, pml_x, pml_y, pml_z, profiles = _load_pml(
             raw,
             _base_world(nx=8, ny=8, nz=8),
             {"C": 3.0},
@@ -179,17 +201,17 @@ class TestPMLConfiguration(unittest.TestCase):
         world = _base_world(nx=8, ny=1, nz=1)
 
         with self.assertRaisesRegex(ValueError, "Invalid PML wall"):
-            load_pml_from_toml([{"wall": "x+", "thickness": 2}], world, {"C": 3.0})
+            _load_pml([{"wall": "x+", "thickness": 2}], world, {"C": 3.0})
 
         with self.assertRaisesRegex(ValueError, "Duplicate PML wall"):
-            load_pml_from_toml(
+            _load_pml(
                 [{"wall": "+x", "thickness": 2}, {"wall": "+x", "thickness": 2}],
                 world,
                 {"C": 3.0},
             )
 
         with self.assertRaisesRegex(ValueError, "exceeds active cells"):
-            load_pml_from_toml([{"wall": "+x", "thickness": 9}], world, {"C": 3.0})
+            _load_pml([{"wall": "+x", "thickness": 9}], world, {"C": 3.0})
 
     def test_build_pml_ramp_only_on_requested_side(self):
         world = _base_world(nx=8, ny=1, nz=1)
@@ -223,9 +245,10 @@ class TestPMLConfiguration(unittest.TestCase):
 class TestPMLInitialization(unittest.TestCase):
     def test_initialize_pml_state_uses_physical_interior_shape(self):
         world = _base_world(nx=8, ny=4, nz=2)
+        world["pml"] = (False, False, False, False, build_pml(world, ()))
 
-        pml_state = initialize_pml_state(world)
-        e_memory, b_memory = pml_state
+        pml_state = _initialize_pml_state(world)
+        e_memory, b_memory, _ = pml_state
 
         self.assertEqual(len(e_memory), 6)
         self.assertEqual(len(b_memory), 6)
@@ -236,14 +259,14 @@ class TestPMLInitialization(unittest.TestCase):
 
     def test_initialize_tiled_pml_state_uses_tile_local_interior_shape(self):
         world = _base_world(nx=8, ny=4, nz=2)
-        world["pml"] = load_pml_from_toml(
+        world["pml"] = _load_pml(
             [{"wall": "+x", "thickness": 2, "sigma_max": 3.0}],
             world,
             {"C": 1.0},
         )
         tile_shape = (2, 2, 1)
 
-        pml_state = initialize_tiled_pml_state(world, tile_shape)
+        pml_state = _initialize_tiled_pml_state(world, tile_shape, {"C": 1.0})
         e_memory, b_memory, tiled_profiles = pml_state
 
         self.assertEqual(len(e_memory), 6)
@@ -257,7 +280,7 @@ class TestPMLInitialization(unittest.TestCase):
 
     def test_tile_pml_profiles_matches_global_profiles_on_tile_interiors(self):
         world = _base_world(nx=8, ny=4, nz=2)
-        world["pml"] = load_pml_from_toml(
+        world["pml"] = _load_pml(
             [
                 {"wall": "-x", "thickness": 2, "sigma_max": 3.0},
                 {"wall": "+x", "thickness": 2, "sigma_max": 3.0},
@@ -267,7 +290,7 @@ class TestPMLInitialization(unittest.TestCase):
         )
         tile_shape = (2, 2, 1)
 
-        tiled_profiles = tile_pml_profiles(world, tile_shape)
+        tiled_profiles = _tile_pml_profiles(world, tile_shape, {"C": 1.0})
         global_profiles = world["pml"][-1]
         assembled_profiles = assemble_tiled_vector_field(tiled_profiles, world, tile_shape, num_guard_cells=int(world["guard_cells"]))
 
@@ -296,16 +319,15 @@ class TestPMLInitialization(unittest.TestCase):
 
         fields = result[2]
         world = result[3]
-        active, pml_x, pml_y, pml_z, _ = world["pml"]
+        pml_state = fields[6]
+        _, _, tiled_profiles = pml_state
         self.assertEqual(len(fields), 8)
-        self.assertIn("pml", world)
-        self.assertTrue(active)
-        self.assertTrue(pml_x)
-        self.assertFalse(pml_y)
-        self.assertFalse(pml_z)
-        self.assertEqual(world["boundary_conditions"]["x"], BC_CONDUCTING)
-        self.assertEqual(world["boundary_conditions"]["y"], BC_PERIODIC)
-        self.assertEqual(world["boundary_conditions"]["z"], BC_PERIODIC)
+        self.assertTrue(world["pml_active"])
+        self.assertIsNotNone(pml_state)
+        self.assertTrue(jnp.any(tiled_profiles[0] > 0.0))
+        self.assertTrue(jnp.allclose(tiled_profiles[1], 0.0))
+        self.assertTrue(jnp.allclose(tiled_profiles[2], 0.0))
+        self.assertEqual(world["boundary_conditions"], (BC_CONDUCTING, BC_PERIODIC, BC_PERIODIC))
 
     def test_initialize_simulation_uses_tiled_pml_state_for_electrodynamic_yee(self):
         pml = [{"wall": "+x", "thickness": 2, "sigma_max": 1.0}]
@@ -342,15 +364,11 @@ class TestPMLInitialization(unittest.TestCase):
 
         fields = result[2]
         world = result[3]
-        active, pml_x, pml_y, pml_z, _ = world["pml"]
 
         self.assertEqual(len(fields), 8)
         self.assertIsNone(fields[6])
         self.assertFalse(bool(fields[-1]))
-        self.assertFalse(active)
-        self.assertFalse(pml_x)
-        self.assertFalse(pml_y)
-        self.assertFalse(pml_z)
+        self.assertFalse(world["pml_active"])
 
 
 class TestPMLFDTDBehavior(unittest.TestCase):
@@ -366,8 +384,9 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         E_tiles = tile_vector_field(E, world, tile_shape)
         B_tiles = tile_vector_field(B, world, tile_shape)
         J_tiles = tile_vector_field(J, world, tile_shape)
-        E_after, pml_state = update_E(E_tiles, B_tiles, J_tiles, world, constants)
-        B_after, pml_state = update_B(E_after, B_tiles, world, constants, pml_state)
+        static_parameters, dynamic_parameters = split_test_parameters(world, constants)
+        E_after, pml_state = update_E(E_tiles, B_tiles, J_tiles, static_parameters, dynamic_parameters)
+        B_after, pml_state = update_B(E_after, B_tiles, static_parameters, dynamic_parameters, pml_state)
 
         self.assertEqual(len(E_after), 3)
         self.assertEqual(len(B_after), 3)
@@ -376,7 +395,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
     def test_tiled_pml_matches_single_tile_pml_for_one_yee_step(self):
         world = _base_world(nx=8, ny=4, nz=2)
         constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
-        world["pml"] = load_pml_from_toml(
+        world["pml"] = _load_pml(
             [
                 {"wall": "-x", "thickness": 2, "sigma_max": 4.0},
                 {"wall": "+x", "thickness": 2, "sigma_max": 4.0},
@@ -411,20 +430,26 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         reference_tile_shape = (world["Nx"], world["Ny"], world["Nz"])
         world["tile_shape"] = reference_tile_shape
         world["field_mesh"] = ghost_cells.make_field_mesh((1, 1, 1))
-        reference_pml_state = initialize_tiled_pml_state(world, reference_tile_shape)
+        reference_static_parameters, reference_dynamic_parameters = split_test_parameters(world, constants)
+        reference_pml_state = initialize_tiled_pml_state(
+            reference_static_parameters,
+            reference_dynamic_parameters,
+            world["pml"][-1],
+            reference_tile_shape,
+        )
         reference_E, reference_pml_state = update_E(
             tile_vector_field(E, world, reference_tile_shape),
             tile_vector_field(B, world, reference_tile_shape),
             tile_vector_field(J, world, reference_tile_shape),
-            world,
-            constants,
+            reference_static_parameters,
+            reference_dynamic_parameters,
             reference_pml_state,
         )
         reference_B, reference_pml_state = update_B(
             reference_E,
             tile_vector_field(B, world, reference_tile_shape),
-            world,
-            constants,
+            reference_static_parameters,
+            reference_dynamic_parameters,
             reference_pml_state,
         )
         E_reference = assemble_tiled_vector_field(
@@ -442,20 +467,26 @@ class TestPMLFDTDBehavior(unittest.TestCase):
 
         world["tile_shape"] = tile_shape
         world["field_mesh"] = ghost_cells.make_field_mesh((4, 2, 2))
-        tiled_pml_state = initialize_tiled_pml_state(world, tile_shape)
+        tiled_static_parameters, tiled_dynamic_parameters = split_test_parameters(world, constants)
+        tiled_pml_state = initialize_tiled_pml_state(
+            tiled_static_parameters,
+            tiled_dynamic_parameters,
+            world["pml"][-1],
+            tile_shape,
+        )
         E_tiles, tiled_pml_state = update_E(
             tile_vector_field(E, world, tile_shape),
             tile_vector_field(B, world, tile_shape),
             tile_vector_field(J, world, tile_shape),
-            world,
-            constants,
+            tiled_static_parameters,
+            tiled_dynamic_parameters,
             tiled_pml_state,
         )
         B_tiles, tiled_pml_state = update_B(
             E_tiles,
             tile_vector_field(B, world, tile_shape),
-            world,
-            constants,
+            tiled_static_parameters,
+            tiled_dynamic_parameters,
             tiled_pml_state,
         )
 
@@ -471,7 +502,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
     def test_tiled_pml_absorbs_field_energy_in_particle_free_1d_wave(self):
         world = _base_world(nx=40, ny=1, nz=1)
         constants = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
-        world["pml"] = load_pml_from_toml(
+        world["pml"] = _load_pml(
             [
                 {"wall": "-x", "thickness": 8, "order": 3.0, "sigma_max": 60.0},
                 {"wall": "+x", "thickness": 8, "order": 3.0, "sigma_max": 60.0},
@@ -483,7 +514,13 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         tile_shape = (4, 1, 1)
         world["tile_shape"] = tile_shape
         world["field_mesh"] = ghost_cells.make_field_mesh((10, 1, 1))
-        tiled_pml_state = initialize_tiled_pml_state(world, tile_shape)
+        static_parameters, dynamic_parameters = split_test_parameters(world, constants)
+        tiled_pml_state = initialize_tiled_pml_state(
+            static_parameters,
+            dynamic_parameters,
+            world["pml"][-1],
+            tile_shape,
+        )
         E, B, J = _empty_global_fields(world)
 
         x = world["grids"]["vertex"][0][1:-1]
@@ -520,8 +557,21 @@ class TestPMLFDTDBehavior(unittest.TestCase):
             )[:2]
         )
         def step(E_tiles, B_tiles, tiled_pml_state):
-            E_tiles, tiled_pml_state = update_E(E_tiles, B_tiles, J_tiles, world, constants, tiled_pml_state)
-            B_tiles, tiled_pml_state = update_B(E_tiles, B_tiles, world, constants, tiled_pml_state)
+            E_tiles, tiled_pml_state = update_E(
+                E_tiles,
+                B_tiles,
+                J_tiles,
+                static_parameters,
+                dynamic_parameters,
+                tiled_pml_state,
+            )
+            B_tiles, tiled_pml_state = update_B(
+                E_tiles,
+                B_tiles,
+                static_parameters,
+                dynamic_parameters,
+                tiled_pml_state,
+            )
             return E_tiles, B_tiles, tiled_pml_state
 
         step = jax.jit(step)
@@ -544,7 +594,7 @@ class TestPMLFDTDBehavior(unittest.TestCase):
     def test_tiled_pml_step_uses_shared_guard_current_without_changing_timing(self):
         world = _base_world(nx=8, ny=1, nz=1)
         constants = {"C": 1.0, "eps": 2.0, "mu": 1.0, "alpha": 1.0}
-        world["pml"] = load_pml_from_toml(
+        world["pml"] = _load_pml(
             [{"wall": "+x", "thickness": 2, "order": 3.0, "sigma_max": 4.0}],
             world,
             constants,
@@ -567,9 +617,10 @@ class TestPMLFDTDBehavior(unittest.TestCase):
         Jx = Jx.at[:, :, :, 1:-1, 1:-1, 1:-1].set(0.25)
         J_tiles = (Jx, Jy, Jz)
 
-        pml_state = initialize_tiled_pml_state(world, tile_shape)
-        E_after, pml_state = update_E(E_tiles, B_tiles, J_tiles, world, constants, pml_state)
-        B_after, pml_state = update_B(E_after, B_tiles, world, constants, pml_state)
+        static_parameters, dynamic_parameters = split_test_parameters(world, constants)
+        pml_state = initialize_tiled_pml_state(static_parameters, dynamic_parameters, world["pml"][-1], tile_shape)
+        E_after, pml_state = update_E(E_tiles, B_tiles, J_tiles, static_parameters, dynamic_parameters, pml_state)
+        B_after, pml_state = update_B(E_after, B_tiles, static_parameters, dynamic_parameters, pml_state)
 
         for component in E_after + B_after:
             self.assertTrue(jnp.all(jnp.isfinite(component)))

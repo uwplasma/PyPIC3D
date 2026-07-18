@@ -9,7 +9,7 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
     collapse_axis_stencil,
     prepare_particle_axis_stencil,
 )
-from PyPIC3D.boundary_conditions.ghost_cells import update_tiled_ghost_cells
+from PyPIC3D.boundary_conditions.ghost_cells import fold_tiled_ghost_cells, update_tiled_ghost_cells
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.particles.particle_class import TiledParticles
 from PyPIC3D.utilities.filters import digital_filter
@@ -19,18 +19,6 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
 )
 
 
-def _species_scalar_to_slots(tiled_particles, species_value):
-    return jnp.broadcast_to(
-        species_value.reshape((1, 1, 1, species_value.shape[0], 1)),
-        tiled_particles.active.shape,
-    )
-
-def _species_slot_counts(tiled_particles):
-    occupied = tiled_particles.active | jnp.any(tiled_particles.x != 0.0, axis=-1) | jnp.any(tiled_particles.u != 0.0, axis=-1)
-    species_counts = jnp.sum(occupied.astype(tiled_particles.x.dtype), axis=(0, 1, 2, 4))
-    return jnp.where(species_counts > 0, species_counts, 1.0)
-
-
 def _collapse_tiled_axis_stencil(points, weights, local_n, reduced_axis, g):
     if reduced_axis:
         collapsed_points = jnp.full((1, points.shape[1]), int(g), dtype=points.dtype)
@@ -38,18 +26,18 @@ def _collapse_tiled_axis_stencil(points, weights, local_n, reduced_axis, g):
         return collapsed_points, collapsed_weights
     return collapse_axis_stencil(points, weights, local_n, ghost_cells=True)
 
-def charge_density(
+def compute_rho(
         particles,
         species_config,
         rho,
         static_parameters,
         dynamic_parameters,
 ):
+
     
     dx = dynamic_parameters["dx"]
     dy = dynamic_parameters["dy"]
     dz = dynamic_parameters["dz"]
-    bc_x, bc_y, bc_z = static_parameters["boundary_conditions"]
     shape_factor = static_parameters["shape_factor"]
     # unpack grid and tile parameters
 
@@ -62,18 +50,13 @@ def charge_density(
     local_Nz = tile_nz + 2 * g
     # piece together the total local tile shape
 
-    x = particles.x[..., 0].reshape(-1)
-    y = particles.x[..., 1].reshape(-1)
-    z = particles.x[..., 2].reshape(-1)
-    # reshape the particle positions into 1D arrays for processing
-
     tiled_grid = dynamic_parameters["grids"]["tiled_center_grid"]
     # get the grid for the tiles
 
     local_bc = 2
 
-    species_weighted_charge = species_config.charge * species_config.weight
-    # compute the weighted charge for each species
+    species_weighted_charge = species_config.charge * species_config.weight / (dx * dy * dz)
+    # compute the weighted charge for each species divided by the cell volume
 
     rho_template = jnp.zeros_like(rho[0, 0, 0])
 
@@ -93,6 +76,8 @@ def charge_density(
         # reshape the particle positions into 1D arrays for processing
         active = active_tile.reshape(-1).astype(x.dtype)
         # reshape the active particle mask into a 1D array for processing
+        q = jnp.broadcast_to(species_weighted_charge[:, jnp.newaxis], active_tile.shape).reshape(-1)
+        # reshape the species-weighted charges into the same flat slot layout
 
         x_grid = tiled_grid[0][tx, ty, tz]
         y_grid = tiled_grid[1][tx, ty, tz]
@@ -159,7 +144,7 @@ def charge_density(
                     iy = ypts[j]
                     iz = zpts[k]
                     rho_tile = rho_tile.at[ix, iy, iz].add(
-                        active * species_weighted_charge * x_weights_node[i] * y_weights_node[j] * z_weights_node[k],
+                        active * q * x_weights_node[i] * y_weights_node[j] * z_weights_node[k],
                         mode="drop",
                     )
         # deposit the charge density for each stencil point in the tile, accumulating contributions from all particles
@@ -184,6 +169,9 @@ def charge_density(
 
     rho = deposit_charge(particles.x, particles.active, tx, ty, tz)
     # deposit the charge density for all tiles by applying the vectorized deposit_charge function to the particle positions, active mask, and tile indices
+
+    rho = fold_tiled_ghost_cells(rho, static_parameters, g)
+    # fold charge deposited into tile ghost cells back to the owner interiors
 
     rho = update_tiled_ghost_cells(rho, static_parameters, g)
     # update the ghost cells of the charge density array to ensure proper boundary conditions
