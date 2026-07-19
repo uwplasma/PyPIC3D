@@ -101,11 +101,31 @@ class TestInitializationFunctions(unittest.TestCase):
             self.assertEqual(plotting_parameters["particle_species_metadata"][0]["name"], "electrons")
             self.assertIn("tiled_center_grid", dynamic_parameters.grids._asdict())
             self.assertIn("tiled_vertex_grid", dynamic_parameters.grids._asdict())
-            expected_vertex_grid, expected_center_grid = build_yee_grid(dynamic_parameters)
-            for axis, expected_axis in zip(dynamic_parameters.grids.vertex, expected_vertex_grid):
-                self.assertTrue(jnp.allclose(axis, expected_axis))
+            expected_center_grid, expected_vertex_grid = build_yee_grid(dynamic_parameters)
             for axis, expected_axis in zip(dynamic_parameters.grids.center, expected_center_grid):
                 self.assertTrue(jnp.allclose(axis, expected_axis))
+            for axis, expected_axis in zip(dynamic_parameters.grids.vertex, expected_vertex_grid):
+                self.assertTrue(jnp.allclose(axis, expected_axis))
+
+            g = int(parameter_set.guard_cells)
+            for axis_index, (tiled_axis, expected_axis, tile_width) in enumerate(
+                zip(dynamic_parameters.grids.tiled_center_grid, expected_center_grid, parameter_set.tile_shape)
+            ):
+                for tile_index in range(int(dynamic_parameters.grids.tiled_center_grid[axis_index].shape[axis_index])):
+                    tile_slice = [0, 0, 0, slice(g, -g)]
+                    tile_slice[axis_index] = tile_index
+                    start = 1 + tile_index * int(tile_width)
+                    stop = start + int(tile_width)
+                    self.assertTrue(jnp.allclose(tiled_axis[tuple(tile_slice)], expected_axis[start:stop]))
+            for axis_index, (tiled_axis, expected_axis, tile_width) in enumerate(
+                zip(dynamic_parameters.grids.tiled_vertex_grid, expected_vertex_grid, parameter_set.tile_shape)
+            ):
+                for tile_index in range(int(dynamic_parameters.grids.tiled_vertex_grid[axis_index].shape[axis_index])):
+                    tile_slice = [0, 0, 0, slice(g, -g)]
+                    tile_slice[axis_index] = tile_index
+                    start = 1 + tile_index * int(tile_width)
+                    stop = start + int(tile_width)
+                    self.assertTrue(jnp.allclose(tiled_axis[tuple(tile_slice)], expected_axis[start:stop]))
             E, B, J, rho, phi, external_fields, pml_state, overflow = fields
             self.assertEqual(E[0].ndim, 6)
             self.assertEqual(B[0].ndim, 6)

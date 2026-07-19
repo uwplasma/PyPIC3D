@@ -308,9 +308,12 @@ def initialize_simulation(toml_file):
     _apply_pml_field_boundaries(static_config, pml_config)
 
     if electrostatic:
-        vertex_grid, center_grid = build_collocated_grid(dynamic_setup)
+        center_grid, vertex_grid = build_collocated_grid(dynamic_setup)
     else:
-        vertex_grid, center_grid = build_yee_grid(dynamic_setup)
+        center_grid, vertex_grid = build_yee_grid(dynamic_setup)
+    # The pusher and direct-current deposition paths use the legacy PyPIC3D
+    # convention: "center" is the collocated/base Yee grid, while "vertex" is
+    # the staggered grid used for the component offsets.
 
     dynamic_config["grids"] = {
         "vertex": vertex_grid,
