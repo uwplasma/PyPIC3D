@@ -316,23 +316,29 @@ def _local_fold_scalar_tile(tile, g, boundary_conditions, reduced_axes, mesh_sha
     return tile
 
 
-def _apply_local_scalar_conducting(tile, g, boundary_conditions, mesh_shape):
-    lower = g
-    upper = -g - 1
-    bc_x, bc_y, bc_z = boundary_conditions
+def _axis_boundary_plane(axis, index):
+    plane = [slice(None), slice(None), slice(None)]
+    plane[axis] = index
+    return tuple(plane)
 
-    if bc_x == BC_CONDUCTING:
-        ix = jax.lax.axis_index("tile_x")
-        tile = jax.lax.cond(ix == 0, lambda f: f.at[lower, :, :].set(0.0), lambda f: f, tile)
-        tile = jax.lax.cond(ix == mesh_shape[0] - 1, lambda f: f.at[upper, :, :].set(0.0), lambda f: f, tile)
-    if bc_y == BC_CONDUCTING:
-        iy = jax.lax.axis_index("tile_y")
-        tile = jax.lax.cond(iy == 0, lambda f: f.at[:, lower, :].set(0.0), lambda f: f, tile)
-        tile = jax.lax.cond(iy == mesh_shape[1] - 1, lambda f: f.at[:, upper, :].set(0.0), lambda f: f, tile)
-    if bc_z == BC_CONDUCTING:
-        iz = jax.lax.axis_index("tile_z")
-        tile = jax.lax.cond(iz == 0, lambda f: f.at[:, :, lower].set(0.0), lambda f: f, tile)
-        tile = jax.lax.cond(iz == mesh_shape[2] - 1, lambda f: f.at[:, :, upper].set(0.0), lambda f: f, tile)
+
+def _apply_local_zero_boundary_axis(tile, axis, g, axis_name, axis_size):
+    lower_plane = _axis_boundary_plane(axis, g)
+    upper_plane = _axis_boundary_plane(axis, -g - 1)
+    tile_index = jax.lax.axis_index(axis_name)
+
+    tile = jax.lax.cond(
+        tile_index == 0,
+        lambda local_tile: local_tile.at[lower_plane].set(0.0),
+        lambda local_tile: local_tile,
+        tile,
+    )
+    tile = jax.lax.cond(
+        tile_index == axis_size - 1,
+        lambda local_tile: local_tile.at[upper_plane].set(0.0),
+        lambda local_tile: local_tile,
+        tile,
+    )
 
     return tile
 
@@ -507,15 +513,17 @@ def make_distributed_vector_ghost_folder(mesh, tile_shape, boundary_conditions, 
     return fold
 
 
-def make_distributed_conducting_bc(mesh, tile_shape, boundary_conditions, num_guard_cells):
+def make_distributed_zero_boundary(mesh, tile_shape, axis, num_guard_cells):
     g = int(num_guard_cells)
     del tile_shape
-    boundary_conditions = tuple(int(bc) for bc in boundary_conditions)
+    axis = int(axis)
     mesh_shape = tuple(int(width) for width in mesh.devices.shape)
+    axis_name = MESH_AXES[axis]
+    axis_size = mesh_shape[axis]
 
     def local_apply(local_tiles):
         tile = local_tiles[0, 0, 0]
-        tile = _apply_local_scalar_conducting(tile, g, boundary_conditions, mesh_shape)
+        tile = _apply_local_zero_boundary_axis(tile, axis, g, axis_name, axis_size)
         return tile[jnp.newaxis, jnp.newaxis, jnp.newaxis, :, :, :]
 
     mapped_apply = jax.shard_map(
@@ -529,61 +537,6 @@ def make_distributed_conducting_bc(mesh, tile_shape, boundary_conditions, num_gu
     def apply(field_tiles):
         _validate_scalar_tile_topology(field_tiles, mesh)
         return mapped_apply(field_tiles)
-
-    return apply
-
-
-def make_distributed_electric_conducting_bc(mesh, tile_shape, boundary_conditions, num_guard_cells):
-    g = int(num_guard_cells)
-    del tile_shape
-    boundary_conditions = tuple(int(bc) for bc in boundary_conditions)
-    mesh_shape = tuple(int(width) for width in mesh.devices.shape)
-
-    def local_apply(local_tiles):
-        Ex = local_tiles[0, 0, 0, 0]
-        Ey = local_tiles[1, 0, 0, 0]
-        Ez = local_tiles[2, 0, 0, 0]
-        lower = g
-        upper = -g - 1
-        bc_x, bc_y, bc_z = boundary_conditions
-
-        if bc_x == BC_CONDUCTING:
-            ix = jax.lax.axis_index("tile_x")
-            Ey = jax.lax.cond(ix == 0, lambda f: f.at[lower, :, :].set(0.0), lambda f: f, Ey)
-            Ez = jax.lax.cond(ix == 0, lambda f: f.at[lower, :, :].set(0.0), lambda f: f, Ez)
-            Ey = jax.lax.cond(ix == mesh_shape[0] - 1, lambda f: f.at[upper, :, :].set(0.0), lambda f: f, Ey)
-            Ez = jax.lax.cond(ix == mesh_shape[0] - 1, lambda f: f.at[upper, :, :].set(0.0), lambda f: f, Ez)
-
-        if bc_y == BC_CONDUCTING:
-            iy = jax.lax.axis_index("tile_y")
-            Ex = jax.lax.cond(iy == 0, lambda f: f.at[:, lower, :].set(0.0), lambda f: f, Ex)
-            Ez = jax.lax.cond(iy == 0, lambda f: f.at[:, lower, :].set(0.0), lambda f: f, Ez)
-            Ex = jax.lax.cond(iy == mesh_shape[1] - 1, lambda f: f.at[:, upper, :].set(0.0), lambda f: f, Ex)
-            Ez = jax.lax.cond(iy == mesh_shape[1] - 1, lambda f: f.at[:, upper, :].set(0.0), lambda f: f, Ez)
-
-        if bc_z == BC_CONDUCTING:
-            iz = jax.lax.axis_index("tile_z")
-            Ex = jax.lax.cond(iz == 0, lambda f: f.at[:, :, lower].set(0.0), lambda f: f, Ex)
-            Ey = jax.lax.cond(iz == 0, lambda f: f.at[:, :, lower].set(0.0), lambda f: f, Ey)
-            Ex = jax.lax.cond(iz == mesh_shape[2] - 1, lambda f: f.at[:, :, upper].set(0.0), lambda f: f, Ex)
-            Ey = jax.lax.cond(iz == mesh_shape[2] - 1, lambda f: f.at[:, :, upper].set(0.0), lambda f: f, Ey)
-
-        stacked = jnp.stack((Ex, Ey, Ez), axis=0)
-        return stacked[:, jnp.newaxis, jnp.newaxis, jnp.newaxis, :, :, :]
-
-    mapped_apply = jax.shard_map(
-        local_apply,
-        mesh=mesh,
-        in_specs=VECTOR_TILE_SPEC,
-        out_specs=VECTOR_TILE_SPEC,
-        check_vma=False,
-    )
-
-    def apply(field_tiles):
-        _validate_vector_tile_topology(field_tiles, mesh)
-        stacked_tiles = _stack_tiled_vector_field(field_tiles)
-        applied = mapped_apply(stacked_tiles)
-        return _restore_tiled_vector_layout(applied, field_tiles)
 
     return apply
 
@@ -626,36 +579,26 @@ def update_tiled_vector_ghost_cells(field_tiles, static_parameters, num_guard_ce
     return updater(field_tiles)
 
 
-def apply_tiled_conducting_bc(E_tiles, static_parameters, num_guard_cells=2):
+def apply_tiled_zero_boundary(field_tiles, static_parameters, axis, num_guard_cells=2):
     """
-    Zero tangential electric-field components only on global conducting walls.
+    Zero scalar values on the global conducting wall for one spatial axis.
     """
+
+    axis = int(axis)
+    boundary_conditions = _boundary_tuple(static_parameters.boundary_conditions)
+    if boundary_conditions[axis] != BC_CONDUCTING:
+        return update_tiled_ghost_cells(field_tiles, static_parameters, num_guard_cells)
 
     tile_shape = tuple(int(width) for width in static_parameters.tile_shape)
     mesh = static_parameters.field_mesh
-    apply_bc = make_distributed_electric_conducting_bc(
+    apply_bc = make_distributed_zero_boundary(
         mesh,
         tile_shape,
-        _boundary_tuple(static_parameters.boundary_conditions),
+        axis,
         num_guard_cells,
     )
-    return apply_bc(E_tiles)
-
-
-def apply_tiled_scalar_conducting_bc(field_tiles, static_parameters, num_guard_cells=2):
-    """
-    Zero scalar field values only on global conducting walls.
-    """
-
-    tile_shape = tuple(int(width) for width in static_parameters.tile_shape)
-    mesh = static_parameters.field_mesh
-    apply_bc = make_distributed_conducting_bc(
-        mesh,
-        tile_shape,
-        _boundary_tuple(static_parameters.boundary_conditions),
-        num_guard_cells,
-    )
-    return apply_bc(field_tiles)
+    field_tiles = apply_bc(field_tiles)
+    return update_tiled_ghost_cells(field_tiles, static_parameters, num_guard_cells)
 
 
 def fold_tiled_ghost_cells(field_tiles, static_parameters, num_guard_cells=2, bc_type=BC_TYPE_FIELD):

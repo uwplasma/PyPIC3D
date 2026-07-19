@@ -94,8 +94,8 @@ class TestGhostCells(unittest.TestCase):
         self.assertEqual(float(result[1, 0, 0, 0, 2, 2]), 0.0)
         # make sure the ghost cell values have been reset to 0.0 after folding
 
-    def test_apply_tiled_conducting_bc_zeros_global_tangential_faces(self):
-        # this tests the application of conducting boundary conditions to a tiled electric field in a periodic domain
+    def test_apply_tiled_zero_boundary_zeros_global_tangential_faces(self):
+        # this tests the application of axis-wise conducting boundary conditions to a tiled electric field
 
         parameter_set = SimpleNamespace(
             tile_shape=self.tile_shape,
@@ -108,8 +108,14 @@ class TestGhostCells(unittest.TestCase):
         E = tuple(jnp.ones((1, 1, 1, 4, 4, 4)) for _ in range(3))
         # create a tuple of three electric field components (Ex, Ey, Ez) with shape (1, 1, 1, 4, 4, 4) and all values set to 1.0
 
-        Ex, Ey, Ez = ghost_cells.apply_tiled_conducting_bc(E, parameter_set, self.g)
-        # call the apply tiled conducting boundary conditions method to zero out the tangential faces of the electric field components
+        Ex, Ey, Ez = E
+        Ey = ghost_cells.apply_tiled_zero_boundary(Ey, parameter_set, axis=0, num_guard_cells=self.g)
+        Ez = ghost_cells.apply_tiled_zero_boundary(Ez, parameter_set, axis=0, num_guard_cells=self.g)
+        Ex = ghost_cells.apply_tiled_zero_boundary(Ex, parameter_set, axis=1, num_guard_cells=self.g)
+        Ez = ghost_cells.apply_tiled_zero_boundary(Ez, parameter_set, axis=1, num_guard_cells=self.g)
+        Ex = ghost_cells.apply_tiled_zero_boundary(Ex, parameter_set, axis=2, num_guard_cells=self.g)
+        Ey = ghost_cells.apply_tiled_zero_boundary(Ey, parameter_set, axis=2, num_guard_cells=self.g)
+        # call the shared scalar zero boundary method for each tangential electric component
 
         self.assertTrue(jnp.all(Ey[0, 0, 0, 1, :, :] == 0.0))
         self.assertTrue(jnp.all(Ez[0, 0, 0, 1, :, :] == 0.0))
@@ -119,16 +125,16 @@ class TestGhostCells(unittest.TestCase):
         self.assertTrue(jnp.all(Ey[0, 0, 0, :, :, 1] == 0.0))
         # make sure the tangential faces of the electric field components have been zeroed out
 
-    def test_apply_tiled_scalar_conducting_bc_periodic_noop(self):
+    def test_apply_tiled_zero_boundary_periodic_axis_keeps_refreshed_field(self):
         parameter_set = self._parameters_with_field_mesh((1, 1, 1))
         field = jnp.arange(4 * 4 * 4, dtype=float).reshape((1, 1, 1, 4, 4, 4))
         # create a scalar field with shape (1, 1, 1, 4, 4, 4) and values from 0 to 63
-        result = ghost_cells.apply_tiled_scalar_conducting_bc(field, parameter_set, self.g)
-        # call the apply tiled scalar conducting boundary conditions method
-        # since the boundary conditions are periodic, this should be a no-op and the result should be equal to the input field
+        refreshed = ghost_cells.update_tiled_ghost_cells(field, parameter_set, self.g)
+        result = ghost_cells.apply_tiled_zero_boundary(refreshed, parameter_set, axis=0, num_guard_cells=self.g)
+        # periodic field boundaries do not zero the physical plane
 
-        self.assertTrue(jnp.allclose(result, field))
-        # confirm the field has not been modified since the boundary conditions are periodic and should not affect the field
+        self.assertTrue(jnp.allclose(result, refreshed))
+        # confirm the field has not been modified after an already consistent periodic halo refresh
 
 
 if __name__ == '__main__':

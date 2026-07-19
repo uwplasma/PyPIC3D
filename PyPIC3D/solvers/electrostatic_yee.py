@@ -4,6 +4,7 @@ from jax import lax
 from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.utilities.filters import digital_filter
 from PyPIC3D.boundary_conditions import ghost_cells
+from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING
 
 
 def _active_slice(g):
@@ -22,11 +23,32 @@ def _as_single_tile(field):
     return field[jnp.newaxis, jnp.newaxis, jnp.newaxis, :, :, :]
 
 
+def _apply_tiled_phi_zero_boundaries(field_tiles, static_parameters, g):
+    bc_x, bc_y, bc_z = static_parameters.boundary_conditions
+    applied_bc = False
+
+    if int(bc_x) == BC_CONDUCTING:
+        field_tiles = ghost_cells.apply_tiled_zero_boundary(field_tiles, static_parameters, axis=0, num_guard_cells=g)
+        applied_bc = True
+    if int(bc_y) == BC_CONDUCTING:
+        field_tiles = ghost_cells.apply_tiled_zero_boundary(field_tiles, static_parameters, axis=1, num_guard_cells=g)
+        applied_bc = True
+    if int(bc_z) == BC_CONDUCTING:
+        field_tiles = ghost_cells.apply_tiled_zero_boundary(field_tiles, static_parameters, axis=2, num_guard_cells=g)
+        applied_bc = True
+
+    if not applied_bc:
+        field_tiles = ghost_cells.update_tiled_ghost_cells(field_tiles, static_parameters, g)
+
+    return field_tiles
+
+
 def _refresh_single_tile_scalar(field, static_parameters, g, apply_conducting=False):
     field_tiles = _as_single_tile(field)
     if apply_conducting:
-        field_tiles = ghost_cells.apply_tiled_scalar_conducting_bc(field_tiles, static_parameters, num_guard_cells=g)
-    field_tiles = ghost_cells.update_tiled_ghost_cells(field_tiles, static_parameters, g)
+        field_tiles = _apply_tiled_phi_zero_boundaries(field_tiles, static_parameters, g)
+    else:
+        field_tiles = ghost_cells.update_tiled_ghost_cells(field_tiles, static_parameters, g)
     return field_tiles[0, 0, 0]
 
 
@@ -246,8 +268,7 @@ def calculate_tiled_electrostatic_fields(static_parameters, dynamic_parameters, 
 
     alpha = dynamic_parameters.alpha
     phi_tiles = digital_filter(phi_tiles, alpha, num_guard_cells=g)
-    phi_tiles = ghost_cells.apply_tiled_scalar_conducting_bc(phi_tiles, static_parameters, num_guard_cells=g)
-    phi_tiles = ghost_cells.update_tiled_ghost_cells(phi_tiles, static_parameters, g)
+    phi_tiles = _apply_tiled_phi_zero_boundaries(phi_tiles, static_parameters, g)
     # keep the same phi post-processing order as the previous electrostatic solver
 
     E_tiles = _centered_tiled_electrostatic_gradient(phi_tiles, static_parameters, dynamic_parameters, g)

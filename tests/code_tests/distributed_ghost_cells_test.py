@@ -325,7 +325,7 @@ class TestDistributedGhostCells(unittest.TestCase):
         self.assert_allclose(actual[0, 0, 0, 0, :, :], actual[0, 0, 0, 1, :, :])
         self.assert_allclose(actual[0, 0, 0, -1, :, :], actual[0, 0, 0, 1, :, :])
 
-    def test_public_scalar_conducting_bc_on_one_device_runs_inside_mapped_path(self):
+    def test_public_axis_zero_boundary_on_one_device_runs_inside_mapped_path(self):
         mesh_shape = (1, 1, 1)
         tile_shape = (3, 2, 2)
         bcs = (BC_CONDUCTING, BC_PERIODIC, BC_PERIODIC)
@@ -334,7 +334,7 @@ class TestDistributedGhostCells(unittest.TestCase):
         sharding = NamedSharding(static_parameters.field_mesh, ghost_cells.SCALAR_TILE_SPEC)
 
         sharded_field = jax.device_put(field, sharding)
-        actual = jax.jit(lambda tiles: ghost_cells.apply_tiled_scalar_conducting_bc(tiles, static_parameters, 1))(
+        actual = jax.jit(lambda tiles: ghost_cells.apply_tiled_zero_boundary(tiles, static_parameters, 0, 1))(
             sharded_field
         )
 
@@ -486,21 +486,28 @@ class TestDistributedGhostCells(unittest.TestCase):
             self.assert_allclose(stacked_actual[i], _reference_update(stacked[i], bcs, tile_shape))
             self.assert_allclose(tuple_actual[i], stacked_actual[i])
 
-    def test_conducting_electric_bc_only_applies_on_global_walls(self):
+    def test_axis_zero_boundary_builds_conducting_electric_bc_on_global_walls(self):
         mesh_shape = (2, 2, 1)
         tile_shape = (2, 2, 2)
         bcs = (BC_CONDUCTING, BC_CONDUCTING, BC_PERIODIC)
         E = tuple(jnp.ones((mesh_shape + (4, 4, 4)), dtype=jnp.float64) * (i + 1.0) for i in range(3))
-        apply_bc = ghost_cells.make_distributed_electric_conducting_bc(_mesh(mesh_shape), tile_shape, bcs, 1)
+        static_parameters = _static_parameters(bcs, tile_shape, mesh_shape)
 
-        Ex, Ey, Ez = jax.jit(apply_bc)(E)
+        def apply_electric_bc(Ex, Ey, Ez):
+            Ey = ghost_cells.apply_tiled_zero_boundary(Ey, static_parameters, axis=0, num_guard_cells=1)
+            Ez = ghost_cells.apply_tiled_zero_boundary(Ez, static_parameters, axis=0, num_guard_cells=1)
+            Ex = ghost_cells.apply_tiled_zero_boundary(Ex, static_parameters, axis=1, num_guard_cells=1)
+            Ez = ghost_cells.apply_tiled_zero_boundary(Ez, static_parameters, axis=1, num_guard_cells=1)
+            return Ex, Ey, Ez
+
+        Ex, Ey, Ez = jax.jit(apply_electric_bc)(*E)
 
         self.assert_allclose(Ey[0, :, :, 1, :, :], 0.0)
         self.assert_allclose(Ez[-1, :, :, -2, :, :], 0.0)
         self.assert_allclose(Ex[:, 0, :, :, 1, :], 0.0)
         self.assert_allclose(Ez[:, -1, :, :, -2, :], 0.0)
-        self.assert_allclose(Ey[0, :, :, 2, :, :], 2.0)
-        self.assert_allclose(Ex[:, 0, :, :, 2, :], 1.0)
+        self.assert_allclose(Ey[0, :, :, 2, 1:-1, 1:-1], 2.0)
+        self.assert_allclose(Ex[:, 0, :, 1:-1, 2, 1:-1], 1.0)
 
     def test_scalar_and_vector_folding_match_reference_and_clear_ghosts(self):
         mesh_shape = (2, 2, 1)

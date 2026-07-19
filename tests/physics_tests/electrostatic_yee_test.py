@@ -14,8 +14,9 @@ from PyPIC3D.solvers.electrostatic_yee import (
     solve_poisson_with_conjugate_gradient,
     calculate_electrostatic_fields,
     _centered_finite_difference_gradient,
+    _refresh_single_tile_scalar,
 )
-from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
+from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 from tests.kernel_fixtures import kernel_parameters, particle_species
 
 jax.config.update("jax_enable_x64", True)
@@ -144,6 +145,30 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
         self.assertTrue(jnp.allclose(E[0][self.active, self.active, self.active], expected_Ex, atol=1e-6, rtol=1e-6))
         self.assertTrue(jnp.allclose(E[1][self.active, self.active, self.active], expected_Ey, atol=1e-6, rtol=1e-6))
         self.assertTrue(jnp.allclose(E[2][self.active, self.active, self.active], expected_Ez, atol=1e-6, rtol=1e-6))
+
+    def test_phi_refresh_uses_shared_zero_boundary_for_conducting_axis(self):
+        static_parameters, dynamic_parameters = kernel_parameters(
+            Nx=8,
+            Ny=4,
+            Nz=4,
+            x_wind=1.0,
+            y_wind=1.0,
+            z_wind=1.0,
+            tile_shape=(8, 4, 4),
+            guard_cells=2,
+            shape_factor=1,
+            boundary_conditions=(BC_CONDUCTING, BC_PERIODIC, BC_PERIODIC),
+            electrostatic=True,
+            solver="electrostatic",
+        )
+        g = int(static_parameters.guard_cells)
+        phi = jnp.ones((8 + 2 * g, 4 + 2 * g, 4 + 2 * g))
+
+        refreshed_phi = _refresh_single_tile_scalar(phi, static_parameters, g, apply_conducting=True)
+
+        self.assertTrue(jnp.all(refreshed_phi[g, :, :] == 0.0))
+        self.assertTrue(jnp.all(refreshed_phi[-g - 1, :, :] == 0.0))
+        self.assertTrue(jnp.all(refreshed_phi[g + 1:-g - 1, g:-g, g:-g] == 1.0))
 
     def test_initialize_simulation_accepts_single_tile_electrostatic(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -3,6 +3,7 @@ from PyPIC3D.boundary_conditions.PML import (
     apply_tiled_pml_to_e_curl,
 )
 from PyPIC3D.boundary_conditions import ghost_cells
+from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING
 from PyPIC3D.utilities.filters import digital_filter_vector
 
 
@@ -75,7 +76,18 @@ def update_E(E_tiles, B_tiles, J_tiles, static_parameters, dynamic_parameters, p
 
     Ex, Ey, Ez = digital_filter_vector((Ex, Ey, Ez), dynamic_parameters.alpha, num_guard_cells=g)
 
-    Ex, Ey, Ez = ghost_cells.apply_tiled_conducting_bc((Ex, Ey, Ez), static_parameters, num_guard_cells=g)
+    bc_x, bc_y, bc_z = static_parameters.boundary_conditions
+    if int(bc_x) == BC_CONDUCTING:
+        Ey = ghost_cells.apply_tiled_zero_boundary(Ey, static_parameters, axis=0, num_guard_cells=g)
+        Ez = ghost_cells.apply_tiled_zero_boundary(Ez, static_parameters, axis=0, num_guard_cells=g)
+    if int(bc_y) == BC_CONDUCTING:
+        Ex = ghost_cells.apply_tiled_zero_boundary(Ex, static_parameters, axis=1, num_guard_cells=g)
+        Ez = ghost_cells.apply_tiled_zero_boundary(Ez, static_parameters, axis=1, num_guard_cells=g)
+    if int(bc_z) == BC_CONDUCTING:
+        Ex = ghost_cells.apply_tiled_zero_boundary(Ex, static_parameters, axis=2, num_guard_cells=g)
+        Ey = ghost_cells.apply_tiled_zero_boundary(Ey, static_parameters, axis=2, num_guard_cells=g)
+    # conducting walls zero tangential E components on the physical boundary
+    # planes; the shared scalar helper refreshes halos through ppermute.
 
     return ghost_cells.update_tiled_vector_ghost_cells((Ex, Ey, Ez), static_parameters, g), pml_state
 
