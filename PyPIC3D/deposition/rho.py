@@ -184,7 +184,7 @@ def compute_rho(
         return rho
 
     rho = jax.lax.cond(
-        dynamic_parameters.alpha != 1.0,
+        dynamic_parameters.current_filter=="digital",
         filter,
         lambda rho: rho,
         rho,
