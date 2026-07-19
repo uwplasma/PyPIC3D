@@ -1,5 +1,7 @@
 import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -217,16 +219,34 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
 
     def _one_tile_particles_from_tiled(self, particles):
         n_species = particles.active.shape[3]
-        n_slots = (
-            particles.active.shape[0]
-            * particles.active.shape[1]
-            * particles.active.shape[2]
-            * particles.active.shape[4]
-        )
+
+        x_by_species = []
+        u_by_species = []
+        max_slots = 1
+        for species_index in range(n_species):
+            active = np.asarray(jax.device_get(particles.active[:, :, :, species_index, :])).reshape(-1)
+            x = np.asarray(jax.device_get(particles.x[:, :, :, species_index, :, :])).reshape(-1, 3)[active]
+            u = np.asarray(jax.device_get(particles.u[:, :, :, species_index, :, :])).reshape(-1, 3)[active]
+            x_by_species.append(x)
+            u_by_species.append(u)
+            max_slots = max(max_slots, int(x.shape[0]))
+
+        x_one_tile = jnp.zeros((1, 1, 1, n_species, max_slots, 3), dtype=particles.x.dtype)
+        u_one_tile = jnp.zeros((1, 1, 1, n_species, max_slots, 3), dtype=particles.u.dtype)
+        active_one_tile = jnp.zeros((1, 1, 1, n_species, max_slots), dtype=bool)
+
+        for species_index in range(n_species):
+            n_active = int(x_by_species[species_index].shape[0])
+            if n_active == 0:
+                continue
+            x_one_tile = x_one_tile.at[0, 0, 0, species_index, :n_active].set(jnp.asarray(x_by_species[species_index]))
+            u_one_tile = u_one_tile.at[0, 0, 0, species_index, :n_active].set(jnp.asarray(u_by_species[species_index]))
+            active_one_tile = active_one_tile.at[0, 0, 0, species_index, :n_active].set(True)
+
         return TiledParticles(
-            x=particles.x.transpose(3, 0, 1, 2, 4, 5).reshape(1, 1, 1, n_species, n_slots, 3),
-            u=particles.u.transpose(3, 0, 1, 2, 4, 5).reshape(1, 1, 1, n_species, n_slots, 3),
-            active=particles.active.transpose(3, 0, 1, 2, 4).reshape(1, 1, 1, n_species, n_slots),
+            x=x_one_tile,
+            u=u_one_tile,
+            active=active_one_tile,
         )
 
     def _one_dimensional_particles(self, parameter_set, x1, tile_shape):
@@ -594,7 +614,9 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
             for Nx, Ny, Nz in cases:
                 with self.subTest(shape_factor=shape_factor, shape=(Nx, Ny, Nz)):
                     parameter_set = self._build_parameter_values(Nx=Nx, Ny=Ny, Nz=Nz, dt=0.05, shape_factor=shape_factor)
-                    if shape_factor == 2:
+                    active_axes = sum(int(width > 1) for width in (Nx, Ny, Nz))
+                    # The production tiled Yee startup promotes Esirkepov current storage to two guards.
+                    if shape_factor == 2 or active_axes == 3:
                         parameter_set["guard_cells"] = 2
                     x_old, u = self._basic_positions_and_velocities(parameter_set)
                     self._assert_tiled_current_matches_reference(parameter_set, x_old, u)
@@ -975,6 +997,8 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
                 species_config,
             ) = initialize_simulation(config)
             self.assertEqual(static_parameters.current_deposition, "esirkepov")
+            initial_particles = particles
+            initial_fields = fields
             particles, fields = loop(
                 particles,
                 species_config,
@@ -983,32 +1007,19 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
                 dynamic_parameters,
             )
 
-            parameter_set = {**static_parameters._asdict(), **dynamic_parameters._asdict()}
-            parameter_set["grids"] = parameter_set["grids"]._asdict()
-            dynamic_values = {"C": float(dynamic_parameters.C), "eps": float(dynamic_parameters.eps), "alpha": float(dynamic_parameters.alpha)}
-
-            reference_particles, reference_species_config = self._particles_from_arrays(
-                parameter_set,
-                self._one_tile_shape_for_parameters(parameter_set),
-                jnp.column_stack((jnp.asarray(x_initial), jnp.zeros(4), jnp.zeros(4))),
-                jnp.column_stack((jnp.asarray(vx_initial), jnp.zeros(4), jnp.zeros(4))),
-            )
-            _, reference_J = self._assembled_esirkepov_current(
-                parameter_set,
-                reference_particles,
-                reference_species_config,
-                dynamic_values,
-                self._one_tile_shape_for_parameters(parameter_set),
-            )
-            tiled_J = assemble_tiled_vector_field(
-                fields[2],
-                parameter_set,
-                tuple(int(width) for width in parameter_set["tile_shape"]),
-                num_guard_cells=int(parameter_set["guard_cells"]),
+            reference_J = Esirkepov_current(
+                initial_particles,
+                species_config,
+                initial_fields[2],
+                static_parameters,
+                dynamic_parameters,
             )
 
-            for reference_component, tiled_component in zip(reference_J, tiled_J):
-                self.assertTrue(jnp.allclose(tiled_component, reference_component, rtol=1.0e-12, atol=1.0e-12))
+            for reference_component, tiled_component in zip(reference_J, fields[2]):
+                self.assertTrue(
+                    jnp.allclose(tiled_component, reference_component, rtol=1.0e-12, atol=1.0e-12),
+                    f"max diff {jnp.max(jnp.abs(tiled_component - reference_component))}",
+                )
 
 
 if __name__ == "__main__":
