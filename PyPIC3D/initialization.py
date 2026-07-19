@@ -5,6 +5,7 @@ import jax
 import jax.numpy as jnp
 
 from PyPIC3D.particles.particle_initialization import load_particles_from_toml
+from PyPIC3D.particles.particle_tile_communication import shard_tiled_particles
 from PyPIC3D.utils import (
     add_external_fields,
     build_plasma_parameters_dict,
@@ -349,6 +350,7 @@ def initialize_simulation(toml_file):
         static_parameters,
         dynamic_parameters,
     )
+    particles = shard_tiled_particles(particles, static_parameters)
     plotting_parameters = {
         **plotting_parameters,
         "particle_species_names": particle_species_names,
@@ -470,12 +472,6 @@ def initialize_simulation(toml_file):
             static_parameters.output_dir,
             filename="initial_fields.h5",
         )
-
-    if static_parameters.GPUs:
-        print("GPUs Detected! Using GPUs for simulation\n")
-        particles = jax.device_put(particles, jax.devices("gpu")[0])
-        if species_config is not None:
-            species_config = jax.device_put(species_config, jax.devices("gpu")[0])
 
     return (
         evolve_loop,

@@ -90,6 +90,9 @@ class TestInitializationFunctions(unittest.TestCase):
 
             self.assertIs(loop, time_loop_electrodynamic)
             self.assertIsInstance(particles, TiledParticles)
+            self.assertEqual(particles.x.sharding.mesh, parameter_set.field_mesh)
+            self.assertEqual(particles.active.sharding.mesh, parameter_set.field_mesh)
+            self.assertEqual(len(particles.x.addressable_shards), 2)
             self.assertEqual(parameter_set.solver, "electrodynamic_yee")
             self.assertEqual(tuple(parameter_set.tile_shape), (2, 1, 1))
             self.assertNotIn("particle_species_names", parameter_set)
