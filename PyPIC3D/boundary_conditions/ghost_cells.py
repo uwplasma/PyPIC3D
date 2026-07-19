@@ -322,6 +322,25 @@ def _axis_boundary_plane(axis, index):
     return tuple(plane)
 
 
+def _axis_constant_boundary_slices(axis, g):
+    lower_ghost = [slice(None), slice(None), slice(None)]
+    upper_ghost = [slice(None), slice(None), slice(None)]
+    lower_interior = [slice(None), slice(None), slice(None)]
+    upper_interior = [slice(None), slice(None), slice(None)]
+
+    lower_ghost[axis] = slice(0, g)
+    upper_ghost[axis] = slice(-g, None)
+    lower_interior[axis] = slice(g, g + 1)
+    upper_interior[axis] = slice(-g - 1, -g)
+
+    return (
+        tuple(lower_ghost),
+        tuple(upper_ghost),
+        tuple(lower_interior),
+        tuple(upper_interior),
+    )
+
+
 def _apply_local_zero_boundary_axis(tile, axis, g, axis_name, axis_size):
     lower_plane = _axis_boundary_plane(axis, g)
     upper_plane = _axis_boundary_plane(axis, -g - 1)
@@ -336,6 +355,30 @@ def _apply_local_zero_boundary_axis(tile, axis, g, axis_name, axis_size):
     tile = jax.lax.cond(
         tile_index == axis_size - 1,
         lambda local_tile: local_tile.at[upper_plane].set(0.0),
+        lambda local_tile: local_tile,
+        tile,
+    )
+
+    return tile
+
+
+def _apply_local_constant_boundary_axis(tile, axis, g, axis_name, axis_size):
+    lower_ghost, upper_ghost, lower_interior, upper_interior = _axis_constant_boundary_slices(axis, g)
+    tile_index = jax.lax.axis_index(axis_name)
+
+    tile = jax.lax.cond(
+        tile_index == 0,
+        lambda local_tile: local_tile.at[lower_ghost].set(
+            jnp.broadcast_to(local_tile[lower_interior], local_tile[lower_ghost].shape)
+        ),
+        lambda local_tile: local_tile,
+        tile,
+    )
+    tile = jax.lax.cond(
+        tile_index == axis_size - 1,
+        lambda local_tile: local_tile.at[upper_ghost].set(
+            jnp.broadcast_to(local_tile[upper_interior], local_tile[upper_ghost].shape)
+        ),
         lambda local_tile: local_tile,
         tile,
     )
@@ -541,6 +584,34 @@ def make_distributed_zero_boundary(mesh, tile_shape, axis, num_guard_cells):
     return apply
 
 
+def make_distributed_constant_boundary(mesh, tile_shape, axis, num_guard_cells):
+    g = int(num_guard_cells)
+    del tile_shape
+    axis = int(axis)
+    mesh_shape = tuple(int(width) for width in mesh.devices.shape)
+    axis_name = MESH_AXES[axis]
+    axis_size = mesh_shape[axis]
+
+    def local_apply(local_tiles):
+        tile = local_tiles[0, 0, 0]
+        tile = _apply_local_constant_boundary_axis(tile, axis, g, axis_name, axis_size)
+        return tile[jnp.newaxis, jnp.newaxis, jnp.newaxis, :, :, :]
+
+    mapped_apply = jax.shard_map(
+        local_apply,
+        mesh=mesh,
+        in_specs=SCALAR_TILE_SPEC,
+        out_specs=SCALAR_TILE_SPEC,
+        check_vma=False,
+    )
+
+    def apply(field_tiles):
+        _validate_scalar_tile_topology(field_tiles, mesh)
+        return mapped_apply(field_tiles)
+
+    return apply
+
+
 def update_tiled_ghost_cells(field_tiles, static_parameters, num_guard_cells=2, bc_type=BC_TYPE_FIELD):
     """
     Refresh scalar tile halos with one logical tile per JAX device.
@@ -599,6 +670,34 @@ def apply_tiled_zero_boundary(field_tiles, static_parameters, axis, num_guard_ce
     )
     field_tiles = apply_bc(field_tiles)
     return update_tiled_ghost_cells(field_tiles, static_parameters, num_guard_cells)
+
+
+def apply_tiled_constant_boundary(field_tiles, static_parameters, axis, num_guard_cells=2):
+    """
+    Fill exterior ghost cells on a conducting wall from the adjacent interior plane.
+
+    This is the scalar potential condition for a conducting boundary: the
+    potential is constant through the boundary.  Internal tile halos are still
+    refreshed through the distributed ppermute path before the exterior ghosts
+    are overwritten.
+    """
+
+    axis = int(axis)
+    field_tiles = update_tiled_ghost_cells(field_tiles, static_parameters, num_guard_cells)
+
+    boundary_conditions = _boundary_tuple(static_parameters.boundary_conditions)
+    if boundary_conditions[axis] != BC_CONDUCTING:
+        return field_tiles
+
+    tile_shape = tuple(int(width) for width in static_parameters.tile_shape)
+    mesh = static_parameters.field_mesh
+    apply_bc = make_distributed_constant_boundary(
+        mesh,
+        tile_shape,
+        axis,
+        num_guard_cells,
+    )
+    return apply_bc(field_tiles)
 
 
 def fold_tiled_ghost_cells(field_tiles, static_parameters, num_guard_cells=2, bc_type=BC_TYPE_FIELD):

@@ -136,6 +136,30 @@ class TestGhostCells(unittest.TestCase):
         self.assertTrue(jnp.allclose(result, refreshed))
         # confirm the field has not been modified after an already consistent periodic halo refresh
 
+    def test_apply_tiled_constant_boundary_copies_adjacent_interior_to_global_ghosts(self):
+        parameter_set = SimpleNamespace(
+            tile_shape=self.tile_shape,
+            guard_cells=self.g,
+            field_mesh=ghost_cells.make_field_mesh((1, 1, 1)),
+            boundary_conditions=(BC_CONDUCTING, BC_PERIODIC, BC_PERIODIC),
+        )
+        field = jnp.arange(4 * 4 * 4, dtype=float).reshape((1, 1, 1, 4, 4, 4))
+
+        result = ghost_cells.apply_tiled_constant_boundary(field, parameter_set, axis=0, num_guard_cells=self.g)
+
+        self.assertTrue(jnp.allclose(result[0, 0, 0, 0, :, :], result[0, 0, 0, 1, :, :]))
+        self.assertTrue(jnp.allclose(result[0, 0, 0, -1, :, :], result[0, 0, 0, -2, :, :]))
+        self.assertTrue(jnp.allclose(result[0, 0, 0, 1:-1, 1:-1, 1:-1], field[0, 0, 0, 1:-1, 1:-1, 1:-1]))
+
+    def test_apply_tiled_constant_boundary_periodic_axis_keeps_refreshed_field(self):
+        parameter_set = self._parameters_with_field_mesh((1, 1, 1))
+        field = jnp.arange(4 * 4 * 4, dtype=float).reshape((1, 1, 1, 4, 4, 4))
+        refreshed = ghost_cells.update_tiled_ghost_cells(field, parameter_set, self.g)
+
+        result = ghost_cells.apply_tiled_constant_boundary(field, parameter_set, axis=0, num_guard_cells=self.g)
+
+        self.assertTrue(jnp.allclose(result, refreshed))
+
 
 if __name__ == '__main__':
     unittest.main()

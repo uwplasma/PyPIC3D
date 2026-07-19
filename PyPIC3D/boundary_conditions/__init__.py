@@ -16,9 +16,11 @@ from PyPIC3D.boundary_conditions.ghost_cells import (
     make_distributed_ghost_folder,
     make_distributed_vector_ghost_folder,
     make_distributed_zero_boundary,
+    make_distributed_constant_boundary,
     update_tiled_ghost_cells,
     update_tiled_vector_ghost_cells,
     apply_tiled_zero_boundary,
+    apply_tiled_constant_boundary,
     fold_tiled_ghost_cells,
     fold_tiled_vector_ghost_cells,
 )

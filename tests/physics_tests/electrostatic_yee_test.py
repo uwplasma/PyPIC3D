@@ -9,15 +9,16 @@ import toml
 
 from PyPIC3D.evolve import time_loop_electrostatic
 from PyPIC3D.initialization import initialize_simulation
-from PyPIC3D.particles.particle_class import TiledParticles
+from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
 from PyPIC3D.solvers.electrostatic_yee import (
     solve_poisson_with_conjugate_gradient,
     calculate_electrostatic_fields,
+    calculate_tiled_electrostatic_fields,
     _centered_finite_difference_gradient,
     _refresh_single_tile_scalar,
 )
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
-from tests.kernel_fixtures import kernel_parameters, particle_species
+from tests.kernel_fixtures import empty_tiled_scalar, kernel_parameters, particle_species
 
 jax.config.update("jax_enable_x64", True)
 
@@ -146,7 +147,7 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
         self.assertTrue(jnp.allclose(E[1][self.active, self.active, self.active], expected_Ey, atol=1e-6, rtol=1e-6))
         self.assertTrue(jnp.allclose(E[2][self.active, self.active, self.active], expected_Ez, atol=1e-6, rtol=1e-6))
 
-    def test_phi_refresh_uses_shared_zero_boundary_for_conducting_axis(self):
+    def test_phi_refresh_uses_shared_constant_boundary_for_conducting_axis(self):
         static_parameters, dynamic_parameters = kernel_parameters(
             Nx=8,
             Ny=4,
@@ -162,13 +163,66 @@ class TestElectrostaticYeeMethods(unittest.TestCase):
             solver="electrostatic",
         )
         g = int(static_parameters.guard_cells)
-        phi = jnp.ones((8 + 2 * g, 4 + 2 * g, 4 + 2 * g))
+        phi = jnp.zeros((8 + 2 * g, 4 + 2 * g, 4 + 2 * g))
+        interior = jnp.arange(8 * 4 * 4, dtype=float).reshape((8, 4, 4))
+        phi = phi.at[g:-g, g:-g, g:-g].set(interior)
 
         refreshed_phi = _refresh_single_tile_scalar(phi, static_parameters, g, apply_conducting=True)
 
-        self.assertTrue(jnp.all(refreshed_phi[g, :, :] == 0.0))
-        self.assertTrue(jnp.all(refreshed_phi[-g - 1, :, :] == 0.0))
-        self.assertTrue(jnp.all(refreshed_phi[g + 1:-g - 1, g:-g, g:-g] == 1.0))
+        self.assertTrue(jnp.allclose(refreshed_phi[:g, :, :], refreshed_phi[g:g + 1, :, :]))
+        self.assertTrue(jnp.allclose(refreshed_phi[-g:, :, :], refreshed_phi[-g - 1:-g, :, :]))
+        self.assertTrue(jnp.allclose(refreshed_phi[g:-g, g:-g, g:-g], interior))
+
+    def test_tiled_electrostatic_single_active_particle_uses_constant_phi_boundary(self):
+        static_parameters, dynamic_parameters = kernel_parameters(
+            Nx=8,
+            Ny=4,
+            Nz=4,
+            x_wind=1.0,
+            y_wind=1.0,
+            z_wind=1.0,
+            tile_shape=(8, 4, 4),
+            guard_cells=2,
+            shape_factor=1,
+            boundary_conditions=(BC_CONDUCTING, BC_PERIODIC, BC_PERIODIC),
+            electrostatic=True,
+            solver="electrostatic",
+        )
+        g = int(static_parameters.guard_cells)
+        active = slice(g, -g)
+        particles = TiledParticles(
+            x=jnp.asarray([[[[[[0.0, 0.0, 0.0]]]]]], dtype=float),
+            u=jnp.zeros((1, 1, 1, 1, 1, 3), dtype=float),
+            active=jnp.asarray([[[[[True]]]]]),
+        )
+        species_config = SpeciesConfig(
+            charge=jnp.asarray([0.0], dtype=float),
+            mass=jnp.asarray([1.0], dtype=float),
+            weight=jnp.asarray([1.0], dtype=float),
+            update_x=jnp.asarray([[True, True, True]]),
+            update_u=jnp.asarray([[True, True, True]]),
+        )
+        rho_tiles = empty_tiled_scalar(static_parameters, dynamic_parameters)
+        phi_tiles = empty_tiled_scalar(static_parameters, dynamic_parameters)
+        phi_tiles = phi_tiles.at[0, 0, 0, active, active, active].set(3.0)
+
+        E_tiles, phi_tiles, rho_tiles = calculate_tiled_electrostatic_fields(
+            static_parameters,
+            dynamic_parameters,
+            particles,
+            species_config,
+            rho_tiles,
+            phi_tiles,
+        )
+        phi = phi_tiles[0, 0, 0]
+
+        self.assertEqual(int(jnp.sum(particles.active)), 1)
+        self.assertTrue(jnp.allclose(rho_tiles, 0.0, rtol=1.0e-12, atol=1.0e-12))
+        self.assertTrue(jnp.allclose(phi[:g, :, :], phi[g:g + 1, :, :], rtol=1.0e-12, atol=1.0e-12))
+        self.assertTrue(jnp.allclose(phi[-g:, :, :], phi[-g - 1:-g, :, :], rtol=1.0e-12, atol=1.0e-12))
+        self.assertTrue(jnp.allclose(phi[active, active, active], 3.0, rtol=1.0e-12, atol=1.0e-12))
+        for component in E_tiles:
+            self.assertTrue(jnp.allclose(component, 0.0, rtol=1.0e-12, atol=1.0e-12))
 
     def test_initialize_simulation_accepts_single_tile_electrostatic(self):
         with tempfile.TemporaryDirectory() as tmpdir:

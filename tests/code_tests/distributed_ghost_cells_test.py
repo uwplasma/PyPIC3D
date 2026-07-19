@@ -343,6 +343,26 @@ class TestDistributedGhostCells(unittest.TestCase):
         self.assert_allclose(actual[0, 0, 0, -2, :, :], 0.0)
         self.assert_allclose(actual[0, 0, 0, 2, :, :], 1.0)
 
+    def test_public_axis_constant_boundary_on_one_device_runs_inside_mapped_path(self):
+        mesh_shape = (1, 1, 1)
+        tile_shape = (3, 2, 2)
+        bcs = (BC_CONDUCTING, BC_PERIODIC, BC_PERIODIC)
+        field = _coordinate_tiles(mesh_shape, tile_shape)
+        field = field.at[0, 0, 0, 0, :, :].set(-100.0)
+        field = field.at[0, 0, 0, -1, :, :].set(100.0)
+        static_parameters = _static_parameters(bcs, tile_shape, mesh_shape)
+        sharding = NamedSharding(static_parameters.field_mesh, ghost_cells.SCALAR_TILE_SPEC)
+
+        sharded_field = jax.device_put(field, sharding)
+        actual = jax.jit(lambda tiles: ghost_cells.apply_tiled_constant_boundary(tiles, static_parameters, 0, 1))(
+            sharded_field
+        )
+
+        self.assertEqual(actual.sharding, sharding)
+        self.assert_allclose(actual[0, 0, 0, 0, :, :], actual[0, 0, 0, 1, :, :])
+        self.assert_allclose(actual[0, 0, 0, -1, :, :], actual[0, 0, 0, -2, :, :])
+        self.assert_allclose(actual[0, 0, 0, 2, 1:-1, 1:-1], field[0, 0, 0, 2, 1:-1, 1:-1])
+
     def test_scalar_halo_refresh_matches_reference_on_2x2x2_periodic_mesh(self):
         mesh_shape = (2, 2, 2)
         tile_shape = (2, 2, 2)
@@ -508,6 +528,20 @@ class TestDistributedGhostCells(unittest.TestCase):
         self.assert_allclose(Ez[:, -1, :, :, -2, :], 0.0)
         self.assert_allclose(Ey[0, :, :, 2, 1:-1, 1:-1], 2.0)
         self.assert_allclose(Ex[:, 0, :, 1:-1, 2, 1:-1], 1.0)
+
+    def test_axis_constant_boundary_preserves_internal_exchange_and_copies_global_ghosts(self):
+        mesh_shape = (2, 1, 1)
+        tile_shape = (2, 2, 2)
+        bcs = (BC_CONDUCTING, BC_PERIODIC, BC_PERIODIC)
+        field = _coordinate_tiles(mesh_shape, tile_shape)
+        static_parameters = _static_parameters(bcs, tile_shape, mesh_shape)
+
+        actual = jax.jit(lambda tiles: ghost_cells.apply_tiled_constant_boundary(tiles, static_parameters, 0, 1))(field)
+
+        self.assert_allclose(actual[0, 0, 0, 0, :, :], actual[0, 0, 0, 1, :, :])
+        self.assert_allclose(actual[-1, 0, 0, -1, :, :], actual[-1, 0, 0, -2, :, :])
+        self.assert_allclose(actual[0, 0, 0, -1, 1:-1, 1:-1], field[1, 0, 0, 1, 1:-1, 1:-1])
+        self.assert_allclose(actual[1, 0, 0, 0, 1:-1, 1:-1], field[0, 0, 0, -2, 1:-1, 1:-1])
 
     def test_scalar_and_vector_folding_match_reference_and_clear_ghosts(self):
         mesh_shape = (2, 2, 1)
