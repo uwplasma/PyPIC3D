@@ -184,12 +184,12 @@ def compute_rho(
         return rho
 
     rho = jax.lax.cond(
-        dynamic_parameters.current_filter=="digital",
+        static_parameters.current_filter == "digital",
         filter,
         lambda rho: rho,
         rho,
     )
-    # apply an additional digital filter to the charge density if specified in the dynamic parameters
+    # apply an additional digital filter to the charge density if specified in the static parameters
 
 
     

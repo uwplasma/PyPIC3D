@@ -226,8 +226,9 @@ class TestTiledRho(unittest.TestCase):
         )
         return rho_tiles, rho
 
-    def _compare_tiled_to_standard(self, shape_factor, alpha):
+    def _compare_tiled_to_standard(self, shape_factor, alpha, current_filter="none"):
         parameter_set = self._build_parameter_values(shape_factor)
+        parameter_set["current_filter"] = current_filter
         dynamic_values = {"alpha": alpha}
         particles = self._particles(parameter_set)
         _, rho_from_tiles = self._deposit_and_assemble(particles, parameter_set, self._simulation_parameters(), dynamic_values)
@@ -249,10 +250,11 @@ class TestTiledRho(unittest.TestCase):
         self._compare_tiled_to_standard(shape_factor=2, alpha=1.0)
 
     def test_tiled_rho_matches_compute_rho_after_digital_filter(self):
-        self._compare_tiled_to_standard(shape_factor=2, alpha=0.55)
+        self._compare_tiled_to_standard(shape_factor=2, alpha=0.55, current_filter="digital")
 
     def test_tiled_rho_digital_filter_depends_on_alpha(self):
         parameter_set = self._build_parameter_values(shape_factor=2)
+        parameter_set["current_filter"] = "digital"
         simulation_parameters = self._simulation_parameters()
         particles = self._particles(parameter_set)
 
