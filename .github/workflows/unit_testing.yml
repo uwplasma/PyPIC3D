@@ -26,5 +26,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install .
     - name: Test with unittest
+      env:
+        JAX_NUM_CPU_DEVICES: "16"
       run: |
         python -m unittest tests/code_tests/*.py tests/physics_tests/*.py

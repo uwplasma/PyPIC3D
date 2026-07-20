@@ -12,7 +12,7 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 
 @jit
-def boris_single_particle(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, q, m, dt, constants):
+def boris_single_particle(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, q, m, dt, dynamic_parameters):
     """
     Updates the velocity of a single particle using the Boris algorithm.
     Args:
@@ -58,7 +58,7 @@ def boris_single_particle(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield
 
 
 @jit
-def relativistic_boris_single_particle(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, q, m, dt, constants):
+def relativistic_boris_single_particle(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, q, m, dt, dynamic_parameters):
     """
     Perform a single step of the relativistic Boris algorithm for a charged particle.
 
@@ -79,7 +79,7 @@ def relativistic_boris_single_particle(vx, vy, vz, efield_atx, efield_aty, efiel
         q (float): Charge of the particle (Coulombs).
         m (float): Mass of the particle (kg).
         dt (float): Time step for the simulation (seconds).
-        constants (dict): Dictionary containing physical constants. Must include:
+        dynamic_parameters (dict): Dictionary containing physical parameters. Must include:
             - 'C': Speed of light in vacuum (m/s).
 
     Returns:
@@ -87,7 +87,7 @@ def relativistic_boris_single_particle(vx, vy, vz, efield_atx, efield_aty, efiel
     """
 
 
-    C = constants['C']
+    C = dynamic_parameters.C
     # speed of light
 
     v = jnp.array([vx, vy, vz])

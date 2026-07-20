@@ -2,6 +2,7 @@ import unittest
 import os
 import tempfile
 import importlib.util
+from types import SimpleNamespace
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -10,14 +11,21 @@ import PyPIC3D
 from PyPIC3D.boundary_conditions import ghost_cells
 from PyPIC3D.initialization import initialize_fields
 from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
-from tests.initial_particles import build_tiled_particles, tiled_species
+from tests.kernel_fixtures import (
+    build_tiled_particles,
+    particle_parameters_from_tile_values,
+    particle_parameters_from_values,
+    particle_species,
+)
 from PyPIC3D.diagnostics import plotting
+from PyPIC3D.parameters import build_dynamic_parameters, build_static_parameters
 from PyPIC3D.utilities.grids import build_collocated_grid, build_yee_grid
 from PyPIC3D.utils import (
     print_stats, check_stability,
     particle_sanity_check, load_external_fields_from_toml, add_external_fields,
     compute_energy, dump_parameters_to_toml,
 )
+from tests.kernel_fixtures import kernel_parameters_from_values
 
 jax.config.update("jax_enable_x64", True)
 
@@ -28,7 +36,7 @@ def _tile_axis_count(n_cells, cells_per_tile):
     return int(n_cells) // int(cells_per_tile)
 
 
-def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
+def tile_scalar_field(field, parameter_set, tile_shape, num_guard_cells=2):
     tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
     g = int(num_guard_cells)
     Nx = int(field.shape[0]) - 2
@@ -58,7 +66,11 @@ def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
                     iz = 1 + tz * tile_nz
                     interior = field[ix:ix + tile_nx, iy:iy + tile_ny, iz:iz + tile_nz]
                     field_tiles = field_tiles.at[tx, ty, tz, g:-g, g:-g, g:-g].set(interior)
-        return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
+        parameter_set = dict(parameter_set)
+        parameter_set["tile_shape"] = tuple(int(width) for width in tile_shape)
+        parameter_set["field_mesh"] = ghost_cells.make_field_mesh((ntx, nty, ntz))
+        static_parameters, _ = kernel_parameters_from_values(parameter_set)
+        return ghost_cells.update_tiled_ghost_cells(field_tiles, static_parameters, g)
 
     def tile_at(tx, ty, tz):
         start = (tx * tile_nx, ty * tile_ny, tz * tile_nz)
@@ -80,36 +92,36 @@ def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
     )
 
 
-def _field_world(Nx, Ny, Nz):
-    return {
-        "Nx": Nx,
-        "Ny": Ny,
-        "Nz": Nz,
-        "tile_shape": (Nx, Ny, Nz),
+def _field_parameter_values(Nx, Ny, Nz):
+        return {
+            "Nx": Nx,
+            "Ny": Ny,
+            "Nz": Nz,
+            "tile_shape": (Nx, Ny, Nz),
         "guard_cells": 2,
         "boundary_conditions": {"x": 0, "y": 0, "z": 0},
     }
 
 
-def _active_interior(world):
-    g = int(world["guard_cells"])
+def _active_interior(parameter_set):
+    g = int(parameter_set["guard_cells"])
     return (
         0,
         0,
         0,
-        slice(g, g + int(world["Nx"])),
-        slice(g, g + int(world["Ny"])),
-        slice(g, g + int(world["Nz"])),
+        slice(g, g + int(parameter_set["Nx"])),
+        slice(g, g + int(parameter_set["Ny"])),
+        slice(g, g + int(parameter_set["Nz"])),
     )
 
 
-def _tile_vector_field(field, world, tile_shape, num_guard_cells=2):
-    return tuple(tile_scalar_field(component, world, tile_shape, num_guard_cells) for component in field)
+def _tile_vector_field(field, parameter_set, tile_shape, num_guard_cells=2):
+    return tuple(tile_scalar_field(component, parameter_set, tile_shape, num_guard_cells) for component in field)
 
 
 class TestUtilsFunctions(unittest.TestCase):
     def setUp(self):
-        self.world = {
+        self.parameter_set = {
             'Nx': 4,
             'Ny': 4,
             'Nz': 4,
@@ -130,16 +142,32 @@ class TestUtilsFunctions(unittest.TestCase):
         }
 
     def test_build_yee_grid(self):
-        grid, staggered = build_yee_grid(self.world)
-        self.assertEqual(len(grid), 3)
-        self.assertEqual(len(staggered), 3)
-        self.assertEqual(len(grid[0]), self.world['Nx'] + 2)
-        self.assertEqual(len(grid[1]), self.world['Ny'] + 2)
-        self.assertEqual(len(grid[2]), self.world['Nz'] + 2)
-        self.assertEqual(len(staggered[0]), self.world['Nx'] + 2)
-        self.assertEqual(len(staggered[1]), self.world['Ny'] + 2)
-        self.assertEqual(len(staggered[2]), self.world['Nz'] + 2)
-        #  Check that the grid and staggered arrays have the expected lengths
+        center_grid, vertex_grid = build_yee_grid(SimpleNamespace(**self.parameter_set))
+        self.assertEqual(len(center_grid), 3)
+        self.assertEqual(len(vertex_grid), 3)
+        self.assertEqual(len(center_grid[0]), self.parameter_set['Nx'] + 2)
+        self.assertEqual(len(center_grid[1]), self.parameter_set['Ny'] + 2)
+        self.assertEqual(len(center_grid[2]), self.parameter_set['Nz'] + 2)
+        self.assertEqual(len(vertex_grid[0]), self.parameter_set['Nx'] + 2)
+        self.assertEqual(len(vertex_grid[1]), self.parameter_set['Ny'] + 2)
+        self.assertEqual(len(vertex_grid[2]), self.parameter_set['Nz'] + 2)
+        #  Check that the center and vertex arrays have the expected lengths
+
+        self.assertTrue(
+            jnp.allclose(
+                center_grid[0][1:-1],
+                -self.parameter_set["x_wind"] / 2
+                + self.parameter_set["dx"] * jnp.arange(self.parameter_set["Nx"]),
+            )
+        )
+        self.assertTrue(
+            jnp.allclose(
+                vertex_grid[0][1:-1],
+                center_grid[0][1:-1] + 0.5 * self.parameter_set["dx"],
+            )
+        )
+        # Legacy PyPIC3D names: center is the collocated/base grid, and
+        # vertex is the staggered half-cell grid.
 
     def test_check_stability(self):
         # Should not raise
@@ -172,8 +200,9 @@ class TestUtilsFunctions(unittest.TestCase):
         self.assertTrue(jnp.allclose(total_B[2], 66.0))
 
     def test_load_external_fields_defaults_to_evolved_fields(self):
-        world = _field_world(2, 2, 2)
-        E, B, J, phi, rho = initialize_fields(world)
+        parameter_set = _field_parameter_values(2, 2, 2)
+        static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set)
+        E, B, J, phi, rho = initialize_fields(static_parameters, dynamic_parameters)
         fields = [component for field in [E, B, J] for component in field]
         external_fields = (tuple(jnp.zeros_like(comp) for comp in E), tuple(jnp.zeros_like(comp) for comp in B))
 
@@ -182,15 +211,16 @@ class TestUtilsFunctions(unittest.TestCase):
             np.save(path, np.ones((2, 2, 2)))
             config = {"field1": {"name": "Ex", "type": 0, "path": path}}
 
-            fields, external_fields = load_external_fields_from_toml(fields, external_fields, config, world)
+            fields, external_fields = load_external_fields_from_toml(fields, external_fields, config, static_parameters, dynamic_parameters)
 
-        interior = _active_interior(world)
+        interior = _active_interior(parameter_set)
         self.assertTrue(jnp.allclose(fields[0][interior], 1.0))
         self.assertTrue(jnp.allclose(external_fields[0][0], 0.0))
 
     def test_load_external_fields_evolve_true_uses_evolved_fields(self):
-        world = _field_world(2, 2, 2)
-        E, B, J, phi, rho = initialize_fields(world)
+        parameter_set = _field_parameter_values(2, 2, 2)
+        static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set)
+        E, B, J, phi, rho = initialize_fields(static_parameters, dynamic_parameters)
         fields = [component for field in [E, B, J] for component in field]
         external_fields = (tuple(jnp.zeros_like(comp) for comp in E), tuple(jnp.zeros_like(comp) for comp in B))
 
@@ -199,15 +229,16 @@ class TestUtilsFunctions(unittest.TestCase):
             np.save(path, np.ones((2, 2, 2)) * 3)
             config = {"field1": {"name": "By", "type": 4, "path": path, "evolve": True}}
 
-            fields, external_fields = load_external_fields_from_toml(fields, external_fields, config, world)
+            fields, external_fields = load_external_fields_from_toml(fields, external_fields, config, static_parameters, dynamic_parameters)
 
-        interior = _active_interior(world)
+        interior = _active_interior(parameter_set)
         self.assertTrue(jnp.allclose(fields[4][interior], 3.0))
         self.assertTrue(jnp.allclose(external_fields[1][1], 0.0))
 
     def test_load_external_fields_evolve_false_uses_external_fields(self):
-        world = _field_world(2, 2, 2)
-        E, B, J, phi, rho = initialize_fields(world)
+        parameter_set = _field_parameter_values(2, 2, 2)
+        static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set)
+        E, B, J, phi, rho = initialize_fields(static_parameters, dynamic_parameters)
         fields = [component for field in [E, B, J] for component in field]
         external_fields = (tuple(jnp.zeros_like(comp) for comp in E), tuple(jnp.zeros_like(comp) for comp in B))
 
@@ -216,15 +247,16 @@ class TestUtilsFunctions(unittest.TestCase):
             np.save(path, np.ones((2, 2, 2)) * 5)
             config = {"field1": {"name": "external Bz", "type": 5, "path": path, "evolve": False}}
 
-            fields, external_fields = load_external_fields_from_toml(fields, external_fields, config, world)
+            fields, external_fields = load_external_fields_from_toml(fields, external_fields, config, static_parameters, dynamic_parameters)
 
-        interior = _active_interior(world)
+        interior = _active_interior(parameter_set)
         self.assertTrue(jnp.allclose(fields[5][interior], 0.0))
         self.assertTrue(jnp.allclose(external_fields[1][2][interior], 5.0))
 
     def test_load_external_fields_rejects_external_current(self):
-        world = _field_world(2, 2, 2)
-        E, B, J, phi, rho = initialize_fields(world)
+        parameter_set = _field_parameter_values(2, 2, 2)
+        static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set)
+        E, B, J, phi, rho = initialize_fields(static_parameters, dynamic_parameters)
         fields = [component for field in [E, B, J] for component in field]
         external_fields = (tuple(jnp.zeros_like(comp) for comp in E), tuple(jnp.zeros_like(comp) for comp in B))
 
@@ -234,11 +266,12 @@ class TestUtilsFunctions(unittest.TestCase):
             config = {"field1": {"name": "external Jx", "type": 6, "path": path, "evolve": False}}
 
             with self.assertRaisesRegex(ValueError, "External-only fields must be electric or magnetic"):
-                load_external_fields_from_toml(fields, external_fields, config, world)
+                load_external_fields_from_toml(fields, external_fields, config, static_parameters, dynamic_parameters)
 
     def test_load_external_fields_preserves_shape_validation(self):
-        world = _field_world(2, 2, 2)
-        E, B, J, phi, rho = initialize_fields(world)
+        parameter_set = _field_parameter_values(2, 2, 2)
+        static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set)
+        E, B, J, phi, rho = initialize_fields(static_parameters, dynamic_parameters)
         fields = [component for field in [E, B, J] for component in field]
         external_fields = (tuple(jnp.zeros_like(comp) for comp in E), tuple(jnp.zeros_like(comp) for comp in B))
 
@@ -248,20 +281,22 @@ class TestUtilsFunctions(unittest.TestCase):
             config = {"field1": {"name": "wrong Ex", "type": 0, "path": path, "evolve": False}}
 
             with self.assertRaisesRegex(ValueError, "Shape mismatch"):
-                load_external_fields_from_toml(fields, external_fields, config, world)
+                load_external_fields_from_toml(fields, external_fields, config, static_parameters, dynamic_parameters)
 
     def test_energy_can_include_external_fields(self):
-        world = _field_world(1, 1, 1)
-        E, B, J, phi, rho = initialize_fields(world)
+        parameter_set = _field_parameter_values(1, 1, 1)
+        static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set)
+        E, B, J, phi, rho = initialize_fields(static_parameters, dynamic_parameters)
         external_E = tuple(jnp.zeros_like(comp) for comp in E)
         external_B = tuple(jnp.zeros_like(comp) for comp in B)
-        interior = _active_interior(world)
+        interior = _active_interior(parameter_set)
         external_E = (external_E[0].at[interior].set(2.0), external_E[1], external_E[2])
         external_B = (external_B[0], external_B[1].at[interior].set(3.0), external_B[2])
         total_E, total_B = add_external_fields(E, B, (external_E, external_B))
 
-        world = world | {"dx": 1.0, "dy": 1.0, "dz": 1.0}
-        constants = {"eps": 2.0, "mu": 4.0, "C": 10.0}
+        parameter_set = parameter_set | {"dx": 1.0, "dy": 1.0, "dz": 1.0}
+        dynamic_values = {"eps": 2.0, "mu": 4.0, "C": 10.0}
+        static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set, dynamic_values)
         particles = TiledParticles(
             x=jnp.zeros((1, 1, 1, 1, 0, 3)),
             u=jnp.zeros((1, 1, 1, 1, 0, 3)),
@@ -274,14 +309,14 @@ class TestUtilsFunctions(unittest.TestCase):
             update_x=jnp.ones((1, 3), dtype=bool),
             update_u=jnp.ones((1, 3), dtype=bool),
         )
-        e_energy, b_energy, kinetic_energy = compute_energy(particles, total_E, total_B, world, constants, species_config=species_config)
+        e_energy, b_energy, kinetic_energy = compute_energy(particles, total_E, total_B, static_parameters, dynamic_parameters, species_config=species_config)
 
         self.assertTrue(jnp.allclose(e_energy, 4.0))
         self.assertTrue(jnp.allclose(b_energy, 1.125))
         self.assertEqual(kinetic_energy, 0.0)
 
     def test_compute_energy_ignores_inactive_particles(self):
-        world = _field_world(1, 1, 1) | {
+        parameter_set = _field_parameter_values(1, 1, 1) | {
             "dx": 1.0,
             "dy": 1.0,
             "dz": 1.0,
@@ -289,8 +324,9 @@ class TestUtilsFunctions(unittest.TestCase):
             "y_wind": 1.0,
             "z_wind": 1.0,
         }
-        E, B, J, phi, rho = initialize_fields(world)
-        constants = {"eps": 1.0, "mu": 1.0, "C": 10.0}
+        dynamic_values = {"eps": 1.0, "mu": 1.0, "C": 10.0}
+        static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set, dynamic_values)
+        E, B, J, phi, rho = initialize_fields(static_parameters, dynamic_parameters)
         tiled_particles = TiledParticles(
             x=jnp.asarray([[[[[[0.6, 0.0, 0.0]]]]]], dtype=float),
             u=jnp.asarray([[[[[[1.0, 0.0, 0.0]]]]]], dtype=float),
@@ -305,7 +341,7 @@ class TestUtilsFunctions(unittest.TestCase):
         )
         # Keep a nonzero inactive velocity so this checks the kinetic-energy mask.
 
-        _, _, kinetic_energy = compute_energy(tiled_particles, E, B, world, constants, species_config=species_config)
+        _, _, kinetic_energy = compute_energy(tiled_particles, E, B, static_parameters, dynamic_parameters, species_config=species_config)
 
         self.assertTrue(jnp.allclose(kinetic_energy, 0.0))
 
@@ -320,27 +356,66 @@ class TestUtilsFunctions(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             os.makedirs(os.path.join(tmpdir, "data"))
-            simulation_parameters = {
+            static_parameters = build_static_parameters({
+                "name": "dump test",
                 "output_dir": tmpdir,
-                "particle_species_names": ("electrons", "ions"),
+                "shape_factor": 1,
+                "guard_cells": 2,
                 "tile_shape": (2, 1, 1),
+                "boundary_conditions": {"x": 0, "y": 0, "z": 0},
+                "particle_boundary_conditions": {"x": 0, "y": 0, "z": 0},
+                "field_mesh": object(),
+            })
+            dynamic_parameters = build_dynamic_parameters(
+                {
+                    "dt": 0.1,
+                    "dx": 1.0,
+                    "dy": 1.0,
+                    "dz": 1.0,
+                    "Nx": 2,
+                    "Ny": 1,
+                    "Nz": 1,
+                    "x_wind": 2.0,
+                    "y_wind": 1.0,
+                    "z_wind": 1.0,
+                    "grids": {
+                        "vertex": (jnp.zeros(4), jnp.zeros(3), jnp.zeros(3)),
+                        "center": (jnp.zeros(4), jnp.zeros(3), jnp.zeros(3)),
+                        "tiled_vertex_grid": (jnp.zeros((1, 1, 1, 6)),) * 3,
+                        "tiled_center_grid": (jnp.zeros((1, 1, 1, 6)),) * 3,
+                    },
+                },
+                {},
+            )
+            plotting_parameters = {
+                "particle_species_names": ("electrons", "ions"),
+                "particle_species_metadata": (
+                    {"name": "electrons", "charge": -1.0},
+                    {"name": "ions", "charge": 1.0},
+                ),
             }
 
             dump_parameters_to_toml(
                 {"total_time": 1.0},
-                simulation_parameters,
+                static_parameters,
+                dynamic_parameters,
                 {},
-                {},
-                {},
+                plotting_parameters,
                 particles,
             )
 
             config = toml.load(os.path.join(tmpdir, "data/output.toml"))
 
+        self.assertNotIn("particle_species_names", config["static_parameters"])
+        self.assertNotIn("particle_species_metadata", config["static_parameters"])
+        self.assertNotIn("particle_species_names", config.get("plotting", {}))
+        self.assertNotIn("particle_species_metadata", config.get("plotting", {}))
         self.assertEqual(config["particles"][0]["name"], "electrons")
+        self.assertEqual(config["particles"][0]["charge"], -1.0)
         self.assertEqual(config["particles"][0]["storage"], "tiled")
         self.assertEqual(config["particles"][0]["active_particles"], 2)
         self.assertEqual(config["particles"][1]["name"], "ions")
+        self.assertEqual(config["particles"][1]["charge"], 1.0)
         self.assertEqual(config["particles"][1]["storage"], "tiled")
         self.assertEqual(config["particles"][1]["active_particles"], 1)
         self.assertEqual(config["particles"][0]["tile_shape"], [2, 1, 1])
@@ -350,7 +425,7 @@ class TestUtilsFunctions(unittest.TestCase):
         self.assertIsNone(importlib.util.find_spec("PyPIC3D.diagnostics.vtk"))
 
     def test_plot_positions_flattens_tiled_particles_and_preserves_species_names(self):
-        species = tiled_species(
+        species = particle_species(
             name="beam electrons",
             charge=-1.0,
             mass=1.0,
@@ -362,7 +437,7 @@ class TestUtilsFunctions(unittest.TestCase):
             u2=jnp.array([0.0, 0.0]),
             u3=jnp.array([0.0, 0.0]),
         )
-        world = {
+        parameter_set = {
             "Nx": 4,
             "Ny": 2,
             "Nz": 1,
@@ -381,7 +456,8 @@ class TestUtilsFunctions(unittest.TestCase):
             "particle_tile_ny": 1,
             "particle_tile_nz": 1,
         }
-        tiled_particles, species_config = build_tiled_particles([species], world, simulation_parameters=simulation_parameters)
+        static_parameters, dynamic_parameters = particle_parameters_from_tile_values(parameter_set, simulation_parameters)
+        tiled_particles, species_config = build_tiled_particles([species], static_parameters, dynamic_parameters)
 
         class FakeFigure:
             def __init__(self):
@@ -402,19 +478,17 @@ class TestUtilsFunctions(unittest.TestCase):
                 plotting.plot_positions(
                     tiled_particles,
                     0,
-                    world["x_wind"],
-                    world["y_wind"],
-                    world["z_wind"],
+                    static_parameters,
+                    dynamic_parameters,
                     tmpdir,
                     species_config=species_config,
                     species_names=("beam electrons",),
-                    world=world,
                 )
 
         self.assertEqual(figure.trace_names, ["beam electrons"])
 
     def test_particles_phase_space_flattens_tiled_particles(self):
-        species = tiled_species(
+        species = particle_species(
             name="electrons",
             charge=-1.0,
             mass=1.0,
@@ -426,7 +500,7 @@ class TestUtilsFunctions(unittest.TestCase):
             u2=jnp.array([0.0]),
             u3=jnp.array([0.0]),
         )
-        world = {
+        parameter_set = {
             "Nx": 4,
             "Ny": 2,
             "Nz": 1,
@@ -445,7 +519,8 @@ class TestUtilsFunctions(unittest.TestCase):
             "particle_tile_ny": 1,
             "particle_tile_nz": 1,
         }
-        tiled_particles, species_config = build_tiled_particles([species], world, simulation_parameters=simulation_parameters)
+        static_parameters, dynamic_parameters = particle_parameters_from_tile_values(parameter_set, simulation_parameters)
+        tiled_particles, species_config = build_tiled_particles([species], static_parameters, dynamic_parameters)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             os.makedirs(os.path.join(tmpdir, "data/phase_space/x"))
@@ -455,7 +530,8 @@ class TestUtilsFunctions(unittest.TestCase):
                 with unittest.mock.patch.object(plotting.plt, "savefig"):
                     plotting.particles_phase_space(
                         tiled_particles,
-                        world,
+                        static_parameters,
+                        dynamic_parameters,
                         0,
                         "electrons",
                         tmpdir,

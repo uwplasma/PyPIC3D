@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 import jax
 import jax.numpy as jnp
@@ -15,9 +16,13 @@ from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
 from PyPIC3D.particles.particle_tile_communication import refresh_tiled_particle_tiles
 from PyPIC3D.diagnostics.output_adapters import assemble_tiled_vector_field
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
+from tests.kernel_fixtures import kernel_parameters_from_values
 
 
 jax.config.update("jax_enable_x64", True)
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _tile_axis_count(n_cells, cells_per_tile):
@@ -27,7 +32,7 @@ def _tile_axis_count(n_cells, cells_per_tile):
 # compute the number of tiles along each axis, ensuring that the number of cells is divisible by the number of cells per tile.
 
 
-def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
+def tile_scalar_field(field, parameter_set, tile_shape, num_guard_cells=2):
     tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
     g = int(num_guard_cells)
     Nx = int(field.shape[0]) - 2
@@ -57,12 +62,21 @@ def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
     field_tiles = field_tiles.at[:, :, :, g:-g, g:-g, g:-g].set(interior_tiles)
     # populate the field tiles with the interior tiles, leaving the guard cells as zeros
 
-    return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
+    parameter_set = dict(parameter_set)
+    parameter_set["tile_shape"] = tuple(int(width) for width in tile_shape)
+    parameter_set["field_mesh"] = ghost_cells.make_field_mesh((ntx, nty, ntz))
+    static_parameters, _ = kernel_parameters_from_values(parameter_set)
+    return ghost_cells.update_tiled_ghost_cells(field_tiles, static_parameters, g)
     # update the guard cells of the tiled field using the ghost_cells function
 
 
-def tile_vector_field(field, world, tile_shape, num_guard_cells=2):
-    return tuple(tile_scalar_field(component, world, tile_shape, num_guard_cells) for component in field)
+def tile_vector_field(field, parameter_set, tile_shape, num_guard_cells=2):
+    return tuple(tile_scalar_field(component, parameter_set, tile_shape, num_guard_cells) for component in field)
+
+
+def _field_static_parameters(parameter_set):
+    static_parameters, _ = kernel_parameters_from_values(parameter_set)
+    return static_parameters
     # call tile_scalar_field for each component of the vector field and return a tuple of tiled components
 
 
@@ -114,11 +128,21 @@ def _fold_ghost_cells(field, bc_x, bc_y, bc_z):
 
 
 class TestDirectDeposition(unittest.TestCase):
-    def _build_world(self, Nx=8, Ny=6, Nz=4, dt=0.05, boundary_conditions=None):
+    def test_J_from_rhov_hard_codes_particle_bc_for_shared_ghost_cells(self):
+        source = (REPO_ROOT / "PyPIC3D" / "deposition" / "J_from_rhov.py").read_text()
+
+        self.assertNotIn('static_argnames=("static_parameters", "bc_type")', source)
+        self.assertNotIn("bc_type=bc_type", source)
+        self.assertNotIn("bc_type=0", source)
+        self.assertIn("fold_tiled_vector_ghost_cells((Jx, Jy, Jz), static_parameters, g, bc_type=1)", source)
+        self.assertIn("update_tiled_vector_ghost_cells(J, static_parameters, g, bc_type=1)", source)
+        self.assertIn("update_tiled_vector_ghost_cells(J, static_parameters, num_guard_cells=g, bc_type=1)", source)
+
+    def _build_parameter_values(self, Nx=8, Ny=6, Nz=4, dt=0.05, boundary_conditions=None):
         x_wind, y_wind, z_wind = 4.0, 3.0, 2.0
         if boundary_conditions is None:
             boundary_conditions = {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC}
-        world = {
+        parameter_set = {
             "dx": x_wind / Nx,
             "dy": y_wind / Ny,
             "dz": z_wind / Nz,
@@ -133,28 +157,28 @@ class TestDirectDeposition(unittest.TestCase):
             "guard_cells": 1,
             "boundary_conditions": boundary_conditions,
         }
-        vertex_grid, center_grid = build_yee_grid(world)
-        world["grids"] = {"vertex": vertex_grid, "center": center_grid}
-        return world
+        center_grid, vertex_grid = build_yee_grid(SimpleNamespace(**parameter_set))
+        parameter_set["grids"] = {"center": center_grid, "vertex": vertex_grid}
+        return parameter_set
 
-    def _empty_J(self, world):
-        shape = (world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2)
+    def _empty_J(self, parameter_set):
+        shape = (parameter_set["Nx"] + 2, parameter_set["Ny"] + 2, parameter_set["Nz"] + 2)
         return (jnp.zeros(shape), jnp.zeros(shape), jnp.zeros(shape))
 
-    def _empty_J_tiles(self, world):
-        tile_shape = tuple(int(width) for width in world["tile_shape"])
+    def _empty_J_tiles(self, parameter_set):
+        tile_shape = tuple(int(width) for width in parameter_set["tile_shape"])
         tile_nx, tile_ny, tile_nz = tile_shape
-        g = int(world["guard_cells"])
+        g = int(parameter_set["guard_cells"])
         shape = (
-            world["Nx"] // tile_nx,
-            world["Ny"] // tile_ny,
-            world["Nz"] // tile_nz,
+            parameter_set["Nx"] // tile_nx,
+            parameter_set["Ny"] // tile_ny,
+            parameter_set["Nz"] // tile_nz,
             tile_nx + 2 * g,
             tile_ny + 2 * g,
             tile_nz + 2 * g,
         )
         return (jnp.zeros(shape), jnp.zeros(shape), jnp.zeros(shape))
-    # create an empty tiled current density field with the appropriate shape based on the world and tile shape
+    # create an empty tiled current density field with the appropriate shape based on the parameter_set and tile shape
 
     def _tile_shape(self, simulation_parameters):
         return (
@@ -164,25 +188,40 @@ class TestDirectDeposition(unittest.TestCase):
         )
     # get the shape of the particle tiles from the simulation parameters
 
-    def _world_with_tiled_grids(self, world, tile_shape):
-        g = int(world["guard_cells"])
-        world = dict(world)
-        grids = dict(world["grids"])
-        world["tile_shape"] = tile_shape
-        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(world, tile_shape, g)
-        grids["tiled_vertex_grid"] = tiled_vertex_grid
+    def _parameters_with_tiled_grids(self, parameter_set, tile_shape):
+        g = int(parameter_set["guard_cells"])
+        parameter_set = dict(parameter_set)
+        grids = dict(parameter_set["grids"])
+        parameter_set["tile_shape"] = tile_shape
+        parameter_set["field_mesh"] = ghost_cells.make_field_mesh((
+            int(parameter_set["Nx"]) // int(tile_shape[0]),
+            int(parameter_set["Ny"]) // int(tile_shape[1]),
+            int(parameter_set["Nz"]) // int(tile_shape[2]),
+        ))
+        grid_static_parameters = SimpleNamespace(tile_shape=tile_shape, guard_cells=g)
+        grid_dynamic_parameters = SimpleNamespace(
+            dx=parameter_set["dx"],
+            dy=parameter_set["dy"],
+            dz=parameter_set["dz"],
+            grids=SimpleNamespace(vertex=grids["vertex"], center=grids["center"]),
+        )
+        tiled_center_grid, tiled_vertex_grid = build_tiled_yee_grids(
+            grid_static_parameters,
+            grid_dynamic_parameters,
+        )
         grids["tiled_center_grid"] = tiled_center_grid
-        world["grids"] = grids
-        return world
-    # create a new world dictionary that includes the tiled grids based on the given tile shape
+        grids["tiled_vertex_grid"] = tiled_vertex_grid
+        parameter_set["grids"] = grids
+        return parameter_set
+    # create a new parameter_set dictionary that includes the tiled grids based on the given tile shape
 
-    def _one_tile_parameters(self, world):
+    def _one_tile_parameters(self, parameter_set):
         return {
-            "particle_tile_nx": world["Nx"],
-            "particle_tile_ny": world["Ny"],
-            "particle_tile_nz": world["Nz"],
+            "particle_tile_nx": parameter_set["Nx"],
+            "particle_tile_ny": parameter_set["Ny"],
+            "particle_tile_nz": parameter_set["Nz"],
         }
-    # create simulation parameters for a single tile that covers the entire world grid
+    # create simulation parameters for a single tile that covers the entire parameter_set grid
 
     def _species_config(self, charges, masses, weights, update_x=None, update_u=None):
         n_species = len(charges)
@@ -200,11 +239,11 @@ class TestDirectDeposition(unittest.TestCase):
         )
     # create a SpeciesConfig object with the given charges, masses, weights, and optional update flags for position and velocity
 
-    def _empty_tiled_particles(self, world, simulation_parameters, n_species, n_slots):
+    def _empty_tiled_particles(self, parameter_set, simulation_parameters, n_species, n_slots):
         tile_nx, tile_ny, tile_nz = self._tile_shape(simulation_parameters)
-        ntx = _tile_axis_count(world["Nx"], tile_nx)
-        nty = _tile_axis_count(world["Ny"], tile_ny)
-        ntz = _tile_axis_count(world["Nz"], tile_nz)
+        ntx = _tile_axis_count(parameter_set["Nx"], tile_nx)
+        nty = _tile_axis_count(parameter_set["Ny"], tile_ny)
+        ntz = _tile_axis_count(parameter_set["Nz"], tile_nz)
         shape = (ntx, nty, ntz, n_species, n_slots, 3)
 
         return TiledParticles(
@@ -212,7 +251,7 @@ class TestDirectDeposition(unittest.TestCase):
             u=jnp.zeros(shape),
             active=jnp.zeros(shape[:-1], dtype=bool),
         )
-    # create an empty TiledParticles object with the appropriate shape based on the world, simulation parameters, number of species, and number of slots
+    # create an empty TiledParticles object with the appropriate shape based on the parameter_set, simulation parameters, number of species, and number of slots
 
     def _set_tiled_particle(self, particles, tile, species, slot, x, u, active=True):
         tx, ty, tz = tile
@@ -224,8 +263,8 @@ class TestDirectDeposition(unittest.TestCase):
         return particles
     # set the position, velocity, and active status of a specific particle in the TiledParticles object based on the given tile, species, slot, position, velocity, and active flag
 
-    def _particles_from_slots(self, world, simulation_parameters, n_species, n_slots, slots):
-        particles = self._empty_tiled_particles(world, simulation_parameters, n_species, n_slots)
+    def _particles_from_slots(self, parameter_set, simulation_parameters, n_species, n_slots, slots):
+        particles = self._empty_tiled_particles(parameter_set, simulation_parameters, n_species, n_slots)
         for tile, species, slot, position, velocity, active in slots:
             particles = self._set_tiled_particle(
                 particles,
@@ -254,7 +293,7 @@ class TestDirectDeposition(unittest.TestCase):
         )
     # convert a TiledParticles object into a single-tile representation by transposing and reshaping the arrays to have a single tile dimension, while preserving the species and slot dimensions
 
-    def _centered_tiled_particles(self, particles, world, simulation_parameters):
+    def _centered_tiled_particles(self, particles, parameter_set, simulation_parameters):
         """
         Build the tiled particle view expected by direct tiled deposition.
 
@@ -264,48 +303,50 @@ class TestDirectDeposition(unittest.TestCase):
         refreshes tile ownership at the centered position.
         """
 
-        particles = particles._replace(x=particles.x - 0.5 * particles.u * world["dt"])
+        particles = particles._replace(x=particles.x - 0.5 * particles.u * parameter_set["dt"])
+        static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set)
 
         centered_particles, overflow = refresh_tiled_particle_tiles(
             particles,
-            world,
-            self._tile_shape(simulation_parameters),
+            static_parameters,
+            dynamic_parameters,
         )
         self.assertFalse(bool(overflow))
         # ensure that no particles have overflowed their tiles after centering
 
         return centered_particles
 
-    def _assembled_tiled_current(self, particles, species_config, world, simulation_parameters, constants, filter="none"):
+    def _assembled_tiled_current(self, particles, species_config, parameter_set, simulation_parameters, dynamic_values, filter="none"):
         tile_shape = self._tile_shape(simulation_parameters)
-        world = self._world_with_tiled_grids(world, tile_shape)
-        tiled_particles = self._centered_tiled_particles(particles, world, simulation_parameters)
+        parameter_set = self._parameters_with_tiled_grids(parameter_set, tile_shape)
+        tiled_particles = self._centered_tiled_particles(particles, parameter_set, simulation_parameters)
+        static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set, dynamic_values)
+        static_parameters = static_parameters._replace(current_filter=filter)
 
         J_tiles = J_from_rhov(
             tiled_particles,
             species_config,
-            self._empty_J_tiles(world),
-            constants,
-            world,
-            filter=filter,
+            self._empty_J_tiles(parameter_set),
+            static_parameters,
+            dynamic_parameters,
         )
-        g = int(world["guard_cells"])
-        J_from_tiles = assemble_tiled_vector_field(J_tiles, world, tile_shape, num_guard_cells=g)
+        g = int(parameter_set["guard_cells"])
+        J_from_tiles = assemble_tiled_vector_field(J_tiles, parameter_set, tile_shape, num_guard_cells=g)
         # assemble the tiled current density field into a global field for comparison
 
         return J_tiles, J_from_tiles
 
-    def _compare_tiled_to_one_tile(self, particles, species_config, world, simulation_parameters, filter="none", alpha=1.0):
-        constants = {"C": 3.0e8, "alpha": alpha}
+    def _compare_tiled_to_one_tile(self, particles, species_config, parameter_set, simulation_parameters, filter="none", alpha=1.0):
+        dynamic_values = {"C": 3.0e8, "alpha": alpha}
         J_tiles, J_from_tiles = self._assembled_tiled_current(
-            particles, species_config, world, simulation_parameters, constants, filter=filter
+            particles, species_config, parameter_set, simulation_parameters, dynamic_values, filter=filter
         )
         _, J_reference = self._assembled_tiled_current(
             self._one_tile_particles_from_tiled(particles),
             species_config,
-            world,
-            self._one_tile_parameters(world),
-            constants,
+            parameter_set,
+            self._one_tile_parameters(parameter_set),
+            dynamic_values,
             filter=filter,
         )
 
@@ -319,9 +360,9 @@ class TestDirectDeposition(unittest.TestCase):
 
 
     def test_tiled_direct_deposition_matches_quadratic_with_two_guard_cells(self):
-        world = self._build_world(Nx=8, Ny=6, Nz=4)
-        world["shape_factor"] = 2
-        world["guard_cells"] = 2
+        parameter_set = self._build_parameter_values(Nx=8, Ny=6, Nz=4)
+        parameter_set["shape_factor"] = 2
+        parameter_set["guard_cells"] = 2
         simulation_parameters = {
             "particle_tile_nx": 2,
             "particle_tile_ny": 3,
@@ -329,7 +370,7 @@ class TestDirectDeposition(unittest.TestCase):
         }
 
         particles = self._particles_from_slots(
-            world,
+            parameter_set,
             simulation_parameters,
             n_species=1,
             n_slots=2,
@@ -344,13 +385,13 @@ class TestDirectDeposition(unittest.TestCase):
         )
         species_config = self._species_config(charges=[-1.0], masses=[1.0], weights=[0.5])
 
-        self._compare_tiled_to_one_tile(particles, species_config, world, simulation_parameters)
+        self._compare_tiled_to_one_tile(particles, species_config, parameter_set, simulation_parameters)
         # ensure the direct deposition from tiled particles matches the deposition from a single tile representation, using quadratic shape factors and two guard cells
 
     def test_tiled_direct_deposition_matches_quadratic_saved_style_reduced_axes(self):
-        world = self._build_world(Nx=20, Ny=1, Nz=1, dt=0.05)
-        world["shape_factor"] = 2
-        world["guard_cells"] = 2
+        parameter_set = self._build_parameter_values(Nx=20, Ny=1, Nz=1, dt=0.05)
+        parameter_set["shape_factor"] = 2
+        parameter_set["guard_cells"] = 2
         simulation_parameters = {
             "particle_tile_nx": 5,
             "particle_tile_ny": 1,
@@ -358,7 +399,7 @@ class TestDirectDeposition(unittest.TestCase):
         }
 
         particles = self._particles_from_slots(
-            world,
+            parameter_set,
             simulation_parameters,
             n_species=1,
             n_slots=3,
@@ -375,20 +416,20 @@ class TestDirectDeposition(unittest.TestCase):
         )
         species_config = self._species_config(charges=[-1.0], masses=[1.0], weights=[0.5])
 
-        self._compare_tiled_to_one_tile(particles, species_config, world, simulation_parameters)
+        self._compare_tiled_to_one_tile(particles, species_config, parameter_set, simulation_parameters)
         # test the direct deposition from tiled particles matches single tiled with reduced dimensions
 
     def test_tiled_direct_deposition_bilinear_matches_quadratic_reduced_axes(self):
-        world = self._build_world(Nx=20, Ny=1, Nz=1, dt=0.05)
-        world["shape_factor"] = 2
-        world["guard_cells"] = 2
+        parameter_set = self._build_parameter_values(Nx=20, Ny=1, Nz=1, dt=0.05)
+        parameter_set["shape_factor"] = 2
+        parameter_set["guard_cells"] = 2
         simulation_parameters = {
             "particle_tile_nx": 5,
             "particle_tile_ny": 1,
             "particle_tile_nz": 1,
         }
         particles = self._particles_from_slots(
-            world,
+            parameter_set,
             simulation_parameters,
             n_species=1,
             n_slots=3,
@@ -405,11 +446,11 @@ class TestDirectDeposition(unittest.TestCase):
         )
         species_config = self._species_config(charges=[-1.0], masses=[1.0], weights=[0.5])
 
-        self._compare_tiled_to_one_tile(particles, species_config, world, simulation_parameters, filter="bilinear")
+        self._compare_tiled_to_one_tile(particles, species_config, parameter_set, simulation_parameters, filter="bilinear")
         # test the bilinear filtered direct deposition from tiled particles matches single tiled with reduced dimensions
 
-    def _assert_tile_scalar_field_rebuilds_halos(self, world, tile_shape, num_guard_cells):
-        shape = (world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2)
+    def _assert_tile_scalar_field_rebuilds_halos(self, parameter_set, tile_shape, num_guard_cells):
+        shape = (parameter_set["Nx"] + 2, parameter_set["Ny"] + 2, parameter_set["Nz"] + 2)
         field = jnp.arange(jnp.prod(jnp.asarray(shape)), dtype=jnp.float64).reshape(shape)
         field = field.at[0, :, :].set(-1001.0)
         field = field.at[-1, :, :].set(-1002.0)
@@ -418,51 +459,52 @@ class TestDirectDeposition(unittest.TestCase):
         field = field.at[:, :, 0].set(-1005.0)
         field = field.at[:, :, -1].set(-1006.0)
 
-        tiles = tile_scalar_field(field, world, tile_shape, num_guard_cells=num_guard_cells)
+        tiles = tile_scalar_field(field, parameter_set, tile_shape, num_guard_cells=num_guard_cells)
         assembled = assemble_tiled_vector_field(
             (tiles, tiles, tiles),
-            world,
+            parameter_set,
             tile_shape,
             num_guard_cells=num_guard_cells,
         )[0]
         expected = _update_ghost_cells(
             field,
-            world["boundary_conditions"]["x"],
-            world["boundary_conditions"]["y"],
-            world["boundary_conditions"]["z"],
+            parameter_set["boundary_conditions"]["x"],
+            parameter_set["boundary_conditions"]["y"],
+            parameter_set["boundary_conditions"]["z"],
         )
 
         self.assertTrue(jnp.allclose(assembled, expected, rtol=1.0e-15, atol=1.0e-15))
         # test that the tiled scalar field correctly rebuilds the halo regions from the interior values, comparing the assembled tiled field to the expected field with updated ghost cells
 
     def test_tile_scalar_field_one_guard_rebuilds_periodic_halos_from_interiors(self):
-        world = self._build_world(Nx=8, Ny=6, Nz=4)
-        self._assert_tile_scalar_field_rebuilds_halos(world, (2, 3, 2), num_guard_cells=1)
+        parameter_set = self._build_parameter_values(Nx=8, Ny=6, Nz=4)
+        self._assert_tile_scalar_field_rebuilds_halos(parameter_set, (2, 3, 2), num_guard_cells=1)
         # test that a tiled scalar field with one guard cell correctly rebuilds periodic halo regions from the interior values
 
     def test_tile_scalar_field_two_guards_rebuilds_periodic_halos_from_interiors(self):
-        world = self._build_world(Nx=8, Ny=6, Nz=4)
-        self._assert_tile_scalar_field_rebuilds_halos(world, (2, 3, 2), num_guard_cells=2)
+        parameter_set = self._build_parameter_values(Nx=8, Ny=6, Nz=4)
+        self._assert_tile_scalar_field_rebuilds_halos(parameter_set, (2, 3, 2), num_guard_cells=2)
         # test that a tiled scalar field with two guard cells correctly rebuilds periodic halo regions from the interior values
 
     def test_tile_scalar_field_rebuilds_conducting_halos_from_interiors(self):
-        world = self._build_world(
+        parameter_set = self._build_parameter_values(
             Nx=8,
             Ny=6,
             Nz=4,
             boundary_conditions={"x": BC_CONDUCTING, "y": BC_PERIODIC, "z": BC_PERIODIC},
         )
-        self._assert_tile_scalar_field_rebuilds_halos(world, (2, 3, 2), num_guard_cells=1)
+        self._assert_tile_scalar_field_rebuilds_halos(parameter_set, (2, 3, 2), num_guard_cells=1)
         # test that a tiled scalar field with conducting boundary conditions correctly rebuilds halo regions from the interior values
 
     def test_tiled_digital_filter_matches_global_digital_filter(self):
-        world = self._build_world(Nx=8, Ny=6, Nz=4)
+        parameter_set = self._build_parameter_values(Nx=8, Ny=6, Nz=4)
         tile_shape = (2, 3, 2)
+        parameter_set = self._parameters_with_tiled_grids(parameter_set, tile_shape)
         alpha = 0.6
-        shape = (world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2)
-        bc_x = world["boundary_conditions"]["x"]
-        bc_y = world["boundary_conditions"]["y"]
-        bc_z = world["boundary_conditions"]["z"]
+        shape = (parameter_set["Nx"] + 2, parameter_set["Ny"] + 2, parameter_set["Nz"] + 2)
+        bc_x = parameter_set["boundary_conditions"]["x"]
+        bc_y = parameter_set["boundary_conditions"]["y"]
+        bc_z = parameter_set["boundary_conditions"]["z"]
 
         base = jnp.arange(jnp.prod(jnp.asarray(shape)), dtype=jnp.float64).reshape(shape)
         base = _update_ghost_cells(base, bc_x, bc_y, bc_z)
@@ -473,10 +515,14 @@ class TestDirectDeposition(unittest.TestCase):
         )
         J = tuple(_update_ghost_cells(component, bc_x, bc_y, bc_z) for component in J)
 
-        J_tiles = tile_vector_field(J, world, tile_shape)
+        J_tiles = tile_vector_field(J, parameter_set, tile_shape)
         filtered_tiles = digital_filter_vector(J_tiles, alpha, num_guard_cells=1)
-        filtered_tiles = ghost_cells.update_tiled_vector_ghost_cells(filtered_tiles, world, num_guard_cells=1, tile_shape=tile_shape)
-        filtered_from_tiles = assemble_tiled_vector_field(filtered_tiles, world, tile_shape)
+        filtered_tiles = ghost_cells.update_tiled_vector_ghost_cells(
+            filtered_tiles,
+            _field_static_parameters(parameter_set),
+            num_guard_cells=1,
+        )
+        filtered_from_tiles = assemble_tiled_vector_field(filtered_tiles, parameter_set, tile_shape)
         filtered_reference = tuple(
             _update_ghost_cells(digital_filter(component, alpha), bc_x, bc_y, bc_z)
             for component in J
@@ -487,13 +533,13 @@ class TestDirectDeposition(unittest.TestCase):
         # test that the digital filter applied to the tiled vector field matches the result of applying the digital filter to the global vector field, ensuring consistency between tiled and global filtering
 
     def test_fold_tiled_ghost_cells_periodic_adds_current_deposits_to_neighbors(self):
-        world = self._build_world(Nx=4, Ny=1, Nz=1)
-        world = self._world_with_tiled_grids(world, (2, 1, 1))
+        parameter_set = self._build_parameter_values(Nx=4, Ny=1, Nz=1)
+        parameter_set = self._parameters_with_tiled_grids(parameter_set, (2, 1, 1))
         tiles = jnp.zeros((2, 1, 1, 4, 3, 3))
         tiles = tiles.at[0, 0, 0, -1, 1, 1].set(2.0)
         tiles = tiles.at[1, 0, 0, 0, 1, 1].set(3.0)
 
-        folded = ghost_cells.fold_tiled_ghost_cells(tiles, world, num_guard_cells=1, tile_shape=world["tile_shape"])
+        folded = ghost_cells.fold_tiled_ghost_cells(tiles, _field_static_parameters(parameter_set), num_guard_cells=1)
 
         self.assertEqual(float(folded[1, 0, 0, 1, 1, 1]), 2.0)
         self.assertEqual(float(folded[0, 0, 0, -2, 1, 1]), 3.0)
@@ -502,10 +548,10 @@ class TestDirectDeposition(unittest.TestCase):
         # test that folding tiled ghost cells with periodic boundary conditions correctly adds current deposits to neighboring tiles, and that the guard cells are zeroed out after folding
 
     def test_fold_tiled_ghost_cells_two_guard_layers_adds_deposits_to_neighbors(self):
-        world = self._build_world(Nx=8, Ny=4, Nz=4)
+        parameter_set = self._build_parameter_values(Nx=8, Ny=4, Nz=4)
         num_guard_cells = 2
-        world["guard_cells"] = num_guard_cells
-        world = self._world_with_tiled_grids(world, (4, 4, 4))
+        parameter_set["guard_cells"] = num_guard_cells
+        parameter_set = self._parameters_with_tiled_grids(parameter_set, (4, 4, 4))
         tiles = jnp.zeros((2, 1, 1, 8, 8, 8))
 
         tiles = tiles.at[1, 0, 0, 0, 2, 2].set(2.0)
@@ -513,7 +559,7 @@ class TestDirectDeposition(unittest.TestCase):
         tiles = tiles.at[0, 0, 0, -2, 2, 2].set(5.0)
         tiles = tiles.at[0, 0, 0, -1, 2, 2].set(7.0)
 
-        folded = ghost_cells.fold_tiled_ghost_cells(tiles, world, num_guard_cells, tile_shape=world["tile_shape"])
+        folded = ghost_cells.fold_tiled_ghost_cells(tiles, _field_static_parameters(parameter_set), num_guard_cells)
 
         self.assertEqual(float(folded[0, 0, 0, 4, 2, 2]), 2.0)
         self.assertEqual(float(folded[0, 0, 0, 5, 2, 2]), 3.0)
@@ -524,11 +570,11 @@ class TestDirectDeposition(unittest.TestCase):
         # test that folding tiled ghost cells with two guard layers correctly adds deposits to neighboring tiles, and that the guard cells are zeroed out after folding
 
     def test_fold_tiled_ghost_cells_two_guard_reduced_axis_folds_to_single_active_cell(self):
-        world = self._build_world(Nx=8, Ny=1, Nz=1)
+        parameter_set = self._build_parameter_values(Nx=8, Ny=1, Nz=1)
         num_guard_cells = 2
         tile_shape = (4, 1, 1)
-        world["guard_cells"] = num_guard_cells
-        world = self._world_with_tiled_grids(world, tile_shape)
+        parameter_set["guard_cells"] = num_guard_cells
+        parameter_set = self._parameters_with_tiled_grids(parameter_set, tile_shape)
         tiles = jnp.zeros((2, 1, 1, 8, 5, 5))
 
         tiles = tiles.at[0, 0, 0, 2, 0, 2].set(1.0)
@@ -536,7 +582,7 @@ class TestDirectDeposition(unittest.TestCase):
         tiles = tiles.at[0, 0, 0, 2, 3, 2].set(3.0)
         tiles = tiles.at[0, 0, 0, 2, 4, 2].set(4.0)
 
-        folded = ghost_cells.fold_tiled_ghost_cells(tiles, world, num_guard_cells, tile_shape=tile_shape)
+        folded = ghost_cells.fold_tiled_ghost_cells(tiles, _field_static_parameters(parameter_set), num_guard_cells)
 
         self.assertEqual(float(folded[0, 0, 0, 2, 2, 2]), 10.0)
         self.assertTrue(jnp.allclose(folded[:, :, :, :, :num_guard_cells, :], 0.0))
@@ -544,20 +590,20 @@ class TestDirectDeposition(unittest.TestCase):
         # test that folding tiled ghost cells with two guard layers in a reduced axis configuration correctly folds all deposits into a single active cell, and that the guard cells are zeroed out after folding
 
     def test_fold_tiled_ghost_cells_conducting_reflects_exterior_deposits(self):
-        world = self._build_world(
+        parameter_set = self._build_parameter_values(
             Nx=4,
             Ny=1,
             Nz=1,
             boundary_conditions={"x": BC_CONDUCTING, "y": BC_PERIODIC, "z": BC_PERIODIC},
         )
-        world = self._world_with_tiled_grids(world, (2, 1, 1))
+        parameter_set = self._parameters_with_tiled_grids(parameter_set, (2, 1, 1))
         tiles = jnp.zeros((2, 1, 1, 4, 3, 3))
         tiles = tiles.at[0, 0, 0, 0, 1, 1].set(4.0)
         tiles = tiles.at[-1, 0, 0, -1, 1, 1].set(7.0)
         tiles = tiles.at[0, 0, 0, -1, 1, 1].set(2.0)
         tiles = tiles.at[1, 0, 0, 0, 1, 1].set(3.0)
 
-        folded = ghost_cells.fold_tiled_ghost_cells(tiles, world, num_guard_cells=1, tile_shape=world["tile_shape"])
+        folded = ghost_cells.fold_tiled_ghost_cells(tiles, _field_static_parameters(parameter_set), num_guard_cells=1)
 
         self.assertEqual(float(folded[0, 0, 0, 1, 1, 1]), -4.0)
         self.assertEqual(float(folded[-1, 0, 0, -2, 1, 1]), -7.0)
@@ -568,15 +614,15 @@ class TestDirectDeposition(unittest.TestCase):
         # test that folding tiled ghost cells with conducting boundary conditions correctly reflects exterior deposits back into the interior, and that the guard cells are zeroed out after folding
 
     def test_fold_tiled_ghost_cells_matches_global_fold_for_mixed_boundaries(self):
-        world = self._build_world(
+        parameter_set = self._build_parameter_values(
             Nx=4,
             Ny=4,
             Nz=2,
             boundary_conditions={"x": BC_PERIODIC, "y": BC_CONDUCTING, "z": BC_PERIODIC},
         )
         tile_shape = (2, 2, 1)
-        world = self._world_with_tiled_grids(world, tile_shape)
-        field = jnp.zeros((world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2))
+        parameter_set = self._parameters_with_tiled_grids(parameter_set, tile_shape)
+        field = jnp.zeros((parameter_set["Nx"] + 2, parameter_set["Ny"] + 2, parameter_set["Nz"] + 2))
         tiles = jnp.zeros((2, 2, 2, 4, 4, 3))
 
         field = field.at[0, 2, 1].set(1.5)
@@ -597,34 +643,35 @@ class TestDirectDeposition(unittest.TestCase):
         field = field.at[3, 3, -1].set(5.0)
         tiles = tiles.at[1, 1, -1, 1, 1, -1].set(5.0)
 
-        folded_tiles = ghost_cells.fold_tiled_ghost_cells(tiles, world, num_guard_cells=1, tile_shape=tile_shape)
-        folded_tiles = ghost_cells.update_tiled_ghost_cells(folded_tiles, world, num_guard_cells=1, tile_shape=tile_shape)
-        folded_from_tiles = assemble_tiled_vector_field((folded_tiles, folded_tiles, folded_tiles), world, tile_shape, num_guard_cells=1)[0]
+        static_parameters = _field_static_parameters(parameter_set)
+        folded_tiles = ghost_cells.fold_tiled_ghost_cells(tiles, static_parameters, num_guard_cells=1)
+        folded_tiles = ghost_cells.update_tiled_ghost_cells(folded_tiles, static_parameters, num_guard_cells=1)
+        folded_from_tiles = assemble_tiled_vector_field((folded_tiles, folded_tiles, folded_tiles), parameter_set, tile_shape, num_guard_cells=1)[0]
         folded_reference = _update_ghost_cells(
             _fold_ghost_cells(
                 field,
-                world["boundary_conditions"]["x"],
-                world["boundary_conditions"]["y"],
-                world["boundary_conditions"]["z"],
+                parameter_set["boundary_conditions"]["x"],
+                parameter_set["boundary_conditions"]["y"],
+                parameter_set["boundary_conditions"]["z"],
             ),
-            world["boundary_conditions"]["x"],
-            world["boundary_conditions"]["y"],
-            world["boundary_conditions"]["z"],
+            parameter_set["boundary_conditions"]["x"],
+            parameter_set["boundary_conditions"]["y"],
+            parameter_set["boundary_conditions"]["z"],
         )
 
         self.assertTrue(jnp.allclose(folded_from_tiles, folded_reference, rtol=1.0e-15, atol=1.0e-15))
         # test that folding tiled ghost cells with mixed boundary conditions matches the result of folding the global field, ensuring consistency between tiled and global folding operations
 
     def test_tiled_direct_deposition_returns_only_local_current_tiles(self):
-        world = self._build_world()
+        parameter_set = self._build_parameter_values()
         simulation_parameters = {
             "particle_tile_nx": 2,
             "particle_tile_ny": 2,
             "particle_tile_nz": 2,
         }
-        constants = {"C": 3.0e8, "alpha": 1.0}
+        dynamic_values = {"C": 3.0e8, "alpha": 1.0}
         particles = self._particles_from_slots(
-            world,
+            parameter_set,
             simulation_parameters,
             n_species=1,
             n_slots=1,
@@ -636,26 +683,26 @@ class TestDirectDeposition(unittest.TestCase):
             ],
         )
         species_config = self._species_config(charges=[1.0], masses=[1.0], weights=[1.0])
-        tiled_particles = self._centered_tiled_particles(particles, world, simulation_parameters)
         tile_shape = self._tile_shape(simulation_parameters)
-        world = self._world_with_tiled_grids(world, tile_shape)
+        parameter_set = self._parameters_with_tiled_grids(parameter_set, tile_shape)
+        tiled_particles = self._centered_tiled_particles(particles, parameter_set, simulation_parameters)
+        static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set, dynamic_values)
 
         J_tiles = J_from_rhov(
             tiled_particles,
             species_config,
-            self._empty_J_tiles(world),
-            constants,
-            world,
-            filter="none",
+            self._empty_J_tiles(parameter_set),
+            static_parameters,
+            dynamic_parameters,
         )
-        J_from_tiles = assemble_tiled_vector_field(J_tiles, world, tile_shape, num_guard_cells=int(world["guard_cells"]))
+        J_from_tiles = assemble_tiled_vector_field(J_tiles, parameter_set, tile_shape, num_guard_cells=int(parameter_set["guard_cells"]))
 
         _, J_reference = self._assembled_tiled_current(
             self._one_tile_particles_from_tiled(particles),
             species_config,
-            world,
-            self._one_tile_parameters(world),
-            constants,
+            parameter_set,
+            self._one_tile_parameters(parameter_set),
+            dynamic_values,
             filter="none",
         )
 
@@ -664,7 +711,7 @@ class TestDirectDeposition(unittest.TestCase):
         # test that the direct deposition from tiled particles returns only the local current tiles, and that the assembled tiled current matches the reference current from a single-tile representation
 
     def test_tiled_direct_deposition_matches_J_from_rhov_for_dummy_species(self):
-        world = self._build_world()
+        parameter_set = self._build_parameter_values()
         simulation_parameters = {
             "particle_tile_nx": 2,
             "particle_tile_ny": 2,
@@ -672,7 +719,7 @@ class TestDirectDeposition(unittest.TestCase):
         }
 
         particles = self._particles_from_slots(
-            world,
+            parameter_set,
             simulation_parameters,
             n_species=2,
             n_slots=1,
@@ -692,22 +739,22 @@ class TestDirectDeposition(unittest.TestCase):
             weights=[0.5, 0.25],
         )
 
-        self._compare_tiled_to_one_tile(particles, species_config, world, simulation_parameters)
+        self._compare_tiled_to_one_tile(particles, species_config, parameter_set, simulation_parameters)
         # test that the direct deposition from tiled particles with multiple species (including a dummy species) matches the deposition from a single-tile representation, ensuring consistency across species
 
     def test_public_J_from_rhov_dispatches_tiled_particles_to_tile_local_current(self):
-        world = self._build_world()
-        world["guard_cells"] = 2
+        parameter_set = self._build_parameter_values()
+        parameter_set["guard_cells"] = 2
         simulation_parameters = {
             "particle_tile_nx": 2,
             "particle_tile_ny": 2,
             "particle_tile_nz": 2,
         }
         tile_shape = self._tile_shape(simulation_parameters)
-        world = self._world_with_tiled_grids(world, tile_shape)
-        constants = {"C": 3.0e8, "alpha": 0.6}
+        parameter_set = self._parameters_with_tiled_grids(parameter_set, tile_shape)
+        dynamic_values = {"C": 3.0e8, "alpha": 0.6}
         particles = self._particles_from_slots(
-            world,
+            parameter_set,
             simulation_parameters,
             n_species=1,
             n_slots=1,
@@ -719,28 +766,29 @@ class TestDirectDeposition(unittest.TestCase):
             ],
         )
         species_config = self._species_config(charges=[-1.0], masses=[1.0], weights=[0.5])
-        tiled_particles = self._centered_tiled_particles(particles, world, simulation_parameters)
+        tiled_particles = self._centered_tiled_particles(particles, parameter_set, simulation_parameters)
+        static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set, dynamic_values)
+        static_parameters = static_parameters._replace(current_filter="digital")
 
         J_tiles = J_from_rhov(
             tiled_particles,
             species_config,
-            self._empty_J_tiles(world),
-            constants,
-            world,
-            filter="digital",
+            self._empty_J_tiles(parameter_set),
+            static_parameters,
+            dynamic_parameters,
         )
         J_from_tiles = assemble_tiled_vector_field(
             J_tiles,
-            world,
+            parameter_set,
             tile_shape,
-            num_guard_cells=int(world["guard_cells"]),
+            num_guard_cells=int(parameter_set["guard_cells"]),
         )
         _, J_reference = self._assembled_tiled_current(
             self._one_tile_particles_from_tiled(particles),
             species_config,
-            world,
-            self._one_tile_parameters(world),
-            constants,
+            parameter_set,
+            self._one_tile_parameters(parameter_set),
+            dynamic_values,
             filter="digital",
         )
 
@@ -751,15 +799,15 @@ class TestDirectDeposition(unittest.TestCase):
         # test that the public J_from_rhov function correctly dispatches tiled particles to the tile-local current deposition, and that the assembled tiled current matches the reference current from a single-tile representation
 
     def test_tiled_direct_deposition_digital_filter_matches_J_from_rhov(self):
-        world = self._build_world()
+        parameter_set = self._build_parameter_values()
         simulation_parameters = {
             "particle_tile_nx": 2,
             "particle_tile_ny": 2,
             "particle_tile_nz": 2,
         }
-        constants = {"C": 3.0e8, "alpha": 0.6}
+        dynamic_values = {"C": 3.0e8, "alpha": 0.6}
         particles = self._particles_from_slots(
-            world,
+            parameter_set,
             simulation_parameters,
             n_species=1,
             n_slots=1,
@@ -772,19 +820,73 @@ class TestDirectDeposition(unittest.TestCase):
         )
         species_config = self._species_config(charges=[-1.0], masses=[1.0], weights=[0.5])
 
-        self._compare_tiled_to_one_tile(particles, species_config, world, simulation_parameters, filter="digital", alpha=0.6)
+        self._compare_tiled_to_one_tile(particles, species_config, parameter_set, simulation_parameters, filter="digital", alpha=0.6)
         # test that the direct deposition from tiled particles with a digital filter matches the deposition from a single-tile representation, ensuring consistency between tiled and global deposition with filtering
 
+    def test_tiled_direct_deposition_none_filter_does_not_use_alpha(self):
+        parameter_set = self._build_parameter_values()
+        simulation_parameters = {
+            "particle_tile_nx": 2,
+            "particle_tile_ny": 2,
+            "particle_tile_nz": 2,
+        }
+        particles = self._particles_from_slots(
+            parameter_set,
+            simulation_parameters,
+            n_species=1,
+            n_slots=1,
+            slots=[
+                ((0, 0, 0), 0, 0, (-1.25, -1.0, -0.65), (0.2, 0.1, -0.05), True),
+                ((1, 1, 0), 0, 0, (-0.25, -0.25, -0.15), (-0.1, 0.15, 0.25), True),
+                ((2, 1, 1), 0, 0, (0.65, 0.35, 0.25), (0.05, -0.2, 0.1), True),
+            ],
+        )
+        species_config = self._species_config(charges=[-1.0], masses=[1.0], weights=[0.5])
+
+        _, raw_alpha_06 = self._assembled_tiled_current(
+            particles,
+            species_config,
+            parameter_set,
+            simulation_parameters,
+            {"C": 3.0e8, "alpha": 0.6},
+            filter="none",
+        )
+        _, raw_alpha_10 = self._assembled_tiled_current(
+            particles,
+            species_config,
+            parameter_set,
+            simulation_parameters,
+            {"C": 3.0e8, "alpha": 1.0},
+            filter="none",
+        )
+        _, digital_alpha_06 = self._assembled_tiled_current(
+            particles,
+            species_config,
+            parameter_set,
+            simulation_parameters,
+            {"C": 3.0e8, "alpha": 0.6},
+            filter="digital",
+        )
+
+        for raw_06_component, raw_10_component in zip(raw_alpha_06, raw_alpha_10):
+            self.assertTrue(jnp.allclose(raw_06_component, raw_10_component, rtol=1.0e-15, atol=1.0e-15))
+
+        digital_difference = max(
+            float(jnp.max(jnp.abs(raw_component - digital_component)))
+            for raw_component, digital_component in zip(raw_alpha_06, digital_alpha_06)
+        )
+        self.assertGreater(digital_difference, 1.0e-12)
+
     def test_tiled_direct_deposition_bilinear_filter_matches_J_from_rhov(self):
-        world = self._build_world(Nx=8, Ny=6, Nz=4)
+        parameter_set = self._build_parameter_values(Nx=8, Ny=6, Nz=4)
         simulation_parameters = {
             "particle_tile_nx": 2,
             "particle_tile_ny": 3,
             "particle_tile_nz": 2,
         }
-        constants = {"C": 3.0e8, "alpha": 1.0}
+        dynamic_values = {"C": 3.0e8, "alpha": 1.0}
         particles = self._particles_from_slots(
-            world,
+            parameter_set,
             simulation_parameters,
             n_species=1,
             n_slots=2,
@@ -799,18 +901,18 @@ class TestDirectDeposition(unittest.TestCase):
         )
         species_config = self._species_config(charges=[-1.0], masses=[1.0], weights=[0.5])
 
-        self._compare_tiled_to_one_tile(particles, species_config, world, simulation_parameters, filter="bilinear")
+        self._compare_tiled_to_one_tile(particles, species_config, parameter_set, simulation_parameters, filter="bilinear")
         # test that the direct deposition from tiled particles with a bilinear filter matches the deposition from a single-tile representation, ensuring consistency between tiled and global deposition with bilinear filtering
 
     def test_tiled_direct_deposition_respects_active_mask(self):
-        world = self._build_world()
+        parameter_set = self._build_parameter_values()
         simulation_parameters = {
             "particle_tile_nx": 2,
             "particle_tile_ny": 3,
             "particle_tile_nz": 2,
         }
         particles = self._particles_from_slots(
-            world,
+            parameter_set,
             simulation_parameters,
             n_species=1,
             n_slots=1,
@@ -823,32 +925,32 @@ class TestDirectDeposition(unittest.TestCase):
         )
         species_config = self._species_config(charges=[1.0], masses=[1.0], weights=[1.0])
 
-        self._compare_tiled_to_one_tile(particles, species_config, world, simulation_parameters)
+        self._compare_tiled_to_one_tile(particles, species_config, parameter_set, simulation_parameters)
         # test that the direct deposition from tiled particles respects the active mask, ensuring that only active particles contribute to the current deposition, and that the assembled tiled current matches the reference current from a single-tile representation
 
     def test_tiled_direct_deposition_periodic_boundary_crossing(self):
-        world = self._build_world(Nx=10, Ny=6, Nz=4, dt=0.0)
+        parameter_set = self._build_parameter_values(Nx=10, Ny=6, Nz=4, dt=0.0)
         simulation_parameters = {
             "particle_tile_nx": 2,
             "particle_tile_ny": 2,
             "particle_tile_nz": 2,
         }
         particles = self._particles_from_slots(
-            world,
+            parameter_set,
             simulation_parameters,
             n_species=1,
             n_slots=1,
             slots=[
-                ((0, 1, 1), 0, 0, (-world["x_wind"] / 2 - 0.2 * world["dx"], 0.0, 0.0), (-0.25, -0.2, 0.15), True),
-                ((4, 1, 1), 0, 0, (world["x_wind"] / 2 + 0.1 * world["dx"], 0.0, 0.0), (0.5, 0.1, 0.0), True),
+                ((0, 1, 1), 0, 0, (-parameter_set["x_wind"] / 2 - 0.2 * parameter_set["dx"], 0.0, 0.0), (-0.25, -0.2, 0.15), True),
+                ((4, 1, 1), 0, 0, (parameter_set["x_wind"] / 2 + 0.1 * parameter_set["dx"], 0.0, 0.0), (0.5, 0.1, 0.0), True),
             ],
         )
         species_config = self._species_config(charges=[1.0], masses=[1.0], weights=[1.0])
 
-        self._compare_tiled_to_one_tile(particles, species_config, world, simulation_parameters)
+        self._compare_tiled_to_one_tile(particles, species_config, parameter_set, simulation_parameters)
 
     def test_tiled_direct_deposition_matches_J_from_rhov_for_conducting_boundaries(self):
-        world = self._build_world(
+        parameter_set = self._build_parameter_values(
             Nx=8,
             Ny=6,
             Nz=4,
@@ -861,7 +963,7 @@ class TestDirectDeposition(unittest.TestCase):
             "particle_tile_nz": 2,
         }
         particles = self._particles_from_slots(
-            world,
+            parameter_set,
             simulation_parameters,
             n_species=1,
             n_slots=1,
@@ -870,7 +972,7 @@ class TestDirectDeposition(unittest.TestCase):
                     (0, 0, 1),
                     0,
                     0,
-                    (-world["x_wind"] / 2 + 0.1 * world["dx"], -world["y_wind"] / 2 + 0.1 * world["dy"], 0.0),
+                    (-parameter_set["x_wind"] / 2 + 0.1 * parameter_set["dx"], -parameter_set["y_wind"] / 2 + 0.1 * parameter_set["dy"], 0.0),
                     (0.5, 0.1, -0.15),
                     True,
                 ),
@@ -878,7 +980,7 @@ class TestDirectDeposition(unittest.TestCase):
                     (3, 1, 0),
                     0,
                     0,
-                    (world["x_wind"] / 2 - 0.1 * world["dx"], 0.0, -world["z_wind"] / 2 + 0.1 * world["dz"]),
+                    (parameter_set["x_wind"] / 2 - 0.1 * parameter_set["dx"], 0.0, -parameter_set["z_wind"] / 2 + 0.1 * parameter_set["dz"]),
                     (-0.25, -0.2, 0.35),
                     True,
                 ),
@@ -886,7 +988,7 @@ class TestDirectDeposition(unittest.TestCase):
                     (2, 2, 1),
                     0,
                     0,
-                    (0.0, world["y_wind"] / 2 - 0.1 * world["dy"], world["z_wind"] / 2 - 0.1 * world["dz"]),
+                    (0.0, parameter_set["y_wind"] / 2 - 0.1 * parameter_set["dy"], parameter_set["z_wind"] / 2 - 0.1 * parameter_set["dz"]),
                     (0.15, 0.3, -0.1),
                     True,
                 ),
@@ -894,10 +996,10 @@ class TestDirectDeposition(unittest.TestCase):
         )
         species_config = self._species_config(charges=[1.0], masses=[1.0], weights=[1.0])
 
-        self._compare_tiled_to_one_tile(particles, species_config, world, simulation_parameters)
+        self._compare_tiled_to_one_tile(particles, species_config, parameter_set, simulation_parameters)
 
     def test_tiled_direct_deposition_matches_J_from_rhov_for_mixed_boundaries(self):
-        world = self._build_world(
+        parameter_set = self._build_parameter_values(
             Nx=8,
             Ny=6,
             Nz=4,
@@ -910,7 +1012,7 @@ class TestDirectDeposition(unittest.TestCase):
             "particle_tile_nz": 2,
         }
         particles = self._particles_from_slots(
-            world,
+            parameter_set,
             simulation_parameters,
             n_species=1,
             n_slots=1,
@@ -919,17 +1021,17 @@ class TestDirectDeposition(unittest.TestCase):
                     (0, 0, 1),
                     0,
                     0,
-                    (-world["x_wind"] / 2 - 0.1 * world["dx"], -world["y_wind"] / 2 + 0.1 * world["dy"], 0.0),
+                    (-parameter_set["x_wind"] / 2 - 0.1 * parameter_set["dx"], -parameter_set["y_wind"] / 2 + 0.1 * parameter_set["dy"], 0.0),
                     (0.2, 0.0, -0.05),
                     True,
                 ),
-                ((1, 1, 0), 0, 0, (-0.5, -0.25, -world["z_wind"] / 2 - 0.1 * world["dz"]), (0.05, -0.2, 0.1), True),
-                ((2, 1, 1), 0, 0, (0.5, 0.25, world["z_wind"] / 2 + 0.2 * world["dz"]), (0.3, 0.1, -0.15), True),
+                ((1, 1, 0), 0, 0, (-0.5, -0.25, -parameter_set["z_wind"] / 2 - 0.1 * parameter_set["dz"]), (0.05, -0.2, 0.1), True),
+                ((2, 1, 1), 0, 0, (0.5, 0.25, parameter_set["z_wind"] / 2 + 0.2 * parameter_set["dz"]), (0.3, 0.1, -0.15), True),
                 (
                     (3, 2, 1),
                     0,
                     0,
-                    (world["x_wind"] / 2 + 0.2 * world["dx"], world["y_wind"] / 2 - 0.2 * world["dy"], 0.25),
+                    (parameter_set["x_wind"] / 2 + 0.2 * parameter_set["dx"], parameter_set["y_wind"] / 2 - 0.2 * parameter_set["dy"], 0.25),
                     (-0.1, 0.15, 0.25),
                     True,
                 ),
@@ -937,17 +1039,17 @@ class TestDirectDeposition(unittest.TestCase):
         )
         species_config = self._species_config(charges=[-1.0], masses=[1.0], weights=[0.5])
 
-        self._compare_tiled_to_one_tile(particles, species_config, world, simulation_parameters)
+        self._compare_tiled_to_one_tile(particles, species_config, parameter_set, simulation_parameters)
 
     def test_tiled_direct_deposition_reduced_dimensions(self):
-        world = self._build_world(Nx=16, Ny=1, Nz=1, dt=0.02)
+        parameter_set = self._build_parameter_values(Nx=16, Ny=1, Nz=1, dt=0.02)
         simulation_parameters = {
             "particle_tile_nx": 4,
             "particle_tile_ny": 1,
             "particle_tile_nz": 1,
         }
         particles = self._particles_from_slots(
-            world,
+            parameter_set,
             simulation_parameters,
             n_species=1,
             n_slots=1,
@@ -959,7 +1061,7 @@ class TestDirectDeposition(unittest.TestCase):
         )
         species_config = self._species_config(charges=[1.0], masses=[1.0], weights=[1.0])
 
-        self._compare_tiled_to_one_tile(particles, species_config, world, simulation_parameters)
+        self._compare_tiled_to_one_tile(particles, species_config, parameter_set, simulation_parameters)
 
 
 if __name__ == "__main__":

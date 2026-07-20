@@ -192,7 +192,8 @@ class AsyncTiledOpenPMDFieldWriter:
         *,
         output_dir,
         filename,
-        world,
+        static_parameters,
+        dynamic_parameters,
         global_shape,
         tile_shape,
         guard_cells=1,
@@ -206,7 +207,8 @@ class AsyncTiledOpenPMDFieldWriter:
 
         self.output_dir = output_dir
         self.filename = filename
-        self.world = world
+        self.static_parameters = static_parameters
+        self.dynamic_parameters = dynamic_parameters
         self.layout = TiledMeshLayout(
             global_shape=tuple(int(width) for width in global_shape),
             tile_shape=tuple(int(width) for width in tile_shape),
@@ -284,7 +286,7 @@ class AsyncTiledOpenPMDFieldWriter:
                             item,
                             output_dir=self.output_dir,
                             filename=self.filename,
-                            world=self.world,
+                            dynamic_parameters=self.dynamic_parameters,
                             layout=self.layout,
                             file_extension=self.file_extension,
                         )
@@ -306,8 +308,8 @@ class AsyncTiledOpenPMDParticleWriter:
         *,
         output_dir,
         filename,
-        world,
-        constants,
+        static_parameters,
+        dynamic_parameters,
         file_extension=".bp",
         dtype=np.float64,
         queue_size=2,
@@ -317,8 +319,8 @@ class AsyncTiledOpenPMDParticleWriter:
 
         self.output_dir = output_dir
         self.filename = filename
-        self.world = world
-        self.constants = constants
+        self.static_parameters = static_parameters
+        self.dynamic_parameters = dynamic_parameters
         self.file_extension = file_extension
         self.dtype = dtype
         self.raise_writer_errors_on_close = bool(raise_writer_errors_on_close)
@@ -395,8 +397,8 @@ class AsyncTiledOpenPMDParticleWriter:
                             item,
                             output_dir=self.output_dir,
                             filename=self.filename,
-                            world=self.world,
-                            constants=self.constants,
+                            static_parameters=self.static_parameters,
+                            dynamic_parameters=self.dynamic_parameters,
                             file_extension=self.file_extension,
                             dtype=self.dtype,
                         )
@@ -409,7 +411,8 @@ class AsyncTiledOpenPMDParticleWriter:
 
 
 def create_async_tiled_openpmd_field_writer(
-    world,
+    static_parameters,
+    dynamic_parameters,
     output_dir,
     *,
     filename="fields",
@@ -419,10 +422,11 @@ def create_async_tiled_openpmd_field_writer(
     writer = AsyncTiledOpenPMDFieldWriter(
         output_dir=output_dir,
         filename=filename,
-        world=world,
-        global_shape=(int(world["Nx"]), int(world["Ny"]), int(world["Nz"])),
-        tile_shape=tuple(int(width) for width in world["tile_shape"]),
-        guard_cells=int(world["guard_cells"]),
+        static_parameters=static_parameters,
+        dynamic_parameters=dynamic_parameters,
+        global_shape=(int(dynamic_parameters.Nx), int(dynamic_parameters.Ny), int(dynamic_parameters.Nz)),
+        tile_shape=tuple(int(width) for width in static_parameters.tile_shape),
+        guard_cells=int(static_parameters.guard_cells),
         active_dims=(1, 1, 1),
         file_extension=file_extension,
         queue_size=queue_size,
@@ -432,8 +436,8 @@ def create_async_tiled_openpmd_field_writer(
 
 
 def create_async_tiled_openpmd_particle_writer(
-    world,
-    constants,
+    static_parameters,
+    dynamic_parameters,
     output_dir,
     *,
     filename="particles",
@@ -443,8 +447,8 @@ def create_async_tiled_openpmd_particle_writer(
     writer = AsyncTiledOpenPMDParticleWriter(
         output_dir=output_dir,
         filename=filename,
-        world=world,
-        constants=constants,
+        static_parameters=static_parameters,
+        dynamic_parameters=dynamic_parameters,
         file_extension=file_extension,
         queue_size=queue_size,
     )
@@ -452,13 +456,13 @@ def create_async_tiled_openpmd_particle_writer(
     return writer
 
 
-def enqueue_openpmd_field_output(field_writer, fields, world, plot_t, t, *, block=True):
+def enqueue_openpmd_field_output(field_writer, fields, dynamic_parameters, plot_t, t, *, block=True):
     field_map = _fields_to_tiled_output_map(fields)
     prefetch_field_map_to_host(field_map)
     return field_writer.enqueue_fields(
         field_map,
         step=int(plot_t),
-        time=float(t * world["dt"]),
+        time=float(t * dynamic_parameters.dt),
         block=block,
     )
 
@@ -466,7 +470,7 @@ def enqueue_openpmd_field_output(field_writer, fields, world, plot_t, t, *, bloc
 def enqueue_openpmd_particle_output(
     particle_writer,
     particles,
-    world,
+    dynamic_parameters,
     plot_t,
     t,
     *,
@@ -478,7 +482,7 @@ def enqueue_openpmd_particle_output(
     return particle_writer.enqueue_particles(
         particles,
         step=int(plot_t),
-        time=float(t * world["dt"]),
+        time=float(t * dynamic_parameters.dt),
         species_config=species_config,
         species_names=species_names,
         block=block,

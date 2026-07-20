@@ -3,10 +3,11 @@ from PyPIC3D.boundary_conditions.PML import (
     apply_tiled_pml_to_e_curl,
 )
 from PyPIC3D.boundary_conditions import ghost_cells
+from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING
 from PyPIC3D.utilities.filters import digital_filter_vector
 
 
-def update_E(E_tiles, B_tiles, J_tiles, world, constants, pml_state=None):
+def update_E(E_tiles, B_tiles, J_tiles, static_parameters, dynamic_parameters, pml_state=None):
     """
     Update compact tiled electric fields without assembling a global field.
 
@@ -15,36 +16,33 @@ def update_E(E_tiles, B_tiles, J_tiles, world, constants, pml_state=None):
     """
 
     Ex, Ey, Ez = E_tiles
-    tile_shape = tuple(int(width) for width in world["tile_shape"])
-    g = int(world["guard_cells"])
+    tile_shape = tuple(int(width) for width in static_parameters.tile_shape)
+    g = static_parameters.guard_cells
     # get the tile information
+    del tile_shape
 
     active = slice(g, -g)
     # build interior slice for active axes
-    forward = slice(g + 1, None if g == 1 else -g + 1)
-    # build forward slice used for forward differences
+    backward = slice(g - 1, -g - 1)
+    # build backward slice used for differences from vertex fields to center fields
 
-    if pml_state is None:
-        Bx, By, Bz = ghost_cells.update_tiled_vector_ghost_cells(B_tiles, world, g, tile_shape)
-    else:
-        Bx, By, Bz = ghost_cells.update_tiled_vector_ghost_cells_for_pml(B_tiles, world, g, tile_shape)
+    Bx, By, Bz = ghost_cells.update_tiled_vector_ghost_cells(B_tiles, static_parameters, g)
     Jx, Jy, Jz = J_tiles
     current = slice(g, -g) #_active_slice(g)
 
-    dt = world["dt"]
-    dx, dy, dz = world["dx"], world["dy"], world["dz"]
-    C = constants["C"]
-    eps = constants["eps"]
+    dt = dynamic_parameters.dt
+    dx, dy, dz = dynamic_parameters.dx, dynamic_parameters.dy, dynamic_parameters.dz
+    C = dynamic_parameters.C
+    eps = dynamic_parameters.eps
 
-    # Forward differences use each tile's + side guard cell.  Those guards now
-    # contain the adjacent tile's interior value, including periodic wrap at
-    # the global edge.
-    dBz_dy = (Bz[:, :, :, active, forward, active] - Bz[:, :, :, active, active, active]) / dy
-    dBy_dz = (By[:, :, :, active, active, forward] - By[:, :, :, active, active, active]) / dz
-    dBx_dz = (Bx[:, :, :, active, active, forward] - Bx[:, :, :, active, active, active]) / dz
-    dBx_dy = (Bx[:, :, :, active, forward, active] - Bx[:, :, :, active, active, active]) / dy
-    dBz_dx = (Bz[:, :, :, forward, active, active] - Bz[:, :, :, active, active, active]) / dx
-    dBy_dx = (By[:, :, :, forward, active, active] - By[:, :, :, active, active, active]) / dx
+    # Backward differences map staggered B components onto same-index E/J
+    # locations under the legacy center=collocated, vertex=staggered contract.
+    dBz_dy = (Bz[:, :, :, active, active, active] - Bz[:, :, :, active, backward, active]) / dy
+    dBy_dz = (By[:, :, :, active, active, active] - By[:, :, :, active, active, backward]) / dz
+    dBx_dz = (Bx[:, :, :, active, active, active] - Bx[:, :, :, active, active, backward]) / dz
+    dBx_dy = (Bx[:, :, :, active, active, active] - Bx[:, :, :, active, backward, active]) / dy
+    dBz_dx = (Bz[:, :, :, active, active, active] - Bz[:, :, :, backward, active, active]) / dx
+    dBy_dx = (By[:, :, :, active, active, active] - By[:, :, :, backward, active, active]) / dx
 
     if pml_state is None:
         curl_x = dBz_dy - dBy_dz
@@ -53,7 +51,8 @@ def update_E(E_tiles, B_tiles, J_tiles, world, constants, pml_state=None):
     else:
         (curl_x, curl_y, curl_z), pml_state = apply_tiled_pml_to_e_curl(
             (dBz_dy, dBy_dz, dBx_dz, dBz_dx, dBy_dx, dBx_dy),
-            world,
+            static_parameters,
+            dynamic_parameters,
             pml_state,
         )
 
@@ -70,24 +69,29 @@ def update_E(E_tiles, B_tiles, J_tiles, world, constants, pml_state=None):
         + (C**2 * curl_z - Jz[:, :, :, current, current, current] / eps) * dt
     )
 
-    if pml_state is None:
-        Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells((Ex, Ey, Ez), world, g, tile_shape)
-    else:
-        Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells_for_pml((Ex, Ey, Ez), world, g, tile_shape)
+    Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells((Ex, Ey, Ez), static_parameters, g)
     # refresh tile halos before the digital field filter, matching the global
     # ghost-cell order in the standard Yee solver.
 
-    Ex, Ey, Ez = digital_filter_vector((Ex, Ey, Ez), constants.get("alpha", 1.0), num_guard_cells=g)
+    Ex, Ey, Ez = digital_filter_vector((Ex, Ey, Ez), dynamic_parameters.alpha, num_guard_cells=g)
 
-    Ex, Ey, Ez = ghost_cells.apply_tiled_conducting_bc((Ex, Ey, Ez), world, num_guard_cells=g)
+    bc_x, bc_y, bc_z = static_parameters.boundary_conditions
+    if int(bc_x) == BC_CONDUCTING:
+        Ey = ghost_cells.apply_tiled_zero_boundary(Ey, static_parameters, axis=0, num_guard_cells=g)
+        Ez = ghost_cells.apply_tiled_zero_boundary(Ez, static_parameters, axis=0, num_guard_cells=g)
+    if int(bc_y) == BC_CONDUCTING:
+        Ex = ghost_cells.apply_tiled_zero_boundary(Ex, static_parameters, axis=1, num_guard_cells=g)
+        Ez = ghost_cells.apply_tiled_zero_boundary(Ez, static_parameters, axis=1, num_guard_cells=g)
+    if int(bc_z) == BC_CONDUCTING:
+        Ex = ghost_cells.apply_tiled_zero_boundary(Ex, static_parameters, axis=2, num_guard_cells=g)
+        Ey = ghost_cells.apply_tiled_zero_boundary(Ey, static_parameters, axis=2, num_guard_cells=g)
+    # conducting walls zero tangential E components on the physical boundary
+    # planes; the shared scalar helper refreshes halos through ppermute.
 
-    if pml_state is None:
-        return ghost_cells.update_tiled_vector_ghost_cells((Ex, Ey, Ez), world, g, tile_shape), None
-
-    return ghost_cells.update_tiled_vector_ghost_cells_for_pml((Ex, Ey, Ez), world, g, tile_shape), pml_state
+    return ghost_cells.update_tiled_vector_ghost_cells((Ex, Ey, Ez), static_parameters, g), pml_state
 
 
-def update_B(E_tiles, B_tiles, world, constants, pml_state=None):
+def update_B(E_tiles, B_tiles, static_parameters, dynamic_parameters, pml_state=None):
     """
     Update compact tiled magnetic fields without assembling a global field.
 
@@ -96,31 +100,28 @@ def update_B(E_tiles, B_tiles, world, constants, pml_state=None):
     """
 
     Bx, By, Bz = B_tiles
-    tile_shape = tuple(int(width) for width in world["tile_shape"])
+    tile_shape = tuple(int(width) for width in static_parameters.tile_shape)
     tile_nx, tile_ny, tile_nz = tile_shape
-    g = int(world["guard_cells"])
+    g = static_parameters.guard_cells
     g = int(g)
+    del tile_nx, tile_ny, tile_nz
     active = slice(g, -g)
     # build interior slice for active axes
-    backward = slice(g - 1, -g - 1)
-    # build backward slice for active axes, used for backward differences
+    forward = slice(g + 1, None if g == 1 else -g + 1)
+    # build forward slice used for differences from center fields to vertex fields
 
-    if pml_state is None:
-        Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells(E_tiles, world, g, tile_shape)
-    else:
-        Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells_for_pml(E_tiles, world, g, tile_shape)
-    dt = world["dt"]
-    dx, dy, dz = world["dx"], world["dy"], world["dz"]
+    Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells(E_tiles, static_parameters, g)
+    dt = dynamic_parameters.dt
+    dx, dy, dz = dynamic_parameters.dx, dynamic_parameters.dy, dynamic_parameters.dz
 
-    # Backward differences use each tile's - side guard cell.  Those guards now
-    # contain the adjacent tile's interior value, including periodic wrap at
-    # the global edge.
-    dEz_dy = (Ez[:, :, :, active, active, active] - Ez[:, :, :, active, backward, active]) / dy
-    dEy_dz = (Ey[:, :, :, active, active, active] - Ey[:, :, :, active, active, backward]) / dz
-    dEx_dz = (Ex[:, :, :, active, active, active] - Ex[:, :, :, active, active, backward]) / dz
-    dEx_dy = (Ex[:, :, :, active, active, active] - Ex[:, :, :, active, backward, active]) / dy
-    dEz_dx = (Ez[:, :, :, active, active, active] - Ez[:, :, :, backward, active, active]) / dx
-    dEy_dx = (Ey[:, :, :, active, active, active] - Ey[:, :, :, backward, active, active]) / dx
+    # Forward differences map same-index E/J components onto staggered B
+    # locations under the legacy center=collocated, vertex=staggered contract.
+    dEz_dy = (Ez[:, :, :, active, forward, active] - Ez[:, :, :, active, active, active]) / dy
+    dEy_dz = (Ey[:, :, :, active, active, forward] - Ey[:, :, :, active, active, active]) / dz
+    dEx_dz = (Ex[:, :, :, active, active, forward] - Ex[:, :, :, active, active, active]) / dz
+    dEx_dy = (Ex[:, :, :, active, forward, active] - Ex[:, :, :, active, active, active]) / dy
+    dEz_dx = (Ez[:, :, :, forward, active, active] - Ez[:, :, :, active, active, active]) / dx
+    dEy_dx = (Ey[:, :, :, forward, active, active] - Ey[:, :, :, active, active, active]) / dx
 
     if pml_state is None:
         curl_x = dEz_dy - dEy_dz
@@ -129,7 +130,8 @@ def update_B(E_tiles, B_tiles, world, constants, pml_state=None):
     else:
         (curl_x, curl_y, curl_z), pml_state = apply_tiled_pml_to_b_curl(
             (dEz_dy, dEy_dz, dEx_dz, dEz_dx, dEy_dx, dEx_dy),
-            world,
+            static_parameters,
+            dynamic_parameters,
             pml_state,
         )
 
@@ -137,16 +139,10 @@ def update_B(E_tiles, B_tiles, world, constants, pml_state=None):
     By = By.at[:, :, :, active, active, active].set(By[:, :, :, active, active, active] - dt * curl_y)
     Bz = Bz.at[:, :, :, active, active, active].set(Bz[:, :, :, active, active, active] - dt * curl_z)
 
-    if pml_state is None:
-        Bx, By, Bz = ghost_cells.update_tiled_vector_ghost_cells((Bx, By, Bz), world, g, tile_shape)
-    else:
-        Bx, By, Bz = ghost_cells.update_tiled_vector_ghost_cells_for_pml((Bx, By, Bz), world, g, tile_shape)
+    Bx, By, Bz = ghost_cells.update_tiled_vector_ghost_cells((Bx, By, Bz), static_parameters, g)
     # refresh tile halos before the digital field filter, matching the global
     # ghost-cell order in the standard Yee solver.
 
-    Bx, By, Bz = digital_filter_vector((Bx, By, Bz), constants.get("alpha", 1.0), num_guard_cells=g)
+    Bx, By, Bz = digital_filter_vector((Bx, By, Bz), dynamic_parameters.alpha, num_guard_cells=g)
 
-    if pml_state is None:
-        return ghost_cells.update_tiled_vector_ghost_cells((Bx, By, Bz), world, g, tile_shape), None
-
-    return ghost_cells.update_tiled_vector_ghost_cells_for_pml((Bx, By, Bz), world, g, tile_shape), pml_state
+    return ghost_cells.update_tiled_vector_ghost_cells((Bx, By, Bz), static_parameters, g), pml_state

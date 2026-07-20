@@ -18,6 +18,7 @@ from PyPIC3D.utilities.filters import (
 
 import jax
 import jax.numpy as jnp
+from functools import partial
 
 def _collapse_tiled_axis_stencil(points, weights, local_n, reduced_axis, g):
     if reduced_axis:
@@ -27,29 +28,30 @@ def _collapse_tiled_axis_stencil(points, weights, local_n, reduced_axis, g):
     return collapse_axis_stencil(points, weights, local_n, ghost_cells=True)
 
 
+@partial(jax.jit, static_argnames="static_parameters")
 def J_from_rhov(
     particles,
     species_config,
-    J=None,
-    constants=None,
-    world=None,
-    filter="bilinear",
+    J,
+    static_parameters,
+    dynamic_parameters,
 ):
     """Compute tile-local direct current from centered tiled particles."""
 
 
-    tile_shape = tuple(int(width) for width in world["tile_shape"])
-    g = int(world["guard_cells"])
+    current_filter = static_parameters.current_filter
+    tile_shape = tuple(int(width) for width in static_parameters.tile_shape)
+    g = int(static_parameters.guard_cells)
     g = int(g)
     # determine the number of guard cells and the shape of each of the tiles
 
-    tiled_grid = world["grids"]["tiled_center_grid"]
+    tiled_grid = dynamic_parameters.grids.tiled_center_grid
     # get the grid for the tiles
 
-    dx = world["dx"]
-    dy = world["dy"]
-    dz = world["dz"]
-    # get the world resolution
+    dx = dynamic_parameters.dx
+    dy = dynamic_parameters.dy
+    dz = dynamic_parameters.dz
+    # get the grid spacing
 
     Jx_tiles, Jy_tiles, Jz_tiles = J
     # unpack the current density tiles
@@ -63,7 +65,7 @@ def J_from_rhov(
     local_Nz = tile_nz + 2 * g
     # piece together the total local tile shape
 
-    shape_factor = world["shape_factor"]
+    shape_factor = static_parameters.shape_factor
     # get the shape factor
 
     reduced_x = int(tile_nx) == 1 and int(ntx) == 1
@@ -221,20 +223,38 @@ def J_from_rhov(
     )
     # compute the current density contributions for all tiles by applying the vectorized deposit function to the particle data and tile indices
 
-    J = fold_tiled_vector_ghost_cells((Jx, Jy, Jz), world, g, tile_shape)
+    J = fold_tiled_vector_ghost_cells((Jx, Jy, Jz), static_parameters, g, bc_type=1)
     # fold the ghost cells of the current density tiles to ensure continuity across tile boundaries
-    J = update_tiled_vector_ghost_cells(J, world, g, tile_shape)
+    J = update_tiled_vector_ghost_cells(J, static_parameters, g, bc_type=1)
     # update the ghost cells of the current density tiles to reflect the contributions from neighboring tiles
 
-    if filter == "bilinear":
-        J = bilinear_filter_vector(J, num_guard_cells=g)
-        # apply a bilinear filter to the current density tiles if specified in the filter argument
-        J = update_tiled_vector_ghost_cells(J, world, g, tile_shape)
-        # update the ghost cells of the current density tiles to reflect the contributions from neighboring tiles
-    elif filter == "digital":
-        J = digital_filter_vector(J, constants["alpha"], num_guard_cells=g)
-        # apply a digital filter to the current density tiles if specified in the filter argument
-        J = update_tiled_vector_ghost_cells(J, world, num_guard_cells=g, tile_shape=tile_shape)
-        # update the ghost cells of the filtered current density tiles to ensure continuity across tile boundaries
 
+
+    ################# CURRENT FILTERING #################
+    def bilinear_filtered_current(J):
+        J = bilinear_filter_vector(J, num_guard_cells=g)
+        J = update_tiled_vector_ghost_cells(J, static_parameters, num_guard_cells=g, bc_type=1)
+        return J
+    
+    def digital_filtered_current(J):
+        J = digital_filter_vector(J, dynamic_parameters.alpha, num_guard_cells=g)
+        J = update_tiled_vector_ghost_cells(J, static_parameters, num_guard_cells=g, bc_type=1)
+        return J
+
+
+    J = jax.lax.cond(
+        current_filter == "bilinear",
+        bilinear_filtered_current,
+        lambda J: jax.lax.cond(
+            current_filter == "digital",
+            digital_filtered_current,
+            lambda J: J,
+            J,
+        ),
+        J,
+    )
+    # apply current filtering
+
+
+    
     return J

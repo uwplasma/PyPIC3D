@@ -1,13 +1,16 @@
 import jax
 import jax.numpy as jnp
-from jax import lax
+from functools import partial
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import (
     compute_particle_anchor,
     particle_axis_offset,
 )
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
-from PyPIC3D.boundary_conditions.ghost_cells import update_tiled_vector_ghost_cells
+from PyPIC3D.boundary_conditions.ghost_cells import (
+    fold_tiled_vector_ghost_cells,
+    update_tiled_vector_ghost_cells,
+)
 from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
 
 
@@ -42,169 +45,13 @@ def collapse_redundant_axis(points, current_weights, old_weights, axis_active, e
     return collapsed_points, collapsed_current, collapsed_old
 
 
-def _compact_1d_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, dim=0):
-    if dim == 0:
-        Wx = jnp.stack([xw[i] - oxw[i] for i in range(5)], axis=0)
-        Wy = jnp.stack([(xw[i] + oxw[i]) / 2 for i in range(5)], axis=0)
-        Wz = jnp.stack([(xw[i] + oxw[i]) / 2 for i in range(5)], axis=0)
-    elif dim == 1:
-        Wy = jnp.stack([yw[j] - oyw[j] for j in range(5)], axis=0)
-        Wx = jnp.stack([(yw[j] + oyw[j]) / 2 for j in range(5)], axis=0)
-        Wz = jnp.stack([(yw[j] + oyw[j]) / 2 for j in range(5)], axis=0)
-    else:
-        Wz = jnp.stack([zw[k] - ozw[k] for k in range(5)], axis=0)
-        Wx = jnp.stack([(zw[k] + ozw[k]) / 2 for k in range(5)], axis=0)
-        Wy = jnp.stack([(zw[k] + ozw[k]) / 2 for k in range(5)], axis=0)
-
-    return Wx, Wy, Wz
-
-
-def _compact_2d_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, null_dim=2):
-    def stack_plane(rows):
-        return jnp.stack([jnp.stack(row, axis=0) for row in rows], axis=0)
-
-    if null_dim == 0:
-        Wx = stack_plane(
-            [
-                [
-                    1 / 3 * (yw[j] * zw[k] + oyw[j] * ozw[k])
-                    + 1 / 6 * (yw[j] * ozw[k] + oyw[j] * zw[k])
-                    for k in range(5)
-                ]
-                for j in range(5)
-            ]
-        )
-        Wy = stack_plane(
-            [[1 / 2 * (yw[j] - oyw[j]) * (zw[k] + ozw[k]) for k in range(5)] for j in range(5)]
-        )
-        Wz = stack_plane(
-            [[1 / 2 * (zw[k] - ozw[k]) * (yw[j] + oyw[j]) for k in range(5)] for j in range(5)]
-        )
-    elif null_dim == 1:
-        Wx = stack_plane(
-            [[1 / 2 * (xw[i] - oxw[i]) * (zw[k] + ozw[k]) for k in range(5)] for i in range(5)]
-        )
-        Wy = stack_plane(
-            [
-                [
-                    1 / 3 * (xw[i] * zw[k] + oxw[i] * ozw[k])
-                    + 1 / 6 * (xw[i] * ozw[k] + oxw[i] * zw[k])
-                    for k in range(5)
-                ]
-                for i in range(5)
-            ]
-        )
-        Wz = stack_plane(
-            [[1 / 2 * (zw[k] - ozw[k]) * (xw[i] + oxw[i]) for k in range(5)] for i in range(5)]
-        )
-    else:
-        Wx = stack_plane(
-            [[1 / 2 * (xw[i] - oxw[i]) * (yw[j] + oyw[j]) for j in range(5)] for i in range(5)]
-        )
-        Wy = stack_plane(
-            [[1 / 2 * (yw[j] - oyw[j]) * (xw[i] + oxw[i]) for j in range(5)] for i in range(5)]
-        )
-        Wz = stack_plane(
-            [
-                [
-                    1 / 3 * (xw[i] * yw[j] + oxw[i] * oyw[j])
-                    + 1 / 6 * (xw[i] * oyw[j] + oxw[i] * yw[j])
-                    for j in range(5)
-                ]
-                for i in range(5)
-            ]
-        )
-
-    return Wx, Wy, Wz
-
-
-def fold_tiled_esirkepov_ghost_cells(field_tiles, world, component_axis, num_guard_cells, tile_shape):
-    """
-    Fold Esirkepov current deposits using the configured guard depth.
-
-    Internal tile faces are ownership transfers. At global particle boundaries,
-    periodic deposits wrap, reflecting deposits mirror with the Esirkepov
-    component sign, and absorbing deposits are discarded.
-    """
-
-    g = int(num_guard_cells)
-    tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
-    ntx, nty, ntz = field_tiles.shape[:3]
-    reduced_axes = (
-        int(ntx) == 1 and tile_nx == 1,
-        int(nty) == 1 and tile_ny == 1,
-        int(ntz) == 1 and tile_nz == 1,
-    )
-    particle_bc = world.get("particle_boundary_conditions", {"x": 0, "y": 0, "z": 0})
-
-    def fold_axis(field_tiles, axis, bc, reduced_axis):
-        tiles = jnp.moveaxis(field_tiles, (axis, 3 + axis), (0, 3))
-        lower_ghost = tiles[:, :, :, :g, :, :]
-        upper_ghost = tiles[:, :, :, -g:, :, :]
-        sign = -1.0 if axis == component_axis else 1.0
-
-        if reduced_axis:
-            ghost_sum = (
-                jnp.sum(lower_ghost, axis=3, keepdims=True)
-                + jnp.sum(upper_ghost, axis=3, keepdims=True)
-            )
-
-            def periodic_boundary(tiles):
-                return tiles.at[:, :, :, g:g + 1, :, :].add(ghost_sum)
-
-            def reflecting_boundary(tiles):
-                return tiles.at[:, :, :, g:g + 1, :, :].add(sign * ghost_sum)
-
-            def absorbing_boundary(tiles):
-                return tiles
-
-            tiles = jax.lax.switch(bc, (periodic_boundary, reflecting_boundary, absorbing_boundary), tiles)
-            tiles = tiles.at[:, :, :, :g, :, :].set(0.0)
-            tiles = tiles.at[:, :, :, -g:, :, :].set(0.0)
-            return jnp.moveaxis(tiles, (0, 3), (axis, 3 + axis))
-
-        tiles = tiles.at[:-1, :, :, -2 * g:-g, :, :].add(lower_ghost[1:, :, :, :, :, :])
-        tiles = tiles.at[1:, :, :, g:2 * g, :, :].add(upper_ghost[:-1, :, :, :, :, :])
-
-        def periodic_boundary(tiles):
-            tiles = tiles.at[-1, :, :, -2 * g:-g, :, :].add(lower_ghost[0, :, :, :, :, :])
-            tiles = tiles.at[0, :, :, g:2 * g, :, :].add(upper_ghost[-1, :, :, :, :, :])
-            return tiles
-
-        def reflecting_boundary(tiles):
-            tiles = tiles.at[0, :, :, g:2 * g, :, :].add(sign * lower_ghost[0, :, :, :, :, :])
-            tiles = tiles.at[-1, :, :, -2 * g:-g, :, :].add(sign * upper_ghost[-1, :, :, :, :, :])
-            return tiles
-
-        def absorbing_boundary(tiles):
-            return tiles
-
-        tiles = jax.lax.switch(bc, (periodic_boundary, reflecting_boundary, absorbing_boundary), tiles)
-        tiles = tiles.at[:, :, :, :g, :, :].set(0.0)
-        tiles = tiles.at[:, :, :, -g:, :, :].set(0.0)
-        return jnp.moveaxis(tiles, (0, 3), (axis, 3 + axis))
-
-    field_tiles = fold_axis(field_tiles, 0, particle_bc["x"], reduced_axes[0])
-    field_tiles = fold_axis(field_tiles, 1, particle_bc["y"], reduced_axes[1])
-    field_tiles = fold_axis(field_tiles, 2, particle_bc["z"], reduced_axes[2])
-
-    return field_tiles
-
-
-def fold_tiled_esirkepov_vector_ghost_cells(field_tiles, world, num_guard_cells, tile_shape):
-    return tuple(
-        fold_tiled_esirkepov_ghost_cells(component, world, component_axis, num_guard_cells, tile_shape)
-        for component_axis, component in enumerate(field_tiles)
-    )
-
-
+@partial(jax.jit, static_argnames="static_parameters")
 def Esirkepov_current(
     particles: TiledParticles,
     species_config: SpeciesConfig,
     J,
-    constants,
-    world,
-    filter=None,
+    static_parameters,
+    dynamic_parameters,
 ):
     """
     Deposit Esirkepov current into tile-local current buffers.
@@ -215,25 +62,20 @@ def Esirkepov_current(
     the caller after deposition.
     """
 
-    if not isinstance(particles, TiledParticles):
-        raise ValueError("Public Esirkepov_current requires TiledParticles.")
-    if filter not in (None, "none"):
-        raise ValueError("Esirkepov current filtering is not supported; use filter='none'.")
-
-    tile_shape = tuple(int(width) for width in world["tile_shape"])
+    tile_shape = tuple(int(width) for width in static_parameters.tile_shape)
     # get the tile shape
-    g = int(world["guard_cells"])
+    g = int(static_parameters.guard_cells)
     # get the number of guard cells on the tiles
-    tiled_grid = world["grids"]["tiled_center_grid"]
+    tiled_grid = dynamic_parameters.grids.tiled_center_grid
     # get the tile grid for the current deposition
 
-    dx = world["dx"]
-    dy = world["dy"]
-    dz = world["dz"]
+    dx = dynamic_parameters.dx
+    dy = dynamic_parameters.dy
+    dz = dynamic_parameters.dz
     # get spatial resolution
-    dt = world["dt"]
+    dt = dynamic_parameters.dt
     # get temporal resolution
-    shape_factor = world["shape_factor"]
+    shape_factor = static_parameters.shape_factor
     # get shape factor
 
     Jx, Jy, Jz = J
@@ -379,7 +221,7 @@ def Esirkepov_current(
 
         if x_active and y_active and z_active:
             # if all three axes are active, compute the 3D Esirkepov weights and deposit the currents accordingly
-            Wx_, Wy_, Wz_ = get_3D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, N_particles)
+            Wx_, Wy_, Wz_ = _3D_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, N_particles)
             Fx = dJx * Wx_
             Fy = dJy * Wy_
             Fz = dJz * Wz_
@@ -405,7 +247,7 @@ def Esirkepov_current(
                 null_dim = 1
             else:
                 null_dim = 2
-            Wx_, Wy_, Wz_ = _compact_2d_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, null_dim=null_dim)
+            Wx_, Wy_, Wz_ = _2d_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, null_dim=null_dim)
             Fx = dJx * Wx_
             Fy = dJy * Wy_
             Fz = dJz * Wz_
@@ -445,7 +287,7 @@ def Esirkepov_current(
                         tile_Jz = tile_Jz.at[ix, iy, iz].add(Fz[i, j, :], mode="drop")
         elif x_active and (not y_active) and (not z_active):
             # if only the x-axis is active, compute the 1D Esirkepov weights and deposit the currents accordingly
-            Wx_, Wy_, Wz_ = _compact_1d_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, dim=0)
+            Wx_, Wy_, Wz_ = _1d_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, dim=0)
             Fx = dJx * Wx_
             Fy = dJy * Wy_
             Fz = dJz * Wz_
@@ -459,7 +301,7 @@ def Esirkepov_current(
                 tile_Jz = tile_Jz.at[ix, iy, iz].add(Fz[i, :], mode="drop")
         elif y_active and (not x_active) and (not z_active):
             # if only the y-axis is active, compute the 1D Esirkepov weights and deposit the currents accordingly
-            Wx_, Wy_, Wz_ = _compact_1d_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, dim=1)
+            Wx_, Wy_, Wz_ = _1d_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, dim=1)
             Fx = dJx * Wx_
             Fy = dJy * Wy_
             Fz = dJz * Wz_
@@ -473,7 +315,7 @@ def Esirkepov_current(
                 tile_Jz = tile_Jz.at[ix, iy, iz].add(Fz[j, :], mode="drop")
         else:
             # if only the z-axis is active, compute the 1D Esirkepov weights and deposit the currents accordingly
-            Wx_, Wy_, Wz_ = _compact_1d_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, dim=2)
+            Wx_, Wy_, Wz_ = _1d_esirkepov_weights(xw, yw, zw, oxw, oyw, ozw, dim=2)
             Fx = dJx * Wx_
             Fy = dJy * Wy_
             Fz = dJz * Wz_
@@ -512,28 +354,26 @@ def Esirkepov_current(
     )
     # deposit the currents for all tiles in parallel using the vectorized deposit function
 
-    J = fold_tiled_esirkepov_vector_ghost_cells((Jx, Jy, Jz), world, num_guard_cells=g, tile_shape=tile_shape)
+    J = fold_tiled_vector_ghost_cells((Jx, Jy, Jz), static_parameters, num_guard_cells=g, bc_type=1)
     # fold the deposited currents across tile boundaries, applying the appropriate boundary conditions for ghost cells
-    J = update_tiled_vector_ghost_cells(J, world, num_guard_cells=g, tile_shape=tile_shape)
+    J = update_tiled_vector_ghost_cells(J, static_parameters, num_guard_cells=g, bc_type=1)
     # update the ghost cells of the folded currents to ensure consistency across tile boundaries
-
-    if filter == "bilinear":
-        J = bilinear_filter_vector(J, num_guard_cells=g)
-        # apply a bilinear filter to the current density tiles if specified in the filter argument
-        J = update_tiled_vector_ghost_cells(J, world, g, tile_shape)
-        # update the ghost cells of the current density tiles to reflect the contributions from neighboring tiles
-    elif filter == "digital":
-        J = digital_filter_vector(J, constants["alpha"], num_guard_cells=g)
-        # apply a digital filter to the current density tiles if specified in the filter argument
-        J = update_tiled_vector_ghost_cells(J, world, num_guard_cells=g, tile_shape=tile_shape)
-        # update the ghost cells of the filtered current density tiles to ensure continuity across tile boundaries
 
     return J
 
 
-def get_3D_esirkepov_weights(
-    x_weights, y_weights, z_weights, old_x_weights, old_y_weights, old_z_weights, N_particles, null_dim=None
-):
+def _3D_esirkepov_weights(
+        x_weights, 
+        y_weights, 
+        z_weights, 
+        old_x_weights, 
+        old_y_weights, 
+        old_z_weights, 
+        N_particles
+    ):
+    
+
+
     Wx_ = jnp.zeros((len(x_weights), len(y_weights), len(z_weights), N_particles))
     Wy_ = jnp.zeros_like(Wx_)
     Wz_ = jnp.zeros_like(Wx_)
@@ -566,3 +406,99 @@ def get_3D_esirkepov_weights(
                 )
 
     return Wx_, Wy_, Wz_
+
+
+
+def _1d_esirkepov_weights(
+        xw,
+        yw,
+        zw, 
+        oxw, 
+        oyw, 
+        ozw, 
+        dim=0
+    ):
+
+    if dim == 0:
+        Wx = jnp.stack([xw[i] - oxw[i] for i in range(5)], axis=0)
+        Wy = jnp.stack([(xw[i] + oxw[i]) / 2 for i in range(5)], axis=0)
+        Wz = jnp.stack([(xw[i] + oxw[i]) / 2 for i in range(5)], axis=0)
+    elif dim == 1:
+        Wy = jnp.stack([yw[j] - oyw[j] for j in range(5)], axis=0)
+        Wx = jnp.stack([(yw[j] + oyw[j]) / 2 for j in range(5)], axis=0)
+        Wz = jnp.stack([(yw[j] + oyw[j]) / 2 for j in range(5)], axis=0)
+    else:
+        Wz = jnp.stack([zw[k] - ozw[k] for k in range(5)], axis=0)
+        Wx = jnp.stack([(zw[k] + ozw[k]) / 2 for k in range(5)], axis=0)
+        Wy = jnp.stack([(zw[k] + ozw[k]) / 2 for k in range(5)], axis=0)
+
+    return Wx, Wy, Wz
+
+
+def _2d_esirkepov_weights(
+        xw,
+        yw, 
+        zw, 
+        oxw, 
+        oyw, 
+        ozw, 
+        null_dim=2
+    ):
+
+
+    def stack_plane(rows):
+        return jnp.stack([jnp.stack(row, axis=0) for row in rows], axis=0)
+
+    if null_dim == 0:
+        Wx = stack_plane(
+            [
+                [
+                    1 / 3 * (yw[j] * zw[k] + oyw[j] * ozw[k])
+                    + 1 / 6 * (yw[j] * ozw[k] + oyw[j] * zw[k])
+                    for k in range(5)
+                ]
+                for j in range(5)
+            ]
+        )
+        Wy = stack_plane(
+            [[1 / 2 * (yw[j] - oyw[j]) * (zw[k] + ozw[k]) for k in range(5)] for j in range(5)]
+        )
+        Wz = stack_plane(
+            [[1 / 2 * (zw[k] - ozw[k]) * (yw[j] + oyw[j]) for k in range(5)] for j in range(5)]
+        )
+    elif null_dim == 1:
+        Wx = stack_plane(
+            [[1 / 2 * (xw[i] - oxw[i]) * (zw[k] + ozw[k]) for k in range(5)] for i in range(5)]
+        )
+        Wy = stack_plane(
+            [
+                [
+                    1 / 3 * (xw[i] * zw[k] + oxw[i] * ozw[k])
+                    + 1 / 6 * (xw[i] * ozw[k] + oxw[i] * zw[k])
+                    for k in range(5)
+                ]
+                for i in range(5)
+            ]
+        )
+        Wz = stack_plane(
+            [[1 / 2 * (zw[k] - ozw[k]) * (xw[i] + oxw[i]) for k in range(5)] for i in range(5)]
+        )
+    else:
+        Wx = stack_plane(
+            [[1 / 2 * (xw[i] - oxw[i]) * (yw[j] + oyw[j]) for j in range(5)] for i in range(5)]
+        )
+        Wy = stack_plane(
+            [[1 / 2 * (yw[j] - oyw[j]) * (xw[i] + oxw[i]) for j in range(5)] for i in range(5)]
+        )
+        Wz = stack_plane(
+            [
+                [
+                    1 / 3 * (xw[i] * yw[j] + oxw[i] * oyw[j])
+                    + 1 / 6 * (xw[i] * oyw[j] + oxw[i] * yw[j])
+                    for j in range(5)
+                ]
+                for i in range(5)
+            ]
+        )
+
+    return Wx, Wy, Wz

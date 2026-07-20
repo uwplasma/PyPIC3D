@@ -34,6 +34,19 @@ def _ensure_openpmd_array(data, dtype=np.float64, squeeze=False):
     return arr
 
 
+def _split_output_parameters(static_parameters, dynamic_parameters):
+    if dynamic_parameters is None:
+        return static_parameters, static_parameters
+    if isinstance(dynamic_parameters, str):
+        return static_parameters, static_parameters
+    if hasattr(dynamic_parameters, "dx"):
+        return static_parameters, dynamic_parameters
+    if "dx" not in dynamic_parameters:
+        static_items = static_parameters._asdict() if hasattr(static_parameters, "_asdict") else static_parameters
+        return static_parameters, {**static_items, **dynamic_parameters}
+    return static_parameters, dynamic_parameters
+
+
 def _open_openpmd_series(output_path, filename, file_extension=".bp"):
     filename = "_".join(filename.split()) + file_extension
     # add file extension
@@ -44,7 +57,7 @@ def _open_openpmd_series(output_path, filename, file_extension=".bp"):
     series.set_attribute("softwareVersion", importlib.metadata.version("PyPIC3D"))
     return series
 
-def _configure_openpmd_mesh(mesh, world, active_dims=(1,1,1)):
+def _configure_openpmd_mesh(mesh, dynamic_parameters, active_dims=(1,1,1)):
     mesh.geometry = io.Geometry.cartesian
     # openpmd-api 0.16+ removed io.Data_Order; mesh.data_order accepts a string.
     mesh.data_order = io.Data_Order.C if hasattr(io, "Data_Order") else "C"
@@ -55,16 +68,16 @@ def _configure_openpmd_mesh(mesh, world, active_dims=(1,1,1)):
     # initialize lists for axes, spacings, and offsets
     if active_dims[0]:
         axes.append("x")
-        ds.append(float(world["dx"]))
-        offsets.append(-float(world["x_wind"]) / 2.0)
+        ds.append(float(dynamic_parameters.dx))
+        offsets.append(-float(dynamic_parameters.x_wind) / 2.0)
     if active_dims[1]:
         axes.append("y")
-        ds.append(float(world["dy"]))
-        offsets.append(-float(world["y_wind"]) / 2.0)
+        ds.append(float(dynamic_parameters.dy))
+        offsets.append(-float(dynamic_parameters.y_wind) / 2.0)
     if active_dims[2]:
         axes.append("z")
-        ds.append(float(world["dz"]))
-        offsets.append(-float(world["z_wind"]) / 2.0)
+        ds.append(float(dynamic_parameters.dz))
+        offsets.append(-float(dynamic_parameters.z_wind) / 2.0)
     # determine the active axes being used and set them
 
     mesh.axis_labels = axes
@@ -74,9 +87,9 @@ def _configure_openpmd_mesh(mesh, world, active_dims=(1,1,1)):
     mesh.unit_SI = 1.0
 
 
-def _write_openpmd_scalar_mesh(iteration, name, data, world, active_dims=(1,1,1)):
+def _write_openpmd_scalar_mesh(iteration, name, data, dynamic_parameters, active_dims=(1,1,1)):
     mesh = iteration.meshes[name]
-    _configure_openpmd_mesh(mesh, world, active_dims)
+    _configure_openpmd_mesh(mesh, dynamic_parameters, active_dims)
     array = _ensure_openpmd_array(data)
     record = mesh[io.Mesh_Record_Component.SCALAR]
     record.reset_dataset(io.Dataset(array.dtype, array.shape))
@@ -84,9 +97,9 @@ def _write_openpmd_scalar_mesh(iteration, name, data, world, active_dims=(1,1,1)
     record.unit_SI = 1.0
 
 
-def _write_openpmd_vector_mesh(iteration, name, components, world, active_dims=(1,1,1)):
+def _write_openpmd_vector_mesh(iteration, name, components, dynamic_parameters, active_dims=(1,1,1)):
     mesh = iteration.meshes[name]
-    _configure_openpmd_mesh(mesh, world, active_dims)
+    _configure_openpmd_mesh(mesh, dynamic_parameters, active_dims)
     for component_name, component_data in zip(("x", "y", "z"), components):
         array = _ensure_openpmd_array(component_data)
         record = mesh[component_name]
@@ -191,26 +204,26 @@ def _iter_tile_chunks_from_host_shard(shard_index, shard_data, *, layout):
                 yield offset, interior
 
 
-def _reset_scalar_mesh_record(iteration, name, *, world, layout):
+def _reset_scalar_mesh_record(iteration, name, *, dynamic_parameters, layout):
     mesh = iteration.meshes[name]
-    _configure_openpmd_mesh(mesh, world, layout.active_dims)
+    _configure_openpmd_mesh(mesh, dynamic_parameters, layout.active_dims)
     record = mesh[io.Mesh_Record_Component.SCALAR]
     record.reset_dataset(io.Dataset(np.dtype(layout.dtype), list(layout.global_shape)))
     record.unit_SI = 1.0
     return record
 
 
-def _reset_vector_mesh_record(iteration, name, component_name, *, world, layout):
+def _reset_vector_mesh_record(iteration, name, component_name, *, dynamic_parameters, layout):
     mesh = iteration.meshes[name]
-    _configure_openpmd_mesh(mesh, world, layout.active_dims)
+    _configure_openpmd_mesh(mesh, dynamic_parameters, layout.active_dims)
     record = mesh[component_name]
     record.reset_dataset(io.Dataset(np.dtype(layout.dtype), list(layout.global_shape)))
     record.unit_SI = 1.0
     return record
 
 
-def write_tiled_scalar_field_chunks_to_iteration(iteration, name, host_shards, *, world, layout):
-    record = _reset_scalar_mesh_record(iteration, name, world=world, layout=layout)
+def write_tiled_scalar_field_chunks_to_iteration(iteration, name, host_shards, *, dynamic_parameters, layout):
+    record = _reset_scalar_mesh_record(iteration, name, dynamic_parameters=dynamic_parameters, layout=layout)
 
     for shard_index, shard_data in host_shards:
         for offset, tile in _iter_tile_chunks_from_host_shard(
@@ -227,7 +240,7 @@ def write_tiled_vector_field_chunks_to_iteration(
     name,
     component_host_shards,
     *,
-    world,
+    dynamic_parameters,
     layout,
     component_names=("x", "y", "z"),
 ):
@@ -236,7 +249,7 @@ def write_tiled_vector_field_chunks_to_iteration(
             iteration,
             name,
             component_name,
-            world=world,
+            dynamic_parameters=dynamic_parameters,
             layout=layout,
         )
 
@@ -255,7 +268,7 @@ def write_tiled_field_snapshot_openpmd(
     *,
     output_dir,
     filename,
-    world,
+    dynamic_parameters,
     layout,
     file_extension=".bp",
 ):
@@ -264,7 +277,7 @@ def write_tiled_field_snapshot_openpmd(
     try:
         iteration = series.iterations[int(snapshot.step)]
         iteration.time = float(snapshot.time)
-        iteration.dt = float(world["dt"])
+        iteration.dt = float(dynamic_parameters.dt)
         iteration.time_unit_SI = 1.0
 
         for name, value in snapshot.fields.items():
@@ -274,7 +287,7 @@ def write_tiled_field_snapshot_openpmd(
                     iteration,
                     name,
                     value,
-                    world=world,
+                    dynamic_parameters=dynamic_parameters,
                     layout=layout,
                 )
             else:
@@ -282,7 +295,7 @@ def write_tiled_field_snapshot_openpmd(
                     iteration,
                     name,
                     value,
-                    world=world,
+                    dynamic_parameters=dynamic_parameters,
                     layout=layout,
                 )
 
@@ -291,24 +304,37 @@ def write_tiled_field_snapshot_openpmd(
         series.close()
 
 
-def write_openpmd_fields_to_iteration(iteration, field_map, world, active_dims=(1,1,1)):
+def write_openpmd_fields_to_iteration(iteration, field_map, dynamic_parameters, active_dims=(1,1,1)):
     for name, data in field_map.items():
         is_vector = isinstance(data, (list, tuple)) and len(data) == 3
         if is_vector:
-            _write_openpmd_vector_mesh(iteration, name, data, world, active_dims)
+            _write_openpmd_vector_mesh(iteration, name, data, dynamic_parameters, active_dims)
         else:
-            _write_openpmd_scalar_mesh(iteration, name, data, world, active_dims)
+            _write_openpmd_scalar_mesh(iteration, name, data, dynamic_parameters, active_dims)
 
 
-def write_openpmd_particles_to_iteration(iteration, particles, constants, species_config=None, species_names=None, world=None):
-    particles = particles_for_output(particles, species_config=species_config, species_names=species_names, world=world)
+def write_openpmd_particles_to_iteration(
+    iteration,
+    particles,
+    static_parameters,
+    dynamic_parameters,
+    species_config=None,
+    species_names=None,
+):
+    particles = particles_for_output(
+        particles,
+        species_config=species_config,
+        species_names=species_names,
+        static_parameters=static_parameters,
+        dynamic_parameters=dynamic_parameters,
+    )
     # Tiled particles carry inactive capacity slots; openPMD should see the
     # active physical particles by species, matching the ordinary output path.
 
     if not particles:
         return
 
-    C = float(constants["C"])
+    C = float(dynamic_parameters.C)
 
     for species in particles:
         species_name = species.name.replace(" ", "_")
@@ -406,15 +432,15 @@ def _axis_diagnostic_position_array(x, u, dt, wind, bc):
     return x_diagnostic
 
 
-def _diagnostic_position_array(x, u, world):
-    particle_bc = world.get("particle_boundary_conditions", {})
-    dt = float(world["dt"])
+def _diagnostic_position_array(x, u, static_parameters, dynamic_parameters):
+    particle_bc = static_parameters.particle_boundary_conditions
+    dt = float(dynamic_parameters.dt)
 
     return np.stack(
         (
-            _axis_diagnostic_position_array(x[:, 0], u[:, 0], dt, float(world["x_wind"]), particle_bc.get("x", 0)),
-            _axis_diagnostic_position_array(x[:, 1], u[:, 1], dt, float(world["y_wind"]), particle_bc.get("y", 0)),
-            _axis_diagnostic_position_array(x[:, 2], u[:, 2], dt, float(world["z_wind"]), particle_bc.get("z", 0)),
+            _axis_diagnostic_position_array(x[:, 0], u[:, 0], dt, float(dynamic_parameters.x_wind), particle_bc[0]),
+            _axis_diagnostic_position_array(x[:, 1], u[:, 1], dt, float(dynamic_parameters.y_wind), particle_bc[1]),
+            _axis_diagnostic_position_array(x[:, 2], u[:, 2], dt, float(dynamic_parameters.z_wind), particle_bc[2]),
         ),
         axis=-1,
     )
@@ -437,11 +463,11 @@ def _count_snapshot_particles_by_species(snapshot):
     return counts
 
 
-def _iter_snapshot_particle_chunks(snapshot, world, constants):
+def _iter_snapshot_particle_chunks(snapshot, static_parameters, dynamic_parameters):
     if len(snapshot.x_shards) != len(snapshot.u_shards) or len(snapshot.x_shards) != len(snapshot.active_shards):
         raise ValueError("Particle snapshot x, u, and active shard lists must have the same length.")
 
-    C = float(constants["C"])
+    C = float(dynamic_parameters.C)
     species_charge = np.asarray(snapshot.species_charge, dtype=np.float64)
     species_mass = np.asarray(snapshot.species_mass, dtype=np.float64)
     species_weight = np.asarray(snapshot.species_weight, dtype=np.float64)
@@ -477,7 +503,7 @@ def _iter_snapshot_particle_chunks(snapshot, world, constants):
 
                         x_live = np.array(x_chunk[tx, ty, tz, local_s][active], dtype=np.float64, copy=True, order="C")
                         u_live = np.array(u_chunk[tx, ty, tz, local_s][active], dtype=np.float64, copy=True, order="C")
-                        x_diagnostic = _diagnostic_position_array(x_live, u_live, world)
+                        x_diagnostic = _diagnostic_position_array(x_live, u_live, static_parameters, dynamic_parameters)
 
                         charge = np.full(n_active, float(species_charge[species_index]), dtype=np.float64)
                         mass = np.full(n_active, float(species_mass[species_index]), dtype=np.float64)
@@ -538,7 +564,7 @@ def _store_particle_record_chunk(species_group, offset, x, u, charge, mass, weig
     return int(offset) + num_particles
 
 
-def write_tiled_particle_snapshot_to_iteration(iteration, snapshot, world, constants, dtype=np.float64):
+def write_tiled_particle_snapshot_to_iteration(iteration, snapshot, static_parameters, dynamic_parameters, dtype=np.float64):
     counts = _count_snapshot_particles_by_species(snapshot)
 
     for species_index, species_name in enumerate(snapshot.species_names):
@@ -551,7 +577,7 @@ def write_tiled_particle_snapshot_to_iteration(iteration, snapshot, world, const
 
     offsets = np.zeros(len(snapshot.species_names), dtype=np.int64)
 
-    for species_index, x, u, charge, mass, weight, gamma in _iter_snapshot_particle_chunks(snapshot, world, constants):
+    for species_index, x, u, charge, mass, weight, gamma in _iter_snapshot_particle_chunks(snapshot, static_parameters, dynamic_parameters):
         species_group = iteration.particles[snapshot.species_names[species_index].replace(" ", "_")]
         offsets[species_index] = _store_particle_record_chunk(
             species_group,
@@ -575,8 +601,8 @@ def write_tiled_particle_snapshot_openpmd(
     *,
     output_dir,
     filename,
-    world,
-    constants,
+    static_parameters,
+    dynamic_parameters,
     file_extension=".bp",
     dtype=np.float64,
 ):
@@ -585,14 +611,14 @@ def write_tiled_particle_snapshot_openpmd(
     try:
         iteration = series.iterations[int(snapshot.step)]
         iteration.time = float(snapshot.time)
-        iteration.dt = float(world["dt"])
+        iteration.dt = float(dynamic_parameters.dt)
         iteration.time_unit_SI = 1.0
 
         write_tiled_particle_snapshot_to_iteration(
             iteration,
             snapshot,
-            world,
-            constants,
+            static_parameters,
+            dynamic_parameters,
             dtype=dtype,
         )
 
@@ -601,20 +627,26 @@ def write_tiled_particle_snapshot_openpmd(
         series.close()
 
 
-def write_openpmd_fields(fields, world, output_dir, plot_t, t, filename="fields", file_extension=".bp"):
+def write_openpmd_fields(fields, static_parameters, dynamic_parameters=None, output_dir=None, plot_t=0, t=0, filename="fields", file_extension=".bp"):
     """
     Write all field data to an openPMD file for visualization in ParaView/VisIt.
 
     Args:
         fields (tuple): Field tuple from the solver (E, B, J, rho, ...).
-        world (dict): Simulation world parameters.
+        static_parameters (dict): Compile-time/run parameters.
+        dynamic_parameters (dict): Scalar/grid parameters.
         output_dir (str): Base output directory for the simulation.
         plot_t (int): openPMD iteration number/index used when writing this step.
-        t (int): Simulation step index used to compute the physical time (t * world["dt"]).
+        t (int): Simulation step index used to compute the physical time.
         filename (str): Base name for the openPMD file.
         file_extension (str): File extension for the openPMD series (for example, ".bp").
     """
-    fields = fields_for_output(fields, world)
+    if isinstance(dynamic_parameters, str) and output_dir is None:
+        output_dir = dynamic_parameters
+        dynamic_parameters = static_parameters
+    static_parameters, dynamic_parameters = _split_output_parameters(static_parameters, dynamic_parameters)
+
+    fields = fields_for_output(fields, static_parameters)
     field_map = _fields_to_interior_map(fields)
     # extract physical interior (strip ghost cells)
 
@@ -626,42 +658,62 @@ def write_openpmd_fields(fields, world, output_dir, plot_t, t, filename="fields"
     # open or create the openPMD series
     iteration = series.iterations[int(plot_t)]
     # specify the iteration using the plot number
-    iteration.time = float(t * world["dt"])
+    iteration.time = float(t * dynamic_parameters.dt)
     # set the physical time
-    iteration.dt = float(world["dt"])
+    iteration.dt = float(dynamic_parameters.dt)
     # set the time step
     iteration.time_unit_SI = 1.0
     # set the time unit
-    write_openpmd_fields_to_iteration(iteration, field_map, world, active_dims)
+    write_openpmd_fields_to_iteration(iteration, field_map, dynamic_parameters, active_dims)
     # write the field data to the iteration
     series.flush()
     series.close()
     # flush and close the series
 
 
-def write_openpmd_particles(particles, world, constants, output_dir, plot_t, t, filename="particles", file_extension=".bp", species_config=None, species_names=None):
+def write_openpmd_particles(
+    particles,
+    static_parameters,
+    dynamic_parameters=None,
+    output_dir=None,
+    plot_t=0,
+    t=0,
+    filename="particles",
+    file_extension=".bp",
+    species_config=None,
+    species_names=None,
+):
     """
     Write all particle data to an openPMD file for visualization in ParaView/VisIt.
 
     Args:
         particles (list): Particle species list.
-        world (dict): Simulation world parameters.
-        constants (dict): Physical constants (must include key 'C').
+        static_parameters (dict): Compile-time/run parameters.
+        dynamic_parameters (dict): Scalar/grid parameters.
         output_dir (str): Base output directory for the simulation.
         t (int): Iteration index.
         filename (str): openPMD file name.
     """
+    static_parameters, dynamic_parameters = _split_output_parameters(static_parameters, dynamic_parameters)
+
     series = _open_openpmd_series(output_dir, filename, file_extension=file_extension)
     # open or create the openPMD series
     iteration = series.iterations[int(plot_t)]
     # specify the iteration using the plot number
-    iteration.time = float(t * world["dt"])
+    iteration.time = float(t * dynamic_parameters.dt)
     # set the physical time
-    iteration.dt = float(world["dt"])
+    iteration.dt = float(dynamic_parameters.dt)
     # set the time step
     iteration.time_unit_SI = 1.0
     # set the time unit
-    write_openpmd_particles_to_iteration(iteration, particles, constants, species_config=species_config, species_names=species_names, world=world)
+    write_openpmd_particles_to_iteration(
+        iteration,
+        particles,
+        static_parameters,
+        dynamic_parameters,
+        species_config=species_config,
+        species_names=species_names,
+    )
     # write the particle data to the iteration
     series.flush()
     series.close()
@@ -669,25 +721,41 @@ def write_openpmd_particles(particles, world, constants, output_dir, plot_t, t, 
 
 
 
-def write_openpmd_initial_particles(particles, world, constants, output_dir, filename="initial_particles.h5", species_config=None, species_names=None):
+def write_openpmd_initial_particles(
+    particles,
+    static_parameters,
+    dynamic_parameters=None,
+    output_dir=None,
+    filename="initial_particles.h5",
+    species_config=None,
+    species_names=None,
+):
     """
     Write the initial particle states to separate openPMD files, one per species.
 
     Args:
         particles (list): List of particle species.
-        world (dict): Dictionary containing the simulation world parameters.
-        constants (dict): Dictionary of physical constants (must include key 'C' for the speed of light).
+        static_parameters (dict): Compile-time/run parameters.
+        dynamic_parameters (dict): Scalar/grid parameters.
         output_dir (str): Base output directory for the simulation.
         filename (str): Base name of the openPMD output file (species name is prepended).
     """
-    particles = particles_for_output(particles, species_config=species_config, species_names=species_names, world=world)
+    static_parameters, dynamic_parameters = _split_output_parameters(static_parameters, dynamic_parameters)
+
+    particles = particles_for_output(
+        particles,
+        species_config=species_config,
+        species_names=species_names,
+        static_parameters=static_parameters,
+        dynamic_parameters=dynamic_parameters,
+    )
     # Initial particle dumps may receive tile-major runtime storage.  The
     # openPMD file still contains ordinary per-species particle records.
 
     if not particles:
         return
     
-    C = constants['C']
+    C = dynamic_parameters.C
     # speed of light
 
     output_path = os.path.join(output_dir, "data", "initial_particles")
@@ -709,7 +777,7 @@ def write_openpmd_initial_particles(particles, world, constants, output_dir, fil
 
         iteration = series.iterations[0]
         iteration.time = 0.0
-        iteration.dt = float(world["dt"])
+        iteration.dt = float(dynamic_parameters.dt)
         iteration.time_unit_SI = 1.0
 
         species_group = iteration.particles[species_name]
@@ -791,17 +859,23 @@ def write_openpmd_initial_particles(particles, world, constants, output_dir, fil
         series.flush()
         series.close()
 
-def write_openpmd_initial_fields(fields, world, output_dir, filename="initial_fields.h5"):
+def write_openpmd_initial_fields(fields, static_parameters, dynamic_parameters=None, output_dir=None, filename="initial_fields.h5"):
     """
     Write the initial field states to an openPMD file.
 
     Args:
         fields (tuple): Field tuple from the solver (E, B, J, rho, ...).
-        world (dict): Simulation world parameters.
+        static_parameters (dict): Compile-time/run parameters.
+        dynamic_parameters (dict): Scalar/grid parameters.
         output_dir (str): Base output directory for the simulation.
         filename (str): openPMD file name.
     """
-    fields = fields_for_output(fields, world)
+    if isinstance(dynamic_parameters, str) and output_dir is None:
+        output_dir = dynamic_parameters
+        dynamic_parameters = static_parameters
+    static_parameters, dynamic_parameters = _split_output_parameters(static_parameters, dynamic_parameters)
+
+    fields = fields_for_output(fields, static_parameters)
     field_map = _fields_to_interior_map(fields)
     # extract physical interior (strip ghost cells)
 
@@ -819,8 +893,8 @@ def write_openpmd_initial_fields(fields, world, output_dir, filename="initial_fi
 
     iteration = series.iterations[0]
     iteration.time = 0.0
-    iteration.dt = float(world["dt"])
+    iteration.dt = float(dynamic_parameters.dt)
     iteration.time_unit_SI = 1.0
-    write_openpmd_fields_to_iteration(iteration, field_map, world, active_dims)
+    write_openpmd_fields_to_iteration(iteration, field_map, dynamic_parameters, active_dims)
     series.flush()
     series.close()

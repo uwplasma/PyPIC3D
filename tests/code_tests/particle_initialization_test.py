@@ -9,7 +9,7 @@ import numpy as np
 
 from PyPIC3D.particles.particle_initialization import load_particles_from_toml
 from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
-from tests.initial_particles import build_tiled_particles, tiled_species
+from tests.kernel_fixtures import build_tiled_particles, particle_parameters_from_tile_values, particle_species
 
 
 jax.config.update("jax_enable_x64", True)
@@ -21,8 +21,11 @@ class TestTiledParticleInitialization(unittest.TestCase):
         np.save(path, np.asarray(values, dtype=float))
         return path
 
+    def _particle_parameters(self, simulation_parameters, parameter_set, dynamic_values):
+        return particle_parameters_from_tile_values(parameter_set, simulation_parameters, dynamic_values=dynamic_values)
+
     def test_direct_tiled_particles_preserve_inactive_slots_and_metadata(self):
-        world = {
+        parameter_set = {
             "Nx": 4,
             "Ny": 2,
             "Nz": 1,
@@ -40,32 +43,24 @@ class TestTiledParticleInitialization(unittest.TestCase):
             "particle_tile_nz": 1,
         }
 
-        species = tiled_species(
+        species = particle_species(
             name="ions",
-            N_particles=3,
             charge=2.0,
             mass=3.0,
             weight=4.0,
-            T=1.0,
             x1=jnp.array([-1.5, 0.5, 1.5]),
             x2=jnp.array([-0.5, 0.5, 0.5]),
             x3=jnp.array([0.0, 0.0, 0.0]),
             v1=jnp.array([0.1, 0.2, 0.3]),
             v2=jnp.array([0.0, 0.0, 0.0]),
             v3=jnp.array([1.0, 2.0, 3.0]),
-            xwind=world["x_wind"],
-            ywind=world["y_wind"],
-            zwind=world["z_wind"],
-            dx=world["dx"],
-            dy=world["dy"],
-            dz=world["dz"],
             update_y=False,
             update_vx=False,
             active_mask=jnp.array([True, False, True]),
-            dt=world["dt"],
         )
 
-        particles, species_config = build_tiled_particles([species], world, simulation_parameters)
+        static_parameters, dynamic_parameters = self._particle_parameters(simulation_parameters, parameter_set, {})
+        particles, species_config = build_tiled_particles([species], static_parameters, dynamic_parameters)
 
         self.assertIsInstance(particles, TiledParticles)
         self.assertIsInstance(species_config, SpeciesConfig)
@@ -97,7 +92,7 @@ class TestTiledParticleInitialization(unittest.TestCase):
         self.assertTrue(bool(species_config.update_u[0, 2]))
 
     def test_species_metadata_is_not_slot_shaped(self):
-        world = {
+        parameter_set = {
             "Nx": 4,
             "Ny": 1,
             "Nz": 1,
@@ -115,51 +110,34 @@ class TestTiledParticleInitialization(unittest.TestCase):
             "particle_tile_nz": 1,
         }
         species = [
-            tiled_species(
+            particle_species(
                 name="electrons",
-                N_particles=2,
                 charge=-1.0,
                 mass=2.0,
                 weight=0.5,
-                T=1.0,
                 x1=jnp.array([-1.5, -0.5]),
                 x2=jnp.zeros(2),
                 x3=jnp.zeros(2),
                 v1=jnp.zeros(2),
                 v2=jnp.zeros(2),
                 v3=jnp.zeros(2),
-                xwind=world["x_wind"],
-                ywind=world["y_wind"],
-                zwind=world["z_wind"],
-                dx=world["dx"],
-                dy=world["dy"],
-                dz=world["dz"],
-                dt=world["dt"],
             ),
-            tiled_species(
+            particle_species(
                 name="ions",
-                N_particles=2,
                 charge=2.0,
                 mass=5.0,
                 weight=0.25,
-                T=1.0,
                 x1=jnp.array([0.5, 1.5]),
                 x2=jnp.zeros(2),
                 x3=jnp.zeros(2),
                 v1=jnp.zeros(2),
                 v2=jnp.zeros(2),
                 v3=jnp.zeros(2),
-                xwind=world["x_wind"],
-                ywind=world["y_wind"],
-                zwind=world["z_wind"],
-                dx=world["dx"],
-                dy=world["dy"],
-                dz=world["dz"],
-                dt=world["dt"],
             ),
         ]
 
-        particles, species_config = build_tiled_particles(species, world, simulation_parameters)
+        static_parameters, dynamic_parameters = self._particle_parameters(simulation_parameters, parameter_set, {})
+        particles, species_config = build_tiled_particles(species, static_parameters, dynamic_parameters)
 
         self.assertEqual(particles.x.shape[:4], (4, 1, 1, 2))
         self.assertEqual(species_config.charge.shape, (2,))
@@ -169,7 +147,7 @@ class TestTiledParticleInitialization(unittest.TestCase):
         self.assertEqual(species_config.update_u.shape, (2, 3))
 
     def test_direct_tiled_particles_can_allocate_inactive_capacity_headroom(self):
-        world = {
+        parameter_set = {
             "Nx": 4,
             "Ny": 1,
             "Nz": 1,
@@ -187,29 +165,21 @@ class TestTiledParticleInitialization(unittest.TestCase):
             "particle_tile_nz": 1,
             "particle_tile_capacity_factor": 3.0,
         }
-        species = tiled_species(
+        species = particle_species(
             name="ions",
-            N_particles=3,
             charge=1.0,
             mass=1.0,
             weight=1.0,
-            T=1.0,
             x1=jnp.array([-1.5, -0.5, 1.5]),
             x2=jnp.zeros(3),
             x3=jnp.zeros(3),
             v1=jnp.zeros(3),
             v2=jnp.zeros(3),
             v3=jnp.zeros(3),
-            xwind=world["x_wind"],
-            ywind=world["y_wind"],
-            zwind=world["z_wind"],
-            dx=world["dx"],
-            dy=world["dy"],
-            dz=world["dz"],
-            dt=world["dt"],
         )
 
-        particles, species_config = build_tiled_particles([species], world, simulation_parameters)
+        static_parameters, dynamic_parameters = self._particle_parameters(simulation_parameters, parameter_set, {})
+        particles, species_config = build_tiled_particles([species], static_parameters, dynamic_parameters)
 
         self.assertEqual(particles.active.shape[-1], 6)
         self.assertEqual(int(jnp.sum(particles.active)), 3)
@@ -224,7 +194,7 @@ class TestTiledParticleInitialization(unittest.TestCase):
             vy_path = self._write_array(tmpdir, "vy.npy", [0.0, 0.0, 0.0])
             vz_path = self._write_array(tmpdir, "vz.npy", [1.0, 2.0, 3.0])
 
-            world = {
+            parameter_set = {
                 "Nx": 4,
                 "Ny": 2,
                 "Nz": 1,
@@ -237,7 +207,7 @@ class TestTiledParticleInitialization(unittest.TestCase):
                 "z_wind": 1.0,
                 "tile_shape": (2, 1, 1),
             }
-            constants = {"kb": 1.0, "eps": 1.0}
+            dynamic_values = {"kb": 1.0, "eps": 1.0}
             simulation_parameters = {
                 "ds_per_debye": None,
                 "shape_factor": 1,
@@ -262,7 +232,12 @@ class TestTiledParticleInitialization(unittest.TestCase):
                 }
             }
 
-            particles, species_config, species_names, metadata = load_particles_from_toml(config, simulation_parameters, world, constants)
+            static_parameters, dynamic_parameters = self._particle_parameters(simulation_parameters, parameter_set, dynamic_values)
+            particles, species_config, species_names, metadata = load_particles_from_toml(
+                config,
+                static_parameters,
+                dynamic_parameters,
+            )
 
             self.assertIsInstance(particles, TiledParticles)
             self.assertIsInstance(species_config, SpeciesConfig)
@@ -296,7 +271,7 @@ class TestTiledParticleInitialization(unittest.TestCase):
             vy_path = self._write_array(tmpdir, "vy.npy", [0.0, 0.0, 0.0, 0.0])
             vz_path = self._write_array(tmpdir, "vz.npy", [1.0, 2.0, 3.0, 4.0])
 
-            world = {
+            parameter_set = {
                 "Nx": 4,
                 "Ny": 1,
                 "Nz": 1,
@@ -309,7 +284,7 @@ class TestTiledParticleInitialization(unittest.TestCase):
                 "z_wind": 1.0,
                 "tile_shape": (2, 1, 1),
             }
-            constants = {"kb": 1.0, "eps": 1.0}
+            dynamic_values = {"kb": 1.0, "eps": 1.0}
             simulation_parameters = {
                 "ds_per_debye": None,
                 "shape_factor": 1,
@@ -348,7 +323,12 @@ class TestTiledParticleInitialization(unittest.TestCase):
                 },
             }
 
-            particles, species_config, species_names, metadata = load_particles_from_toml(config, simulation_parameters, world, constants)
+            static_parameters, dynamic_parameters = self._particle_parameters(simulation_parameters, parameter_set, dynamic_values)
+            particles, species_config, species_names, metadata = load_particles_from_toml(
+                config,
+                static_parameters,
+                dynamic_parameters,
+            )
 
             self.assertEqual(species_names, ("electrons", "ions"))
             self.assertEqual(tuple(item["name"] for item in metadata), ("electrons", "ions"))
@@ -380,7 +360,7 @@ class TestTiledParticleInitialization(unittest.TestCase):
             y_path = self._write_array(tmpdir, "y.npy", [0.0])
             z_path = self._write_array(tmpdir, "z.npy", [0.0])
 
-            world = {
+            parameter_set = {
                 "Nx": 1,
                 "Ny": 1,
                 "Nz": 1,
@@ -393,7 +373,7 @@ class TestTiledParticleInitialization(unittest.TestCase):
                 "z_wind": 1.0,
                 "tile_shape": (1, 1, 1),
             }
-            constants = {"kb": 1.0, "eps": 1.0}
+            dynamic_values = {"kb": 1.0, "eps": 1.0}
             simulation_parameters = {
                 "ds_per_debye": None,
                 "shape_factor": 1,
@@ -425,7 +405,12 @@ class TestTiledParticleInitialization(unittest.TestCase):
                 }
             }
 
-            particles, species_config, species_names, metadata = load_particles_from_toml(config, simulation_parameters, world, constants)
+            static_parameters, dynamic_parameters = self._particle_parameters(simulation_parameters, parameter_set, dynamic_values)
+            particles, species_config, species_names, metadata = load_particles_from_toml(
+                config,
+                static_parameters,
+                dynamic_parameters,
+            )
 
             self.assertTrue(bool(species_config.update_x[0, 0]))
             self.assertFalse(bool(species_config.update_x[0, 1]))

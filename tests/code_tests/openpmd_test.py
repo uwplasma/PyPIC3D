@@ -1,16 +1,23 @@
 import unittest
-import math
 import threading
 import time
 from unittest.mock import patch
 
 import jax.numpy as jnp
 
-from PyPIC3D.boundary_conditions import ghost_cells
 from PyPIC3D.diagnostics import async_writer
 from PyPIC3D.diagnostics import openPMD
 from PyPIC3D.diagnostics.openPMD import _ensure_openpmd_array
-from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
+from tests.kernel_fixtures import (
+    build_tiled_particles,
+    field_tiles_from_global,
+    kernel_parameters,
+    kernel_parameters_from_values,
+    particle_parameters_from_values,
+    particle_species,
+    species_names as names_for_species,
+    vector_tiles_from_global,
+)
 
 
 def _tile_axis_count(n_cells, cells_per_tile):
@@ -19,38 +26,12 @@ def _tile_axis_count(n_cells, cells_per_tile):
     return int(n_cells) // int(cells_per_tile)
 
 
-def tile_scalar_field(field, world, tile_shape, num_guard_cells=2):
-    tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
-    g = int(num_guard_cells)
-    Nx = int(field.shape[0]) - 2
-    Ny = int(field.shape[1]) - 2
-    Nz = int(field.shape[2]) - 2
-    ntx = _tile_axis_count(Nx, tile_nx)
-    nty = _tile_axis_count(Ny, tile_ny)
-    ntz = _tile_axis_count(Nz, tile_nz)
-
-    interior_tiles = field[1:-1, 1:-1, 1:-1]
-    interior_tiles = interior_tiles.reshape(ntx, tile_nx, nty, tile_ny, ntz, tile_nz)
-    interior_tiles = interior_tiles.transpose(0, 2, 4, 1, 3, 5)
-
-    field_tiles = jnp.zeros(
-        (
-            ntx,
-            nty,
-            ntz,
-            tile_nx + 2 * g,
-            tile_ny + 2 * g,
-            tile_nz + 2 * g,
-        ),
-        dtype=field.dtype,
-    )
-    field_tiles = field_tiles.at[:, :, :, g:-g, g:-g, g:-g].set(interior_tiles)
-
-    return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
+def tile_scalar_field(field, static_parameters, dynamic_parameters, num_guard_cells=None):
+    return field_tiles_from_global(field, static_parameters, dynamic_parameters, num_guard_cells)
 
 
-def tile_vector_field(field, world, tile_shape, num_guard_cells=2):
-    return tuple(tile_scalar_field(component, world, tile_shape, num_guard_cells) for component in field)
+def tile_vector_field(field, static_parameters, dynamic_parameters, num_guard_cells=None):
+    return vector_tiles_from_global(field, static_parameters, dynamic_parameters, num_guard_cells)
 
 
 class FakeRecord:
@@ -150,7 +131,7 @@ def _zero_field(shape):
     return tuple(jnp.zeros(shape) for _ in range(3))
 
 
-def _world():
+def _parameter_values():
     return {
         "dt": 0.2,
         "dx": 1.0,
@@ -183,86 +164,14 @@ def _record_data(record):
 
 
 def _species(name, charge, mass, weight, x1):
-    return {
-        "name": name,
-        "charge": charge,
-        "mass": mass,
-        "weight": weight,
-        "x1": jnp.asarray(x1),
-        "u1": jnp.ones_like(x1) * 0.1,
-    }
-
-
-def _particle_tile_index(x, y, z, world, tile_shape):
-    tile_nx, tile_ny, tile_nz = tile_shape
-
-    x_cell = math.floor((float(x) + float(world["x_wind"]) / 2.0) / float(world["dx"]))
-    y_cell = math.floor((float(y) + float(world["y_wind"]) / 2.0) / float(world["dy"]))
-    z_cell = math.floor((float(z) + float(world["z_wind"]) / 2.0) / float(world["dz"]))
-
-    x_cell = min(max(x_cell, 0), int(world["Nx"]) - 1)
-    y_cell = min(max(y_cell, 0), int(world["Ny"]) - 1)
-    z_cell = min(max(z_cell, 0), int(world["Nz"]) - 1)
-
-    return x_cell // tile_nx, y_cell // tile_ny, z_cell // tile_nz
-
-
-def _make_tiled_particles(species, world):
-    tile_shape = tuple(int(width) for width in world["tile_shape"])
-    tile_nx, tile_ny, tile_nz = tile_shape
-    ntx = _tile_axis_count(world["Nx"], tile_nx)
-    nty = _tile_axis_count(world["Ny"], tile_ny)
-    ntz = _tile_axis_count(world["Nz"], tile_nz)
-
-    placements = []
-    tile_counts = {}
-
-    for species_index, species_data in enumerate(species):
-        x1 = species_data["x1"]
-        u1 = species_data["u1"]
-        zeros = jnp.zeros_like(x1)
-        x = jnp.stack((x1, zeros, zeros), axis=-1)
-        u = jnp.stack((u1, zeros, zeros), axis=-1)
-
-        for particle_index in range(x1.shape[0]):
-            tx, ty, tz = _particle_tile_index(
-                x[particle_index, 0],
-                x[particle_index, 1],
-                x[particle_index, 2],
-                world,
-                tile_shape,
-            )
-            tile_key = (tx, ty, tz, species_index)
-            tile_counts[tile_key] = tile_counts.get(tile_key, 0) + 1
-            placements.append((tile_key, x[particle_index], u[particle_index]))
-
-    max_particles_per_tile = max(1, max(tile_counts.values()))
-    n_species = len(species)
-
-    x_tiles = jnp.zeros((ntx, nty, ntz, n_species, max_particles_per_tile, 3))
-    u_tiles = jnp.zeros_like(x_tiles)
-    active_tiles = jnp.zeros((ntx, nty, ntz, n_species, max_particles_per_tile), dtype=bool)
-    write_counts = {}
-
-    for tile_key, x_particle, u_particle in placements:
-        slot = write_counts.get(tile_key, 0)
-        write_counts[tile_key] = slot + 1
-
-        x_tiles = x_tiles.at[tile_key + (slot, slice(None))].set(x_particle)
-        u_tiles = u_tiles.at[tile_key + (slot, slice(None))].set(u_particle)
-        active_tiles = active_tiles.at[tile_key + (slot,)].set(True)
-
-    particles = TiledParticles(x=x_tiles, u=u_tiles, active=active_tiles)
-    species_config = SpeciesConfig(
-        charge=jnp.asarray([species_data["charge"] for species_data in species]),
-        mass=jnp.asarray([species_data["mass"] for species_data in species]),
-        weight=jnp.asarray([species_data["weight"] for species_data in species]),
-        update_x=jnp.ones((n_species, 3), dtype=bool),
-        update_u=jnp.ones((n_species, 3), dtype=bool),
+    return particle_species(
+        name=name,
+        charge=charge,
+        mass=mass,
+        weight=weight,
+        x1=jnp.asarray(x1),
+        u1=jnp.ones_like(x1) * 0.1,
     )
-    species_names = tuple(species_data["name"] for species_data in species)
-
-    return particles, species_config, species_names
 
 
 class OpenPMDDiagnosticsTests(unittest.TestCase):
@@ -274,38 +183,15 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
 
         self.assertEqual(array.shape, (4, 1, 6))
 
-    def _expected_tiled_scalar_from_interior(self, field, world, num_guard_cells):
-        tile_shape = world["tile_shape"]
-        tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
-        g = int(num_guard_cells)
-        Nx = int(field.shape[0]) - 2
-        Ny = int(field.shape[1]) - 2
-        Nz = int(field.shape[2]) - 2
-        ntx = _tile_axis_count(Nx, tile_nx)
-        nty = _tile_axis_count(Ny, tile_ny)
-        ntz = _tile_axis_count(Nz, tile_nz)
+    def _expected_tiled_scalar_from_interior(self, field, static_parameters, dynamic_parameters, num_guard_cells):
+        return field_tiles_from_global(field, static_parameters, dynamic_parameters, num_guard_cells)
 
-        interior_tiles = field[1:-1, 1:-1, 1:-1]
-        interior_tiles = interior_tiles.reshape(ntx, tile_nx, nty, tile_ny, ntz, tile_nz)
-        interior_tiles = interior_tiles.transpose(0, 2, 4, 1, 3, 5)
-
-        field_tiles = jnp.zeros(
-            (
-                ntx,
-                nty,
-                ntz,
-                tile_nx + 2 * g,
-                tile_ny + 2 * g,
-                tile_nz + 2 * g,
-            ),
-            dtype=field.dtype,
+    def _field_with_stale_global_ghosts(self, dynamic_parameters, value_offset=0.0):
+        shape = (
+            int(dynamic_parameters.Nx) + 2,
+            int(dynamic_parameters.Ny) + 2,
+            int(dynamic_parameters.Nz) + 2,
         )
-        field_tiles = field_tiles.at[:, :, :, g:-g, g:-g, g:-g].set(interior_tiles)
-
-        return ghost_cells.update_tiled_ghost_cells(field_tiles, world, g, tile_shape)
-
-    def _field_with_stale_global_ghosts(self, world, value_offset=0.0):
-        shape = (world["Nx"] + 2, world["Ny"] + 2, world["Nz"] + 2)
         field = jnp.arange(jnp.prod(jnp.asarray(shape)), dtype=jnp.float64).reshape(shape)
         field = field + value_offset
         field = field.at[0, :, :].set(-1000.0)
@@ -317,20 +203,30 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
         return field
 
     def test_tile_scalar_field_one_guard_rebuilds_periodic_halos_from_interiors(self):
-        world = _world()
-        field = self._field_with_stale_global_ghosts(world)
+        static_parameters, dynamic_parameters = kernel_parameters_from_values(_parameter_values())
+        field = self._field_with_stale_global_ghosts(dynamic_parameters)
 
-        tiles = tile_scalar_field(field, world, world["tile_shape"], num_guard_cells=1)
-        expected = self._expected_tiled_scalar_from_interior(field, world, num_guard_cells=1)
+        tiles = tile_scalar_field(field, static_parameters, dynamic_parameters, num_guard_cells=1)
+        expected = self._expected_tiled_scalar_from_interior(
+            field,
+            static_parameters,
+            dynamic_parameters,
+            num_guard_cells=1,
+        )
 
         self.assertTrue(jnp.allclose(tiles, expected))
 
     def test_tile_scalar_field_two_guards_rebuilds_periodic_halos_from_interiors(self):
-        world = _world()
-        field = self._field_with_stale_global_ghosts(world, value_offset=10.0)
+        static_parameters, dynamic_parameters = kernel_parameters_from_values(_parameter_values())
+        field = self._field_with_stale_global_ghosts(dynamic_parameters, value_offset=10.0)
 
-        tiles = tile_scalar_field(field, world, world["tile_shape"], num_guard_cells=2)
-        expected = self._expected_tiled_scalar_from_interior(field, world, num_guard_cells=2)
+        tiles = tile_scalar_field(field, static_parameters, dynamic_parameters, num_guard_cells=2)
+        expected = self._expected_tiled_scalar_from_interior(
+            field,
+            static_parameters,
+            dynamic_parameters,
+            num_guard_cells=2,
+        )
 
         self.assertTrue(jnp.allclose(tiles, expected))
 
@@ -343,19 +239,24 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
         phi = jnp.zeros(shape_with_ghosts)
         external_fields = _zero_field(shape_with_ghosts), _zero_field(shape_with_ghosts)
         fields = (E, B, J, rho, phi, external_fields)
-        world = {
-            "dt": 1.0,
-            "dx": 0.25,
-            "dy": 0.5,
-            "dz": 0.75,
-            "x_wind": 1.0,
-            "y_wind": 2.0,
-            "z_wind": 3.0,
-        }
+        static_parameters, dynamic_parameters = kernel_parameters(
+            Nx=4,
+            Ny=1,
+            Nz=6,
+            x_wind=1.0,
+            y_wind=2.0,
+            z_wind=3.0,
+            dx=0.25,
+            dy=0.5,
+            dz=0.75,
+            dt=1.0,
+            tile_shape=(4, 1, 6),
+            guard_cells=1,
+        )
         series = FakeSeries()
 
         with patch.object(openPMD, "_open_openpmd_series", return_value=series):
-            openPMD.write_openpmd_fields(fields, world, "/tmp", plot_t=0, t=0)
+            openPMD.write_openpmd_fields(fields, static_parameters, dynamic_parameters, "/tmp", plot_t=0, t=0)
 
         B_mesh = series.iterations[0].meshes["B"]
         self.assertEqual(B_mesh.axis_labels, ["x", "y", "z"])
@@ -371,7 +272,7 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
         rho = jnp.zeros(shape_with_ghosts)
         phi = jnp.zeros(shape_with_ghosts)
         external_fields = _zero_field(shape_with_ghosts), _zero_field(shape_with_ghosts)
-        world = {
+        parameter_values = {
             "dt": 1.0,
             "dx": 0.25,
             "dy": 0.5,
@@ -386,22 +287,23 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
             "guard_cells": 2,
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
+        static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_values)
         tiled_fields = (
-            tile_vector_field(E, world, world["tile_shape"]),
-            tile_vector_field(B, world, world["tile_shape"]),
-            tile_vector_field(J, world, world["tile_shape"]),
-            tile_scalar_field(rho, world, world["tile_shape"]),
-            tile_scalar_field(phi, world, world["tile_shape"]),
+            tile_vector_field(E, static_parameters, dynamic_parameters),
+            tile_vector_field(B, static_parameters, dynamic_parameters),
+            tile_vector_field(J, static_parameters, dynamic_parameters),
+            tile_scalar_field(rho, static_parameters, dynamic_parameters),
+            tile_scalar_field(phi, static_parameters, dynamic_parameters),
             (
-                tile_vector_field(external_fields[0], world, world["tile_shape"]),
-                tile_vector_field(external_fields[1], world, world["tile_shape"]),
+                tile_vector_field(external_fields[0], static_parameters, dynamic_parameters),
+                tile_vector_field(external_fields[1], static_parameters, dynamic_parameters),
             ),
             None,
         )
         series = FakeSeries()
 
         with patch.object(openPMD, "_open_openpmd_series", return_value=series):
-            openPMD.write_openpmd_fields(tiled_fields, world, "/tmp", plot_t=0, t=0)
+            openPMD.write_openpmd_fields(tiled_fields, static_parameters, dynamic_parameters, "/tmp", plot_t=0, t=0)
 
         E_mesh = series.iterations[0].meshes["E"]
         rho_mesh = series.iterations[0].meshes["rho"]
@@ -409,16 +311,17 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
         self.assertEqual(rho_mesh.records[openPMD.io.Mesh_Record_Component.SCALAR].shape, (4, 2, 2))
 
     def test_tiled_field_snapshot_writes_tile_chunks_without_global_assembly(self):
-        world = _world()
+        parameter_values = _parameter_values()
+        static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_values)
         shape_with_ghosts = (6, 4, 3)
         rho_global = jnp.arange(6 * 4 * 3, dtype=jnp.float64).reshape(shape_with_ghosts)
         phi_global = rho_global + 100.0
         E_global = tuple(rho_global + offset for offset in (10.0, 20.0, 30.0))
-        tile_shape = world["tile_shape"]
+        tile_shape = tuple(int(width) for width in static_parameters.tile_shape)
         field_map = {
-            "E": tile_vector_field(E_global, world, tile_shape),
-            "rho": tile_scalar_field(rho_global, world, tile_shape),
-            "phi": tile_scalar_field(phi_global, world, tile_shape),
+            "E": tile_vector_field(E_global, static_parameters, dynamic_parameters),
+            "rho": tile_scalar_field(rho_global, static_parameters, dynamic_parameters),
+            "phi": tile_scalar_field(phi_global, static_parameters, dynamic_parameters),
         }
         snapshot = async_writer.make_tiled_field_snapshot(
             field_map,
@@ -426,9 +329,9 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
             time=0.6,
         )
         layout = openPMD.TiledMeshLayout(
-            global_shape=(world["Nx"], world["Ny"], world["Nz"]),
+            global_shape=(int(dynamic_parameters.Nx), int(dynamic_parameters.Ny), int(dynamic_parameters.Nz)),
             tile_shape=tile_shape,
-            guard_cells=world["guard_cells"],
+            guard_cells=int(static_parameters.guard_cells),
         )
         series = FakeSeries()
 
@@ -437,7 +340,7 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
                 snapshot,
                 output_dir="/tmp",
                 filename="fields",
-                world=world,
+                dynamic_parameters=dynamic_parameters,
                 layout=layout,
                 file_extension=".h5",
             )
@@ -447,7 +350,7 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
         E_record = iteration.meshes["E"].records["x"]
 
         self.assertEqual(iteration.time, 0.6)
-        self.assertEqual(iteration.dt, world["dt"])
+        self.assertEqual(iteration.dt, float(dynamic_parameters.dt))
         self.assertEqual(iteration.meshes["rho"].axis_labels, ["x", "y", "z"])
         self.assertEqual(len(rho_record.chunks), 4)
         self.assertEqual(rho_record.chunks[0][0], (0, 0, 0))
@@ -456,14 +359,15 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
         self.assertEqual(E_record.chunks[0][0], (0, 0, 0))
 
     def test_async_field_writer_queue_size_caps_pending_snapshots(self):
-        world = _world()
+        static_parameters, dynamic_parameters = kernel_parameters_from_values(_parameter_values())
         writer = async_writer.AsyncTiledOpenPMDFieldWriter(
             output_dir="/tmp",
             filename="fields",
-            world=world,
-            global_shape=(world["Nx"], world["Ny"], world["Nz"]),
-            tile_shape=world["tile_shape"],
-            guard_cells=world["guard_cells"],
+            static_parameters=static_parameters,
+            dynamic_parameters=dynamic_parameters,
+            global_shape=(int(dynamic_parameters.Nx), int(dynamic_parameters.Ny), int(dynamic_parameters.Nz)),
+            tile_shape=tuple(int(width) for width in static_parameters.tile_shape),
+            guard_cells=int(static_parameters.guard_cells),
             queue_size=1,
         )
         snapshot = async_writer.TiledFieldSnapshot(step=0, time=0.0, fields={})
@@ -473,14 +377,15 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
         writer.close(raise_errors=False)
 
     def test_async_field_writer_raises_worker_errors_on_close(self):
-        world = _world()
+        static_parameters, dynamic_parameters = kernel_parameters_from_values(_parameter_values())
         writer = async_writer.AsyncTiledOpenPMDFieldWriter(
             output_dir="/tmp",
             filename="fields",
-            world=world,
-            global_shape=(world["Nx"], world["Ny"], world["Nz"]),
-            tile_shape=world["tile_shape"],
-            guard_cells=world["guard_cells"],
+            static_parameters=static_parameters,
+            dynamic_parameters=dynamic_parameters,
+            global_shape=(int(dynamic_parameters.Nx), int(dynamic_parameters.Ny), int(dynamic_parameters.Nz)),
+            tile_shape=tuple(int(width) for width in static_parameters.tile_shape),
+            guard_cells=int(static_parameters.guard_cells),
             queue_size=1,
         )
         snapshot = async_writer.TiledFieldSnapshot(step=0, time=0.0, fields={})
@@ -492,20 +397,25 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
                 writer.close()
 
     def test_tiled_particle_snapshot_writes_same_records_as_synchronous_output(self):
-        world = _world()
+        parameter_values = _parameter_values()
+        dynamic_values = {"C": 10.0}
+        static_parameters, dynamic_parameters = particle_parameters_from_values(
+            parameter_values,
+            dynamic_values=dynamic_values,
+        )
         species = [
             _species("beam electrons", -1.0, 2.0, 3.0, jnp.array([-1.5, 0.5])),
             _species("background ions", 1.0, 4.0, 5.0, jnp.array([1.5, -0.5])),
         ]
-        tiled_particles, species_config, species_names = _make_tiled_particles(species, world)
-        constants = {"C": 10.0}
+        tiled_particles, species_config = build_tiled_particles(species, static_parameters, dynamic_parameters)
+        species_names = names_for_species(species)
 
         sync_series = FakeSeries()
         with patch.object(openPMD, "_open_openpmd_series", return_value=sync_series):
             openPMD.write_openpmd_particles(
                 tiled_particles,
-                world,
-                constants,
+                static_parameters,
+                dynamic_parameters,
                 "/tmp",
                 plot_t=2,
                 t=3,
@@ -516,7 +426,7 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
         snapshot = async_writer.make_tiled_particle_snapshot(
             tiled_particles,
             step=2,
-            time=3 * world["dt"],
+            time=3 * float(dynamic_parameters.dt),
             species_names=species_names,
             species_config=species_config,
         )
@@ -526,8 +436,8 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
                 snapshot,
                 output_dir="/tmp",
                 filename="particles",
-                world=world,
-                constants=constants,
+                static_parameters=static_parameters,
+                dynamic_parameters=dynamic_parameters,
                 file_extension=".h5",
             )
 
@@ -536,7 +446,7 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
         sync_ions = sync_series.iterations[2].particles["background_ions"]
         async_ions = async_series.iterations[2].particles["background_ions"]
 
-        self.assertEqual(async_series.iterations[2].time, 3 * world["dt"])
+        self.assertEqual(async_series.iterations[2].time, 3 * float(dynamic_parameters.dt))
         self.assertEqual(_record_data(async_electrons["position"]["x"]).shape, _record_data(sync_electrons["position"]["x"]).shape)
         self.assertEqual(_record_data(async_ions["position"]["x"]).shape, _record_data(sync_ions["position"]["x"]).shape)
         for group_async, group_sync in ((async_electrons, sync_electrons), (async_ions, sync_ions)):
@@ -557,12 +467,15 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
                 )
 
     def test_async_particle_writer_queue_size_caps_pending_snapshots(self):
-        world = _world()
+        static_parameters, dynamic_parameters = particle_parameters_from_values(
+            _parameter_values(),
+            dynamic_values={"C": 10.0},
+        )
         writer = async_writer.AsyncTiledOpenPMDParticleWriter(
             output_dir="/tmp",
             filename="particles",
-            world=world,
-            constants={"C": 10.0},
+            static_parameters=static_parameters,
+            dynamic_parameters=dynamic_parameters,
             queue_size=1,
         )
         snapshot = async_writer.TiledParticleSnapshot(
@@ -582,12 +495,15 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
         writer.close(raise_errors=False)
 
     def test_async_particle_writer_raises_worker_errors_on_close(self):
-        world = _world()
+        static_parameters, dynamic_parameters = particle_parameters_from_values(
+            _parameter_values(),
+            dynamic_values={"C": 10.0},
+        )
         writer = async_writer.AsyncTiledOpenPMDParticleWriter(
             output_dir="/tmp",
             filename="particles",
-            world=world,
-            constants={"C": 10.0},
+            static_parameters=static_parameters,
+            dynamic_parameters=dynamic_parameters,
             queue_size=1,
         )
         snapshot = async_writer.TiledParticleSnapshot(
@@ -609,21 +525,25 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
                 writer.close()
 
     def test_field_and_particle_async_writers_serialize_openpmd_calls(self):
-        world = _world()
+        static_parameters, dynamic_parameters = kernel_parameters_from_values(
+            _parameter_values(),
+            dynamic_values={"C": 10.0},
+        )
         field_writer = async_writer.AsyncTiledOpenPMDFieldWriter(
             output_dir="/tmp",
             filename="fields",
-            world=world,
-            global_shape=(world["Nx"], world["Ny"], world["Nz"]),
-            tile_shape=world["tile_shape"],
-            guard_cells=world["guard_cells"],
+            static_parameters=static_parameters,
+            dynamic_parameters=dynamic_parameters,
+            global_shape=(int(dynamic_parameters.Nx), int(dynamic_parameters.Ny), int(dynamic_parameters.Nz)),
+            tile_shape=tuple(int(width) for width in static_parameters.tile_shape),
+            guard_cells=int(static_parameters.guard_cells),
             queue_size=1,
         )
         particle_writer = async_writer.AsyncTiledOpenPMDParticleWriter(
             output_dir="/tmp",
             filename="particles",
-            world=world,
-            constants={"C": 10.0},
+            static_parameters=static_parameters,
+            dynamic_parameters=dynamic_parameters,
             queue_size=1,
         )
         field_snapshot = async_writer.TiledFieldSnapshot(step=0, time=0.0, fields={})
@@ -670,19 +590,23 @@ class OpenPMDDiagnosticsTests(unittest.TestCase):
         self.assertEqual(overlaps, [])
 
     def test_write_openpmd_initial_particles_flattens_tiled_particles_and_preserves_names(self):
-        world = _world()
+        static_parameters, dynamic_parameters = particle_parameters_from_values(
+            _parameter_values(),
+            dynamic_values={"C": 10.0},
+        )
         species = [
             _species("beam electrons", -1.0, 2.0, 3.0, jnp.array([-1.5, 0.5])),
             _species("background ions", 1.0, 4.0, 5.0, jnp.array([1.5])),
         ]
-        tiled_particles, species_config, species_names = _make_tiled_particles(species, world)
+        tiled_particles, species_config = build_tiled_particles(species, static_parameters, dynamic_parameters)
+        species_names = names_for_species(species)
         series = FakeSeries()
 
         with patch.object(openPMD.io, "Series", return_value=series):
             openPMD.write_openpmd_initial_particles(
                 tiled_particles,
-                world,
-                {"C": 10.0},
+                static_parameters,
+                dynamic_parameters,
                 "/tmp",
                 species_config=species_config,
                 species_names=species_names,

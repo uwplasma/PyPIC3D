@@ -3,33 +3,33 @@ from jax import jit
 
 
 @jit
-def gamma_from_u(u, constants):
+def gamma_from_u(u, dynamic_parameters):
     """
     Calculate gamma from the relativistic velocity-like momentum u = gamma * v.
     """
-    C = constants["C"]
+    C = dynamic_parameters.C
     # speed of light
 
     return jnp.sqrt(1.0 + jnp.dot(u, u) / C**2)
 
 
 @jit
-def velocity_from_u(u, constants):
+def velocity_from_u(u, dynamic_parameters):
     """
     Convert the relativistic velocity-like momentum u = gamma * v to velocity.
     """
-    gamma = gamma_from_u(u, constants)
+    gamma = gamma_from_u(u, dynamic_parameters)
     # compute gamma from u
 
     return u / gamma
 
 
 @jit
-def u_from_v(v, constants):
+def u_from_v(v, dynamic_parameters):
     """
     Convert velocity to the relativistic velocity-like momentum u = gamma * v.
     """
-    C = constants["C"]
+    C = dynamic_parameters.C
     # speed of light
 
     gamma = 1.0 / jnp.sqrt(1.0 - jnp.dot(v, v) / C**2)
@@ -39,23 +39,23 @@ def u_from_v(v, constants):
 
 
 @jit
-def gamma_higuera_cary(u_e, beta, constants):
+def gamma_higuera_cary(u_e, beta, dynamic_parameters):
     """
     Calculate the Higuera-Cary gamma used in the magnetic rotation.
     """
-    C = constants["C"]
+    C = dynamic_parameters.C
     # speed of light
 
     beta_squared = jnp.dot(beta, beta)
     u_star = jnp.dot(u_e, beta) / C
-    sigma = gamma_from_u(u_e, constants) ** 2 - beta_squared
+    sigma = gamma_from_u(u_e, dynamic_parameters) ** 2 - beta_squared
     # compute the scalar quantities for the Higuera-Cary gamma expression
 
     return jnp.sqrt((sigma + jnp.sqrt(sigma**2 + 4.0 * (beta_squared + u_star**2))) / 2.0)
 
 
 @jit
-def higuera_cary_single_particle(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, q, m, dt, constants):
+def higuera_cary_single_particle(vx, vy, vz, efield_atx, efield_aty, efield_atz, bfield_atx, bfield_aty, bfield_atz, q, m, dt, dynamic_parameters):
     """
     Updates the velocity of a single particle using the Higuera-Cary algorithm.
     Args:
@@ -71,7 +71,7 @@ def higuera_cary_single_particle(vx, vy, vz, efield_atx, efield_aty, efield_atz,
         q (float): Charge of the particle.
         m (float): Mass of the particle.
         dt (float): Time step for the update.
-        constants (dict): Dictionary containing the speed of light.
+        dynamic_parameters (dict): Dictionary containing the speed of light.
     Returns:
         tuple: Updated velocity components (vx, vy, vz) of the particle.
     """
@@ -79,7 +79,7 @@ def higuera_cary_single_particle(vx, vy, vz, efield_atx, efield_aty, efield_atz,
     v = jnp.array([vx, vy, vz])
     # convert v into an array
 
-    u = u_from_v(v, constants)
+    u = u_from_v(v, dynamic_parameters)
     # convert velocity into relativistic velocity-like momentum
 
     E = jnp.array([efield_atx, efield_aty, efield_atz])
@@ -96,7 +96,7 @@ def higuera_cary_single_particle(vx, vy, vz, efield_atx, efield_aty, efield_atz,
     u_e = u + epsilon
     # apply the first half electric-field kick
 
-    gamma_next = gamma_higuera_cary(u_e, beta, constants)
+    gamma_next = gamma_higuera_cary(u_e, beta, dynamic_parameters)
     t = beta / gamma_next
     # calculate the Higuera-Cary rotation vector
 
@@ -107,7 +107,7 @@ def higuera_cary_single_particle(vx, vy, vz, efield_atx, efield_aty, efield_atz,
     newu = u_m + epsilon + jnp.cross(u_m, t)
     # apply the second electric-field kick and final rotation correction
 
-    newv = velocity_from_u(newu, constants)
+    newv = velocity_from_u(newu, dynamic_parameters)
     # convert the relativistic velocity-like momentum back to velocity
 
     return newv[0], newv[1], newv[2]

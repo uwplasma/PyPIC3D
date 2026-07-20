@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import (
@@ -5,83 +6,103 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
     build_staggered_axis,
 )
 
-
 def _tile_axis_count(n_cells, cells_per_tile):
     if int(n_cells) % int(cells_per_tile) != 0:
         raise ValueError("Shared tile sizes must divide the physical grid dimensions exactly.")
     return int(n_cells) // int(cells_per_tile)
 
-
-def build_collocated_grid(world):
+def build_collocated_grid(dynamic_parameters):
     """
     Build the collocated vertex/center grid including one ghost cell per side.
     """
 
-    dx = world["dx"]
-    dy = world["dy"]
-    dz = world["dz"]
-    x_wind = world["x_wind"]
-    y_wind = world["y_wind"]
-    z_wind = world["z_wind"]
-    Nx = world["Nx"]
-    Ny = world["Ny"]
-    Nz = world["Nz"]
+    dx = dynamic_parameters.dx
+    dy = dynamic_parameters.dy
+    dz = dynamic_parameters.dz
+    # get the spatial resolutions
+    x_wind = dynamic_parameters.x_wind
+    y_wind = dynamic_parameters.y_wind
+    z_wind = dynamic_parameters.z_wind
+    # get the physical domain sizes
+    Nx = dynamic_parameters.Nx
+    Ny = dynamic_parameters.Ny
+    Nz = dynamic_parameters.Nz
+    # get the number of grid points
 
     grid = (
         build_collocated_axis(-x_wind / 2, dx, Nx),
         build_collocated_axis(-y_wind / 2, dy, Ny),
         build_collocated_axis(-z_wind / 2, dz, Nz),
     )
+    # construct a collocated grid with ghost cells
 
     return grid, grid
 
 
-def build_yee_grid(world):
+def build_yee_grid(dynamic_parameters):
     """
-    Build the Yee vertex and center grids including one ghost cell per side.
+    Build the legacy PyPIC3D Yee center and vertex grids.
+
+    In the runtime contract, ``center`` is the collocated/base index grid and
+    ``vertex`` is the staggered half-cell grid.
     """
 
-    dx = world["dx"]
-    dy = world["dy"]
-    dz = world["dz"]
-    x_wind = world["x_wind"]
-    y_wind = world["y_wind"]
-    z_wind = world["z_wind"]
-    Nx = world["Nx"]
-    Ny = world["Ny"]
-    Nz = world["Nz"]
+    dx = dynamic_parameters.dx
+    dy = dynamic_parameters.dy
+    dz = dynamic_parameters.dz
+    # get the spatial resolutions
+    x_wind = dynamic_parameters.x_wind
+    y_wind = dynamic_parameters.y_wind
+    z_wind = dynamic_parameters.z_wind
+    # get the physical domain sizes
+    Nx = dynamic_parameters.Nx
+    Ny = dynamic_parameters.Ny
+    Nz = dynamic_parameters.Nz
+    # get the number of grid points
 
-    vertex_grid = (
+    center_grid = (
         build_collocated_axis(-x_wind / 2, dx, Nx),
         build_collocated_axis(-y_wind / 2, dy, Ny),
         build_collocated_axis(-z_wind / 2, dz, Nz),
     )
-    center_grid = (
+    # construct the collocated/base grid with ghost cells
+
+    vertex_grid = (
         build_staggered_axis(-x_wind / 2, dx, Nx),
         build_staggered_axis(-y_wind / 2, dy, Ny),
         build_staggered_axis(-z_wind / 2, dz, Nz),
     )
+    # construct the staggered half-cell grid with ghost cells
 
-    return vertex_grid, center_grid
+    return center_grid, vertex_grid
 
 
-def _tile_grid_axis(global_axis_grid, world, tile_shape, tile_counts, axis_index, num_guard_cells):
-    tile_width = int(tile_shape[axis_index])
-    tile_count = int(tile_counts[axis_index])
-    g = int(num_guard_cells)
+def _tile_grid_axis(global_axis_grid, dynamic_parameters, tile_shape, tile_counts, axis_index, num_guard_cells):
+    tile_width = tile_shape[axis_index]
+    tile_count = tile_counts[axis_index]
+    g = num_guard_cells
 
-    if axis_index == 0:
-        d = world["dx"]
-    elif axis_index == 1:
-        d = world["dy"]
-    else:
-        d = world["dz"]
+    d = jax.lax.cond(
+        axis_index == 0,
+        lambda _: dynamic_parameters.dx,
+        lambda _: jax.lax.cond(
+            axis_index == 1,
+            lambda _: dynamic_parameters.dy,
+            lambda _: dynamic_parameters.dz,
+            None,
+        ),
+        None,
+    )
+    # determine the grid spacing for the given axis index
 
     offsets = jnp.arange(tile_width + 2 * g, dtype=global_axis_grid.dtype)
+    # determine the offsets for the tile including guard cells
     tile_indices = jnp.arange(tile_count, dtype=global_axis_grid.dtype)
+    # get the tile indices for the given axis
     axis_lines = global_axis_grid[0] + (
         offsets[jnp.newaxis, :] + tile_indices[:, jnp.newaxis] * tile_width - (g - 1)
     ) * d
+    # build the local tile axes
 
     axis_shape = [1, 1, 1, tile_width + 2 * g]
     axis_shape[axis_index] = tile_count
@@ -90,7 +111,7 @@ def _tile_grid_axis(global_axis_grid, world, tile_shape, tile_counts, axis_index
     return jnp.broadcast_to(axis_lines.reshape(axis_shape), tiled_shape)
 
 
-def _tile_grid_axes(grid, world, tile_shape, num_guard_cells=2):
+def _tile_grid_axes(grid, dynamic_parameters, tile_shape, num_guard_cells=2):
     """
     Build tile-local coordinate lines for a center or vertex grid.
     """
@@ -106,32 +127,39 @@ def _tile_grid_axes(grid, world, tile_shape, num_guard_cells=2):
     )
 
     return tuple(
-        _tile_grid_axis(grid[axis], world, tile_shape, tile_counts, axis, num_guard_cells)
+        _tile_grid_axis(grid[axis], dynamic_parameters, tile_shape, tile_counts, axis, num_guard_cells)
         for axis in range(3)
     )
 
 
-def build_tiled_yee_grids(world, tile_shape=None, num_guard_cells=None):
+def build_tiled_yee_grids(static_parameters, dynamic_parameters):
     """
-    Build the tiled vertex and center grids from the untiled grids in world.
+    Build the tiled center and vertex grids from the untiled grids.
     """
 
-    if tile_shape is None:
-        tile_shape = tuple(int(width) for width in world["tile_shape"])
-    if num_guard_cells is None:
-        num_guard_cells = int(world["guard_cells"])
+    tile_shape = static_parameters.tile_shape
+    # get the tile shape from the static parameters
+    num_guard_cells = static_parameters.guard_cells
+    # get the number of guard cells from the static parameters
+    grids = dynamic_parameters.grids
+    # get the grids from the dynamic parameters
 
-    tiled_vertex_grid = _tile_grid_axes(
-        world["grids"]["vertex"],
-        world,
-        tile_shape,
-        num_guard_cells=num_guard_cells,
-    )
+    center_grid = grids.center
+    vertex_grid = grids.vertex
+    # get the center and vertex grids from the grids object
+
     tiled_center_grid = _tile_grid_axes(
-        world["grids"]["center"],
-        world,
+        center_grid,
+        dynamic_parameters,
         tile_shape,
         num_guard_cells=num_guard_cells,
     )
+    tiled_vertex_grid = _tile_grid_axes(
+        vertex_grid,
+        dynamic_parameters,
+        tile_shape,
+        num_guard_cells=num_guard_cells,
+    )
+    # build the tiled center and vertex grids
 
-    return tiled_vertex_grid, tiled_center_grid
+    return tiled_center_grid, tiled_vertex_grid

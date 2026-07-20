@@ -25,6 +25,8 @@ jobs:
           pip install coverage
 
       - name: Run tests with coverage
+        env:
+          JAX_NUM_CPU_DEVICES: "16"
         run: |
           coverage run -m unittest tests/code_tests/*.py
           coverage xml

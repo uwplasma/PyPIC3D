@@ -5,27 +5,37 @@ import jax.numpy as jnp
 import os
 import plotly.graph_objects as go
 import jax
+import numpy as np
 from functools import partial
 
 from PyPIC3D.diagnostics.output_adapters import particles_for_output
 
-def plot_positions(particles, t, x_wind, y_wind, z_wind, path, species_config=None, species_names=None, world=None):
+def plot_positions(particles, t, static_parameters, dynamic_parameters, path, species_config=None, species_names=None):
     """
     Makes an interactive 3D plot of the positions of the particles using Plotly.
 
     Args:
         particles (list): A list of ParticleSpecies objects containing positions.
         t (float): The time value.
-        x_wind (float): The x-axis wind limit.
-        y_wind (float): The y-axis wind limit.
-        z_wind (float): The z-axis wind limit.
+        static_parameters (dict): Compile-time/run parameters.
+        dynamic_parameters (dict): Scalar/grid parameters.
 
     Returns:
         None
     """
     fig = go.Figure()
 
-    particles = particles_for_output(particles, species_config=species_config, species_names=species_names, world=world)
+    x_wind = dynamic_parameters.x_wind
+    y_wind = dynamic_parameters.y_wind
+    z_wind = dynamic_parameters.z_wind
+
+    particles = particles_for_output(
+        particles,
+        species_config=species_config,
+        species_names=species_names,
+        static_parameters=static_parameters,
+        dynamic_parameters=dynamic_parameters,
+    )
     # Keep tiled fixed-capacity storage out of the plotting loop.  From here on
     # the code sees the same species-like diagnostic objects as ordinary output.
 
@@ -55,7 +65,7 @@ def plot_positions(particles, t, x_wind, y_wind, z_wind, path, species_config=No
 
     fig.write_html(f"{path}/data/positions/particles.{t:09}.html")
 
-def write_particles_phase_space(particles, t, path, species_config=None, species_names=None, world=None):
+def write_particles_phase_space(particles, t, path, static_parameters, dynamic_parameters, species_config=None, species_names=None):
     """
     Write the phase space of the particles to a file.
 
@@ -75,7 +85,13 @@ def write_particles_phase_space(particles, t, path, species_config=None, species
         os.makedirs(f"{path}/data/phase_space/z")
     # Create directory if it doesn't exist
 
-    particles = particles_for_output(particles, species_config=species_config, species_names=species_names, world=world)
+    particles = particles_for_output(
+        particles,
+        species_config=species_config,
+        species_names=species_names,
+        static_parameters=static_parameters,
+        dynamic_parameters=dynamic_parameters,
+    )
     # Tiled storage contains fixed-capacity inactive slots; phase-space output
     # writes only active particles and otherwise keeps the old species-list path.
 
@@ -93,7 +109,7 @@ def write_particles_phase_space(particles, t, path, species_config=None, species
         jnp.save(f"{path}/data/phase_space/z/{name}_phase_space.{t:09}.npy", z_phase_space)
     # write the phase space of the particles to a file
 
-def particles_phase_space(particles, world, t, name, path, species_config=None, species_names=None):
+def particles_phase_space(particles, static_parameters, dynamic_parameters, t, name, path, species_config=None, species_names=None):
     """
     Plot the phase space of the particles.
 
@@ -106,14 +122,20 @@ def particles_phase_space(particles, world, t, name, path, species_config=None, 
         None
     """
 
-    x_wind = world['x_wind']
-    y_wind = world['y_wind']
-    z_wind = world['z_wind']
+    x_wind = dynamic_parameters.x_wind
+    y_wind = dynamic_parameters.y_wind
+    z_wind = dynamic_parameters.z_wind
 
     colors = ['r', 'b', 'g', 'c', 'm', 'y', 'k']
     idx = 0
     order = 10
-    particles = particles_for_output(particles, species_config=species_config, species_names=species_names, world=world)
+    particles = particles_for_output(
+        particles,
+        species_config=species_config,
+        species_names=species_names,
+        static_parameters=static_parameters,
+        dynamic_parameters=dynamic_parameters,
+    )
     # Phase-space plots are an output boundary; tile-major storage is flattened
     # once here rather than leaking into the plotting loops.
 
@@ -158,7 +180,7 @@ def particles_phase_space(particles, world, t, name, path, species_config=None, 
     plt.close()
 
 
-def plot_initial_histograms(particle_record, world, name, path):
+def plot_initial_histograms(particle_record, dynamic_parameters, name, path):
     """
     Generates and saves histograms for the initial positions and velocities 
     of particles in a simulation.
@@ -166,9 +188,7 @@ def plot_initial_histograms(particle_record, world, name, path):
     Parameters:
         particle_record (ParticleOutputRecord): Flattened tiled particle output
                                    with diagnostic positions and velocities.
-        world (dict): A dictionary containing the simulation world parameters, 
-                      specifically the wind dimensions with keys 'x_wind', 
-                      'y_wind', and 'z_wind'.
+        dynamic_parameters (dict): Scalar/grid parameters with wind dimensions.
         name (str): A string representing the name of the particle species or 
                     simulation, used in the titles of the histograms and filenames.
         path (str): The directory path where the histogram images will be saved.
@@ -184,9 +204,9 @@ def plot_initial_histograms(particle_record, world, name, path):
     x, y, z = particle_record.x_diagnostic[:, 0], particle_record.x_diagnostic[:, 1], particle_record.x_diagnostic[:, 2]
     vx, vy, vz = particle_record.u[:, 0], particle_record.u[:, 1], particle_record.u[:, 2]
 
-    x_wind = world['x_wind']
-    y_wind = world['y_wind']
-    z_wind = world['z_wind']
+    x_wind = dynamic_parameters.x_wind
+    y_wind = dynamic_parameters.y_wind
+    z_wind = dynamic_parameters.z_wind
 
 
     plt.hist(x, bins=50)
@@ -235,11 +255,9 @@ def plot_initial_histograms(particle_record, world, name, path):
     plt.close()
 
 
-@partial(jax.jit, static_argnums=(0))
 def write_data(filename, time, data):
     """
-    Write the given time and data to a file using JAX's callback mechanism.
-    This function is designed to be used with JAX's just-in-time compilation (jit) to optimize performance.
+    Write one scalar diagnostic sample.
 
     Args:
         filename (str): The name of the file to write to.
@@ -250,8 +268,12 @@ def write_data(filename, time, data):
         None
     """
 
-    def write_to_file(filename, time, data):
-        with open(filename, "a") as f:
-            f.write(f"{time}, {data}\n")
+    time_value = np.asarray(jax.device_get(time)).item()
+    data_value = np.asarray(jax.device_get(data))
+    if data_value.ndim == 0:
+        data_value = data_value.item()
+    else:
+        data_value = data_value.tolist()
 
-    return jax.debug.callback(write_to_file, filename, time, data, ordered=True)
+    with open(filename, "a") as f:
+        f.write(f"{time_value}, {data_value}\n")

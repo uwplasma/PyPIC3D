@@ -1,14 +1,41 @@
 import jax
 import jax.numpy as jnp
+from jax.sharding import NamedSharding, PartitionSpec as P
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import wrap_periodic_position
+from PyPIC3D.boundary_conditions.ghost_cells import MESH_AXES
 from PyPIC3D.particles.particle_class import TiledParticles
 
 
-def _particle_boundary_conditions(world):
-    if "particle_boundary_conditions" in world:
-        return world["particle_boundary_conditions"]
-    return {"x": 0, "y": 0, "z": 0}
+PARTICLE_STATE_TILE_SPEC = P("tile_x", "tile_y", "tile_z", None, None, None)
+PARTICLE_ACTIVE_TILE_SPEC = P("tile_x", "tile_y", "tile_z", None, None)
+
+
+def _validate_particle_tile_topology(tiled_particles, mesh):
+    tile_grid_shape = tuple(int(width) for width in tiled_particles.active.shape[:3])
+    mesh_shape = tuple(int(width) for width in mesh.devices.shape)
+    if tile_grid_shape != mesh_shape:
+        raise ValueError(
+            "Tiled particle communication requires one logical particle tile per device: "
+            f"particle tile topology {tile_grid_shape} does not match device mesh {mesh_shape}."
+        )
+
+
+def shard_tiled_particles(tiled_particles, static_parameters):
+    """
+    Place tile-major particle arrays on the same one-tile-per-device mesh as fields.
+    """
+
+    mesh = static_parameters.field_mesh
+    _validate_particle_tile_topology(tiled_particles, mesh)
+    state_sharding = NamedSharding(mesh, PARTICLE_STATE_TILE_SPEC)
+    active_sharding = NamedSharding(mesh, PARTICLE_ACTIVE_TILE_SPEC)
+
+    return TiledParticles(
+        x=jax.device_put(tiled_particles.x, state_sharding),
+        u=jax.device_put(tiled_particles.u, state_sharding),
+        active=jax.device_put(tiled_particles.active, active_sharding),
+    )
 
 
 def _apply_tiled_axis_boundary(x, u, active, wind, bc):
@@ -32,17 +59,18 @@ def _apply_tiled_axis_boundary(x, u, active, wind, bc):
     return x_out, u_out, active_out
 
 
-def _particle_tile_indices(x, y, z, world, tile_shape, tile_counts):
+def _particle_tile_indices(x, y, z, static_parameters, dynamic_parameters, tile_counts):
+    tile_shape = static_parameters.tile_shape
     tile_nx, tile_ny, tile_nz = tile_shape
     ntx, nty, ntz = tile_counts
 
-    x_cell = jnp.floor((x + 0.5 * world["x_wind"]) / world["dx"]).astype(int)
-    y_cell = jnp.floor((y + 0.5 * world["y_wind"]) / world["dy"]).astype(int)
-    z_cell = jnp.floor((z + 0.5 * world["z_wind"]) / world["dz"]).astype(int)
+    x_cell = jnp.floor((x + 0.5 * dynamic_parameters.x_wind) / dynamic_parameters.dx).astype(int)
+    y_cell = jnp.floor((y + 0.5 * dynamic_parameters.y_wind) / dynamic_parameters.dy).astype(int)
+    z_cell = jnp.floor((z + 0.5 * dynamic_parameters.z_wind) / dynamic_parameters.dz).astype(int)
 
-    x_cell = jnp.clip(x_cell, 0, world["Nx"] - 1)
-    y_cell = jnp.clip(y_cell, 0, world["Ny"] - 1)
-    z_cell = jnp.clip(z_cell, 0, world["Nz"] - 1)
+    x_cell = jnp.clip(x_cell, 0, dynamic_parameters.Nx - 1)
+    y_cell = jnp.clip(y_cell, 0, dynamic_parameters.Ny - 1)
+    z_cell = jnp.clip(z_cell, 0, dynamic_parameters.Nz - 1)
 
     return (
         jnp.clip(x_cell // tile_nx, 0, ntx - 1),
@@ -77,6 +105,43 @@ def _movement_offsets(count):
     return (1, 0, -1)
 
 
+def _send_positive_permutation(axis_size, boundary_condition):
+    axis_size = int(axis_size)
+    if boundary_condition == 0:
+        return tuple((i, (i + 1) % axis_size) for i in range(axis_size))
+    return tuple((i, i + 1) for i in range(axis_size - 1))
+
+
+def _send_negative_permutation(axis_size, boundary_condition):
+    axis_size = int(axis_size)
+    if boundary_condition == 0:
+        return tuple((i, (i - 1) % axis_size) for i in range(axis_size))
+    return tuple((i, i - 1) for i in range(1, axis_size))
+
+
+def _send_axis_stream(stream, offset, axis_name, axis_size, boundary_condition):
+    if axis_size == 1 or offset == 0:
+        return stream
+    if offset == 1:
+        return jax.lax.ppermute(
+            stream,
+            axis_name,
+            _send_positive_permutation(axis_size, boundary_condition),
+        )
+    return jax.lax.ppermute(
+        stream,
+        axis_name,
+        _send_negative_permutation(axis_size, boundary_condition),
+    )
+
+
+def _send_particle_stream(stream, offset_x, offset_y, offset_z, mesh_shape, particle_boundary_conditions):
+    stream = _send_axis_stream(stream, offset_x, MESH_AXES[0], mesh_shape[0], particle_boundary_conditions[0])
+    stream = _send_axis_stream(stream, offset_y, MESH_AXES[1], mesh_shape[1], particle_boundary_conditions[1])
+    stream = _send_axis_stream(stream, offset_z, MESH_AXES[2], mesh_shape[2], particle_boundary_conditions[2])
+    return stream
+
+
 def _adjacent_tile_offset(dest_tile, source_tile, tile_count):
     """
     Signed adjacent offset from the source tile to the destination tile.
@@ -99,227 +164,6 @@ def _adjacent_tile_offset(dest_tile, source_tile, tile_count):
 
     return offset
 
-
-def _tiles_need_repack(offset_x, offset_y, offset_z, active):
-    moving = active & ((offset_x != 0) | (offset_y != 0) | (offset_z != 0))
-    outgoing = jnp.any(moving, axis=-1)
-    incoming = jnp.zeros_like(outgoing)
-
-    for ox in _movement_offsets(active.shape[0]):
-        for oy in _movement_offsets(active.shape[1]):
-            for oz in _movement_offsets(active.shape[2]):
-                if ox == 0 and oy == 0 and oz == 0:
-                    continue
-                stream_active = moving & (offset_x == ox) & (offset_y == oy) & (offset_z == oz)
-                incoming_stream = jnp.any(stream_active, axis=-1)
-                incoming_stream = jnp.roll(incoming_stream, shift=ox, axis=0)
-                incoming_stream = jnp.roll(incoming_stream, shift=oy, axis=1)
-                incoming_stream = jnp.roll(incoming_stream, shift=oz, axis=2)
-                incoming = incoming | incoming_stream
-
-    return outgoing | incoming
-
-
-def _compact_tile_candidates(
-    candidate_x,
-    candidate_u,
-    candidate_active,
-    n_slots,
-    fallback_x=None,
-    fallback_u=None,
-    fallback_active=None,
-    repack_mask=None,
-):
-    """
-    Repack fixed-size incoming streams into the destination tile slot axis.
-    """
-
-    leading_shape = candidate_active.shape[:-1]
-    n_candidates = candidate_active.shape[-1]
-
-    flat_x = candidate_x.reshape((-1, n_candidates, 3))
-    flat_u = candidate_u.reshape((-1, n_candidates, 3))
-    flat_active = candidate_active.reshape((-1, n_candidates))
-    if fallback_x is None:
-        flat_fallback_x = jnp.zeros((flat_x.shape[0], n_slots, 3), dtype=flat_x.dtype)
-        flat_fallback_u = jnp.zeros((flat_u.shape[0], n_slots, 3), dtype=flat_u.dtype)
-        flat_fallback_active = jnp.zeros((flat_active.shape[0], n_slots), dtype=flat_active.dtype)
-        flat_repack_mask = jnp.ones((flat_active.shape[0],), dtype=bool)
-    else:
-        flat_fallback_x = fallback_x.reshape((-1, n_slots, 3))
-        flat_fallback_u = fallback_u.reshape((-1, n_slots, 3))
-        flat_fallback_active = fallback_active.reshape((-1, n_slots))
-        flat_repack_mask = repack_mask.reshape((-1,))
-
-    def compact_one(local_x_in, local_u_in, local_active_in, fallback_x_in, fallback_u_in, fallback_active_in, do_repack):
-        rank = jnp.cumsum(local_active_in.astype(int)) - 1
-        fits = local_active_in & (rank < n_slots)
-        safe_rank = jnp.where(fits, rank, 0)
-
-        local_x = jnp.zeros((n_slots, 3), dtype=local_x_in.dtype)
-        local_u = jnp.zeros((n_slots, 3), dtype=local_u_in.dtype)
-        local_active_count = jnp.zeros(n_slots, dtype=int)
-
-        valid = fits.astype(local_x_in.dtype)
-        local_x = local_x.at[safe_rank].add(valid[:, None] * local_x_in)
-        local_u = local_u.at[safe_rank].add(valid[:, None] * local_u_in)
-        local_active_count = local_active_count.at[safe_rank].add(fits.astype(int))
-
-        compacted = (local_x, local_u, local_active_count > 0, jnp.sum(local_active_in) > n_slots)
-        unchanged = (fallback_x_in, fallback_u_in, fallback_active_in, jnp.asarray(False))
-
-        return jax.lax.cond(do_repack, lambda _: compacted, lambda _: unchanged, operand=None)
-
-    flat_new_x, flat_new_u, flat_new_active, flat_overflow = jax.vmap(compact_one)(
-        flat_x,
-        flat_u,
-        flat_active,
-        flat_fallback_x,
-        flat_fallback_u,
-        flat_fallback_active,
-        flat_repack_mask,
-    )
-
-    new_x = flat_new_x.reshape(leading_shape + (n_slots, 3))
-    new_u = flat_new_u.reshape(leading_shape + (n_slots, 3))
-    new_active = flat_new_active.reshape(leading_shape + (n_slots,))
-    overflow = jnp.any(flat_overflow)
-
-    return new_x, new_u, new_active, overflow
-
-
-def _bounded_state_and_tile_offsets(tiled_particles, world, tile_shape):
-    """
-    Apply physical particle boundaries and identify the adjacent tile offset.
-    """
-
-    ntx, nty, ntz, n_species, n_slots = tiled_particles.active.shape
-    tile_counts = (ntx, nty, ntz)
-
-    particle_bc = _particle_boundary_conditions(world)
-    bounded_x = tiled_particles.x
-    bounded_u = tiled_particles.u
-    bounded_active = tiled_particles.active
-
-    x1, u1, bounded_active = _apply_tiled_axis_boundary(
-        bounded_x[..., 0],
-        bounded_u[..., 0],
-        bounded_active,
-        world["x_wind"],
-        particle_bc["x"],
-    )
-    x2, u2, bounded_active = _apply_tiled_axis_boundary(
-        bounded_x[..., 1],
-        bounded_u[..., 1],
-        bounded_active,
-        world["y_wind"],
-        particle_bc["y"],
-    )
-    x3, u3, bounded_active = _apply_tiled_axis_boundary(
-        bounded_x[..., 2],
-        bounded_u[..., 2],
-        bounded_active,
-        world["z_wind"],
-        particle_bc["z"],
-    )
-
-    bounded_x = bounded_x.at[..., 0].set(x1)
-    bounded_x = bounded_x.at[..., 1].set(x2)
-    bounded_x = bounded_x.at[..., 2].set(x3)
-    bounded_u = bounded_u.at[..., 0].set(u1)
-    bounded_u = bounded_u.at[..., 1].set(u2)
-    bounded_u = bounded_u.at[..., 2].set(u3)
-
-    dest_tx, dest_ty, dest_tz = _particle_tile_indices(
-        bounded_x[..., 0],
-        bounded_x[..., 1],
-        bounded_x[..., 2],
-        world,
-        tile_shape,
-        tile_counts,
-    )
-
-    tx = jnp.arange(ntx).reshape((ntx, 1, 1, 1, 1))
-    ty = jnp.arange(nty).reshape((1, nty, 1, 1, 1))
-    tz = jnp.arange(ntz).reshape((1, 1, ntz, 1, 1))
-
-    offset_x = _adjacent_tile_offset(dest_tx, tx, ntx)
-    offset_y = _adjacent_tile_offset(dest_ty, ty, nty)
-    offset_z = _adjacent_tile_offset(dest_tz, tz, ntz)
-
-    return bounded_x, bounded_u, bounded_active, offset_x, offset_y, offset_z
-
-
-def _refresh_tiled_particle_tiles_compacting(tiled_particles, world, tile_shape):
-    """
-    Move active particles into owning tiles by compacting all neighbor streams.
-    """
-
-    bounded_x, bounded_u, bounded_active, offset_x, offset_y, offset_z = _bounded_state_and_tile_offsets(
-        tiled_particles,
-        world,
-        tile_shape,
-    )
-
-    ntx, nty, ntz, n_species, n_slots = bounded_active.shape
-    repack_mask = _tiles_need_repack(offset_x, offset_y, offset_z, bounded_active)
-
-    x_offsets = _movement_offsets(ntx)
-    y_offsets = _movement_offsets(nty)
-    z_offsets = _movement_offsets(ntz)
-
-    candidate_x = []
-    candidate_u = []
-    candidate_active = []
-
-    for ox in x_offsets:
-        for oy in y_offsets:
-            for oz in z_offsets:
-                stream_active = (
-                    bounded_active
-                    & (offset_x == ox)
-                    & (offset_y == oy)
-                    & (offset_z == oz)
-                )
-                stream_x = jnp.where(stream_active[..., None], bounded_x, 0.0)
-                stream_u = jnp.where(stream_active[..., None], bounded_u, 0.0)
-
-                stream_x = jnp.roll(stream_x, shift=ox, axis=0)
-                stream_x = jnp.roll(stream_x, shift=oy, axis=1)
-                stream_x = jnp.roll(stream_x, shift=oz, axis=2)
-                stream_u = jnp.roll(stream_u, shift=ox, axis=0)
-                stream_u = jnp.roll(stream_u, shift=oy, axis=1)
-                stream_u = jnp.roll(stream_u, shift=oz, axis=2)
-                stream_active = jnp.roll(stream_active, shift=ox, axis=0)
-                stream_active = jnp.roll(stream_active, shift=oy, axis=1)
-                stream_active = jnp.roll(stream_active, shift=oz, axis=2)
-
-                candidate_x.append(stream_x)
-                candidate_u.append(stream_u)
-                candidate_active.append(stream_active)
-
-    candidate_x = jnp.concatenate(candidate_x, axis=-2)
-    candidate_u = jnp.concatenate(candidate_u, axis=-2)
-    candidate_active = jnp.concatenate(candidate_active, axis=-1)
-
-    new_x, new_u, new_active, overflow = _compact_tile_candidates(
-        candidate_x,
-        candidate_u,
-        candidate_active,
-        n_slots,
-        fallback_x=bounded_x,
-        fallback_u=bounded_u,
-        fallback_active=bounded_active,
-        repack_mask=repack_mask,
-    )
-
-    refreshed = TiledParticles(
-        x=new_x,
-        u=new_u,
-        active=new_active,
-    )
-
-    return refreshed, overflow
 
 
 def _fill_incoming_particles(stay_x, stay_u, stay_active, incoming_x, incoming_u, incoming_active):
@@ -386,90 +230,224 @@ def _fill_incoming_particles(stay_x, stay_u, stay_active, incoming_x, incoming_u
     return new_x, new_u, new_active, overflow
 
 
-def _refresh_tiled_particle_tiles_sparse(tiled_particles, world, tile_shape):
+def _bounded_local_state_and_tile_offsets(local_x, local_u, local_active, static_parameters, dynamic_parameters, mesh_shape):
+    """
+    Apply physical particle boundaries on one local tile and identify neighbor offsets.
+    """
+
+    particle_bc = static_parameters.particle_boundary_conditions
+    bounded_x = local_x
+    bounded_u = local_u
+    bounded_active = local_active
+
+    x1, u1, bounded_active = _apply_tiled_axis_boundary(
+        bounded_x[..., 0],
+        bounded_u[..., 0],
+        bounded_active,
+        dynamic_parameters.x_wind,
+        particle_bc[0],
+    )
+    x2, u2, bounded_active = _apply_tiled_axis_boundary(
+        bounded_x[..., 1],
+        bounded_u[..., 1],
+        bounded_active,
+        dynamic_parameters.y_wind,
+        particle_bc[1],
+    )
+    x3, u3, bounded_active = _apply_tiled_axis_boundary(
+        bounded_x[..., 2],
+        bounded_u[..., 2],
+        bounded_active,
+        dynamic_parameters.z_wind,
+        particle_bc[2],
+    )
+
+    bounded_x = bounded_x.at[..., 0].set(x1)
+    bounded_x = bounded_x.at[..., 1].set(x2)
+    bounded_x = bounded_x.at[..., 2].set(x3)
+    bounded_u = bounded_u.at[..., 0].set(u1)
+    bounded_u = bounded_u.at[..., 1].set(u2)
+    bounded_u = bounded_u.at[..., 2].set(u3)
+
+    dest_tx, dest_ty, dest_tz = _particle_tile_indices(
+        bounded_x[..., 0],
+        bounded_x[..., 1],
+        bounded_x[..., 2],
+        static_parameters,
+        dynamic_parameters,
+        mesh_shape,
+    )
+
+    tx = jax.lax.axis_index(MESH_AXES[0])
+    ty = jax.lax.axis_index(MESH_AXES[1])
+    tz = jax.lax.axis_index(MESH_AXES[2])
+
+    offset_x = _adjacent_tile_offset(dest_tx, tx, mesh_shape[0])
+    offset_y = _adjacent_tile_offset(dest_ty, ty, mesh_shape[1])
+    offset_z = _adjacent_tile_offset(dest_tz, tz, mesh_shape[2])
+
+    return bounded_x, bounded_u, bounded_active, offset_x, offset_y, offset_z
+
+
+def make_distributed_particle_refresher(static_parameters):
+    mesh = static_parameters.field_mesh
+    mesh_shape = tuple(int(width) for width in mesh.devices.shape)
+    particle_boundary_conditions = tuple(int(bc) for bc in static_parameters.particle_boundary_conditions)
+
+    def local_refresh(local_x_tiles, local_u_tiles, local_active_tiles, dynamic_parameters):
+        local_x = local_x_tiles[0, 0, 0]
+        local_u = local_u_tiles[0, 0, 0]
+        local_active = local_active_tiles[0, 0, 0]
+
+        bounded_x, bounded_u, bounded_active, offset_x, offset_y, offset_z = _bounded_local_state_and_tile_offsets(
+            local_x,
+            local_u,
+            local_active,
+            static_parameters,
+            dynamic_parameters,
+            mesh_shape,
+        )
+
+        nonlocal_offset = (offset_x != 0) | (offset_y != 0) | (offset_z != 0)
+        invalid_offset = (
+            (jnp.abs(offset_x) > 1)
+            | (jnp.abs(offset_y) > 1)
+            | (jnp.abs(offset_z) > 1)
+        )
+        moving = bounded_active & nonlocal_offset & ~invalid_offset
+        stay_active = bounded_active & ~moving & ~invalid_offset
+        stay_x = jnp.where(stay_active[..., None], bounded_x, 0.0)
+        stay_u = jnp.where(stay_active[..., None], bounded_u, 0.0)
+
+        incoming_x = []
+        incoming_u = []
+        incoming_active = []
+
+        for ox in _movement_offsets(mesh_shape[0]):
+            for oy in _movement_offsets(mesh_shape[1]):
+                for oz in _movement_offsets(mesh_shape[2]):
+                    if ox == 0 and oy == 0 and oz == 0:
+                        continue
+
+                    stream_active = moving & (offset_x == ox) & (offset_y == oy) & (offset_z == oz)
+                    stream_x = jnp.where(stream_active[..., None], bounded_x, 0.0)
+                    stream_u = jnp.where(stream_active[..., None], bounded_u, 0.0)
+
+                    incoming_x.append(
+                        _send_particle_stream(
+                            stream_x,
+                            ox,
+                            oy,
+                            oz,
+                            mesh_shape,
+                            particle_boundary_conditions,
+                        )
+                    )
+                    incoming_u.append(
+                        _send_particle_stream(
+                            stream_u,
+                            ox,
+                            oy,
+                            oz,
+                            mesh_shape,
+                            particle_boundary_conditions,
+                        )
+                    )
+                    incoming_active.append(
+                        _send_particle_stream(
+                            stream_active,
+                            ox,
+                            oy,
+                            oz,
+                            mesh_shape,
+                            particle_boundary_conditions,
+                        )
+                    )
+
+        if len(incoming_active) == 0:
+            overflow = jnp.any(bounded_active & invalid_offset)
+            overflow = jax.lax.pmax(overflow, MESH_AXES)
+            return (
+                stay_x[jnp.newaxis, jnp.newaxis, jnp.newaxis],
+                stay_u[jnp.newaxis, jnp.newaxis, jnp.newaxis],
+                stay_active[jnp.newaxis, jnp.newaxis, jnp.newaxis],
+                overflow,
+            )
+
+        incoming_x = jnp.concatenate(incoming_x, axis=-2)
+        incoming_u = jnp.concatenate(incoming_u, axis=-2)
+        incoming_active = jnp.concatenate(incoming_active, axis=-1)
+
+        new_x, new_u, new_active, capacity_overflow = _fill_incoming_particles(
+            stay_x,
+            stay_u,
+            stay_active,
+            incoming_x,
+            incoming_u,
+            incoming_active,
+        )
+        overflow = capacity_overflow | jnp.any(bounded_active & invalid_offset)
+        overflow = jax.lax.pmax(overflow, MESH_AXES)
+
+        return (
+            new_x[jnp.newaxis, jnp.newaxis, jnp.newaxis],
+            new_u[jnp.newaxis, jnp.newaxis, jnp.newaxis],
+            new_active[jnp.newaxis, jnp.newaxis, jnp.newaxis],
+            overflow,
+        )
+
+    def refresh(tiled_particles, dynamic_parameters):
+        _validate_particle_tile_topology(tiled_particles, mesh)
+        mapped_refresh = jax.shard_map(
+            local_refresh,
+            mesh=mesh,
+            in_specs=(
+                PARTICLE_STATE_TILE_SPEC,
+                PARTICLE_STATE_TILE_SPEC,
+                PARTICLE_ACTIVE_TILE_SPEC,
+                None,
+            ),
+            out_specs=(
+                PARTICLE_STATE_TILE_SPEC,
+                PARTICLE_STATE_TILE_SPEC,
+                PARTICLE_ACTIVE_TILE_SPEC,
+                P(),
+            ),
+            check_vma=False,
+        )
+        x, u, active, overflow = mapped_refresh(
+            tiled_particles.x,
+            tiled_particles.u,
+            tiled_particles.active,
+            dynamic_parameters,
+        )
+        return TiledParticles(x=x, u=u, active=active), overflow
+
+    return refresh
+
+
+def _refresh_tiled_particle_tiles_sparse(tiled_particles, static_parameters, dynamic_parameters):
     """
     Move active particles into owning tiles using neighbor-only incoming streams.
     """
 
-    bounded_x, bounded_u, bounded_active, offset_x, offset_y, offset_z = _bounded_state_and_tile_offsets(
-        tiled_particles,
-        world,
-        tile_shape,
+    refresher = make_distributed_particle_refresher(
+        static_parameters,
     )
-
-    ntx, nty, ntz, n_species, n_slots = bounded_active.shape
-    moving = bounded_active & ((offset_x != 0) | (offset_y != 0) | (offset_z != 0))
-    stay_active = bounded_active & ~moving
-    stay_x = jnp.where(stay_active[..., None], bounded_x, 0.0)
-    stay_u = jnp.where(stay_active[..., None], bounded_u, 0.0)
-
-    incoming_x = []
-    incoming_u = []
-    incoming_active = []
-
-    for ox in _movement_offsets(ntx):
-        for oy in _movement_offsets(nty):
-            for oz in _movement_offsets(ntz):
-                if ox == 0 and oy == 0 and oz == 0:
-                    continue
-
-                stream_active = (
-                    moving
-                    & (offset_x == ox)
-                    & (offset_y == oy)
-                    & (offset_z == oz)
-                )
-                stream_x = jnp.where(stream_active[..., None], bounded_x, 0.0)
-                stream_u = jnp.where(stream_active[..., None], bounded_u, 0.0)
-
-                stream_x = jnp.roll(stream_x, shift=ox, axis=0)
-                stream_x = jnp.roll(stream_x, shift=oy, axis=1)
-                stream_x = jnp.roll(stream_x, shift=oz, axis=2)
-                stream_u = jnp.roll(stream_u, shift=ox, axis=0)
-                stream_u = jnp.roll(stream_u, shift=oy, axis=1)
-                stream_u = jnp.roll(stream_u, shift=oz, axis=2)
-                stream_active = jnp.roll(stream_active, shift=ox, axis=0)
-                stream_active = jnp.roll(stream_active, shift=oy, axis=1)
-                stream_active = jnp.roll(stream_active, shift=oz, axis=2)
-
-                incoming_x.append(stream_x)
-                incoming_u.append(stream_u)
-                incoming_active.append(stream_active)
-
-    if len(incoming_active) == 0:
-        overflow = jnp.asarray(False)
-        return TiledParticles(x=stay_x, u=stay_u, active=stay_active), overflow
-
-    incoming_x = jnp.concatenate(incoming_x, axis=-2)
-    incoming_u = jnp.concatenate(incoming_u, axis=-2)
-    incoming_active = jnp.concatenate(incoming_active, axis=-1)
-
-    new_x, new_u, new_active, overflow = _fill_incoming_particles(
-        stay_x,
-        stay_u,
-        stay_active,
-        incoming_x,
-        incoming_u,
-        incoming_active,
-    )
-
-    refreshed = TiledParticles(
-        x=new_x,
-        u=new_u,
-        active=new_active,
-    )
-
-    return refreshed, overflow
+    return refresher(tiled_particles, dynamic_parameters)
 
 
-def refresh_tiled_particle_tiles(tiled_particles, world, tile_shape):
+def refresh_tiled_particle_tiles(tiled_particles, static_parameters, dynamic_parameters):
     """
     Move active particles into their owning tiles while preserving static shape.
 
     The refresh assumes particles move by at most one cell in a timestep, so each
-    particle either stays in its current tile or moves to an adjacent tile.
-    Particles that do not fit in the destination tile capacity are dropped from
-    the returned active mask and reported through the overflow flag.
+    particle either stays in its current tile or moves to an adjacent tile.  Tile
+    transfers are performed inside the field device mesh with ppermute streams;
+    no device owns local copies of other particle tiles.  Particles that do not
+    fit in the destination tile capacity, or that would require a non-adjacent
+    tile jump, are dropped from the returned active mask and reported through the
+    overflow flag.
     """
 
-    return _refresh_tiled_particle_tiles_sparse(tiled_particles, world, tile_shape)
+    return _refresh_tiled_particle_tiles_sparse(tiled_particles, static_parameters, dynamic_parameters)

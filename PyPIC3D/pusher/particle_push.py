@@ -10,7 +10,7 @@ from PyPIC3D.pusher.boris import (
 from PyPIC3D.pusher.higuera_cary import higuera_cary_single_particle
 
 
-def particle_push(particles, species_config, E_tiles, B_tiles, world, constants, relativistic=True, particle_pusher="boris"):
+def particle_push(particles, species_config, E_tiles, B_tiles, static_parameters, dynamic_parameters):
     """
     Push tile-major particles with the selected pusher using compact tiled Yee fields.
 
@@ -19,14 +19,17 @@ def particle_push(particles, species_config, E_tiles, B_tiles, world, constants,
     neighboring Yee data needed by the interpolation stencil near tile faces.
     """
 
-    tile_shape = tuple(int(width) for width in world["tile_shape"])
-    tile_nx, tile_ny, tile_nz = tile_shape
-    g = int(world["guard_cells"])
-    dt = world["dt"]
-    shape_factor = world["shape_factor"]
+    relativistic = static_parameters.relativistic
+    particle_pusher = static_parameters.particle_pusher
 
-    tiled_center_grid = world["grids"]["tiled_center_grid"]
-    tiled_vertex_grid = world["grids"]["tiled_vertex_grid"]
+    tile_shape = tuple(int(width) for width in static_parameters.tile_shape)
+    tile_nx, tile_ny, tile_nz = tile_shape
+    g = int(static_parameters.guard_cells)
+    dt = dynamic_parameters.dt
+    shape_factor = static_parameters.shape_factor
+
+    tiled_center_grid = dynamic_parameters.grids.tiled_center_grid
+    tiled_vertex_grid = dynamic_parameters.grids.tiled_vertex_grid
 
     Ex_tiles, Ey_tiles, Ez_tiles = E_tiles
     Bx_tiles, By_tiles, Bz_tiles = B_tiles
@@ -104,28 +107,26 @@ def particle_push(particles, species_config, E_tiles, B_tiles, world, constants,
         )
 
         if particle_pusher == "boris":
-            new_vx, new_vy, new_vz = jax.lax.cond(
-                relativistic,
-                lambda _: relativistic_boris_vmap(
+            if relativistic:
+                new_vx, new_vy, new_vz = relativistic_boris_vmap(
                     vx, vy, vz,
                     efield_atx, efield_aty, efield_atz,
                     bfield_atx, bfield_aty, bfield_atz,
-                    q, m, dt, constants,
-                ),
-                lambda _: boris_vmap(
+                    q, m, dt, dynamic_parameters,
+                )
+            else:
+                new_vx, new_vy, new_vz = boris_vmap(
                     vx, vy, vz,
                     efield_atx, efield_aty, efield_atz,
                     bfield_atx, bfield_aty, bfield_atz,
-                    q, m, dt, constants,
-                ),
-                operand=None,
-            )
+                    q, m, dt, dynamic_parameters,
+                )
         elif particle_pusher == "higuera_cary":
             new_vx, new_vy, new_vz = higuera_cary_vmap(
                 vx, vy, vz,
                 efield_atx, efield_aty, efield_atz,
                 bfield_atx, bfield_aty, bfield_atz,
-                q, m, dt, constants,
+                q, m, dt, dynamic_parameters,
             )
         else:
             raise ValueError(f"Unknown particle_pusher: {particle_pusher}")
