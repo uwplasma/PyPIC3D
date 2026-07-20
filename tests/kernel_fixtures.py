@@ -127,9 +127,9 @@ def kernel_parameters(
     )
 
     if electrostatic:
-        center_grid, vertex_grid = build_collocated_grid(dynamic_parameters)
+        vertex_grid, center_grid = build_collocated_grid(dynamic_parameters)
     else:
-        center_grid, vertex_grid = build_yee_grid(dynamic_parameters)
+        vertex_grid, center_grid = build_yee_grid(dynamic_parameters)
 
     dynamic_parameters = dynamic_parameters._replace(
         grids=GridParameters(
