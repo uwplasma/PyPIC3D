@@ -127,8 +127,8 @@ class TestYeeTiled(unittest.TestCase):
             "shape_factor": 1,
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
-        vertex_grid, center_grid = build_yee_grid(SimpleNamespace(**parameter_set))
-        parameter_set["grids"] = {"vertex": vertex_grid, "center": center_grid}
+        center_grid, vertex_grid = build_yee_grid(SimpleNamespace(**parameter_set))
+        parameter_set["grids"] = {"center": center_grid, "vertex": vertex_grid}
         return parameter_set
 
     def _conducting_parameters(self):
@@ -145,7 +145,7 @@ class TestYeeTiled(unittest.TestCase):
             int(parameter_set["Nz"]) // int(tile_shape[2]),
         ))
         static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set)
-        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(static_parameters, dynamic_parameters)
+        tiled_center_grid, tiled_vertex_grid = build_tiled_yee_grids(static_parameters, dynamic_parameters)
         parameter_set["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
         parameter_set["grids"]["tiled_center_grid"] = tiled_center_grid
         return parameter_set
@@ -308,9 +308,16 @@ class TestYeeTiled(unittest.TestCase):
         parameter_set = self._build_parameter_values()
         tile_shape = (2, 3, 2)
         g = 2
-        parameter_set = self._with_tile_metadata(parameter_set, tile_shape, g)
-        static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set)
-        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(static_parameters, dynamic_parameters)
+        center_grid, vertex_grid = build_yee_grid(SimpleNamespace(**parameter_set))
+        parameter_set["grids"] = {"center": center_grid, "vertex": vertex_grid}
+        static_parameters = SimpleNamespace(tile_shape=tile_shape, guard_cells=g)
+        dynamic_parameters = SimpleNamespace(
+            dx=parameter_set["dx"],
+            dy=parameter_set["dy"],
+            dz=parameter_set["dz"],
+            grids=SimpleNamespace(center=center_grid, vertex=vertex_grid),
+        )
+        tiled_center_grid, tiled_vertex_grid = build_tiled_yee_grids(static_parameters, dynamic_parameters)
 
         self.assertEqual(tiled_center_grid[0].shape, (4, 2, 2, tile_shape[0] + 2 * g))
         self.assertEqual(tiled_center_grid[1].shape, (4, 2, 2, tile_shape[1] + 2 * g))

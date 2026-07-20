@@ -110,8 +110,8 @@ class TestTiledRho(unittest.TestCase):
             "boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},
             "particle_boundary_conditions": particle_boundary_conditions,
         }
-        vertex_grid, center_grid = build_yee_grid(SimpleNamespace(**parameter_set))
-        parameter_set["grids"] = {"vertex": vertex_grid, "center": center_grid}
+        center_grid, vertex_grid = build_yee_grid(SimpleNamespace(**parameter_set))
+        parameter_set["grids"] = {"center": center_grid, "vertex": vertex_grid}
         return parameter_set
 
     def _parameters_with_tiled_grids(self, parameter_set, simulation_parameters):
@@ -130,9 +130,9 @@ class TestTiledRho(unittest.TestCase):
             int(parameter_set["Nz"]) // int(tile_shape[2]),
         ))
         static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set)
-        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(static_parameters, dynamic_parameters)
-        grids["tiled_vertex_grid"] = tiled_vertex_grid
+        tiled_center_grid, tiled_vertex_grid = build_tiled_yee_grids(static_parameters, dynamic_parameters)
         grids["tiled_center_grid"] = tiled_center_grid
+        grids["tiled_vertex_grid"] = tiled_vertex_grid
         parameter_set["grids"] = grids
         return parameter_set
 

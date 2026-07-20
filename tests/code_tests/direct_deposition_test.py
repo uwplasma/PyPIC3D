@@ -157,8 +157,8 @@ class TestDirectDeposition(unittest.TestCase):
             "guard_cells": 1,
             "boundary_conditions": boundary_conditions,
         }
-        vertex_grid, center_grid = build_yee_grid(SimpleNamespace(**parameter_set))
-        parameter_set["grids"] = {"vertex": vertex_grid, "center": center_grid}
+        center_grid, vertex_grid = build_yee_grid(SimpleNamespace(**parameter_set))
+        parameter_set["grids"] = {"center": center_grid, "vertex": vertex_grid}
         return parameter_set
 
     def _empty_J(self, parameter_set):
@@ -205,12 +205,12 @@ class TestDirectDeposition(unittest.TestCase):
             dz=parameter_set["dz"],
             grids=SimpleNamespace(vertex=grids["vertex"], center=grids["center"]),
         )
-        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(
+        tiled_center_grid, tiled_vertex_grid = build_tiled_yee_grids(
             grid_static_parameters,
             grid_dynamic_parameters,
         )
-        grids["tiled_vertex_grid"] = tiled_vertex_grid
         grids["tiled_center_grid"] = tiled_center_grid
+        grids["tiled_vertex_grid"] = tiled_vertex_grid
         parameter_set["grids"] = grids
         return parameter_set
     # create a new parameter_set dictionary that includes the tiled grids based on the given tile shape

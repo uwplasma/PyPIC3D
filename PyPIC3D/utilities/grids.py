@@ -41,7 +41,10 @@ def build_collocated_grid(dynamic_parameters):
 
 def build_yee_grid(dynamic_parameters):
     """
-    Build the Yee vertex and center grids including one ghost cell per side.
+    Build the legacy PyPIC3D Yee center and vertex grids.
+
+    In the runtime contract, ``center`` is the collocated/base index grid and
+    ``vertex`` is the staggered half-cell grid.
     """
 
     dx = dynamic_parameters.dx
@@ -57,21 +60,21 @@ def build_yee_grid(dynamic_parameters):
     Nz = dynamic_parameters.Nz
     # get the number of grid points
 
-    vertex_grid = (
+    center_grid = (
         build_collocated_axis(-x_wind / 2, dx, Nx),
         build_collocated_axis(-y_wind / 2, dy, Ny),
         build_collocated_axis(-z_wind / 2, dz, Nz),
     )
-    # construct a collocated vertex grid with ghost cells
+    # construct the collocated/base grid with ghost cells
 
-    center_grid = (
+    vertex_grid = (
         build_staggered_axis(-x_wind / 2, dx, Nx),
         build_staggered_axis(-y_wind / 2, dy, Ny),
         build_staggered_axis(-z_wind / 2, dz, Nz),
     )
-    # construct a staggered center grid with ghost cells
+    # construct the staggered half-cell grid with ghost cells
 
-    return vertex_grid, center_grid
+    return center_grid, vertex_grid
 
 
 def _tile_grid_axis(global_axis_grid, dynamic_parameters, tile_shape, tile_counts, axis_index, num_guard_cells):
@@ -131,7 +134,7 @@ def _tile_grid_axes(grid, dynamic_parameters, tile_shape, num_guard_cells=2):
 
 def build_tiled_yee_grids(static_parameters, dynamic_parameters):
     """
-    Build the tiled vertex and center grids from the untiled grids.
+    Build the tiled center and vertex grids from the untiled grids.
     """
 
     tile_shape = static_parameters.tile_shape
@@ -141,22 +144,22 @@ def build_tiled_yee_grids(static_parameters, dynamic_parameters):
     grids = dynamic_parameters.grids
     # get the grids from the dynamic parameters
 
-    vertex_grid = grids.vertex
     center_grid = grids.center
-    # get the vertex and center grids from the grids object
+    vertex_grid = grids.vertex
+    # get the center and vertex grids from the grids object
 
-    tiled_vertex_grid = _tile_grid_axes(
-        vertex_grid,
-        dynamic_parameters,
-        tile_shape,
-        num_guard_cells=num_guard_cells,
-    )
     tiled_center_grid = _tile_grid_axes(
         center_grid,
         dynamic_parameters,
         tile_shape,
         num_guard_cells=num_guard_cells,
     )
-    # build the tiled vertex and center grids
+    tiled_vertex_grid = _tile_grid_axes(
+        vertex_grid,
+        dynamic_parameters,
+        tile_shape,
+        num_guard_cells=num_guard_cells,
+    )
+    # build the tiled center and vertex grids
 
-    return tiled_vertex_grid, tiled_center_grid
+    return tiled_center_grid, tiled_vertex_grid

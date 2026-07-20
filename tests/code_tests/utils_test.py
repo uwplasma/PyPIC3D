@@ -142,16 +142,32 @@ class TestUtilsFunctions(unittest.TestCase):
         }
 
     def test_build_yee_grid(self):
-        grid, staggered = build_yee_grid(SimpleNamespace(**self.parameter_set))
-        self.assertEqual(len(grid), 3)
-        self.assertEqual(len(staggered), 3)
-        self.assertEqual(len(grid[0]), self.parameter_set['Nx'] + 2)
-        self.assertEqual(len(grid[1]), self.parameter_set['Ny'] + 2)
-        self.assertEqual(len(grid[2]), self.parameter_set['Nz'] + 2)
-        self.assertEqual(len(staggered[0]), self.parameter_set['Nx'] + 2)
-        self.assertEqual(len(staggered[1]), self.parameter_set['Ny'] + 2)
-        self.assertEqual(len(staggered[2]), self.parameter_set['Nz'] + 2)
-        #  Check that the grid and staggered arrays have the expected lengths
+        center_grid, vertex_grid = build_yee_grid(SimpleNamespace(**self.parameter_set))
+        self.assertEqual(len(center_grid), 3)
+        self.assertEqual(len(vertex_grid), 3)
+        self.assertEqual(len(center_grid[0]), self.parameter_set['Nx'] + 2)
+        self.assertEqual(len(center_grid[1]), self.parameter_set['Ny'] + 2)
+        self.assertEqual(len(center_grid[2]), self.parameter_set['Nz'] + 2)
+        self.assertEqual(len(vertex_grid[0]), self.parameter_set['Nx'] + 2)
+        self.assertEqual(len(vertex_grid[1]), self.parameter_set['Ny'] + 2)
+        self.assertEqual(len(vertex_grid[2]), self.parameter_set['Nz'] + 2)
+        #  Check that the center and vertex arrays have the expected lengths
+
+        self.assertTrue(
+            jnp.allclose(
+                center_grid[0][1:-1],
+                -self.parameter_set["x_wind"] / 2
+                + self.parameter_set["dx"] * jnp.arange(self.parameter_set["Nx"]),
+            )
+        )
+        self.assertTrue(
+            jnp.allclose(
+                vertex_grid[0][1:-1],
+                center_grid[0][1:-1] + 0.5 * self.parameter_set["dx"],
+            )
+        )
+        # Legacy PyPIC3D names: center is the collocated/base grid, and
+        # vertex is the staggered half-cell grid.
 
     def test_check_stability(self):
         # Should not raise

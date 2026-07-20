@@ -97,8 +97,8 @@ class TestTiledParticlePusher(unittest.TestCase):
             "shape_factor": shape_factor,
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
-        vertex_grid, center_grid = build_yee_grid(SimpleNamespace(**parameter_set))
-        parameter_set["grids"] = {"vertex": vertex_grid, "center": center_grid}
+        center_grid, vertex_grid = build_yee_grid(SimpleNamespace(**parameter_set))
+        parameter_set["grids"] = {"center": center_grid, "vertex": vertex_grid}
         return parameter_set
 
     def _with_tiled_grids(self, parameter_set, tile_shape, g=1):
@@ -110,9 +110,9 @@ class TestTiledParticlePusher(unittest.TestCase):
             int(parameter_set["Nz"]) // int(tile_shape[2]),
         ))
         static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set)
-        tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(static_parameters, dynamic_parameters)
-        parameter_set["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
+        tiled_center_grid, tiled_vertex_grid = build_tiled_yee_grids(static_parameters, dynamic_parameters)
         parameter_set["grids"]["tiled_center_grid"] = tiled_center_grid
+        parameter_set["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
         return parameter_set
 
     def _copy_parameters_for_tile_shape(self, parameter_set, tile_shape, g):

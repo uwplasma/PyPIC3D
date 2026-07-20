@@ -127,9 +127,9 @@ def kernel_parameters(
     )
 
     if electrostatic:
-        vertex_grid, center_grid = build_collocated_grid(dynamic_parameters)
+        center_grid, vertex_grid = build_collocated_grid(dynamic_parameters)
     else:
-        vertex_grid, center_grid = build_yee_grid(dynamic_parameters)
+        center_grid, vertex_grid = build_yee_grid(dynamic_parameters)
 
     dynamic_parameters = dynamic_parameters._replace(
         grids=GridParameters(
@@ -139,7 +139,7 @@ def kernel_parameters(
             tiled_center_grid=(),
         )
     )
-    tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(static_parameters, dynamic_parameters)
+    tiled_center_grid, tiled_vertex_grid = build_tiled_yee_grids(static_parameters, dynamic_parameters)
 
     dynamic_parameters = dynamic_parameters._replace(
         grids=GridParameters(
@@ -349,7 +349,7 @@ def retiled_parameters(static_parameters, dynamic_parameters, tile_shape, guard_
             tiled_center_grid=(),
         )
     )
-    tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(static_parameters, dynamic_parameters)
+    tiled_center_grid, tiled_vertex_grid = build_tiled_yee_grids(static_parameters, dynamic_parameters)
     dynamic_parameters = dynamic_parameters._replace(
         grids=GridParameters(
             vertex=dynamic_parameters.grids.vertex,

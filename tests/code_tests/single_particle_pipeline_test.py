@@ -359,8 +359,10 @@ def _empty_electrodynamic_fields(static_parameters, dynamic_parameters):
 def _expected_B_from_Ey(Ey, dynamic_parameters):
     expected = jnp.zeros_like(Ey)
     active = (slice(1, -1), slice(1, -1), slice(1, -1))
-    backward_x = (slice(0, -2), slice(1, -1), slice(1, -1))
-    dEy_dx = (Ey[active] - Ey[backward_x]) / dynamic_parameters.dx
+    forward_x = (slice(2, None), slice(1, -1), slice(1, -1))
+    # Ey is centered in x, while Bz is staggered in x under the legacy
+    # center=collocated, vertex=staggered contract.
+    dEy_dx = (Ey[forward_x] - Ey[active]) / dynamic_parameters.dx
     return expected.at[active].set(-dynamic_parameters.dt * dEy_dx)
 
 

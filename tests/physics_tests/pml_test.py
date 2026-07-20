@@ -130,7 +130,7 @@ def _base_parameter_values(nx=24, ny=1, nz=1):
         "guard_cells": 2,
         "boundary_conditions": {"x": 0, "y": 0, "z": 0},
     }
-    vertex_grid, center_grid = build_yee_grid(SimpleNamespace(**parameter_set))
+    center_grid, vertex_grid = build_yee_grid(SimpleNamespace(**parameter_set))
     parameter_set["grids"] = {"center": center_grid, "vertex": vertex_grid}
     return parameter_set
 

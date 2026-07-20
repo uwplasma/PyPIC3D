@@ -23,8 +23,8 @@ def update_E(E_tiles, B_tiles, J_tiles, static_parameters, dynamic_parameters, p
 
     active = slice(g, -g)
     # build interior slice for active axes
-    forward = slice(g + 1, None if g == 1 else -g + 1)
-    # build forward slice used for forward differences
+    backward = slice(g - 1, -g - 1)
+    # build backward slice used for differences from vertex fields to center fields
 
     Bx, By, Bz = ghost_cells.update_tiled_vector_ghost_cells(B_tiles, static_parameters, g)
     Jx, Jy, Jz = J_tiles
@@ -35,15 +35,14 @@ def update_E(E_tiles, B_tiles, J_tiles, static_parameters, dynamic_parameters, p
     C = dynamic_parameters.C
     eps = dynamic_parameters.eps
 
-    # Forward differences use each tile's + side guard cell.  Those guards now
-    # contain the adjacent tile's interior value, including periodic wrap at
-    # the global edge.
-    dBz_dy = (Bz[:, :, :, active, forward, active] - Bz[:, :, :, active, active, active]) / dy
-    dBy_dz = (By[:, :, :, active, active, forward] - By[:, :, :, active, active, active]) / dz
-    dBx_dz = (Bx[:, :, :, active, active, forward] - Bx[:, :, :, active, active, active]) / dz
-    dBx_dy = (Bx[:, :, :, active, forward, active] - Bx[:, :, :, active, active, active]) / dy
-    dBz_dx = (Bz[:, :, :, forward, active, active] - Bz[:, :, :, active, active, active]) / dx
-    dBy_dx = (By[:, :, :, forward, active, active] - By[:, :, :, active, active, active]) / dx
+    # Backward differences map staggered B components onto same-index E/J
+    # locations under the legacy center=collocated, vertex=staggered contract.
+    dBz_dy = (Bz[:, :, :, active, active, active] - Bz[:, :, :, active, backward, active]) / dy
+    dBy_dz = (By[:, :, :, active, active, active] - By[:, :, :, active, active, backward]) / dz
+    dBx_dz = (Bx[:, :, :, active, active, active] - Bx[:, :, :, active, active, backward]) / dz
+    dBx_dy = (Bx[:, :, :, active, active, active] - Bx[:, :, :, active, backward, active]) / dy
+    dBz_dx = (Bz[:, :, :, active, active, active] - Bz[:, :, :, backward, active, active]) / dx
+    dBy_dx = (By[:, :, :, active, active, active] - By[:, :, :, backward, active, active]) / dx
 
     if pml_state is None:
         curl_x = dBz_dy - dBy_dz
@@ -108,22 +107,21 @@ def update_B(E_tiles, B_tiles, static_parameters, dynamic_parameters, pml_state=
     del tile_nx, tile_ny, tile_nz
     active = slice(g, -g)
     # build interior slice for active axes
-    backward = slice(g - 1, -g - 1)
-    # build backward slice for active axes, used for backward differences
+    forward = slice(g + 1, None if g == 1 else -g + 1)
+    # build forward slice used for differences from center fields to vertex fields
 
     Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells(E_tiles, static_parameters, g)
     dt = dynamic_parameters.dt
     dx, dy, dz = dynamic_parameters.dx, dynamic_parameters.dy, dynamic_parameters.dz
 
-    # Backward differences use each tile's - side guard cell.  Those guards now
-    # contain the adjacent tile's interior value, including periodic wrap at
-    # the global edge.
-    dEz_dy = (Ez[:, :, :, active, active, active] - Ez[:, :, :, active, backward, active]) / dy
-    dEy_dz = (Ey[:, :, :, active, active, active] - Ey[:, :, :, active, active, backward]) / dz
-    dEx_dz = (Ex[:, :, :, active, active, active] - Ex[:, :, :, active, active, backward]) / dz
-    dEx_dy = (Ex[:, :, :, active, active, active] - Ex[:, :, :, active, backward, active]) / dy
-    dEz_dx = (Ez[:, :, :, active, active, active] - Ez[:, :, :, backward, active, active]) / dx
-    dEy_dx = (Ey[:, :, :, active, active, active] - Ey[:, :, :, backward, active, active]) / dx
+    # Forward differences map same-index E/J components onto staggered B
+    # locations under the legacy center=collocated, vertex=staggered contract.
+    dEz_dy = (Ez[:, :, :, active, forward, active] - Ez[:, :, :, active, active, active]) / dy
+    dEy_dz = (Ey[:, :, :, active, active, forward] - Ey[:, :, :, active, active, active]) / dz
+    dEx_dz = (Ex[:, :, :, active, active, forward] - Ex[:, :, :, active, active, active]) / dz
+    dEx_dy = (Ex[:, :, :, active, forward, active] - Ex[:, :, :, active, active, active]) / dy
+    dEz_dx = (Ez[:, :, :, forward, active, active] - Ez[:, :, :, active, active, active]) / dx
+    dEy_dx = (Ey[:, :, :, forward, active, active] - Ey[:, :, :, active, active, active]) / dx
 
     if pml_state is None:
         curl_x = dEz_dy - dEy_dz

@@ -340,9 +340,9 @@ def initialize_simulation(toml_file):
         grids=SimpleNamespace(vertex=vertex_grid, center=center_grid),
     )
     static_setup = SimpleNamespace(tile_shape=tile_shape, guard_cells=guard_cells)
-    tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(static_setup, grid_setup)
-    dynamic_config["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
+    tiled_center_grid, tiled_vertex_grid = build_tiled_yee_grids(static_setup, grid_setup)
     dynamic_config["grids"]["tiled_center_grid"] = tiled_center_grid
+    dynamic_config["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
 
     static_parameters = build_static_parameters(static_config)
     dynamic_parameters = build_dynamic_parameters(dynamic_config)

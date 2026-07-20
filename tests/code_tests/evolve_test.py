@@ -34,9 +34,9 @@ def add_tiled_grids_to_parameters(parameter_set, tile_shape):
         dz=parameter_set["dz"],
         grids=SimpleNamespace(vertex=parameter_set["grids"]["vertex"], center=parameter_set["grids"]["center"]),
     )
-    tiled_vertex_grid, tiled_center_grid = build_tiled_yee_grids(static_parameters, dynamic_parameters)
-    parameter_set["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
+    tiled_center_grid, tiled_vertex_grid = build_tiled_yee_grids(static_parameters, dynamic_parameters)
     parameter_set["grids"]["tiled_center_grid"] = tiled_center_grid
+    parameter_set["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
     # make tiled versions of the grids for the parallelized particle pushers to use
 
 
@@ -90,7 +90,7 @@ class TestEvolveExternalFields(unittest.TestCase):
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
             "particle_boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
-        vertex_grid, center_grid = build_yee_grid(SimpleNamespace(**parameter_set))
+        center_grid, vertex_grid = build_yee_grid(SimpleNamespace(**parameter_set))
         parameter_set["grids"] = {"center": center_grid, "vertex": vertex_grid}
         dynamic_values = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         # build parameter_set and grids, and set dynamic_values for the simulation
@@ -174,7 +174,7 @@ class TestEvolveExternalFields(unittest.TestCase):
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
             "particle_boundary_conditions": {"x": 0, "y": 0, "z": 0},
         }
-        vertex_grid, center_grid = build_yee_grid(SimpleNamespace(**parameter_set))
+        center_grid, vertex_grid = build_yee_grid(SimpleNamespace(**parameter_set))
         parameter_set["grids"] = {"center": center_grid, "vertex": vertex_grid}
         dynamic_values = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
 
@@ -232,7 +232,7 @@ class TestEvolveExternalFields(unittest.TestCase):
             "boundary_conditions": {"x": 0, "y": 0, "z": 0},
             "particle_boundary_conditions": {"x": 2, "y": 0, "z": 0},
         }
-        vertex_grid, center_grid = build_yee_grid(SimpleNamespace(**parameter_set))
+        center_grid, vertex_grid = build_yee_grid(SimpleNamespace(**parameter_set))
         parameter_set["grids"] = {"center": center_grid, "vertex": vertex_grid}
         dynamic_values = {"C": 1.0, "eps": 1.0, "mu": 1.0, "alpha": 1.0}
         # build parameter_set and grids, and set dynamic_values for the simulation
