@@ -111,7 +111,7 @@ def update_B(E_tiles, B_tiles, static_parameters, dynamic_parameters, pml_state=
     # build forward slice used for differences from center fields to vertex fields
 
     Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells(E_tiles, static_parameters, g)
-    dt = dynamic_parameters.dt
+    dt = dynamic_parameters.dt / 2  # half timestep for B update
     dx, dy, dz = dynamic_parameters.dx, dynamic_parameters.dy, dynamic_parameters.dz
 
     # Forward differences map same-index E/J components onto staggered B
