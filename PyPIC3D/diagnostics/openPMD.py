@@ -355,8 +355,8 @@ def write_openpmd_particles_to_iteration(
         num_particles = x.shape[0]
         # number of particles in this species
 
-        particle_mass = species.mass * species.weight
-        particle_charge = species.charge * species.weight
+        particle_mass = species.mass
+        particle_charge = species.charge
         weights = species.weight
         # get the particle mass, charge, and weight for this species
 
@@ -398,7 +398,8 @@ def write_openpmd_particles_to_iteration(
             record_component = momentum[component]
             record_component.reset_dataset(io.Dataset(data.dtype, [num_particles]))
             momenta = data * masses * gamma
-            # compute the momentum for each particle
+            # openPMD momentum is per physical particle; macro weight is stored
+            # separately in the weighting record for WarpX/PICMI readers.
             record_component.store_chunk(momenta, [0], [num_particles])
             record_component.unit_SI = 1.0
 
@@ -409,12 +410,12 @@ def write_openpmd_particles_to_iteration(
 
         charge = species_group["charge"]
         charge.reset_dataset(io.Dataset(charges.dtype, [num_particles]))
-        charge.store_chunk(charges / weights, [0], [num_particles])
+        charge.store_chunk(charges, [0], [num_particles])
         charge.unit_SI = 1.0
 
         mass = species_group["mass"]
         mass.reset_dataset(io.Dataset(masses.dtype, [num_particles]))
-        mass.store_chunk(masses / weights, [0], [num_particles])
+        mass.store_chunk(masses, [0], [num_particles])
         mass.unit_SI = 1.0
 
 
@@ -553,7 +554,7 @@ def _store_particle_record_chunk(species_group, offset, x, u, charge, mass, weig
     for component in ("x", "y", "z"):
         species_group["positionOffset"][component].store_chunk(zeros, start, extent)
 
-    momentum = u * (mass * weight * gamma)[:, None]
+    momentum = u * (mass * gamma)[:, None]
     for component, data in zip(("x", "y", "z"), (momentum[:, 0], momentum[:, 1], momentum[:, 2])):
         species_group["momentum"][component].store_chunk(_ensure_openpmd_array(data, dtype=dtype), start, extent)
 
@@ -796,8 +797,8 @@ def write_openpmd_initial_particles(
         gamma = make_array_writable(gamma)
 
         num_particles = x.shape[0]
-        particle_mass = species.mass * species.weight
-        particle_charge = species.charge * species.weight
+        particle_mass = species.mass
+        particle_charge = species.charge
         particle_weight = species.weight
 
         if jnp.ndim(particle_weight) == 0:
@@ -814,9 +815,6 @@ def write_openpmd_initial_particles(
             charges = np.full(num_particles, float(particle_charge), dtype=np.float64)
         else:
             charges = _ensure_openpmd_array(particle_charge, squeeze=True)
-
-        mass_per_weight = masses / weights
-        charge_per_weight = charges / weights
 
         position = species_group["position"]
         for component, data in zip(("x", "y", "z"), (x, y, z)):
@@ -848,12 +846,12 @@ def write_openpmd_initial_particles(
 
         charge = species_group["charge"]
         charge.reset_dataset(io.Dataset(charges.dtype, [num_particles]))
-        charge.store_chunk(charge_per_weight, [0], [num_particles])
+        charge.store_chunk(charges, [0], [num_particles])
         charge.unit_SI = 1.0
 
         mass = species_group["mass"]
         mass.reset_dataset(io.Dataset(masses.dtype, [num_particles]))
-        mass.store_chunk(mass_per_weight, [0], [num_particles])
+        mass.store_chunk(masses, [0], [num_particles])
         mass.unit_SI = 1.0
 
         series.flush()
