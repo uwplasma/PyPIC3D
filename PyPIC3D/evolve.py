@@ -85,7 +85,7 @@ def time_loop_electrodynamic(
         particles, J, overflow = direct_deposition_step((particles, J, overflow_previous))
     # deposit current into the tiled J arrays using the selected deposition method
 
-    B, pml_state = update_B(E, B, static_parameters, dynamic_parameters, pml_state)
+    B, pml_state = update_B(E, B, static_parameters, dynamic_parameters, pml_state, do_filter=False)
     # update magnetic field from the previous electric field by half a timestep
     # for no pml, the pml_state is None, and the update_B function returns None for the pml_state
 
@@ -93,7 +93,7 @@ def time_loop_electrodynamic(
     # update electric field from B and the supplied current
     # for no pml, the pml_state is None, and the update_E function returns None for the pml_state
 
-    B, pml_state = update_B(E, B, static_parameters, dynamic_parameters, pml_state)
+    B, pml_state = update_B(E, B, static_parameters, dynamic_parameters, pml_state, do_filter=True)
     # update magnetic field from the newly updated electric field by half a timestep
     # for no pml, the pml_state is None, and the update_B function returns None for the pml_state
 

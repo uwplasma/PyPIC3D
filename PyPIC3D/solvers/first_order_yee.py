@@ -1,3 +1,5 @@
+import jax
+
 from PyPIC3D.boundary_conditions.PML import (
     apply_tiled_pml_to_b_curl,
     apply_tiled_pml_to_e_curl,
@@ -91,7 +93,7 @@ def update_E(E_tiles, B_tiles, J_tiles, static_parameters, dynamic_parameters, p
     return ghost_cells.update_tiled_vector_ghost_cells((Ex, Ey, Ez), static_parameters, g), pml_state
 
 
-def update_B(E_tiles, B_tiles, static_parameters, dynamic_parameters, pml_state=None):
+def update_B(E_tiles, B_tiles, static_parameters, dynamic_parameters, pml_state=None, do_filter=False):
     """
     Update compact tiled magnetic fields without assembling a global field.
 
@@ -143,6 +145,12 @@ def update_B(E_tiles, B_tiles, static_parameters, dynamic_parameters, pml_state=
     # refresh tile halos before the digital field filter, matching the global
     # ghost-cell order in the standard Yee solver.
 
-    Bx, By, Bz = digital_filter_vector((Bx, By, Bz), dynamic_parameters.alpha, num_guard_cells=g)
+    Bx, By, Bz = jax.lax.cond(
+        do_filter,
+        lambda _: digital_filter_vector((Bx, By, Bz), dynamic_parameters.alpha, num_guard_cells=g),
+        lambda _: (Bx, By, Bz),
+        operand=None,
+    )
+    # if requested, apply the digital filter to the updated B fields, matching the global ghost-cell order in the standard Yee solver.
 
     return ghost_cells.update_tiled_vector_ghost_cells((Bx, By, Bz), static_parameters, g), pml_state
