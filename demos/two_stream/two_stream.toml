@@ -1,6 +1,12 @@
 # This is a configuration file for PyPIC3D
+
+# The two stream instability is a basic streaming instability that occurs
+# between two counter streaming flows, which causes the exponential growth
+# of the electric field energy and the formation of vortices in the electron 
+# phase space.
+
 [simulation_parameters]
-name = "Demo of a TS instability with 3,000 electrons"
+name = "Demo of a two stream instability with 3,000 electrons"
 t_wind = 5.413e-8
 solver = 'electrodynamic_yee'
 Nx = 100

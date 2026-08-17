@@ -1,6 +1,14 @@
 # This is a configuration file for PyPIC3D
+
+# This is a demonstration of a weibel instability in 1D3V
+# using a temperature anisotropy in the z direction, which
+# causes the exponential growth of the magnetic field energy 
+# and the formation of filaments in the out of plane magnetic
+# field and current density.
+
+
 [simulation_parameters]
-name = "Demo of a 1D Weibel instability with 3,000 electrons"
+name = "Demo of a 1D Weibel instability with 40 electrons per cell"
 Nt = 6000
 bc = 'periodic'
 solver = 'electrodynamic_yee'
