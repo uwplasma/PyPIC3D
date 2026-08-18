@@ -8,16 +8,16 @@
 
 [simulation_parameters]
 name = "Demo of a pierce diode instability with 3,000 electrons"
-t_wind = 5.413e-8
+t_wind = 1.67e-8
 solver = 'electrostatic'
-Nx = 100
+Nx = 200
 Ny = 1
 Nz = 1
-particle_tile_nx = 100
+particle_tile_nx = 200
 particle_tile_ny = 1
 particle_tile_nz = 1
 particle_tile_capacity_factor=1.0
-x_wind = 1
+x_wind = 0.1
 y_wind = 1
 z_wind = 1
 verbose = false
@@ -34,27 +34,27 @@ z_bc = "periodic"
 
 
 [plotting]
-plotting_interval = 8
+plotting_interval = 1
 plot_openpmd_particles = true
 plot_openpmd_fields = true
 
 # electron beam current
 [particle1]
 name = "electron1"
-N_particles = 1500
+N_particles = 10000
 charge = -1.602e-19
 mass   = 9.1093837e-31
-vth = 14989622.9
-number_density = 1.0e15
-initial_vx = 0.5e8
+vth = 0
+weight =  1.61e+10
+initial_vx = 6.00e7
 
 # static ions for neutralizing background
 [particle2]
 name = "ion1"
-N_particles = 3000
+N_particles = 10000
 charge = 1.602e-19
 mass = 1.67e-27
-vth = 34982.78402326697
+vth = 0.0
 update_x = false
 update_y = false
 update_z = false
