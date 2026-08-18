@@ -210,9 +210,12 @@ sizes are too small, the simulation may stall while waiting for disk writes to
 complete. If the queue sizes are too large, the simulation may run out of memory.
 
 
-Field output contains ``E``, ``B``, and ``J``. ``plotchargedensity = true``
-deposits the scalar charge-density mesh ``rho`` from the current particle
-positions, and ``plotvelocities = true`` adds the particle-weighted vector mesh
-``fluid_velocity``. ``dump_fields`` and ``dump_particles`` write initial-state
-openPMD files during initialization. Final run parameters, species metadata,
-and timing statistics are written to ``data/output.toml``.
+Electrodynamic and static-metric field output contains ``E``, ``B``, and ``J``.
+For these solvers, ``plotchargedensity = true`` deposits the scalar
+charge-density mesh ``rho`` from the current particle positions. Electrostatic
+field output instead contains ``rho``, ``phi``, and ``E`` by default; its zero
+``B`` and ``J`` fields are omitted. ``plotvelocities = true`` adds the
+particle-weighted vector mesh ``fluid_velocity`` for every solver.
+``dump_fields`` and ``dump_particles`` write initial-state openPMD files during
+initialization. Final run parameters, species metadata, and timing statistics
+are written to ``data/output.toml``.

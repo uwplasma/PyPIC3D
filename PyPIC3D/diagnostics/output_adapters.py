@@ -127,26 +127,42 @@ def build_field_output_map(
     """
     Select the tiled mesh quantities written by field diagnostics.
 
-    E, B, and J are the default output contract. Charge density and fluid
-    velocity are particle diagnostics and are only calculated when explicitly
-    requested.
+    Electrostatic output contains rho, phi, and E. Other solvers output E, B,
+    and J by default. Charge density for non-electrostatic solvers and fluid
+    velocity are particle diagnostics calculated only when requested.
     """
 
-    E, B, J, rho, *_rest = fields
-    field_map = {
-        "E": E,
-        "B": B,
-        "J": J,
-    }
+    E, B, J, rho, phi, *_rest = fields
+    electrostatic = static_parameters.solver == "electrostatic"
 
-    if include_charge_density:
-        field_map["rho"] = compute_rho(
+    if electrostatic:
+        rho_for_output = compute_rho(
             particles,
             species_config,
             rho,
             static_parameters,
             dynamic_parameters,
         )
+        field_map = {
+            "rho": rho_for_output,
+            "phi": phi,
+            "E": E,
+        }
+    else:
+        field_map = {
+            "E": E,
+            "B": B,
+            "J": J,
+        }
+
+        if include_charge_density:
+            field_map["rho"] = compute_rho(
+                particles,
+                species_config,
+                rho,
+                static_parameters,
+                dynamic_parameters,
+            )
 
     if include_fluid_velocity:
         velocity_template = J[0]

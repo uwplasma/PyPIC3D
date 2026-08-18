@@ -21,7 +21,12 @@ def tile_scalar_field(field, static_parameters, dynamic_parameters, num_guard_ce
 
 
 class TestTiledFluidQuantities(unittest.TestCase):
-    def _build_parameters(self, shape_factor=2, tile_shape=None):
+    def _build_parameters(
+        self,
+        shape_factor=2,
+        tile_shape=None,
+        solver="electrodynamic_yee",
+    ):
         x_wind, y_wind, z_wind = 4.0, 3.0, 2.0
         if tile_shape is None:
             tile_shape = (8, 6, 4)
@@ -40,6 +45,8 @@ class TestTiledFluidQuantities(unittest.TestCase):
             shape_factor=shape_factor,
             guard_cells=2,
             tile_shape=tile_shape,
+            solver=solver,
+            electrostatic=solver == "electrostatic",
             boundary_conditions=(BC_PERIODIC, BC_PERIODIC, BC_PERIODIC),
         )
 
@@ -225,6 +232,66 @@ class TestTiledFluidQuantities(unittest.TestCase):
                     atol=1.0e-12,
                 )
             )
+
+    def test_electrostatic_field_output_map_defaults_to_rho_phi_E(self):
+        static_parameters, dynamic_parameters = self._build_parameters(
+            shape_factor=1,
+            solver="electrostatic",
+        )
+        particles = self._weighted_average_particles()
+        tiled_particles, species_config = build_tiled_particles(
+            particles,
+            static_parameters,
+            dynamic_parameters,
+        )
+
+        scalar_field = self._scalar_tiles(static_parameters, dynamic_parameters)
+        phi = scalar_field + 3.0
+        E = (scalar_field + 1.0, scalar_field + 2.0, scalar_field + 4.0)
+        B = (scalar_field, scalar_field, scalar_field)
+        J = (scalar_field, scalar_field, scalar_field)
+        fields = (
+            E,
+            B,
+            J,
+            scalar_field,
+            phi,
+            (B, B),
+            None,
+            jnp.asarray(False),
+        )
+
+        field_map = build_field_output_map(
+            fields,
+            tiled_particles,
+            species_config,
+            static_parameters,
+            dynamic_parameters,
+        )
+        expected_rho = compute_rho(
+            tiled_particles,
+            species_config,
+            scalar_field,
+            static_parameters,
+            dynamic_parameters,
+        )
+
+        self.assertEqual(tuple(field_map), ("rho", "phi", "E"))
+        self.assertTrue(jnp.allclose(field_map["rho"], expected_rho))
+        self.assertTrue(jnp.any(field_map["rho"] != 0.0))
+        self.assertIs(field_map["phi"], phi)
+        self.assertIs(field_map["E"], E)
+
+        field_map_with_charge_flag = build_field_output_map(
+            fields,
+            tiled_particles,
+            species_config,
+            static_parameters,
+            dynamic_parameters,
+            include_charge_density=True,
+        )
+        self.assertEqual(tuple(field_map_with_charge_flag), ("rho", "phi", "E"))
+        self.assertTrue(jnp.allclose(field_map_with_charge_flag["rho"], expected_rho))
 
     def test_inactive_slots_do_not_contribute_to_fluid_velocity(self):
         static_parameters, dynamic_parameters = self._build_parameters(shape_factor=1)

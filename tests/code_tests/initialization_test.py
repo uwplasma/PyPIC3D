@@ -460,6 +460,9 @@ class TestInitializationFunctions(unittest.TestCase):
                     "Nt": 1,
                     "dt": 1.0e-10,
                 },
+                "plotting": {
+                    "dump_fields": True,
+                },
                 "particle1": {
                     "name": "electrons",
                     "N_particles": 1,
@@ -475,11 +478,23 @@ class TestInitializationFunctions(unittest.TestCase):
                 },
             }
 
-            loop, particles, fields, parameter_set, dynamic_parameters, *_ = initialize_simulation(config)
+            with patch("PyPIC3D.initialization.write_openpmd_initial_fields") as write_initial_fields:
+                (
+                    loop,
+                    particles,
+                    fields,
+                    parameter_set,
+                    dynamic_parameters,
+                    plotting_parameters,
+                    *_rest,
+                ) = initialize_simulation(config)
 
             self.assertIs(loop, time_loop_electrostatic)
             self.assertIsInstance(particles, TiledParticles)
             self.assertEqual(fields[0][0].ndim, 6)
+            self.assertEqual(tuple(plotting_parameters["field_map"]), ("rho", "phi", "E"))
+            self.assertEqual(tuple(write_initial_fields.call_args.args[0]), ("rho", "phi", "E"))
+            self.assertTrue(jnp.any(plotting_parameters["field_map"]["rho"] != 0.0))
             for vertex_axis, center_axis in zip(dynamic_parameters.grids.vertex, dynamic_parameters.grids.center):
                 self.assertTrue(jnp.allclose(vertex_axis, center_axis))
         # test the initialize_simulation function with an electrostatic solver and check that it uses a collocated grid
