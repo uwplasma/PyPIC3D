@@ -1,4 +1,5 @@
 import os
+from numbers import Integral
 from types import SimpleNamespace
 
 import jax
@@ -152,6 +153,48 @@ def _validate_tiled_yee_configuration(static_config, dynamic_config):
             raise ValueError("Yee runtime requires the shared tile shape to divide Nx/Ny/Nz exactly")
 
 
+def _configured_total_particles(config, dynamic_config):
+    """Count the particles requested across the configured species blocks."""
+
+    total_particles = 0
+    grid_cells = int(dynamic_config["Nx"]) * int(dynamic_config["Ny"]) * int(dynamic_config["Nz"])
+
+    for key, species in config.items():
+        if not key.startswith("particle") or not isinstance(species, dict):
+            continue
+        if "N_particles" in species:
+            total_particles += int(species["N_particles"])
+        elif "N_per_cell" in species:
+            total_particles += int(species["N_per_cell"] * grid_cells)
+
+    return total_particles
+
+
+def _resolve_particle_batch_size(static_config, dynamic_config, config):
+    """Resolve the static pusher batch shape from the optional run setting."""
+
+    particle_batch_size = static_config.get("particle_batch_size")
+    if particle_batch_size is None:
+        total_particles = _configured_total_particles(config, dynamic_config)
+        particle_batch_size = max(100, total_particles // 4)
+
+    if isinstance(particle_batch_size, bool) or not isinstance(particle_batch_size, Integral):
+        raise ValueError("particle_batch_size must be a positive integer.")
+    if particle_batch_size <= 0:
+        raise ValueError("particle_batch_size must be a positive integer.")
+
+    static_config["particle_batch_size"] = int(particle_batch_size)
+
+
+def _effective_particle_batch_size(particles, configured_batch_size):
+    """Limit a configured batch to the fixed particle-slot capacity of one tile."""
+
+    tile_capacity = int(particles.active.shape[-2]) * int(particles.active.shape[-1])
+    if tile_capacity == 0:
+        return 1
+    return min(int(configured_batch_size), tile_capacity)
+
+
 def _apply_pml_field_boundaries(static_config, pml_config):
     """
     PML-active axes use nonwrapping field halos from initialization onward.
@@ -249,6 +292,7 @@ def default_parameters():
         "particle_tile_ny": None,
         "particle_tile_nz": None,
         "particle_tile_capacity_factor": 1.0,
+        "particle_batch_size": None,
         "current_calculation": "j_from_rhov",
         "filter_j": "bilinear",
         "supergaussian_active": False,
@@ -352,6 +396,8 @@ def initialize_simulation(toml_file):
         static_config["particle_tile_ny"] = int(Ny)
     if static_config["particle_tile_nz"] is None:
         static_config["particle_tile_nz"] = int(Nz)
+
+    _resolve_particle_batch_size(static_config, dynamic_config, config)
 
     guard_cells = int(static_config["guard_cells"])
     if guard_cells < 1:
@@ -471,6 +517,18 @@ def initialize_simulation(toml_file):
         static_parameters,
         dynamic_parameters,
     )
+    effective_batch_size = _effective_particle_batch_size(
+        particles,
+        static_parameters.particle_batch_size,
+    )
+    if effective_batch_size != static_parameters.particle_batch_size:
+        print(
+            "Reducing particle_batch_size from "
+            f"{static_parameters.particle_batch_size} to tile capacity {effective_batch_size}."
+        )
+        static_parameters = static_parameters._replace(
+            particle_batch_size=effective_batch_size,
+        )
     particles = shard_tiled_particles(particles, static_parameters)
     plotting_parameters = {
         **plotting_parameters,

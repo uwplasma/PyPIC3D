@@ -75,6 +75,7 @@ def kernel_parameters(
     supergaussian_active=False,
     supergaussian_layers=(),
     particle_tile_capacity_factor=1.0,
+    particle_batch_size=256,
 ):
     if dx is None:
         dx = x_wind / Nx
@@ -122,6 +123,7 @@ def kernel_parameters(
         electrostatic_local_cg_tol=float(electrostatic_local_cg_tol),
         electrostatic_local_cg_max_iterations=int(electrostatic_local_cg_max_iterations),
         particle_tile_capacity_factor=float(particle_tile_capacity_factor),
+        particle_batch_size=int(particle_batch_size),
         pml_active=bool(pml_active),
         supergaussian_active=bool(supergaussian_active),
         supergaussian_layers=tuple(supergaussian_layers),
@@ -261,6 +263,7 @@ def kernel_parameters_from_values(parameter_set, dynamic_values=None):
         supergaussian_active=parameter_set.get("supergaussian", (False, False, False, False, ()))[0],
         supergaussian_layers=parameter_set.get("supergaussian", (False, False, False, False, ()))[-1],
         particle_tile_capacity_factor=parameter_set.get("particle_tile_capacity_factor", 1.0),
+        particle_batch_size=parameter_set.get("particle_batch_size", 256),
     )
 
 
@@ -312,6 +315,7 @@ def particle_parameters_from_values(parameter_set, tile_shape=None, dynamic_valu
         electrostatic_local_cg_tol=float(parameter_set.get("electrostatic_local_cg_tol", 1.0e-6)),
         electrostatic_local_cg_max_iterations=int(parameter_set.get("electrostatic_local_cg_max_iterations", 500)),
         particle_tile_capacity_factor=float(parameter_set.get("particle_tile_capacity_factor", 1.0)),
+        particle_batch_size=int(parameter_set.get("particle_batch_size", 256)),
         pml_active=bool(parameter_set.get("pml_active", False)),
         supergaussian_active=bool(parameter_set.get("supergaussian", (False, False, False, False, ()))[0]),
         supergaussian_layers=tuple(parameter_set.get("supergaussian", (False, False, False, False, ()))[-1]),

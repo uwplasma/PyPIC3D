@@ -105,6 +105,14 @@ single static slot capacity. A value greater than one leaves room for later
 particle motion. Inactive slots remain allocated so array shapes stay fixed
 under JIT compilation.
 
+The particle pusher constructs a temporary fixed-shape active-index list in
+each tile and processes it in ``particle_batch_size`` chunks. The six Yee field
+gathers and the selected velocity pusher therefore skip inactive slots, while
+``x``, ``u``, and ``active`` retain their fixed-capacity layout. Because tiles
+are mapped together, a compiled multi-tile push can execute up to the largest
+active batch count among the mapped tiles; no global particle compaction or
+cross-device gather is performed.
+
 After a position update, particles are sent to adjacent owner tiles and packed
 into free slots. A destination without enough slots, or a particle crossing
 more than one tile in a single refresh, sets the overflow flag. The Python

@@ -53,6 +53,7 @@ class TestKernelParameters(unittest.TestCase):
         self.assertEqual(static_parameters.current_deposition, "direct")
         self.assertEqual(static_parameters.current_filter, "none")
         self.assertEqual(static_parameters.particle_pusher, "boris")
+        self.assertEqual(static_parameters.particle_batch_size, 256)
         self.assertEqual(static_parameters.tile_shape, (4, 2, 1))
         self.assertEqual(static_parameters.electrostatic_schwarz_tol, 2.0e-6)
         self.assertEqual(static_parameters.electrostatic_schwarz_max_iterations, 250)

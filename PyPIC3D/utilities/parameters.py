@@ -1,4 +1,5 @@
 import jax.numpy as jnp
+from numbers import Integral
 from typing import NamedTuple
 
 from PyPIC3D.boundary_conditions.ghost_cells import make_field_mesh
@@ -35,6 +36,7 @@ class StaticParameters(NamedTuple):
     electrostatic_local_cg_tol: float
     electrostatic_local_cg_max_iterations: int
     particle_tile_capacity_factor: float
+    particle_batch_size: int
     pml_active: bool
     supergaussian_active: bool
     supergaussian_layers: tuple
@@ -105,6 +107,11 @@ def build_static_parameters(static_config):
     """
 
     tile_shape = _tile_shape(static_config)
+    particle_batch_size = static_config.get("particle_batch_size", 1)
+    if isinstance(particle_batch_size, bool) or not isinstance(particle_batch_size, Integral):
+        raise ValueError("particle_batch_size must be a positive integer.")
+    if particle_batch_size <= 0:
+        raise ValueError("particle_batch_size must be a positive integer.")
 
     return StaticParameters(
         name=static_config.get("name", "Default Simulation"),
@@ -130,6 +137,7 @@ def build_static_parameters(static_config):
         electrostatic_local_cg_tol=float(static_config.get("electrostatic_local_cg_tol", 1.0e-6)),
         electrostatic_local_cg_max_iterations=int(static_config.get("electrostatic_local_cg_max_iterations", 500)),
         particle_tile_capacity_factor=float(static_config.get("particle_tile_capacity_factor", 1.0)),
+        particle_batch_size=int(particle_batch_size),
         pml_active=bool(static_config.get("pml_active", False)),
         supergaussian_active=bool(static_config.get("supergaussian_active", False)),
         supergaussian_layers=tuple(static_config.get("supergaussian_layers", ())),

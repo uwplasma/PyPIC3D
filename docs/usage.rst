@@ -56,6 +56,7 @@ one JAX device:
    particle_tile_nz = 1
    guard_cells = 2
    particle_tile_capacity_factor = 1.25
+   particle_batch_size = 1250
 
    shape_factor = 1
    current_calculation = "j_from_rhov"
@@ -112,6 +113,10 @@ Numerical Choices
 - ``particle_pusher`` is ``boris`` or ``higuera_cary``. The ``relativistic``
   switch selects relativistic or non-relativistic Boris; Higuera-Cary uses its
   relativistic update.
+- ``particle_batch_size`` is the positive, static number of active particle
+  slots pushed at once inside each tile. If omitted, it is exactly
+  ``max(1, total_particles // 4)`` and is reduced to the tile slot capacity
+  during initialization when necessary.
 - ``shape_factor`` is ``1`` or ``2``.
 - ``current_calculation`` is ``j_from_rhov`` or ``esirkepov``.
 - ``filter_j`` is ``none``, ``digital``, or ``bilinear`` for direct current.
