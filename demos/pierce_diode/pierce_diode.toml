@@ -1,59 +1,61 @@
-# This is a PyPIC3D configuration file
-
-# This is a simulation of the pierce diode instability
-# The pierce diode instability is instability triggered by
-# a current between parallel plate PECs that causes the formation
-# of a virtual cathode.
-
-
 [simulation_parameters]
-name = "Demo of a pierce diode instability with 3,000 electrons"
-t_wind = 1.67e-8
-solver = 'electrostatic'
-Nx = 200
+name = "Warm Pierce diode blocking instability"
+t_wind = 5.194937872998525e-8
+dt = 2.2421696041844394e-12
+solver = "electrostatic"
+Nx = 256
 Ny = 1
 Nz = 1
-particle_tile_nx = 200
+particle_tile_nx = 256
 particle_tile_ny = 1
 particle_tile_nz = 1
-particle_tile_capacity_factor=1.0
-x_wind = 0.1
-y_wind = 1
-z_wind = 1
+particle_tile_capacity_factor = 10.999755859375
+x_min = 0.0
+x_max = 0.01
+y_wind = 1.0
+z_wind = 1.0
 verbose = false
-cfl = 0.99
 shape_factor = 2
 alpha = 1.0
-relativistic = true
-particle_x_bc = "reflecting"
+relativistic = false
+particle_x_bc = "absorbing"
 particle_y_bc = "periodic"
 particle_z_bc = "periodic"
 x_bc = "conducting"
 y_bc = "periodic"
 z_bc = "periodic"
 
-
 [plotting]
-plotting_interval = 1
+plotting_interval = 10
 plot_openpmd_particles = true
 plot_openpmd_fields = true
 
-# electron beam current
+[pierce_diode]
+electron_species = "electron1"
+ion_species = "ion1"
+alpha = 9.26769832808989
+omega_p = 1783986364.1604173
+beam_velocity = 1924950.8356926676
+thermal_velocity = 139373.9347000326
+macro_injection_per_timestep = 1.7678607373678732
+transit_times = 10.0
+random_seed = 0
+
 [particle1]
 name = "electron1"
-N_particles = 10000
-charge = -1.602e-19
-mass   = 9.1093837e-31
-vth = 0
-weight =  1.61e+10
-initial_vx = 6.00e7
+N_per_cell = 16
+number_density = 1000000000000000.0
+charge = -1.602176634e-19
+mass = 9.1093837139e-31
+vth = 139373.9347000326
+initial_vx = 1924950.8356926676
 
-# static ions for neutralizing background
 [particle2]
 name = "ion1"
-N_particles = 10000
-charge = 1.602e-19
-mass = 1.67e-27
+N_per_cell = 16
+number_density = 1000000000000000.0
+charge = 1.602176634e-19
+mass = 1.67262192595e-27
 vth = 0.0
 update_x = false
 update_y = false
