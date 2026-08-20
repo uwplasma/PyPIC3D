@@ -683,10 +683,10 @@ def apply_tiled_constant_boundary(field_tiles, static_parameters, axis, num_guar
     """
     Fill exterior ghost cells from the adjacent interior plane.
 
-    This is used by the electrostatic scalar potential on conducting walls and
-    by explicit constant field boundaries.  Internal tile halos are still
-    refreshed through the distributed ppermute path before the exterior ghosts
-    are overwritten.
+    This supports explicit constant field boundaries and callers that require
+    a zero-normal-gradient scalar on a conducting axis. Internal tile halos are
+    still refreshed through the distributed ppermute path before the exterior
+    ghosts are overwritten.
     """
 
     axis = int(axis)

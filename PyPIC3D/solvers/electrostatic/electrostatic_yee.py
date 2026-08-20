@@ -19,21 +19,16 @@ def _backward_slice(g):
     return slice(g - 1, -g - 1)
 
 
-def _apply_tiled_phi_constant_boundaries(field_tiles, static_parameters, g):
+def _apply_tiled_phi_zero_boundaries(field_tiles, static_parameters, g):
     bc_x, bc_y, bc_z = static_parameters.boundary_conditions
     boundary_conditions = (bc_x, bc_y, bc_z)
 
-    field_tiles = ghost_cells.update_tiled_ghost_cells(
-        field_tiles,
-        static_parameters,
-        g,
-    )
-    # Refresh all neighbor halos once, then impose each physical constant wall.
-    # Calling apply_tiled_constant_boundary once per axis would refresh again
-    # between axes and erase an already-filled conducting face.
+    # Ground each physical conducting face before refreshing the inter-tile and
+    # exterior halos. Explicit constant boundaries retain their normal-copy
+    # behavior in the generic ghost-cell updater.
     for axis, boundary_condition in enumerate(boundary_conditions):
         if int(boundary_condition) == BC_CONDUCTING:
-            apply_boundary = ghost_cells.make_distributed_constant_boundary(
+            apply_boundary = ghost_cells.make_distributed_zero_boundary(
                 static_parameters.field_mesh,
                 static_parameters.tile_shape,
                 axis,
@@ -41,7 +36,56 @@ def _apply_tiled_phi_constant_boundaries(field_tiles, static_parameters, g):
             )
             field_tiles = apply_boundary(field_tiles)
 
-    return field_tiles
+    return ghost_cells.update_tiled_ghost_cells(
+        field_tiles,
+        static_parameters,
+        g,
+    )
+
+
+def _free_potential_mask(residual, static_parameters):
+    """Mask out fixed-potential planes on the global conducting walls."""
+
+    free = jnp.ones_like(residual, dtype=bool)
+    boundary_conditions = tuple(
+        int(boundary_condition)
+        for boundary_condition in static_parameters.boundary_conditions
+    )
+
+    for axis, boundary_condition in enumerate(boundary_conditions):
+        if boundary_condition != BC_CONDUCTING:
+            continue
+
+        lower_wall = [slice(None)] * residual.ndim
+        upper_wall = [slice(None)] * residual.ndim
+        lower_wall[axis] = 0
+        lower_wall[axis + 3] = 0
+        upper_wall[axis] = -1
+        upper_wall[axis + 3] = -1
+        free = free.at[tuple(lower_wall)].set(False)
+        free = free.at[tuple(upper_wall)].set(False)
+
+    return free
+
+
+def _free_poisson_residual(
+    rho_tiles,
+    phi_tiles,
+    static_parameters,
+    dynamic_parameters,
+    g,
+):
+    residual = _poisson_residual(
+        rho_tiles,
+        phi_tiles,
+        dynamic_parameters,
+        g,
+    )
+    return jnp.where(
+        _free_potential_mask(residual, static_parameters),
+        residual,
+        0.0,
+    )
 
 
 def _tiled_laplacian(field_tiles, dynamic_parameters, g):
@@ -88,20 +132,23 @@ def _poisson_residual(rho_tiles, phi_tiles, dynamic_parameters, g):
 def _local_tile_cg_solve(
     rho_tiles,
     phi_tiles,
+    static_parameters,
     dynamic_parameters,
     g,
     local_cg_tol,
     local_cg_max_iterations,
 ):
-    """Solve each tile with fixed Dirichlet halos and residual-controlled CG."""
+    """Solve each tile with fixed Dirichlet halos and conducting wall planes."""
 
     active = _active_slice(g)
-    residual = _poisson_residual(
+    residual = _free_poisson_residual(
         rho_tiles,
         phi_tiles,
+        static_parameters,
         dynamic_parameters,
         g,
     )
+    free = _free_potential_mask(residual, static_parameters)
     search_direction = jnp.zeros_like(phi_tiles)
     search_direction = search_direction.at[..., active, active, active].set(residual)
     rr = jnp.sum(
@@ -127,6 +174,7 @@ def _local_tile_cg_solve(
             dynamic_parameters,
             g,
         )
+        Ap = jnp.where(free, Ap, 0.0)
         pAp = jnp.sum(
             search_owned * Ap,
             axis=(-3, -2, -1),
@@ -261,6 +309,8 @@ def solve_poisson_with_tiled_local_schwarz(
     while holding that tile's ``g = guard_cells`` halo fixed as Dirichlet data.
     Search directions are zero in the guard cells, and CG reductions cover only
     the three owned spatial axes, so no global Krylov solve is formed.
+    Owned points on global conducting walls are grounded and excluded from the
+    Krylov updates and convergence residuals.
 
     Each parallel Schwarz update is averaged with the previous iterate before
     the potential halos are refreshed. This fixed under-relaxation damps the
@@ -277,14 +327,15 @@ def solve_poisson_with_tiled_local_schwarz(
     """
 
     g = int(static_parameters.guard_cells)
-    phi_tiles = _apply_tiled_phi_constant_boundaries(
+    phi_tiles = _apply_tiled_phi_zero_boundaries(
         phi_tiles,
         static_parameters,
         g,
     )
-    residual = _poisson_residual(
+    residual = _free_poisson_residual(
         rho_tiles,
         phi_tiles,
+        static_parameters,
         dynamic_parameters,
         g,
     )
@@ -327,6 +378,7 @@ def solve_poisson_with_tiled_local_schwarz(
         local_phi_tiles, local_cg_residual = _local_tile_cg_solve(
             rho_tiles,
             phi_tiles,
+            static_parameters,
             dynamic_parameters,
             g,
             local_cg_tol,
@@ -338,14 +390,15 @@ def solve_poisson_with_tiled_local_schwarz(
         phi_tiles = phi_tiles + schwarz_relaxation * (
             local_phi_tiles - phi_tiles
         )
-        phi_tiles = _apply_tiled_phi_constant_boundaries(
+        phi_tiles = _apply_tiled_phi_zero_boundaries(
             phi_tiles,
             static_parameters,
             g,
         )
-        residual = _poisson_residual(
+        residual = _free_poisson_residual(
             rho_tiles,
             phi_tiles,
+            static_parameters,
             dynamic_parameters,
             g,
         )
@@ -401,7 +454,7 @@ def _centered_tiled_electrostatic_gradient(phi_tiles, static_parameters, dynamic
     forward = slice(g + 1, None if g == 1 else -g + 1)
     backward = slice(g - 1, -g - 1)
 
-    phi_tiles = _apply_tiled_phi_constant_boundaries(phi_tiles, static_parameters, g)
+    phi_tiles = _apply_tiled_phi_zero_boundaries(phi_tiles, static_parameters, g)
 
     Ex = jnp.zeros_like(phi_tiles)
     Ey = jnp.zeros_like(phi_tiles)
@@ -452,7 +505,7 @@ def calculate_electrostatic_fields(
 
     alpha = dynamic_parameters.alpha
     phi_tiles = digital_filter(phi_tiles, alpha, num_guard_cells=g)
-    phi_tiles = _apply_tiled_phi_constant_boundaries(phi_tiles, static_parameters, g)
+    phi_tiles = _apply_tiled_phi_zero_boundaries(phi_tiles, static_parameters, g)
     # preserve the established solve -> filter -> halo refresh ordering
 
     E_tiles = _centered_tiled_electrostatic_gradient(phi_tiles, static_parameters, dynamic_parameters, g)

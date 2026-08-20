@@ -8,7 +8,8 @@ from jax.scipy.special import erf
 from PyPIC3D.boundary_conditions.ghost_cells import update_tiled_ghost_cells
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
 from PyPIC3D.solvers.electrostatic.electrostatic_yee import (
-    _apply_tiled_phi_constant_boundaries,
+    _apply_tiled_phi_zero_boundaries,
+    _free_poisson_residual,
     _local_tile_cg_solve,
     _poisson_residual,
     _tiled_laplacian,
@@ -429,7 +430,7 @@ class TestTiledLocalSchwarz(unittest.TestCase):
             )
             self.assertAlmostEqual(float(order), 2.0, delta=0.2)
 
-    def test_conducting_boundaries_preserve_the_existing_constant_ghost_rule(self):
+    def test_conducting_boundaries_ground_the_potential(self):
         Nx = Ny = Nz = 8
         static_parameters, dynamic_parameters = kernel_parameters(
             Nx=Nx,
@@ -448,12 +449,12 @@ class TestTiledLocalSchwarz(unittest.TestCase):
             indexing="ij",
         )
         phi_true = (
-            jnp.cos(jnp.pi * ii / (Nx - 1))
-            + 0.2 * jnp.cos(2.0 * jnp.pi * jj / (Ny - 1))
-            + 0.1 * jnp.cos(jnp.pi * kk / (Nz - 1))
+            jnp.sin(jnp.pi * ii / (Nx - 1))
+            * jnp.sin(jnp.pi * jj / (Ny - 1))
+            * jnp.sin(jnp.pi * kk / (Nz - 1))
         )
         phi_true_tiles = _tile_field(phi_true, (1, 1, 1), (Nx, Ny, Nz), 1)
-        phi_true_tiles = _apply_tiled_phi_constant_boundaries(
+        phi_true_tiles = _apply_tiled_phi_zero_boundaries(
             phi_true_tiles,
             static_parameters,
             1,
@@ -475,22 +476,93 @@ class TestTiledLocalSchwarz(unittest.TestCase):
         )
         local_cg_residual, schwarz_residual, schwarz_iteration = diagnostics
 
-        self.assertLess(float(_relative_phi_error(phi_tiles, phi_true, 1)), 2.0e-4)
+        phi = _assemble_owned(phi_tiles, 1)
+        relative_error = jnp.linalg.norm(phi - phi_true) / jnp.linalg.norm(phi_true)
+        residual = _free_poisson_residual(
+            rho_tiles,
+            phi_tiles,
+            static_parameters,
+            dynamic_parameters,
+            1,
+        )
+
+        self.assertLess(float(relative_error), 2.0e-7)
         self.assertTrue(jnp.all(jnp.isfinite(local_cg_residual)))
         self.assertLessEqual(float(schwarz_residual), 1.0e-6)
+        self.assertLessEqual(float(jnp.max(jnp.abs(residual))), 1.0e-6)
         self.assertGreater(int(schwarz_iteration), 0)
-        self.assertTrue(
-            jnp.allclose(
-                phi_tiles[..., 0, 1:-1, 1:-1],
-                phi_tiles[..., 1, 1:-1, 1:-1],
-            )
+        self.assertTrue(jnp.all(phi[0, :, :] == 0.0))
+        self.assertTrue(jnp.all(phi[-1, :, :] == 0.0))
+        self.assertTrue(jnp.all(phi[:, 0, :] == 0.0))
+        self.assertTrue(jnp.all(phi[:, -1, :] == 0.0))
+        self.assertTrue(jnp.all(phi[:, :, 0] == 0.0))
+        self.assertTrue(jnp.all(phi[:, :, -1] == 0.0))
+
+    def _assert_non_neutral_grounded_solution(self, tile_nx):
+        Nx = 16
+        tile_grid_shape = (Nx // tile_nx, 1, 1)
+        static_parameters, dynamic_parameters = kernel_parameters(
+            Nx=Nx,
+            Ny=1,
+            Nz=1,
+            tile_shape=(tile_nx, 1, 1),
+            guard_cells=1,
+            boundary_conditions=(BC_CONDUCTING, BC_PERIODIC, BC_PERIODIC),
+            electrostatic=True,
+            solver="electrostatic",
         )
-        self.assertTrue(
-            jnp.allclose(
-                phi_tiles[..., -1, 1:-1, 1:-1],
-                phi_tiles[..., -2, 1:-1, 1:-1],
-            )
+        i = jnp.arange(Nx, dtype=jnp.float64)
+        phi_true = (i * (Nx - 1 - i))[:, jnp.newaxis, jnp.newaxis]
+        phi_true_tiles = _tile_field(
+            phi_true,
+            tile_grid_shape,
+            (tile_nx, 1, 1),
+            1,
         )
+        phi_true_tiles = _apply_tiled_phi_zero_boundaries(
+            phi_true_tiles,
+            static_parameters,
+            1,
+        )
+        rho_owned = jnp.full(
+            tile_grid_shape + (tile_nx, 1, 1),
+            2.0 * dynamic_parameters.eps / dynamic_parameters.dx**2,
+            dtype=phi_true.dtype,
+        )
+        rho_tiles = jnp.zeros_like(phi_true_tiles)
+        rho_tiles = rho_tiles.at[..., 1:-1, 1:-1, 1:-1].set(rho_owned)
+
+        phi_tiles, diagnostics = solve_poisson_with_tiled_local_schwarz(
+            rho_tiles,
+            jnp.zeros_like(phi_true_tiles),
+            static_parameters,
+            dynamic_parameters,
+            schwarz_tol=1.0e-9,
+            local_cg_tol=1.0e-9,
+            return_diagnostics=True,
+        )
+        phi = _assemble_owned(phi_tiles, 1)
+        residual = _free_poisson_residual(
+            rho_tiles,
+            phi_tiles,
+            static_parameters,
+            dynamic_parameters,
+            1,
+        )
+
+        self.assertGreater(float(jnp.sum(rho_owned)), 0.0)
+        self.assertLess(float(jnp.max(jnp.abs(phi - phi_true))), 1.0e-8)
+        self.assertEqual(float(phi[0, 0, 0]), 0.0)
+        self.assertEqual(float(phi[-1, 0, 0]), 0.0)
+        self.assertLessEqual(float(jnp.max(jnp.abs(residual))), 1.0e-9)
+        self.assertLess(int(diagnostics[2]), 500)
+
+    def test_non_neutral_one_dimensional_source_converges_between_grounded_walls(self):
+        self._assert_non_neutral_grounded_solution(tile_nx=16)
+
+    def test_two_tiles_keep_only_the_global_conducting_walls_grounded(self):
+        self._require_devices(2)
+        self._assert_non_neutral_grounded_solution(tile_nx=8)
 
     def test_zero_residual_is_nan_safe_and_jittable(self):
         static_parameters, dynamic_parameters, _, rho_tiles, phi_tiles, _ = _periodic_mode_problem(
