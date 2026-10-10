@@ -114,18 +114,6 @@ def digital_filter(phi, alpha, num_guard_cells=1):
     return phi.at[..., active, active, active].set(filtered)
 
 
-def bilinear_filter_vector(field, num_guard_cells=1):
-    """Apply the tri-linear filter component-wise to a vector field."""
-
-    stacked = _stack_vector_field(field)
-    filtered = vmap(
-        lambda component: bilinear_filter(component, num_guard_cells=num_guard_cells),
-        in_axes=0,
-        out_axes=0,
-    )(stacked)
-    return _restore_vector_field(filtered, field)
-
-
 def digital_filter_vector(field, alpha, num_guard_cells=1):
     """Apply the six-neighbor digital filter component-wise to a vector field."""
 

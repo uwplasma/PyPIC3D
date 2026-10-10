@@ -6,14 +6,15 @@ from PyPIC3D.relativity.core import (
     covariant_lorentz_factor,
     contravariant_three_velocity,
     lower_vector,
-    metric_for_location,
+    location_grid,
 )
-from PyPIC3D.relativity.flat import (
+from PyPIC3D.relativity.interpolate_metric import particle_lorentz_factor
+from PyPIC3D.relativity.metrics.flat import (
     initialize_flat_cartesian_metric,
     initialize_flat_cylindrical_metric,
     initialize_flat_spherical_metric,
 )
-from PyPIC3D.relativity.kerr_schild import (
+from PyPIC3D.relativity.metrics.kerr_schild import (
     initialize_kerr_schild_cartesian_metric,
     initialize_kerr_schild_spherical_metric,
 )
@@ -26,7 +27,8 @@ __all__ = [
     "covariant_lorentz_factor",
     "contravariant_three_velocity",
     "lower_vector",
-    "metric_for_location",
+    "location_grid",
+    "particle_lorentz_factor",
     "initialize_flat_cartesian_metric",
     "initialize_flat_cylindrical_metric",
     "initialize_flat_spherical_metric",

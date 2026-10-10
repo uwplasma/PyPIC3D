@@ -1,112 +1,59 @@
-import jax
-
+from PyPIC3D.relativity.core import D_FIELD_LOCATIONS, B_FIELD_LOCATIONS
 from PyPIC3D.boundary_conditions.PML import (
     stretch_tiled_pml_b_derivatives,
     stretch_tiled_pml_e_derivatives,
 )
 from PyPIC3D.boundary_conditions.supergaussian import apply_tiled_supergaussian_absorber
 from PyPIC3D.boundary_conditions import ghost_cells
-from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING
-
-
-def _active_vector(field_tiles, g):
-    active = slice(g, -g)
-    return tuple(component[:, :, :, active, active, active] for component in field_tiles)
-
-
-def _forward_difference_from_refreshed(field, axis, spacing, guard_cells):
-    """Take one forward Yee difference after the vector halo refresh."""
-
-    g = int(guard_cells)
-    active = slice(g, -g)
-    forward = slice(g + 1, None if g == 1 else -g + 1)
-
-    current_slices = [active, active, active]
-    forward_slices = [active, active, active]
-    forward_slices[int(axis)] = forward
-
-    current_slices = (slice(None), slice(None), slice(None), *current_slices)
-    forward_slices = (slice(None), slice(None), slice(None), *forward_slices)
-    return (field[forward_slices] - field[current_slices]) / spacing
-
-
-def _yee_derivatives_from_refreshed_channels(channels, static_parameters, dynamic_parameters):
-    """Apply the six canonical forward differences to refreshed field channels."""
-
-    Ez_for_dy, Ey_for_dz, Ex_for_dz, Ez_for_dx, Ey_for_dx, Ex_for_dy = channels
-    g = int(static_parameters.guard_cells)
-
-    return (
-        _forward_difference_from_refreshed(Ez_for_dy, 1, dynamic_parameters.dy, g),
-        _forward_difference_from_refreshed(Ey_for_dz, 2, dynamic_parameters.dz, g),
-        _forward_difference_from_refreshed(Ex_for_dz, 2, dynamic_parameters.dz, g),
-        _forward_difference_from_refreshed(Ez_for_dx, 0, dynamic_parameters.dx, g),
-        _forward_difference_from_refreshed(Ey_for_dx, 0, dynamic_parameters.dx, g),
-        _forward_difference_from_refreshed(Ex_for_dy, 1, dynamic_parameters.dy, g),
-    )
 
 
 def yee_derivatives_e_to_b(E_tiles, static_parameters, dynamic_parameters):
     """
     Return the six forward Yee derivatives from centered E to staggered B.
 
-    Halo refresh is part of this spatial operator.  The current field boundary
-    maps are linear and do not inject nonzero prescribed values.
-
     Output order is
     ``dEz_dy, dEy_dz, dEx_dz, dEz_dx, dEy_dx, dEx_dy``.
     """
 
     g = int(static_parameters.guard_cells)
-    Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells(E_tiles, static_parameters, g)
-    channels = (Ez, Ey, Ex, Ez, Ey, Ex)
-    return _yee_derivatives_from_refreshed_channels(channels, static_parameters, dynamic_parameters)
+    active = slice(g, -g)
+    forward = slice(g + 1, None if g == 1 else -g + 1)
+
+    Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells(E_tiles, static_parameters, g, locations=D_FIELD_LOCATIONS)
+    dx, dy, dz = dynamic_parameters.dx, dynamic_parameters.dy, dynamic_parameters.dz
+
+    dEz_dy = (Ez[:, :, :, active, forward, active] - Ez[:, :, :, active, active, active]) / dy
+    dEy_dz = (Ey[:, :, :, active, active, forward] - Ey[:, :, :, active, active, active]) / dz
+    dEx_dz = (Ex[:, :, :, active, active, forward] - Ex[:, :, :, active, active, active]) / dz
+    dEz_dx = (Ez[:, :, :, forward, active, active] - Ez[:, :, :, active, active, active]) / dx
+    dEy_dx = (Ey[:, :, :, forward, active, active] - Ey[:, :, :, active, active, active]) / dx
+    dEx_dy = (Ex[:, :, :, active, forward, active] - Ex[:, :, :, active, active, active]) / dy
+
+    return dEz_dy, dEy_dz, dEx_dz, dEz_dx, dEy_dx, dEx_dy
 
 
-def _independent_yee_derivative_channels(channels, static_parameters, dynamic_parameters):
-    """
-    Apply the forward geometry to six independent channels for transposition.
-
-    Keeping the derivative channels independent lets the transpose return each
-    backward derivative separately.  The channels share one vector halo
-    exchange, so the reverse operator has one distributed transpose/fold phase.
-    """
-
-    g = int(static_parameters.guard_cells)
-    channels = ghost_cells.update_tiled_vector_ghost_cells(channels, static_parameters, g)
-    return _yee_derivatives_from_refreshed_channels(channels, static_parameters, dynamic_parameters)
-
-
-def yee_derivatives_b_to_e(B_tiles, E_template, static_parameters, dynamic_parameters):
+def yee_derivatives_b_to_e(B_tiles, static_parameters, dynamic_parameters):
     """
     Return the six backward Yee derivatives from staggered B to centered E.
-
-    The reverse geometry is ``D_backward = -D_forward.T``.  A single batched
-    transpose keeps the six derivative channels separate for PML stretching
-    while sharing the transpose of the distributed halo operation.
 
     Output order is
     ``dBz_dy, dBy_dz, dBx_dz, dBz_dx, dBy_dx, dBx_dy``.
     """
 
     g = int(static_parameters.guard_cells)
-    Ex, Ey, Ez = E_template
-    Bx, By, Bz = _active_vector(B_tiles, g)
+    active = slice(g, -g)
+    backward = slice(g - 1, -g - 1)
 
-    channel_templates = (Ez, Ey, Ex, Ez, Ey, Ex)
-    derivative_cotangents = (Bx, Bx, By, By, Bz, Bz)
-    transpose_derivatives = jax.linear_transpose(
-        lambda channels: _independent_yee_derivative_channels(
-            channels,
-            static_parameters,
-            dynamic_parameters,
-        ),
-        channel_templates,
-    )
-    transposed_channels, = transpose_derivatives(derivative_cotangents)
-    backward_channels = tuple(-component for component in _active_vector(transposed_channels, g))
+    Bx, By, Bz = ghost_cells.update_tiled_vector_ghost_cells(B_tiles, static_parameters, g, locations=B_FIELD_LOCATIONS)
+    dx, dy, dz = dynamic_parameters.dx, dynamic_parameters.dy, dynamic_parameters.dz
 
-    dBx_dy, dBx_dz, dBy_dz, dBy_dx, dBz_dx, dBz_dy = backward_channels
+    dBz_dy = (Bz[:, :, :, active, active, active] - Bz[:, :, :, active, backward, active]) / dy
+    dBy_dz = (By[:, :, :, active, active, active] - By[:, :, :, active, active, backward]) / dz
+    dBx_dz = (Bx[:, :, :, active, active, active] - Bx[:, :, :, active, active, backward]) / dz
+    dBz_dx = (Bz[:, :, :, active, active, active] - Bz[:, :, :, backward, active, active]) / dx
+    dBy_dx = (By[:, :, :, active, active, active] - By[:, :, :, backward, active, active]) / dx
+    dBx_dy = (Bx[:, :, :, active, active, active] - Bx[:, :, :, active, backward, active]) / dy
+
     return dBz_dy, dBy_dz, dBx_dz, dBz_dx, dBy_dx, dBx_dy
 
 
@@ -124,12 +71,11 @@ def yee_curl_e_to_b(E_tiles, static_parameters, dynamic_parameters):
     return assemble_yee_curl(derivatives)
 
 
-def yee_curl_b_to_e(B_tiles, E_template, static_parameters, dynamic_parameters):
-    """Apply the transpose-derived Yee curl from staggered B to centered E."""
+def yee_curl_b_to_e(B_tiles, static_parameters, dynamic_parameters):
+    """Apply the explicit backward Yee curl from staggered B to centered E."""
 
     derivatives = yee_derivatives_b_to_e(
         B_tiles,
-        E_template,
         static_parameters,
         dynamic_parameters,
     )
@@ -140,8 +86,8 @@ def update_E(E_tiles, B_tiles, J_tiles, static_parameters, dynamic_parameters, p
     """
     Update compact tiled electric fields without assembling a global field.
 
-    The ordinary B-to-E curl is the algebraic transpose of the centered-E to
-    staggered-B spatial operator, including its halo communication.
+    The B-to-E curl uses explicit backward differences after refreshing B
+    halos from neighboring tiles or field boundary conditions.
     """
 
     Ex, Ey, Ez = E_tiles
@@ -156,7 +102,6 @@ def update_E(E_tiles, B_tiles, J_tiles, static_parameters, dynamic_parameters, p
 
     derivatives = yee_derivatives_b_to_e(
         B_tiles,
-        E_tiles,
         static_parameters,
         dynamic_parameters,
     )
@@ -182,29 +127,19 @@ def update_E(E_tiles, B_tiles, J_tiles, static_parameters, dynamic_parameters, p
         + (C**2 * curl_z - Jz[:, :, :, active, active, active] / eps) * dt
     )
 
-    bc_x, bc_y, bc_z = static_parameters.boundary_conditions
-    if int(bc_x) == BC_CONDUCTING:
-        Ey = ghost_cells.apply_tiled_zero_boundary(Ey, static_parameters, axis=0, num_guard_cells=g)
-        Ez = ghost_cells.apply_tiled_zero_boundary(Ez, static_parameters, axis=0, num_guard_cells=g)
-    if int(bc_y) == BC_CONDUCTING:
-        Ex = ghost_cells.apply_tiled_zero_boundary(Ex, static_parameters, axis=1, num_guard_cells=g)
-        Ez = ghost_cells.apply_tiled_zero_boundary(Ez, static_parameters, axis=1, num_guard_cells=g)
-    if int(bc_z) == BC_CONDUCTING:
-        Ex = ghost_cells.apply_tiled_zero_boundary(Ex, static_parameters, axis=2, num_guard_cells=g)
-        Ey = ghost_cells.apply_tiled_zero_boundary(Ey, static_parameters, axis=2, num_guard_cells=g)
-    # conducting walls zero tangential E components on the physical boundary
-    # planes; the shared scalar helper refreshes halos through ppermute.
+    Ex, Ey, Ez = ghost_cells.apply_tiled_pec_boundary((Ex, Ey, Ez), static_parameters)
 
     E_tiles = apply_tiled_supergaussian_absorber(
         (Ex, Ey, Ez),
         static_parameters,
         dynamic_parameters,
         dynamic_parameters.dt,
+        locations=D_FIELD_LOCATIONS,
     )
     # A supergaussian layer is a field-only sponge: it damps the evolved fields
     # after the Maxwell update without changing the deposited current.
 
-    return ghost_cells.update_tiled_vector_ghost_cells(E_tiles, static_parameters, g), pml_state
+    return ghost_cells.update_tiled_vector_ghost_cells(E_tiles, static_parameters, g, locations=D_FIELD_LOCATIONS), pml_state
 
 
 def update_B(E_tiles, B_tiles, static_parameters, dynamic_parameters, pml_state=None):
@@ -244,8 +179,9 @@ def update_B(E_tiles, B_tiles, static_parameters, dynamic_parameters, pml_state=
         static_parameters,
         dynamic_parameters,
         dt,
+        locations=B_FIELD_LOCATIONS,
     )
     # The B update is split into half steps, so the sponge uses the same half
     # timestep as Faraday's-law update here.
 
-    return ghost_cells.update_tiled_vector_ghost_cells((Bx, By, Bz), static_parameters, g), pml_state
+    return ghost_cells.update_tiled_vector_ghost_cells((Bx, By, Bz), static_parameters, g, locations=B_FIELD_LOCATIONS), pml_state

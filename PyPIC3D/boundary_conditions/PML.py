@@ -3,8 +3,6 @@ import math
 import jax
 import jax.numpy as jnp
 
-from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_PERIODIC
-
 
 PML_WALLS = ["-x", "+x", "-y", "+y", "-z", "+z"]
 

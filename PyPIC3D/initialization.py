@@ -1,13 +1,16 @@
 import os
+import math
 from types import SimpleNamespace
 
 import jax
 import jax.numpy as jnp
 
+from PyPIC3D.relativity.field_state import densitize_vector
 from PyPIC3D.particles.particle_initialization import load_particles_from_toml
+from PyPIC3D.pusher.particle_push import seed_leapfrog_velocity
 from PyPIC3D.particles.particle_tile_communication import shard_tiled_particles
-from PyPIC3D.diagnostics.diagnostic_quantities import compute_energy
-from PyPIC3D.utilities.field_helpers import add_external_fields
+from PyPIC3D.diagnostics.diagnostic_quantities import compute_energy, compute_dark_energy
+from PyPIC3D.utilities.field_helpers import add_external_fields, yee_push_fields
 from PyPIC3D.utilities.plasma_quantities import build_plasma_parameters_dict
 from PyPIC3D.utilities.simulation_helpers import (
     convert_to_jax_compatible,
@@ -19,6 +22,7 @@ from PyPIC3D.utilities.simulation_helpers import (
 from PyPIC3D.utilities.toml_helpers import (
     load_external_fields_from_toml,
     load_previous_fields_from_toml,
+    load_dark_fields_from_toml,
     update_parameters_from_toml,
 )
 from PyPIC3D.utilities.grids import (
@@ -33,12 +37,14 @@ from PyPIC3D.diagnostics.openPMD import (
 )
 from PyPIC3D.diagnostics.plotting import plot_initial_histograms
 from PyPIC3D.boundary_conditions.ghost_cells import (
-    make_field_mesh,
+    apply_tiled_pec_boundary,
     update_tiled_vector_ghost_cells,
 )
+from PyPIC3D.boundary_conditions.staggered import refresh_fields
 from PyPIC3D.solvers.electrostatic.time_loop import time_loop_electrostatic
-from PyPIC3D.solvers.gr_static.time_loop import time_loop_static_metric
+from PyPIC3D.solvers.GR_yee.time_loop import time_loop_static_metric
 from PyPIC3D.solvers.yee.time_loop import time_loop_electrodynamic
+from PyPIC3D.solvers.dark_matter_yee.time_loop import time_loop_dark_photon, dark_photon_push_fields
 from PyPIC3D.boundary_conditions.grid_and_stencil import (
     BC_ABSORBING,
     BC_CONDUCTING,
@@ -47,13 +53,14 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
 )
 from PyPIC3D.boundary_conditions.PML import initialize_tiled_pml_state, load_pml_from_toml
 from PyPIC3D.boundary_conditions.supergaussian import load_supergaussian_from_toml
-from PyPIC3D.utilities.parameters import build_dynamic_parameters, build_static_parameters
-from PyPIC3D.relativity.flat import (
+from PyPIC3D.utilities.parameters import build_dynamic_parameters, build_static_parameters, validate_dark_parameters
+from PyPIC3D.relativity.core import B_FIELD_LOCATIONS, D_FIELD_LOCATIONS
+from PyPIC3D.relativity.metrics.flat import (
     initialize_flat_cartesian_metric,
     initialize_flat_cylindrical_metric,
     initialize_flat_spherical_metric,
 )
-from PyPIC3D.relativity.kerr_schild import (
+from PyPIC3D.relativity.metrics.kerr_schild import (
     initialize_kerr_schild_cartesian_metric,
     initialize_kerr_schild_spherical_metric,
 )
@@ -92,11 +99,36 @@ def validate_field_solver(solver):
     Keep the active field-solver names explicit so stale configs do not silently
     fall through to a different numerical update.
     """
-    supported_solvers = ("electrodynamic_yee", "electrostatic", "static_metric")
+    supported_solvers = ("electrodynamic_yee", "electrostatic", "static_metric", "dark_matter_yee")
     if solver not in supported_solvers:
         raise ValueError(
-            f"Unsupported solver: {solver}. Use 'electrodynamic_yee', 'electrostatic', or 'static_metric'."
+            f"Unsupported solver: {solver}. Use one of {supported_solvers}."
         )
+
+
+def _dark_timestep(static_config, dynamic_config):
+    """Resolve a stable explicit Maxwell-Proca timestep before JAX tracing."""
+    validate_dark_parameters(static_config["sin_chi"], static_config["dark_mu"])
+    c = float(dynamic_config["C"])
+    eps = float(dynamic_config["eps"])
+    if not math.isfinite(c) or c <= 0 or not math.isfinite(eps) or eps <= 0:
+        raise ValueError("dark_matter_yee requires positive finite C and eps")
+    inverse_spacings = [1 / float(dynamic_config["d" + axis]) for axis in "xyz"
+                        if dynamic_config["N" + axis] > 1]
+    frequency = c * math.sqrt(float(static_config["dark_mu"])**2 + 4 * sum(v*v for v in inverse_spacings))
+    limit = 2 / frequency if frequency else math.inf
+    dt = dynamic_config["dt"]
+    if dt is None:
+        cfl = float(static_config["cfl"])
+        if not math.isfinite(cfl) or not 0 < cfl <= 1:
+            raise ValueError("dark_matter_yee requires 0 < cfl <= 1")
+        if not frequency:
+            raise ValueError("Specify dt for a massless dark field with all dimensions collapsed")
+        maxwell_dt = cfl / (c * sum(inverse_spacings)) if inverse_spacings else math.inf
+        dt = min(maxwell_dt, 0.99 * cfl * limit)
+    if not math.isfinite(float(dt)) or not 0 < float(dt) < limit:
+        raise ValueError(f"dark_matter_yee requires positive finite dt < {limit} (Proca stability limit)")
+    return float(dt)
 
 
 def _tile_shape_from_static_config(static_config):
@@ -108,21 +140,26 @@ def _tile_shape_from_static_config(static_config):
 
 
 def _encode_current_calculation(current_calculation):
-    if current_calculation not in ("j_from_rhov", "esirkepov", "GR_direct_deposition", "gr_direct_deposition", "GR_direct"):
-        raise ValueError("Unsupported current_calculation. Use 'j_from_rhov', 'esirkepov', or 'GR_direct_deposition'.")
+    if current_calculation not in ("j_from_rhov", "esirkepov", "GR_direct_deposition"):
+        raise ValueError(
+            "Unsupported current_calculation. Use 'j_from_rhov', 'esirkepov', "
+            "or 'GR_direct_deposition'."
+        )
     if current_calculation == "esirkepov":
         return "esirkepov"
-    if current_calculation in ("GR_direct_deposition", "gr_direct_deposition", "GR_direct"):
+    if current_calculation == "GR_direct_deposition":
         return "GR_direct"
     return "direct"
 
 
 def _validate_current_filter_contract(static_config):
-    if (
-        static_config["current_calculation"] == "esirkepov"
-        and static_config["filter_j"] != "none"
-    ):
-        raise ValueError("Esirkepov current filtering is not supported; use filter_j='none'.")
+    charge_conserving = static_config["current_calculation"] == "esirkepov"
+    if charge_conserving and static_config["filter_j"] != "none":
+        raise ValueError(
+            "Esirkepov current filtering is not supported; use filter_j='none'. "
+            "Filtering the deposited current destroys the exact discrete "
+            "continuity the scheme exists to provide."
+        )
 
 
 def _validate_tiled_yee_configuration(static_config, dynamic_config):
@@ -131,8 +168,11 @@ def _validate_tiled_yee_configuration(static_config, dynamic_config):
     """
 
     if static_config["solver"] == "static_metric":
-        if static_config["current_calculation"] not in ("GR_direct_deposition", "gr_direct_deposition", "GR_direct"):
-            raise ValueError("static_metric requires current_calculation='GR_direct_deposition'")
+        if static_config["current_calculation"] not in ("GR_direct_deposition", "esirkepov"):
+            raise ValueError(
+                "static_metric requires current_calculation='GR_direct_deposition' "
+                "or current_calculation='esirkepov'"
+            )
         if static_config["particle_pusher"] != "hybrid_boris_geodesic":
             raise ValueError("static_metric requires particle_pusher='hybrid_boris_geodesic'")
     elif static_config["current_calculation"] not in ("j_from_rhov", "esirkepov"):
@@ -150,6 +190,113 @@ def _validate_tiled_yee_configuration(static_config, dynamic_config):
     for cells, tile_width in zip(grid_shape, tile_shape):
         if cells % tile_width != 0:
             raise ValueError("Yee runtime requires the shared tile shape to divide Nx/Ny/Nz exactly")
+
+
+def _validate_static_metric_conducting_widths(static_parameters, grid_shape):
+    """
+    Static-metric PEC walls need more cells than guard cells on each conducting axis.
+
+    The edge solves and exterior reflections in ``boundary_conditions/pec.py``
+    pair each wall with the nodes beside it; on an axis no wider than the halo,
+    mirror images reach the opposite wall and the projection is no longer exact.
+    """
+
+    if static_parameters.solver != "static_metric":
+        return
+    g = int(static_parameters.guard_cells)
+    for axis, (bc, cells) in enumerate(zip(static_parameters.boundary_conditions, grid_shape)):
+        if bc == BC_CONDUCTING and int(cells) <= g:
+            raise ValueError(
+                f"static_metric conducting {'xyz'[axis]} boundaries need at least guard_cells + 1 = {g + 1} "
+                f"cells along that axis; got N{'xyz'[axis]}={int(cells)}"
+            )
+
+
+_CPU_PARTICLES_PER_LOGICAL_THREAD = 128
+_ACCELERATOR_PARTICLE_BATCH_TARGET = 1024
+
+
+def _available_cpu_threads():
+    """Return the logical CPU allocation visible to this process."""
+
+    try:
+        cpu_threads = len(os.sched_getaffinity(0))
+    except (AttributeError, OSError):
+        cpu_threads = os.cpu_count()
+    return max(1, int(cpu_threads or 1))
+
+
+def _local_mesh_device_count(field_mesh):
+    """Count mesh devices owned by this JAX process."""
+
+    process_index = int(jax.process_index())
+    local_devices = sum(
+        int(device.process_index) == process_index
+        for device in field_mesh.devices.flat
+    )
+    return max(1, int(local_devices))
+
+
+def _resolve_particle_batch_size(
+    particles,
+    requested_batch_size,
+    field_mesh=None,
+    *,
+    platform=None,
+    available_cpu_threads=None,
+    local_device_count=None,
+):
+    """Resolve a static batch size from actual occupancy and backend parallelism.
+
+    ``requested_batch_size`` is None for automatic sizing, or a positive integer
+    already validated by ``build_static_parameters``.
+    """
+
+    tile_capacity = int(particles.active.shape[-2]) * int(particles.active.shape[-1])
+    if tile_capacity == 0:
+        return 1, "empty particle storage"
+
+    if requested_batch_size is not None:
+        resolved = min(int(requested_batch_size), tile_capacity)
+        return resolved, f"explicit request {int(requested_batch_size)}, tile capacity {tile_capacity}"
+
+    active = jnp.asarray(jax.device_get(particles.active), dtype=bool)
+    active_per_tile = jnp.count_nonzero(active, axis=(-2, -1))
+    max_active_per_tile = int(jnp.max(active_per_tile)) if active_per_tile.size else 0
+    tile_count = int(active_per_tile.size)
+
+    if tile_count <= 1:
+        resolved = max(1, min(max_active_per_tile, tile_capacity))
+        return resolved, f"one tile, {max_active_per_tile} active particles"
+
+    if platform is None:
+        if field_mesh is None:
+            raise ValueError("field_mesh is required to resolve an automatic multi-tile particle batch size.")
+        platform = str(field_mesh.devices.flat[0].platform)
+
+    if platform == "cpu":
+        if available_cpu_threads is None:
+            available_cpu_threads = _available_cpu_threads()
+        if local_device_count is None:
+            if field_mesh is None:
+                raise ValueError("field_mesh is required to determine the local CPU device count.")
+            local_device_count = _local_mesh_device_count(field_mesh)
+        available_cpu_threads = max(1, int(available_cpu_threads))
+        local_device_count = max(1, int(local_device_count))
+        threads_per_device = max(1, available_cpu_threads // local_device_count)
+        compute_target = _CPU_PARTICLES_PER_LOGICAL_THREAD * threads_per_device
+        reason = (
+            f"cpu, {available_cpu_threads} logical threads / {local_device_count} local devices, "
+            f"target {compute_target}, max active tile {max_active_per_tile}"
+        )
+    else:
+        compute_target = _ACCELERATOR_PARTICLE_BATCH_TARGET
+        reason = (
+            f"{platform}, target {compute_target}, max active tile {max_active_per_tile}"
+        )
+
+    resolved = max(1, min(max_active_per_tile, compute_target, tile_capacity))
+    return resolved, reason
 
 
 def _apply_pml_field_boundaries(static_config, pml_config):
@@ -222,6 +369,8 @@ def default_parameters():
         "name": "Default Simulation",
         "output_dir": os.getcwd(),
         "solver": "electrodynamic_yee",
+        "sin_chi": 0.0,
+        "dark_mu": 0.0,
         "particle_x_bc": "periodic",
         "particle_y_bc": "periodic",
         "particle_z_bc": "periodic",
@@ -233,14 +382,14 @@ def default_parameters():
         "particle_pusher": "boris",
         "benchmark": False,
         "verbose": False,
-        "GPUs": False,
+        "GPUs": False,  # Accepted for input compatibility; JAX selects devices.
         "metric": "flat_cartesian",
         "metric_mass": 1.0,
         "metric_spin": 0.0,
         "cfl": 1.0,
         "ds_per_debye": None,
         "shape_factor": 1,
-        "guard_cells": 2,
+        "guard_cells": None,
         "electrostatic_schwarz_tol": 1.0e-6,
         "electrostatic_schwarz_max_iterations": 500,
         "electrostatic_local_cg_tol": 1.0e-6,
@@ -249,6 +398,7 @@ def default_parameters():
         "particle_tile_ny": None,
         "particle_tile_nz": None,
         "particle_tile_capacity_factor": 1.0,
+        "particle_batch_size": None,
         "current_calculation": "j_from_rhov",
         "filter_j": "bilinear",
         "supergaussian_active": False,
@@ -336,6 +486,14 @@ def initialize_simulation(toml_file):
     validate_field_solver(solver)
     electrostatic = solver == "electrostatic"
     static_metric = solver == "static_metric"
+    dark_matter = solver == "dark_matter_yee"
+    if dark_matter:
+        if any(static_config[axis + "_bc"] not in ("periodic", "conducting") for axis in "xyz"):
+            raise ValueError("dark_matter_yee supports periodic or conducting field boundaries")
+        if config.get("supergaussian"):
+            raise ValueError("dark_matter_yee does not support supergaussian absorbers")
+    elif any(key.startswith("dark_field") for key in config):
+        raise ValueError("dark_field initial data requires solver='dark_matter_yee'")
     static_config["electrostatic"] = electrostatic
 
     _resolve_axis_bounds(dynamic_config, "x")
@@ -353,10 +511,12 @@ def initialize_simulation(toml_file):
     if static_config["particle_tile_nz"] is None:
         static_config["particle_tile_nz"] = int(Nz)
 
-    guard_cells = int(static_config["guard_cells"])
-    if guard_cells < 1:
-        raise ValueError("Tiled fields require at least one guard cell.")
-    static_config["guard_cells"] = guard_cells
+    requested_particle_batch_size = static_config.get("particle_batch_size")
+    # Particle packing needs a complete StaticParameters value, but automatic
+    # sizing depends on the packed active population.  The placeholder is
+    # replaced before particles are sharded or timestep kernels are compiled.
+    if requested_particle_batch_size is None:
+        static_config["particle_batch_size"] = 1
     _validate_current_filter_contract(static_config)
 
     setup_write_dir(static_config, plotting_parameters)
@@ -366,7 +526,10 @@ def initialize_simulation(toml_file):
     dynamic_config["dy"] = dy
     dynamic_config["dz"] = dz
 
-    if dynamic_config["dt"] is not None:
+    if dark_matter:
+        dt = _dark_timestep(static_config, dynamic_config)
+        dynamic_config["dt"] = dt
+    elif dynamic_config["dt"] is not None:
         print(f"Using user defined dt: {dynamic_config['dt']}")
         dt = dynamic_config["dt"]
     else:
@@ -400,7 +563,7 @@ def initialize_simulation(toml_file):
     raw_pml = config.get("pml", [])
     pml_active = bool(raw_pml)
     if pml_active and electrostatic:
-        raise ValueError("PML is only supported for the electrodynamic_yee solver")
+        raise ValueError("PML is only supported for the electrodynamic_yee and dark_matter_yee solvers")
     if pml_active and static_metric:
         raise ValueError("PML is not yet supported for the static_metric solver")
 
@@ -433,17 +596,14 @@ def initialize_simulation(toml_file):
         "center": center_grid,
     }
 
-    tile_shape = _tile_shape_from_static_config(static_config)
-    static_config["tile_shape"] = tile_shape
     static_config["Nx"] = int(Nx)
     static_config["Ny"] = int(Ny)
     static_config["Nz"] = int(Nz)
-    tile_grid_shape = (
-        int(Nx) // int(tile_shape[0]),
-        int(Ny) // int(tile_shape[1]),
-        int(Nz) // int(tile_shape[2]),
-    )
-    static_config["field_mesh"] = make_field_mesh(tile_grid_shape)
+    static_parameters = build_static_parameters(static_config)
+    _validate_static_metric_conducting_widths(static_parameters, (int(Nx), int(Ny), int(Nz)))
+    # PML and supergaussian layers may have made periodic axes conducting above
+    tile_shape = static_parameters.tile_shape
+    guard_cells = static_parameters.guard_cells
 
     grid_dynamic_config = convert_to_jax_compatible({
         key: value for key, value in dynamic_config.items() if key != "grids"
@@ -452,12 +612,10 @@ def initialize_simulation(toml_file):
         **grid_dynamic_config,
         grids=SimpleNamespace(vertex=vertex_grid, center=center_grid),
     )
-    static_setup = SimpleNamespace(tile_shape=tile_shape, guard_cells=guard_cells)
-    tiled_center_grid, tiled_vertex_grid = build_tiled_yee_grids(static_setup, grid_setup)
+    tiled_center_grid, tiled_vertex_grid = build_tiled_yee_grids(static_parameters, grid_setup)
     dynamic_config["grids"]["tiled_center_grid"] = tiled_center_grid
     dynamic_config["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
 
-    static_parameters = build_static_parameters(static_config)
     dynamic_parameters = build_dynamic_parameters(dynamic_config)
     plotting_parameters = convert_to_jax_compatible(plotting_parameters)
     metric = (
@@ -471,6 +629,22 @@ def initialize_simulation(toml_file):
         static_parameters,
         dynamic_parameters,
     )
+    effective_batch_size, batch_size_reason = _resolve_particle_batch_size(
+        particles,
+        requested_particle_batch_size,
+        static_parameters.field_mesh,
+    )
+    if requested_particle_batch_size is None:
+        print(
+            f"Using automatic particle_batch_size {effective_batch_size} "
+            f"({batch_size_reason})."
+        )
+    elif effective_batch_size != static_parameters.particle_batch_size:
+        print(
+            "Reducing particle_batch_size from "
+            f"{static_parameters.particle_batch_size} to tile capacity {effective_batch_size}."
+        )
+    static_parameters = static_parameters._replace(particle_batch_size=effective_batch_size)
     particles = shard_tiled_particles(particles, static_parameters)
     plotting_parameters = {
         **plotting_parameters,
@@ -482,9 +656,9 @@ def initialize_simulation(toml_file):
         particles,
         species_config=species_config,
         species_names=particle_species_names,
-        static_parameters=static_parameters,
-        dynamic_parameters=dynamic_parameters,
     )
+    # positions and velocities are both at t=0 here (before the leapfrog seed),
+    # so the histograms use the stored positions without a half-step shift
     for particle_record in initial_particle_records:
         name = particle_record.name.replace(" ", "_")
         plot_initial_histograms(
@@ -511,6 +685,7 @@ def initialize_simulation(toml_file):
             static_parameters.output_dir,
             species_config=species_config,
             species_names=particle_species_names,
+            metric=metric,
         )
 
     E, B, J, phi, rho = initialize_fields(static_parameters, dynamic_parameters)
@@ -529,26 +704,56 @@ def initialize_simulation(toml_file):
     )
     E, B, J = field_components[:3], field_components[3:6], field_components[6:9]
 
-    E = update_tiled_vector_ghost_cells(E, static_parameters, num_guard_cells=guard_cells)
-    B = update_tiled_vector_ghost_cells(B, static_parameters, num_guard_cells=guard_cells)
-    external_E, external_B = external_fields
-    external_E = update_tiled_vector_ghost_cells(external_E, static_parameters, num_guard_cells=guard_cells)
-    external_B = update_tiled_vector_ghost_cells(external_B, static_parameters, num_guard_cells=guard_cells)
-    external_fields = (external_E, external_B)
-
     static_metric_state = None
     if static_metric:
-        static_metric_state = E, B
+        # TOML fields are physical contravariant vectors; the solver evolves
+        # native densities, so convert once here and refresh the densities.
         static_metric_state = load_previous_fields_from_toml(
-            static_metric_state,
+            (E, B),
             config,
             static_parameters,
             dynamic_parameters,
         )
         D_previous, B_previous = static_metric_state
-        D_previous = update_tiled_vector_ghost_cells(D_previous, static_parameters, num_guard_cells=guard_cells)
-        B_previous = update_tiled_vector_ghost_cells(B_previous, static_parameters, num_guard_cells=guard_cells)
+        D_previous = refresh_fields(densitize_vector(D_previous, metric.D), static_parameters,
+                                    D_FIELD_LOCATIONS, 'D', metric=metric)
+        B_previous = refresh_fields(densitize_vector(B_previous, metric.B), static_parameters,
+                                    B_FIELD_LOCATIONS, 'B', metric=metric)
         static_metric_state = D_previous, B_previous
+        E = refresh_fields(densitize_vector(E, metric.D), static_parameters, D_FIELD_LOCATIONS, 'D', metric=metric)
+        B = refresh_fields(densitize_vector(B, metric.B), static_parameters, B_FIELD_LOCATIONS, 'B', metric=metric)
+        J = densitize_vector(J, metric.D)
+    elif solver in ("electrodynamic_yee", "dark_matter_yee"):
+        E = apply_tiled_pec_boundary(E, static_parameters)
+        E = update_tiled_vector_ghost_cells(E, static_parameters, guard_cells, locations=D_FIELD_LOCATIONS)
+        B = update_tiled_vector_ghost_cells(B, static_parameters, guard_cells, locations=B_FIELD_LOCATIONS)
+    else:
+        E = update_tiled_vector_ghost_cells(E, static_parameters, num_guard_cells=guard_cells)
+        B = update_tiled_vector_ghost_cells(B, static_parameters, num_guard_cells=guard_cells)
+    external_E, external_B = external_fields
+    if static_metric:
+        external_E = refresh_fields(densitize_vector(external_E, metric.D), static_parameters,
+                                    D_FIELD_LOCATIONS, 'D', metric=metric)
+        external_B = refresh_fields(densitize_vector(external_B, metric.B), static_parameters,
+                                    B_FIELD_LOCATIONS, 'B', metric=metric)
+        # the time loop adds these to refreshed D/B without refreshing the sum
+    else:
+        external_E = update_tiled_vector_ghost_cells(external_E, static_parameters, num_guard_cells=guard_cells)
+        external_B = update_tiled_vector_ghost_cells(external_B, static_parameters, num_guard_cells=guard_cells)
+    external_fields = (external_E, external_B)
+
+    dark_fields = load_dark_fields_from_toml(config, static_parameters, dynamic_parameters) if dark_matter else None
+    pml_state = None
+    dark_pml = None
+    if pml_active:
+        pml_profiles = pml_config[4]
+        pml_state = initialize_tiled_pml_state(static_parameters, dynamic_parameters, pml_profiles, tile_shape)
+        if dark_matter:
+            from PyPIC3D.solvers.dark_matter_yee.pml import initialize_dark_pml
+            dark_fields, dark_pml = initialize_dark_pml(dark_fields, static_parameters, dynamic_parameters, pml_profiles)
+            pml_state = pml_state, dark_pml
+
+    if static_metric:
         print("Skipping flat-space energy diagnostics for static_metric fields and covariant particle u_i\n")
     else:
         total_E, total_B = add_external_fields(E, B, external_fields)
@@ -563,7 +768,32 @@ def initialize_simulation(toml_file):
         print(f"Initial Electric Field Energy: {e_energy:.2e} J")
         print(f"Initial Magnetic Field Energy: {b_energy:.2e} J")
         print(f"Initial Kinetic Energy: {kinetic_energy:.2e} J")
-        print(f"Total Initial Energy: {e_energy + b_energy + kinetic_energy:.2e} J\n")
+        dark_energy = compute_dark_energy(dark_fields, static_parameters, dynamic_parameters, dark_pml) if dark_matter else 0.0
+        if dark_matter:
+            print(f"Initial Dark Field Energy: {dark_energy:.2e} J")
+        print(f"Total Initial Energy: {e_energy + b_energy + kinetic_energy + dark_energy:.2e} J\n")
+
+    if dark_matter:
+        seed_E, seed_B = dark_photon_push_fields(E, B, dark_fields, external_fields, static_parameters, dynamic_parameters, dark_pml)
+    elif not static_metric and not electrostatic:
+        seed_E, seed_B = yee_push_fields(E, B, external_fields, static_parameters, dynamic_parameters)
+    else:
+        seed_E, seed_B = add_external_fields(E, B, external_fields)
+    particles = seed_leapfrog_velocity(
+        particles,
+        species_config,
+        seed_E,
+        seed_B,
+        static_parameters,
+        dynamic_parameters,
+        metric=metric if static_metric else None,
+    )
+    print("Offset particle velocities to u^(-dt/2) for the leapfrog start")
+    # every time loop advances u^{n-1/2} to u^{n+1/2} with the force at x^n, so
+    # the run has to begin from a velocity that is half a step behind the
+    # positions.  Starting from the configured u(0) leaves an O(dt) error in the
+    # initial state and reduces the whole simulation to first order.  This is
+    # done after the initial energy report so that report still shows u(0).
 
     if static_parameters.relativistic:
         print("Relativistic simulation")
@@ -577,6 +807,9 @@ def initialize_simulation(toml_file):
     elif electrostatic:
         print("Using electrostatic solver")
         evolve_loop = time_loop_electrostatic
+    elif dark_matter:
+        print("Using dark_matter_yee Maxwell-Proca solver")
+        evolve_loop = time_loop_dark_photon
     else:
         print("Using electrodynamic Yee solver")
         evolve_loop = time_loop_electrodynamic
@@ -595,16 +828,9 @@ def initialize_simulation(toml_file):
         fields = (E, B, J, rho, phi, external_fields, metric, static_metric_state, overflow)
     elif electrostatic:
         fields = (E, B, J, rho, phi, external_fields, None, overflow)
+    elif dark_matter:
+        fields = (E, B, J, rho, phi, external_fields, pml_state, dark_fields, overflow)
     else:
-        pml_state = None
-        if pml_active:
-            _, _, _, _, pml_profiles = pml_config
-            pml_state = initialize_tiled_pml_state(
-                static_parameters,
-                dynamic_parameters,
-                pml_profiles,
-                tile_shape,
-            )
         fields = (E, B, J, rho, phi, external_fields, pml_state, overflow)
 
     field_map = build_field_output_map(

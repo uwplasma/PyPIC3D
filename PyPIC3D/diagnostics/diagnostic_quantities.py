@@ -1,6 +1,25 @@
 import jax.numpy as jnp
 
 
+def compute_dark_energy(dark_fields, static_parameters, dynamic_parameters, pml_state=None):
+    """Physical Proca energy at integer time, using reconstructed A and B.
+
+    This diagnostic is second-order accurate in time, rather than an exactly
+    conserved discrete leapfrog Hamiltonian. Halos are excluded from the sum.
+    """
+    from PyPIC3D.solvers.dark_matter_yee.dark_photon_fields import synchronized_dark_fields
+
+    E, A, phi, B = synchronized_dark_fields(dark_fields, static_parameters, dynamic_parameters, pml_state)
+    g = static_parameters.guard_cells
+    interior = (slice(None),) * 3 + (slice(g, -g),) * 3
+    c2 = dynamic_parameters.C**2
+    mass2 = static_parameters.dark_mu**2
+    density = sum(e[interior]**2 + c2 * b[interior]**2 + c2 * mass2 * a[interior]**2
+                  for e, b, a in zip(E, B, A)) + mass2 * phi[interior]**2
+    volume = dynamic_parameters.dx * dynamic_parameters.dy * dynamic_parameters.dz
+    return 0.5 * dynamic_parameters.eps * volume * jnp.sum(density)
+
+
 def compute_energy(particles, E, B, static_parameters, dynamic_parameters, species_config=None):
     """
     Compute the electric, magnetic, and particle kinetic energies.
@@ -9,17 +28,6 @@ def compute_energy(particles, E, B, static_parameters, dynamic_parameters, speci
     dx = dynamic_parameters.dx
     dy = dynamic_parameters.dy
     dz = dynamic_parameters.dz
-
-    Nx = dynamic_parameters.Nx
-    Ny = dynamic_parameters.Ny
-    Nz = dynamic_parameters.Nz
-
-    def nd_trapezoid(arr, dxs):
-        for axis, dx in enumerate(dxs):
-            arr = jnp.trapezoid( jnp.squeeze(arr), dx=dx, axis=-1)
-        return arr
-
-    dxs = tuple(d for d in (dz, dy, dx) if d != 1)
 
     Ex, Ey, Ez = E
     Bx, By, Bz = B

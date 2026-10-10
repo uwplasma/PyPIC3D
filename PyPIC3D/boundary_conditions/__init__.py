@@ -10,6 +10,7 @@ from PyPIC3D.boundary_conditions.ghost_cells import (
     MESH_AXES,
     SCALAR_TILE_SPEC,
     VECTOR_TILE_SPEC,
+    particle_vector_reflecting_parity,
     make_field_mesh,
     make_distributed_ghost_updater,
     make_distributed_vector_ghost_updater,

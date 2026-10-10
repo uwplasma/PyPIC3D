@@ -4,7 +4,8 @@ import unittest
 import jax
 import jax.numpy as jnp
 
-from PyPIC3D.boundary_conditions.ghost_cells import update_tiled_vector_ghost_cells
+from PyPIC3D.boundary_conditions.ghost_cells import update_tiled_vector_ghost_cells, apply_tiled_pec_boundary
+from PyPIC3D.relativity.core import D_FIELD_LOCATIONS, B_FIELD_LOCATIONS
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING
 from PyPIC3D.solvers.yee.first_order_yee import (
     update_B,
@@ -12,9 +13,6 @@ from PyPIC3D.solvers.yee.first_order_yee import (
     yee_curl_e_to_b,
 )
 from tests.kernel_fixtures import initialized_fields, kernel_parameters
-
-
-jax.config.update("jax_enable_x64", True)
 
 
 def _magnitude_squared(vector):
@@ -41,18 +39,16 @@ def _tm111_electric_mode(num_points, spacing):
     # Ez =              E0 Cos(kx x)  Cos( ky y) Cos(kz z)
     
 
-    phase = math.pi * jnp.arange(num_points, dtype=jnp.float64) / (num_points - 1)
+    phase = math.pi * jnp.arange(num_points+1, dtype=jnp.float64) / num_points
     sine = jnp.sin(phase)
     sine = sine.at[0].set(0.0)
     sine = sine.at[-1].set(0.0)
     # define the phase of the sine wave
 
-    gradient = jnp.zeros_like(sine)
-    gradient = gradient.at[:-1].set(jnp.diff(sine) / spacing)
-    # The last forward derivative samples the zero-valued conducting exterior
-    # ghost. Since the final sine value is also zero, that derivative is zero.
+    gradient = jnp.diff(sine) / spacing
+    sine = sine[:-1]  # the upper C endpoint lives in the first halo slot
 
-    modified_wavenumber = 2.0 * math.sin(math.pi / (2.0 * (num_points - 1))) / spacing
+    modified_wavenumber = 2.0 * math.sin(math.pi / (2.0 * num_points)) / spacing
     transverse_wavenumber_squared = 2.0 * modified_wavenumber**2
 
     gradient_x, sine_y, sine_z = jnp.meshgrid(gradient, sine, sine, indexing="ij")
@@ -78,19 +74,17 @@ def _tm111_electric_mode(num_points, spacing):
     return (Ex, Ey, Ez), modified_wavenumber
 
 
-def _tangential_electric_residual(E):
-    Ex, Ey, Ez = E
-    wall_values = (
-        Ey[[0, -1], :, :],
-        Ez[[0, -1], :, :],
-        Ex[:, [0, -1], :],
-        Ez[:, [0, -1], :],
-        Ex[:, :, [0, -1]],
-        Ey[:, :, [0, -1]],
-    )
-    return jnp.max(
-        jnp.stack(tuple(jnp.max(jnp.abs(values)) for values in wall_values))
-    )
+def _tangential_electric_residual(E, g):
+    walls = []
+    for axis in range(3):
+        for i, value in enumerate(E):
+            if i == axis:
+                continue
+            for endpoint in (g, value.shape[axis+3]-g):
+                index = [0, 0, 0, slice(g, -g), slice(g, -g), slice(g, -g)]
+                index[axis+3] = endpoint
+                walls.append(jnp.max(jnp.abs(value[tuple(index)])))
+    return jnp.max(jnp.stack(walls))
 
 
 def _observed_order(coarse_error, fine_error, coarse_spacing, fine_spacing):
@@ -99,7 +93,7 @@ def _observed_order(coarse_error, fine_error, coarse_spacing, fine_spacing):
 
 class TestPECStandingWaveCavity(unittest.TestCase):
     def _initial_state(self, num_points, dt):
-        spacing = 1.0 / (num_points - 1)
+        spacing = 1.0 / num_points
         nominal_width = num_points * spacing
 
         static_parameters, dynamic_parameters = kernel_parameters(
@@ -135,8 +129,9 @@ class TestPECStandingWaveCavity(unittest.TestCase):
             component.at[active].set(values)
             for component, values in zip(E, E_values)
         )
-        E = update_tiled_vector_ghost_cells(E, static_parameters, g)
-        B = update_tiled_vector_ghost_cells(B, static_parameters, g)
+        E = apply_tiled_pec_boundary(E, static_parameters)
+        E = update_tiled_vector_ghost_cells(E, static_parameters, g, locations=D_FIELD_LOCATIONS)
+        B = update_tiled_vector_ghost_cells(B, static_parameters, g, locations=B_FIELD_LOCATIONS)
 
         return (
             E,
@@ -212,7 +207,7 @@ class TestPECStandingWaveCavity(unittest.TestCase):
                 jnp.max(jnp.abs(B_active[2])),
                 jnp.max(jnp.abs(B_active[0])),
                 jnp.max(jnp.abs(B_active[1])),
-                _tangential_electric_residual(E_active),
+                _tangential_electric_residual(E_now, g),
                 modal_residual,
             )
 
@@ -330,7 +325,7 @@ class TestPECStandingWaveCavity(unittest.TestCase):
         for component in (*B_active, *J_active):
             self.assertTrue(bool(jnp.all(component == 0.0)))
 
-        self.assertLess(float(_tangential_electric_residual(E_active)), 1.0e-12)
+        self.assertLess(float(_tangential_electric_residual(E, g)), 1.0e-12)
         self.assertLess(float(jnp.max(jnp.abs(curl_E[2]))), 1.0e-12)
 
     def test_tm111_converges_with_space_and_time_refinement(self):
@@ -338,7 +333,7 @@ class TestPECStandingWaveCavity(unittest.TestCase):
         results = []
 
         for num_points in (8, 12, 16):
-            spacing = 1.0 / (num_points - 1)
+            spacing = 1.0 / num_points
             dt_limit = 0.5 / (3.0 / spacing)
             num_steps = math.ceil(continuum_period / dt_limit)
             results.append(self._run_cavity(num_points, num_steps, continuum_period))
@@ -381,10 +376,10 @@ class TestPECStandingWaveCavity(unittest.TestCase):
 
     def test_tm111_converges_with_timestep_refinement(self):
         num_points = 12
-        spacing = 1.0 / (num_points - 1)
+        spacing = 1.0 / num_points
         modified_wavenumber = (
             2.0
-            * math.sin(math.pi / (2.0 * (num_points - 1)))
+            * math.sin(math.pi / (2.0 * num_points))
             / spacing
         )
         discrete_period = 2.0 * math.pi / (math.sqrt(3.0) * modified_wavenumber)

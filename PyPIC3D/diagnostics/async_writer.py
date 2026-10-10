@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, List, Mapping, Sequence, Tuple, Union
+from typing import Any, List, Mapping, Optional, Sequence, Tuple, Union
 import queue
 import threading
 import traceback
@@ -60,6 +60,8 @@ class TiledParticleSnapshot:
     species_charge: np.ndarray
     species_mass: np.ndarray
     species_weight: np.ndarray
+    gamma_shards: Optional[HostShardList] = None
+    # Static-metric runs supply the Lorentz factor computed from covariant u_i.
 
 
 def _copy_array_to_host_shards(arr):
@@ -147,6 +149,7 @@ def make_tiled_particle_snapshot(
     time,
     species_names,
     species_config,
+    gamma=None,
 ):
     names = _species_names_for_output(species_names, int(particles.active.shape[3]))
 
@@ -160,6 +163,7 @@ def make_tiled_particle_snapshot(
         species_charge=_species_array_to_host(species_config.charge),
         species_mass=_species_array_to_host(species_config.mass),
         species_weight=_species_array_to_host(species_config.weight),
+        gamma_shards=None if gamma is None else _copy_array_to_host_shards(gamma),
     )
 
 
@@ -338,13 +342,14 @@ class AsyncTiledOpenPMDParticleWriter:
         except queue.Full:
             return False
 
-    def enqueue_particles(self, particles, *, step, time, species_config, species_names=None, block=True):
+    def enqueue_particles(self, particles, *, step, time, species_config, species_names=None, gamma=None, block=True):
         snapshot = make_tiled_particle_snapshot(
             particles,
             step=step,
             time=time,
             species_config=species_config,
             species_names=species_names,
+            gamma=gamma,
         )
         return self.enqueue(snapshot, block=block)
 
@@ -460,6 +465,7 @@ def enqueue_openpmd_particle_output(
     *,
     species_config,
     species_names=None,
+    gamma=None,
     block=True,
 ):
     prefetch_tiled_particles_to_host(particles)
@@ -469,5 +475,6 @@ def enqueue_openpmd_particle_output(
         time=float(t * dynamic_parameters.dt),
         species_config=species_config,
         species_names=species_names,
+        gamma=gamma,
         block=block,
     )

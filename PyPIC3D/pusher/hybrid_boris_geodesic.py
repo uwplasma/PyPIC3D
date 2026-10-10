@@ -4,379 +4,91 @@ import jax
 import jax.numpy as jnp
 
 from PyPIC3D.particles.particle_class import TiledParticles
+from PyPIC3D.particles.particle_batching import (
+    prepare_particle_batches, particle_batch_indices, number_of_particle_batches,
+)
 from PyPIC3D.pusher.boris import interpolate_field_to_particles
 from PyPIC3D.relativity.core import (
     B_FIELD_LOCATIONS,
     D_FIELD_LOCATIONS,
-    Metric,
-    contravariant_three_velocity,
     covariant_lorentz_factor,
+    location_grid,
     lower_vector,
+)
+from PyPIC3D.relativity.interpolate_metric import (
+    check_particle_samples,
+    interpolate_metric,
+    particle_active_axes,
+    safe_inactive_positions,
 )
 
 
-def _metric_component_grid(location, dynamic_parameters, tx, ty, tz):
-    center_grid = dynamic_parameters.grids.tiled_center_grid
-    vertex_grid = dynamic_parameters.grids.tiled_vertex_grid
-    return tuple(
-        (center_grid[axis] if location[axis] == "C" else vertex_grid[axis])[tx, ty, tz]
-        for axis in range(3)
-    )
-
-
-def _sample_scalar(
-    field,
-    x,
-    y,
-    z,
-    grid,
-    shape_factor,
-    active_axes,
-    inactive_axis_indices,
-):
-    particle_shape = x.shape
-    component_shape = field.shape[3:]
-    sampled_field = interpolate_field_to_particles(
-        field,
-        x.reshape(-1),
-        y.reshape(-1),
-        z.reshape(-1),
-        grid,
-        shape_factor,
-        ghost_cells=True,
-        active_axes=active_axes,
-        inactive_axis_indices=inactive_axis_indices,
-    )
-    return sampled_field.reshape(particle_shape + component_shape)
-
-
-def _sample_vector(
-    field,
-    x,
-    y,
-    z,
-    grids,
-    shape_factor,
-    active_axes,
-    inactive_axis_indices,
-):
-    fields = jnp.stack(field, axis=0)
-    x_grids = jnp.stack((grids[0][0], grids[1][0], grids[2][0]), axis=0)
-    y_grids = jnp.stack((grids[0][1], grids[1][1], grids[2][1]), axis=0)
-    z_grids = jnp.stack((grids[0][2], grids[1][2], grids[2][2]), axis=0)
-
-    def sample_component(component_field, x_grid, y_grid, z_grid):
-        return _sample_scalar(
-            component_field,
-            x,
-            y,
-            z,
-            (x_grid, y_grid, z_grid),
-            shape_factor,
-            active_axes,
-            inactive_axis_indices,
-        )
-
-    sampled_components = jax.vmap(sample_component)(
-        fields,
-        x_grids,
-        y_grids,
-        z_grids,
-    )
-    return jnp.moveaxis(sampled_components, 0, -1)
-
-
-def _sample_metric(
-    metric,
-    x,
-    y,
-    z,
-    grid,
-    shape_factor,
-    metric_name,
-    active_axes,
-    inactive_axis_indices,
-):
-    gamma = _sample_scalar(
-        metric.gamma,
-        x,
-        y,
-        z,
-        grid,
-        shape_factor,
-        active_axes,
-        inactive_axis_indices,
-    )
-    # Keep the sampled inverse metric paired with the independently sampled
-    # center_grad_gamma_inv used by the geodesic force.
-    gamma_inv = _sample_scalar(
-        metric.gamma_inv,
-        x,
-        y,
-        z,
-        grid,
-        shape_factor,
-        active_axes,
-        inactive_axis_indices,
-    )
-    sqrt_gamma_magnitude = jnp.sqrt(jnp.linalg.det(gamma))
-
-    # gamma fixes the determinant magnitude.  The particle coordinate fixes
-    # the orientation of cylindrical and full-theta spherical charts.
-    position = jnp.stack((x, y, z), axis=-1)
-    is_cylindrical = metric_name == "flat_cylindrical"
-    is_spherical = metric_name in (
-        "flat_spherical",
-        "kerr_schild_spherical",
-    )
-    orientation_source = jax.lax.cond(
-        jnp.asarray(is_cylindrical),
-        lambda position: position[..., 0],
-        lambda position: jax.lax.cond(
-            jnp.asarray(is_spherical),
-            lambda position: jnp.sin(position[..., 1]),
-            lambda position: jnp.ones_like(position[..., 0]),
-            position,
-        ),
-        position,
-    )
-    sqrt_gamma = jnp.copysign(sqrt_gamma_magnitude, orientation_source)
-
-    return Metric(
-        lapse=_sample_scalar(
-            metric.lapse,
-            x,
-            y,
-            z,
-            grid,
-            shape_factor,
-            active_axes,
-            inactive_axis_indices,
-        ),
-        shift=_sample_scalar(
-            metric.shift,
-            x,
-            y,
-            z,
-            grid,
-            shape_factor,
-            active_axes,
-            inactive_axis_indices,
-        ),
-        gamma=gamma,
-        gamma_inv=gamma_inv,
-        sqrt_gamma=sqrt_gamma,
-        christoffel=_sample_scalar(
-            metric.christoffel,
-            x,
-            y,
-            z,
-            grid,
-            shape_factor,
-            active_axes,
-            inactive_axis_indices,
-        ),
-        grad_lapse=_sample_scalar(
-            metric.grad_lapse,
-            x,
-            y,
-            z,
-            grid,
-            shape_factor,
-            active_axes,
-            inactive_axis_indices,
-        ),
-        grad_shift=_sample_scalar(
-            metric.grad_shift,
-            x,
-            y,
-            z,
-            grid,
-            shape_factor,
-            active_axes,
-            inactive_axis_indices,
-        ),
-    )
-
-
-def _metric_tile(metric, tx, ty, tz):
-    return Metric(
-        lapse=metric.lapse[tx, ty, tz],
-        shift=metric.shift[tx, ty, tz],
-        gamma=metric.gamma[tx, ty, tz],
-        gamma_inv=metric.gamma_inv[tx, ty, tz],
-        sqrt_gamma=metric.sqrt_gamma[tx, ty, tz],
-        christoffel=metric.christoffel[tx, ty, tz],
-        grad_lapse=metric.grad_lapse[tx, ty, tz],
-        grad_shift=metric.grad_shift[tx, ty, tz],
-    )
-
-
-def GR_position_update(position, u_cov, metric):
+def coordinate_velocity(u_cov, metric):
     """
-    Coordinate velocity dx^i/dt from covariant spatial momentum u_i.
+    Coordinate velocity dx^i/dt = alpha gamma^ij u_j / Gamma - beta^i.
     """
 
-    del position
     Gamma = covariant_lorentz_factor(u_cov, metric.gamma_inv)
     u_con = jnp.einsum("...ij,...j->...i", metric.gamma_inv, u_cov)
     return metric.lapse[..., jnp.newaxis] * u_con / Gamma[..., jnp.newaxis] - metric.shift
 
 
-def geodesic_velocity(position, u_cov, metric, grad_gamma_inv):
+def geodesic_acceleration(u_cov, metric):
     """
-    Geodesic source term du_i/dt for covariant spatial momentum.
+    Geodesic source du_i/dt = -Gamma d_i alpha + u_j d_i beta^j
+    - alpha/(2 Gamma) u_l u_m d_i gamma^lm.
     """
 
-    del position
     Gamma = covariant_lorentz_factor(u_cov, metric.gamma_inv)
-    grad_beta_term = jnp.einsum("...j,...ji->...i", u_cov, metric.grad_shift)
+    lapse_force = -Gamma[..., jnp.newaxis] * metric.grad_lapse
+    shift_force = jnp.einsum("...j,...ji->...i", u_cov, metric.grad_shift)
     metric_force = (-0.5 * metric.lapse / Gamma)[..., jnp.newaxis] * jnp.einsum(
-        "...l,...m,...ilm->...i",
-        u_cov,
-        u_cov,
-        grad_gamma_inv,
+        "...l,...m,...ilm->...i", u_cov, u_cov, metric.grad_gamma_inv
     )
+    return lapse_force + shift_force + metric_force
 
-    return -Gamma[..., jnp.newaxis] * metric.grad_lapse + grad_beta_term + metric_force
 
+def magnetic_boris_rotation(u_minus, B_con, metric, q_over_m, dt):
+    """
+    Boris rotation of covariant u_i about the contravariant magnetic field B^i.
+    """
 
-def _magnetic_boris_rotation(u_minus, B_con, metric, q_over_m, dt):
     Gamma_minus = covariant_lorentz_factor(u_minus, metric.gamma_inv)
     u0_bar = Gamma_minus / metric.lapse
     t_con = (q_over_m * dt / (2.0 * u0_bar))[..., jnp.newaxis] * B_con
     t_cov = lower_vector(t_con, metric.gamma)
     t_norm = jnp.einsum("...i,...i->...", t_con, t_cov)
-
-    u_minus_con = jnp.einsum("...ij,...j->...i", metric.gamma_inv, u_minus)
-    u_prime = u_minus + metric.sqrt_gamma[..., jnp.newaxis] * jnp.cross(u_minus_con, t_con)
     s_con = 2.0 * t_con / (1.0 + t_norm)[..., jnp.newaxis]
+
+    sqrt_gamma = metric.sqrt_gamma[..., jnp.newaxis]
+    u_minus_con = jnp.einsum("...ij,...j->...i", metric.gamma_inv, u_minus)
+    u_prime = u_minus + sqrt_gamma * jnp.cross(u_minus_con, t_con)
     u_prime_con = jnp.einsum("...ij,...j->...i", metric.gamma_inv, u_prime)
-    return u_minus + metric.sqrt_gamma[..., jnp.newaxis] * jnp.cross(u_prime_con, s_con)
+    return u_minus + sqrt_gamma * jnp.cross(u_prime_con, s_con)
 
 
-def _electromagnetic_boris_step(
-    position,
-    u_cov,
-    q_over_m,
-    D_tiles,
-    B_tiles,
-    metric_tiles,
-    static_parameters,
-    dynamic_parameters,
-    tx,
-    ty,
-    tz,
-    dt,
-    active_axes,
-    inactive_axis_indices,
-):
-    shape_factor = static_parameters.shape_factor
-    x = position[..., 0]
-    y = position[..., 1]
-    z = position[..., 2]
+def gather_vector(field, locations, position, center_grid, vertex_grid,
+                  shape_factor, active_axes, inactive_axis_indices):
+    """
+    Gather a staggered tile-local vector field to ``position[..., 3]``.
 
-    D_grids = tuple(
-        _metric_component_grid(D_FIELD_LOCATIONS[i], dynamic_parameters, tx, ty, tz)
+    ``field[i]`` lives on the Yee location ``locations[i]``; the grids are the
+    cell-centered and vertex axes of the same tile.
+    """
+
+    x, y, z = (position[..., axis].reshape(-1) for axis in range(3))
+    components = [
+        interpolate_field_to_particles(
+            field[i], x, y, z,
+            location_grid(center_grid, vertex_grid, locations[i]),
+            shape_factor,
+            ghost_cells=True,
+            active_axes=active_axes,
+            inactive_axis_indices=inactive_axis_indices,
+        )
         for i in range(3)
-    )
-    B_grids = tuple(
-        _metric_component_grid(B_FIELD_LOCATIONS[i], dynamic_parameters, tx, ty, tz)
-        for i in range(3)
-    )
-    center_grid = _metric_component_grid(("C", "C", "C"), dynamic_parameters, tx, ty, tz)
-
-    D_con = _sample_vector(
-        tuple(D_tiles[i][tx, ty, tz] for i in range(3)),
-        x,
-        y,
-        z,
-        D_grids,
-        shape_factor,
-        active_axes,
-        inactive_axis_indices,
-    )
-    B_con = _sample_vector(
-        tuple(B_tiles[i][tx, ty, tz] for i in range(3)),
-        x,
-        y,
-        z,
-        B_grids,
-        shape_factor,
-        active_axes,
-        inactive_axis_indices,
-    )
-    metric = _sample_metric(
-        _metric_tile(metric_tiles.center, tx, ty, tz),
-        x,
-        y,
-        z,
-        center_grid,
-        shape_factor,
-        static_parameters.metric,
-        active_axes,
-        inactive_axis_indices,
-    )
-    E_cov = lower_vector(D_con, metric.gamma)
-
-    u_minus = u_cov + (q_over_m * dt / 2.0)[..., jnp.newaxis] * metric.lapse[..., jnp.newaxis] * E_cov
-    u_plus = _magnetic_boris_rotation(u_minus, B_con, metric, q_over_m, dt)
-    u_new = u_plus + (q_over_m * dt / 2.0)[..., jnp.newaxis] * metric.lapse[..., jnp.newaxis] * E_cov
-
-    return u_new
-
-
-def _sample_center_metric_at_position(
-    position,
-    metric_tiles,
-    static_parameters,
-    dynamic_parameters,
-    tx,
-    ty,
-    tz,
-    active_axes,
-    inactive_axis_indices,
-):
-    shape_factor = static_parameters.shape_factor
-    center_grid = _metric_component_grid(("C", "C", "C"), dynamic_parameters, tx, ty, tz)
-
-    return _sample_metric(
-        _metric_tile(metric_tiles.center, tx, ty, tz),
-        position[..., 0],
-        position[..., 1],
-        position[..., 2],
-        center_grid,
-        shape_factor,
-        static_parameters.metric,
-        active_axes,
-        inactive_axis_indices,
-    )
-
-
-def _sample_center_grad_gamma_inv_at_position(
-    position,
-    metric_tiles,
-    static_parameters,
-    dynamic_parameters,
-    tx,
-    ty,
-    tz,
-    active_axes,
-    inactive_axis_indices,
-):
-    shape_factor = static_parameters.shape_factor
-    center_grid = _metric_component_grid(("C", "C", "C"), dynamic_parameters, tx, ty, tz)
-
-    return _sample_scalar(
-        metric_tiles.center_grad_gamma_inv[tx, ty, tz],
-        position[..., 0],
-        position[..., 1],
-        position[..., 2],
-        center_grid,
-        shape_factor,
-        active_axes,
-        inactive_axis_indices,
-    )
+    ]
+    return jnp.stack(components, axis=-1).reshape(position.shape)
 
 
 @partial(jax.jit, static_argnames="static_parameters")
@@ -390,164 +102,161 @@ def hybrid_boris_geodesic_push(
     dynamic_parameters,
 ):
     """
-    Strang-split second-order 3+1 particle push.
+    Explicit Strang-split second-order 3+1 particle push.
 
     Particle positions are contravariant coordinates.  ``particles.u`` stores
-    covariant spatial velocity components ``u_i``.
+    covariant spatial velocity components ``u_i``.  ``D_tiles``/``B_tiles``
+    are native densities ``sqrt(gamma) V^i`` (including any external field);
+    each component is divided by its own grid-node ``sqrt_gamma`` before the
+    gather, so particles see the physical contravariant field.
+
+    This is a staggered leapfrog.  The incoming ``particles.u`` is
+    ``u^{n-1/2}``; the velocity operator ``EM(dt/2) . geodesic(dt) . EM(dt/2)``
+    is applied with every field and metric quantity sampled at ``x^n``, giving
+    ``u^{n+1/2}``, and the position is only advanced afterwards with a
+    midpoint rule.  A run must therefore start from ``u^{-1/2}``, which
+    :func:`PyPIC3D.pusher.particle_push.seed_leapfrog_velocity` provides;
+    starting from the physical ``u(0)`` costs a full order of accuracy.
+
+    Returns the full-step particles ``(x^{n+1}, u^{n+1/2})`` and the centred
+    particles ``(x^{n+1/2}, u^{n+1/2})`` used for the current deposition.
     """
 
-    tile_nx, tile_ny, tile_nz = tuple(
-        int(width) for width in static_parameters.tile_shape
-    )
     g = int(static_parameters.guard_cells)
     dt = dynamic_parameters.dt
+    shape_factor = static_parameters.shape_factor
+    metric_name = static_parameters.metric
     ntx, nty, ntz = particles.active.shape[:3]
-    active_axes = (
-        int(ntx) * tile_nx > 1,
-        int(nty) * tile_ny > 1,
-        int(ntz) * tile_nz > 1,
-    )
-    # A width-one local tile remains physical when other tiles extend the axis.
+    active_axes = particle_active_axes((ntx, nty, ntz), static_parameters.tile_shape)
     inactive_axis_indices = (g, g, g)
     q_over_m = species_config.charge / species_config.mass
-    q_over_m = q_over_m.reshape((species_config.charge.shape[0], 1))
-    update_x = species_config.update_x.reshape((species_config.update_x.shape[0], 1, 3))
+    cell_size = jnp.array([dynamic_parameters.dx, dynamic_parameters.dy, dynamic_parameters.dz])
 
-    def push_one_tile(x_tile, u_tile, active_tile, tx, ty, tz):
-        active = active_tile[..., jnp.newaxis]
-        qom_tile = jnp.broadcast_to(q_over_m, active_tile.shape)
-        metric_n = _sample_center_metric_at_position(
-            x_tile,
-            metric,
-            static_parameters,
-            dynamic_parameters,
-            tx,
-            ty,
-            tz,
-            active_axes,
-            inactive_axis_indices,
-        )
-        grad_gamma_inv_n = _sample_center_grad_gamma_inv_at_position(
-            x_tile,
-            metric,
-            static_parameters,
-            dynamic_parameters,
-            tx,
-            ty,
-            tz,
-            active_axes,
-            inactive_axis_indices,
-        )
+    def push_active_batch(x_n, u_old, active, q_over_m_batch, update_x, tx, ty, tz):
+        tile = jnp.array([tx, ty, tz])
+        center_grid = tuple(axis[tx, ty, tz] for axis in dynamic_parameters.grids.tiled_center_grid)
+        vertex_grid = tuple(axis[tx, ty, tz] for axis in dynamic_parameters.grids.tiled_vertex_grid)
+        tile_metric = jax.tree.map(lambda array: array[tx, ty, tz], metric.center)
+        D_tile = tuple(component[tx, ty, tz] / sample.sqrt_gamma[tx, ty, tz]
+                       for component, sample in zip(D_tiles, metric.D))
+        B_tile = tuple(component[tx, ty, tz] / sample.sqrt_gamma[tx, ty, tz]
+                       for component, sample in zip(B_tiles, metric.B))
 
-        u_after_first_em = _electromagnetic_boris_step(
-            x_tile,
-            u_tile,
-            qom_tile,
-            D_tiles,
-            B_tiles,
-            metric,
-            static_parameters,
-            dynamic_parameters,
-            tx,
-            ty,
-            tz,
-            dt / 2.0,
-            active_axes,
-            inactive_axis_indices,
-        )
-        u_after_first_em = jnp.where(active & update_x, u_after_first_em, u_tile)
-        # a disabled direction freezes both its covariant velocity and coordinate
+        live = active[..., jnp.newaxis]
+        # update_x freezes individual velocity and coordinate components per species
+        moving = live & update_x
+        x_n = safe_inactive_positions(x_n, active, center_grid, active_axes, g)
+        u_old = jnp.where(live, u_old, 0.0)
 
-        du_dt_n = geodesic_velocity(
-            x_tile,
-            u_after_first_em,
-            metric_n,
-            grad_gamma_inv_n,
+        # Every force in the velocity update is sampled once, at x^n.
+        metric_n = interpolate_metric(
+            tile_metric, x_n, center_grid, metric_name, active_axes, inactive_axis_indices
         )
-        u_geo_mid = u_after_first_em + 0.5 * dt * du_dt_n
-        du_dt_mid = geodesic_velocity(
-            x_tile,
-            u_geo_mid,
-            metric_n,
-            grad_gamma_inv_n,
-        )
-        u_after_geodesic = u_after_first_em + dt * du_dt_mid
-        u_after_geodesic = jnp.where(active & update_x, u_after_geodesic, u_tile)
-        # midpoint geodesic velocity source at x^n; positions remain staggered until the velocity update is complete.
+        D_con = gather_vector(D_tile, D_FIELD_LOCATIONS, x_n, center_grid, vertex_grid,
+                              shape_factor, active_axes, inactive_axis_indices)
+        B_con = gather_vector(B_tile, B_FIELD_LOCATIONS, x_n, center_grid, vertex_grid,
+                              shape_factor, active_axes, inactive_axis_indices)
+        E_cov = lower_vector(D_con, metric_n.gamma)
+        # EM(dt/2) is a quarter-step electric kick, a half-step rotation, and a quarter-step kick.
+        electric_kick = (q_over_m_batch * dt / 4.0)[..., jnp.newaxis] * metric_n.lapse[..., jnp.newaxis] * E_cov
 
-        u_new = _electromagnetic_boris_step(
-            x_tile,
-            u_after_geodesic,
-            qom_tile,
-            D_tiles,
-            B_tiles,
-            metric,
-            static_parameters,
-            dynamic_parameters,
-            tx,
-            ty,
-            tz,
-            dt / 2.0,
-            active_axes,
-            inactive_axis_indices,
-        )
-        u_new = jnp.where(active & update_x, u_new, u_tile)
-        # second half of the electromagnetic Boris step, reinterpolated at the same x^n position.
+        def electromagnetic_half_step(u):
+            u = u + electric_kick
+            u = magnetic_boris_rotation(u, B_con, metric_n, q_over_m_batch, dt / 2.0)
+            return u + electric_kick
 
-        dx_dt_n = GR_position_update(
-            x_tile,
-            u_new,
-            metric_n,
-        )
-        x_half = x_tile + 0.5 * dt * dx_dt_n
-        x_half = jnp.where(active & update_x, x_half, x_tile)
+        u_after_first_em = jnp.where(moving, electromagnetic_half_step(u_old), u_old)
 
-        metric_half = _sample_center_metric_at_position(
-            x_half,
-            metric,
-            static_parameters,
-            dynamic_parameters,
-            tx,
-            ty,
-            tz,
-            active_axes,
-            inactive_axis_indices,
+        # midpoint rule for the geodesic source over the full step
+        u_geo_mid = u_after_first_em + 0.5 * dt * geodesic_acceleration(u_after_first_em, metric_n)
+        u_after_geodesic = u_after_first_em + dt * geodesic_acceleration(u_geo_mid, metric_n)
+        u_after_geodesic = jnp.where(moving, u_after_geodesic, u_old)
+
+        u_new = jnp.where(moving, electromagnetic_half_step(u_after_geodesic), u_old)
+
+        # midpoint rule for the position; x^{n+1/2} is also the deposition position
+        x_half = jnp.where(moving, x_n + 0.5 * dt * coordinate_velocity(u_new, metric_n), x_n)
+        metric_half = interpolate_metric(
+            tile_metric, x_half, center_grid, metric_name, active_axes, inactive_axis_indices,
+            derivatives=False,
         )
-        dx_dt_half = GR_position_update(
-            x_half,
-            u_new,
-            metric_half,
-        )
-        x_new = x_tile + dt * dx_dt_half
-        x_new = jnp.where(active & update_x, x_new, x_tile)
-        # centered particles use x^{n+1/2}; x^{n+1} uses a metric/RHS sampled at that midpoint.
+        x_new = jnp.where(moving, x_n + dt * coordinate_velocity(u_new, metric_half), x_n)
+
+        for stage, value in (("first magnetic half-step", u_after_first_em),
+                             ("geodesic midpoint", u_geo_mid),
+                             ("geodesic full-step", u_after_geodesic),
+                             ("second magnetic half-step", u_new),
+                             ("position midpoint", x_half),
+                             ("position full-step", x_new)):
+            check_particle_samples(~active | jnp.all(jnp.isfinite(value), axis=-1), x_n, stage, tile)
+        displacement = jnp.abs(x_new - x_n) / cell_size
+        within_one_cell = jnp.all(jnp.where(jnp.array(active_axes), displacement <= 1, True), axis=-1)
+        check_particle_samples(~active | within_one_cell, x_n, "one-cell displacement bound", tile)
 
         return x_new, u_new, x_half
 
-    tx, ty, tz = jnp.meshgrid(
-        jnp.arange(ntx),
-        jnp.arange(nty),
-        jnp.arange(ntz),
-        indexing="ij",
+    capacity = particles.active.shape[-2] * particles.active.shape[-1]
+    if capacity == 0:
+        return particles, particles
+    batch_size = min(int(static_parameters.particle_batch_size), capacity)
+    slots = particles.active.shape[-1]
+    tile_shape = particles.active.shape[:3]
+    x_flat = particles.x.reshape(tile_shape + (capacity, 3))
+    u_flat = particles.u.reshape(tile_shape + (capacity, 3))
+
+    def map_tiles(function):
+        if tile_shape == (1, 1, 1):
+            # Keep the direct single-tile dispatch used by active-only batching.
+            def one_tile(*args):
+                result = function(*(value[0, 0, 0] for value in args))
+                return jax.tree.map(lambda value: value[None, None, None], result)
+            return one_tile
+        for _ in range(3):
+            function = jax.vmap(function)
+        return function
+
+    def prepare(active):
+        _, _, indices, count = prepare_particle_batches(active, static_parameters.particle_batch_size)
+        return indices, count
+
+    indices, counts = map_tiles(prepare)(particles.active)
+    n_batches = jnp.max(number_of_particle_batches(counts, batch_size))
+    tx, ty, tz = jnp.meshgrid(jnp.arange(ntx), jnp.arange(nty), jnp.arange(ntz), indexing="ij")
+
+    def push_selected(index_array, count, x, u, tx, ty, tz, batch_index):
+        selected, valid = particle_batch_indices(index_array, count, batch_index, batch_size)
+        species = selected // slots
+        new_x, new_u, mid_x = push_active_batch(
+            x[selected], u[selected], valid, q_over_m[species],
+            species_config.update_x[species], tx, ty, tz,
+        )
+        return jnp.where(valid, selected, capacity), new_x, new_u, mid_x
+
+    def write_tile(destination, values, original):
+        # Padded lanes must not overwrite their repeated live source index.
+        return original.at[destination].set(values, mode="drop")
+
+    def advance_batch(state):
+        batch_index, full_x, full_u, half_x = state
+        destination, new_x, new_u, mid_x = map_tiles(push_selected)(
+            indices, counts, x_flat, u_flat, tx, ty, tz,
+            jnp.broadcast_to(batch_index, tile_shape),
+        )
+        return (batch_index + 1,
+                map_tiles(write_tile)(destination, new_x, full_x),
+                map_tiles(write_tile)(destination, new_u, full_u),
+                map_tiles(write_tile)(destination, mid_x, half_x))
+
+    # Keep the dynamic loop outside vmap: checkify rejects vmap-of-while.
+    # Tiles share the maximum active batch count; padded lanes use safe metrics.
+    _, x_new, u_new, x_half = jax.lax.while_loop(
+        lambda state: state[0] < n_batches,
+        advance_batch, (jnp.asarray(0), x_flat, u_flat, x_flat),
     )
+    x_new = x_new.reshape(particles.x.shape)
+    u_new = u_new.reshape(particles.u.shape)
+    x_half = x_half.reshape(particles.x.shape)
 
-    push_tiles = push_one_tile
-    push_tiles = jax.vmap(push_tiles, in_axes=(0, 0, 0, 0, 0, 0), out_axes=0)
-    push_tiles = jax.vmap(push_tiles, in_axes=(0, 0, 0, 0, 0, 0), out_axes=0)
-    push_tiles = jax.vmap(push_tiles, in_axes=(0, 0, 0, 0, 0, 0), out_axes=0)
-
-    x_new, u_new, x_half = push_tiles(
-        particles.x,
-        particles.u,
-        particles.active,
-        tx,
-        ty,
-        tz,
-    )
-
-    particles = TiledParticles(x=x_new, u=u_new, active=particles.active)
-    # pack the tiled particles into a single TiledParticles object.
-    particles_n_plushalf = TiledParticles(x=x_half, u=u_new, active=particles.active)
-    # pack the intermediate particles into a single TiledParticles object for centered current deposition.
-
-    return particles, particles_n_plushalf
+    full_step = TiledParticles(x=x_new, u=u_new, active=particles.active)
+    half_step = TiledParticles(x=x_half, u=u_new, active=particles.active)
+    return full_step, half_step

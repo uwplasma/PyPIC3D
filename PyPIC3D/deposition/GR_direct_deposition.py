@@ -4,81 +4,18 @@ import jax
 import jax.numpy as jnp
 
 from PyPIC3D.boundary_conditions.ghost_cells import (
+    BC_TYPE_PARTICLE,
     fold_tiled_vector_ghost_cells,
     update_tiled_vector_ghost_cells,
 )
 from PyPIC3D.boundary_conditions.grid_and_stencil import (
-    collapse_axis_stencil,
+    collapse_tiled_axis_stencil,
     prepare_particle_axis_stencil,
 )
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
-from PyPIC3D.pusher.boris import interpolate_field_to_particles
-from PyPIC3D.relativity.core import Metric, contravariant_three_velocity
+from PyPIC3D.relativity.core import contravariant_three_velocity
+from PyPIC3D.relativity.interpolate_metric import interpolate_metric, safe_inactive_positions
 from PyPIC3D.utilities.filters import tiled_bilinear_filter_vector, tiled_digital_filter_vector
-
-
-def _collapse_tiled_axis_stencil(points, weights, local_n, reduced_axis, g):
-    if reduced_axis:
-        collapsed_points = jnp.full((1, points.shape[1]), int(g), dtype=points.dtype)
-        collapsed_weights = jnp.sum(weights, axis=0, keepdims=True)
-        return collapsed_points, collapsed_weights
-    return collapse_axis_stencil(points, weights, local_n, ghost_cells=True)
-
-
-def _sample_scalar(field, x, y, z, grid, shape_factor):
-    particle_shape = x.shape
-    return interpolate_field_to_particles(
-        field,
-        x.reshape(-1),
-        y.reshape(-1),
-        z.reshape(-1),
-        grid,
-        shape_factor,
-        ghost_cells=True,
-    ).reshape(particle_shape)
-
-
-def _sample_vector(field, x, y, z, grid, shape_factor):
-    return jnp.stack(
-        tuple(_sample_scalar(field[..., i], x, y, z, grid, shape_factor) for i in range(3)),
-        axis=-1,
-    )
-
-
-def _sample_tensor(field, x, y, z, grid, shape_factor):
-    rows = []
-    for i in range(3):
-        columns = []
-        for j in range(3):
-            columns.append(_sample_scalar(field[..., i, j], x, y, z, grid, shape_factor))
-        rows.append(jnp.stack(tuple(columns), axis=-1))
-    return jnp.stack(tuple(rows), axis=-2)
-
-
-def _sample_current_metric(metric, x, y, z, grid, shape_factor):
-    return Metric(
-        lapse=_sample_scalar(metric.lapse, x, y, z, grid, shape_factor),
-        shift=_sample_vector(metric.shift, x, y, z, grid, shape_factor),
-        gamma=_sample_tensor(metric.gamma, x, y, z, grid, shape_factor),
-        gamma_inv=_sample_tensor(metric.gamma_inv, x, y, z, grid, shape_factor),
-        sqrt_gamma=_sample_scalar(metric.sqrt_gamma, x, y, z, grid, shape_factor),
-        christoffel=metric.christoffel,
-        grad_lapse=metric.grad_lapse,
-        grad_shift=metric.grad_shift,
-    )
-
-
-def _metric_tile(metric, tx, ty, tz):
-    return Metric(
-        lapse=metric.lapse[tx, ty, tz],
-        shift=metric.shift[tx, ty, tz],
-        gamma=metric.gamma[tx, ty, tz],
-        gamma_inv=metric.gamma_inv[tx, ty, tz],
-        sqrt_gamma=metric.sqrt_gamma[tx, ty, tz],
-        christoffel=metric.christoffel[tx, ty, tz],
-        grad_lapse=metric.grad_lapse[tx, ty, tz],
-        grad_shift=metric.grad_shift[tx, ty, tz],
-    )
 
 
 @partial(jax.jit, static_argnames="static_parameters")
@@ -94,12 +31,10 @@ def GR_direct_deposition(
     Direct current deposition for a fixed 3+1 metric.
 
     ``particles.u`` stores covariant spatial components ``u_i``.  Deposition,
-    ghost folding, and filtering operate on the conformal current
-    ``sqrt(gamma) J^i``.  The returned source current follows the physical FPIC
-    Maxwell convention
+    ghost folding, and filtering operate on, and return, the conformal current
+    of the densitized Maxwell update
 
-        J^i = (q / (sqrt(gamma) d^3x)) * S(x)
-              * (alpha v^i - beta^i).
+        sqrt(gamma) J^i = (q / d^3x) * S(x) * (alpha v^i - beta^i).
     """
 
     current_filter = static_parameters.current_filter
@@ -146,13 +81,18 @@ def GR_direct_deposition(
         tiled_z_grid = tiled_grid[2][tx, ty, tz]
         center_grid = (tiled_x_grid, tiled_y_grid, tiled_z_grid)
 
-        metric_at_particles = _sample_current_metric(
-            _metric_tile(metric.center, tx, ty, tz),
-            x,
-            y,
-            z,
+        active_axes = (not reduced_x, not reduced_y, not reduced_z)
+        evaluation_position = safe_inactive_positions(
+            jnp.stack((x, y, z), axis=-1), active.astype(bool), center_grid, active_axes, g)
+        u_cov = jnp.where(active[:, None].astype(bool), u_cov, 0.)
+        metric_at_particles = interpolate_metric(
+            jax.tree.map(lambda array: array[tx, ty, tz], metric.center),
+            evaluation_position,
             center_grid,
-            shape_factor,
+            static_parameters.metric,
+            active_axes,
+            (g, g, g),
+            derivatives=False,
         )
         v_con = contravariant_three_velocity(u_cov, metric_at_particles.gamma_inv)
         source_velocity = metric_at_particles.lapse[:, jnp.newaxis] * v_con - metric_at_particles.shift
@@ -253,22 +193,22 @@ def GR_direct_deposition(
         y_weights_face = jnp.asarray(y_weights_face)
         z_weights_face = jnp.asarray(z_weights_face)
 
-        xpts_node, x_weights_node = _collapse_tiled_axis_stencil(
+        xpts_node, x_weights_node = collapse_tiled_axis_stencil(
             xpts_node, x_weights_node, local_Nx, reduced_x, g
         )
-        xpts_face, x_weights_face = _collapse_tiled_axis_stencil(
+        xpts_face, x_weights_face = collapse_tiled_axis_stencil(
             xpts_face, x_weights_face, local_Nx, reduced_x, g
         )
-        ypts_node, y_weights_node = _collapse_tiled_axis_stencil(
+        ypts_node, y_weights_node = collapse_tiled_axis_stencil(
             ypts_node, y_weights_node, local_Ny, reduced_y, g
         )
-        ypts_face, y_weights_face = _collapse_tiled_axis_stencil(
+        ypts_face, y_weights_face = collapse_tiled_axis_stencil(
             ypts_face, y_weights_face, local_Ny, reduced_y, g
         )
-        zpts_node, z_weights_node = _collapse_tiled_axis_stencil(
+        zpts_node, z_weights_node = collapse_tiled_axis_stencil(
             zpts_node, z_weights_node, local_Nz, reduced_z, g
         )
-        zpts_face, z_weights_face = _collapse_tiled_axis_stencil(
+        zpts_face, z_weights_face = collapse_tiled_axis_stencil(
             zpts_face, z_weights_face, local_Nz, reduced_z, g
         )
 
@@ -315,13 +255,18 @@ def GR_direct_deposition(
         tz,
     )
 
-    conformal_J = fold_tiled_vector_ghost_cells((Jx, Jy, Jz), static_parameters, g, bc_type=1)
+    conformal_J = fold_tiled_vector_ghost_cells(
+        (Jx, Jy, Jz),
+        static_parameters,
+        g,
+        bc_type=BC_TYPE_PARTICLE,
+    )
 
     def bilinear_filtered_current(conformal_J):
         return tiled_bilinear_filter_vector(
             conformal_J,
             static_parameters,
-            bc_type=1,
+            bc_type=BC_TYPE_PARTICLE,
         )
 
     def digital_filtered_current(conformal_J):
@@ -329,10 +274,10 @@ def GR_direct_deposition(
             conformal_J,
             dynamic_parameters.alpha,
             static_parameters,
-            bc_type=1,
+            bc_type=BC_TYPE_PARTICLE,
         )
 
-    conformal_J = jax.lax.cond(
+    return jax.lax.cond(
         current_filter == "bilinear",
         bilinear_filtered_current,
         lambda conformal_J: jax.lax.cond(
@@ -342,14 +287,9 @@ def GR_direct_deposition(
                 conformal_J,
                 static_parameters,
                 g,
-                bc_type=1,
+                bc_type=BC_TYPE_PARTICLE,
             ),
             conformal_J,
         ),
         conformal_J,
-    )
-
-    return tuple(
-        conformal_J[i] / metric.D[i].sqrt_gamma
-        for i in range(3)
     )

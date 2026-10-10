@@ -1,15 +1,10 @@
 import unittest
 import jax
 import jax.numpy as jnp
-import sys
-import os
-
 
 from PyPIC3D.pusher.boris import boris_single_particle, interpolate_field_to_particles
 from PyPIC3D.pusher.higuera_cary import higuera_cary_single_particle
 from tests.kernel_fixtures import kernel_parameters
-
-jax.config.update("jax_enable_x64", True)
 
 
 def mae(x, y):

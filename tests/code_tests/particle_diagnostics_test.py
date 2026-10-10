@@ -1,6 +1,5 @@
 import unittest
 
-import jax
 import jax.numpy as jnp
 
 from PyPIC3D.diagnostics.output_adapters import particles_for_output
@@ -10,9 +9,6 @@ from tests.kernel_fixtures import (
     particle_species,
     species_names,
 )
-
-
-jax.config.update("jax_enable_x64", True)
 
 
 class TestTiledParticleDiagnostics(unittest.TestCase):
@@ -43,7 +39,6 @@ class TestTiledParticleDiagnostics(unittest.TestCase):
         return particle_parameters_from_tile_values(parameter_set, self._simulation_parameters())
 
     def _species(self):
-        parameter_set = self._parameter_values()
         ions = particle_species(
             name="ions",
             charge=2.0,

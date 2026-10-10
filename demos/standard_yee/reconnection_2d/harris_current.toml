@@ -1,0 +1,79 @@
+[simulation_parameters]
+name = "Electron-Positron Harris-Sheet Reconnection"
+Nt = 14000
+solver = "electrodynamic_yee"
+Nx = 300
+Ny = 1
+Nz = 300
+x_wind = 7.972018780303677e-4
+y_wind = 2.657339593434559e-6 # One per-species Debye length at the sheet density.
+z_wind = 7.972018780303677e-4
+cfl = 0.9
+verbose = false
+shape_factor = 2
+relativistic = true
+particle_pusher = "boris"
+current_calculation = "j_from_rhov"
+filter_j = "bilinear"
+particle_tile_nx = 150
+particle_tile_ny = 1
+particle_tile_nz = 300
+particle_tile_capacity_factor = 1.25
+x_bc = "periodic"
+y_bc = "periodic"
+z_bc = "conducting"
+particle_x_bc = "periodic"
+particle_y_bc = "periodic"
+particle_z_bc = "reflecting"
+
+[plotting]
+plotting_interval = 140
+plot_openpmd_fields = true
+plot_openpmd_particles = false
+plotvelocities = true
+dump_fields = false
+dump_particles = false
+
+[field1]
+name = "Bx field"
+type = 3
+path = "Bx.npy"
+
+[field2]
+name = "Bz field"
+type = 5
+path = "Bz.npy"
+
+[particle1]
+name = "electrons"
+N_particles = 550000
+charge = -1.602e-19
+mass = 9.1093837e-31
+temperature = 1.4824741435867757e7
+weight = 11258.808326179767
+initial_x = "electron_x.npy"
+initial_y = "electron_y.npy"
+initial_z = "electron_z.npy"
+initial_vx = "electron_vx.npy"
+initial_vy = "electron_vy.npy"
+initial_vz = "electron_vz.npy"
+x_bc = "periodic"
+y_bc = "periodic"
+z_bc = "reflecting"
+
+[particle2]
+name = "positrons"
+N_particles = 550000
+charge = 1.602e-19
+mass = 9.1093837e-31
+temperature = 1.4824741435867757e7
+weight = 11258.808326179767
+initial_x = "positron_x.npy"
+initial_y = "positron_y.npy"
+initial_z = "positron_z.npy"
+initial_vx = "positron_vx.npy"
+initial_vy = "positron_vy.npy"
+initial_vz = "positron_vz.npy"
+x_bc = "periodic"
+y_bc = "periodic"
+z_bc = "reflecting"

@@ -228,7 +228,6 @@ def load_particles_from_toml(config, static_parameters, dynamic_parameters):
     dz = dynamic_parameters.dz
     dt = dynamic_parameters.dt
     kb = dynamic_parameters.kb
-    eps = dynamic_parameters.eps
     # get the simulation domain dimensions, grid sizes, spatial resolution, and thermal scalar values
     (x_min, x_max), (y_min, y_max), (z_min, z_max) = grid_domain_bounds(dynamic_parameters)
     # get the physical domain boundaries from the grid geometry

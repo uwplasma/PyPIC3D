@@ -1,4 +1,6 @@
+import math
 import jax.numpy as jnp
+from numbers import Integral
 from typing import NamedTuple
 
 from PyPIC3D.boundary_conditions.ghost_cells import make_field_mesh
@@ -16,7 +18,6 @@ class StaticParameters(NamedTuple):
     output_dir: str
     Nt: int
     verbose: bool
-    GPUs: bool
     benchmark: bool
     solver: str
     electrostatic: bool
@@ -35,12 +36,16 @@ class StaticParameters(NamedTuple):
     electrostatic_local_cg_tol: float
     electrostatic_local_cg_max_iterations: int
     particle_tile_capacity_factor: float
+    particle_batch_size: int
     pml_active: bool
     supergaussian_active: bool
     supergaussian_layers: tuple
     boundary_conditions: tuple
     particle_boundary_conditions: tuple
     field_mesh: object
+    horizon_field_cells: int = 0
+    sin_chi: float = 0.0
+    dark_mu: float = 0.0
 
 
 class DynamicParameters(NamedTuple):
@@ -95,6 +100,14 @@ def _field_mesh(static_config, tile_shape):
     return make_field_mesh(tile_grid_shape)
 
 
+def validate_dark_parameters(sin_chi, dark_mu):
+    """Validate the dimensionless mixing and inverse-length Proca mass."""
+    if not math.isfinite(float(sin_chi)) or abs(float(sin_chi)) > 1:
+        raise ValueError("sin_chi must be finite and between -1 and 1")
+    if not math.isfinite(float(dark_mu)) or float(dark_mu) < 0:
+        raise ValueError("dark_mu must be a finite nonnegative inverse length")
+
+
 def build_static_parameters(static_config):
     """
     Collect compile-time PIC choices for the timestep kernels.
@@ -104,14 +117,39 @@ def build_static_parameters(static_config):
     non-jitted Python dispatch, not traced as dynamic arrays.
     """
 
+    static_config = dict(static_config)
+    validate_dark_parameters(static_config.get("sin_chi", 0.0), static_config.get("dark_mu", 0.0))
+    if static_config.get("solver") == "dark_matter_yee":
+        if any(bc not in (0, 1) for bc in _axis_tuple(static_config["boundary_conditions"])):
+            raise ValueError("dark_matter_yee supports periodic or conducting field boundaries")
+        if static_config.get("supergaussian_active"):
+            raise ValueError("dark_matter_yee does not support supergaussian absorbers")
+    horizon_cells = static_config.get('horizon_field_cells', 0)
+    if isinstance(horizon_cells, bool) or not isinstance(horizon_cells, Integral) or horizon_cells < 0:
+        raise ValueError('horizon_field_cells must be a nonnegative integer')
+    if horizon_cells and (static_config.get('solver') != 'static_metric'
+                          or static_config.get('metric') != 'kerr_schild_spherical'):
+        raise ValueError('Horizon field layers require the spherical Kerr-Schild solver')
+    hybrid = (static_config.get("solver") == "static_metric" or
+              static_config.get("particle_pusher") == "hybrid_boris_geodesic")
+    if static_config.get("guard_cells") is None:
+        static_config["guard_cells"] = 3 if hybrid else 2
+    guard_cells = int(static_config["guard_cells"])
+    if guard_cells < 1:
+        raise ValueError("Tiled fields require at least one guard cell.")
+    if hybrid and guard_cells < 3:
+        raise ValueError("Hybrid Hermite particle metrics require guard_cells >= 3")
     tile_shape = _tile_shape(static_config)
+    particle_batch_size = static_config.get("particle_batch_size", 1)
+    if (isinstance(particle_batch_size, bool) or not isinstance(particle_batch_size, Integral)
+            or particle_batch_size <= 0):
+        raise ValueError("particle_batch_size must be a positive integer.")
 
     return StaticParameters(
         name=static_config.get("name", "Default Simulation"),
         output_dir=static_config.get("output_dir", "."),
         Nt=int(static_config.get("Nt", 0)),
         verbose=bool(static_config.get("verbose", False)),
-        GPUs=bool(static_config.get("GPUs", False)),
         benchmark=bool(static_config.get("benchmark", False)),
         solver=static_config.get("solver", "electrodynamic_yee"),
         electrostatic=bool(static_config.get("electrostatic", False)),
@@ -123,21 +161,23 @@ def build_static_parameters(static_config):
         metric_mass=float(static_config.get("metric_mass", 1.0)),
         metric_spin=float(static_config.get("metric_spin", 0.0)),
         shape_factor=int(static_config["shape_factor"]),
-        guard_cells=int(static_config["guard_cells"]),
+        guard_cells=guard_cells,
         tile_shape=tile_shape,
         electrostatic_schwarz_tol=float(static_config.get("electrostatic_schwarz_tol", 1.0e-6)),
         electrostatic_schwarz_max_iterations=int(static_config.get("electrostatic_schwarz_max_iterations", 500)),
         electrostatic_local_cg_tol=float(static_config.get("electrostatic_local_cg_tol", 1.0e-6)),
         electrostatic_local_cg_max_iterations=int(static_config.get("electrostatic_local_cg_max_iterations", 500)),
         particle_tile_capacity_factor=float(static_config.get("particle_tile_capacity_factor", 1.0)),
+        particle_batch_size=int(particle_batch_size),
         pml_active=bool(static_config.get("pml_active", False)),
         supergaussian_active=bool(static_config.get("supergaussian_active", False)),
         supergaussian_layers=tuple(static_config.get("supergaussian_layers", ())),
         boundary_conditions=_axis_tuple(static_config["boundary_conditions"]),
-        particle_boundary_conditions=_axis_tuple(
-            static_config.get("particle_boundary_conditions", {"x": 0, "y": 0, "z": 0})
-        ),
+        particle_boundary_conditions=_axis_tuple(static_config.get("particle_boundary_conditions", (0, 0, 0))),
         field_mesh=_field_mesh(static_config, tile_shape),
+        horizon_field_cells=int(horizon_cells),
+        sin_chi=float(static_config.get("sin_chi", 0.0)),
+        dark_mu=float(static_config.get("dark_mu", 0.0)),
     )
 
 
@@ -194,6 +234,9 @@ def _output_value(value):
 def static_parameters_for_output(static_parameters):
     skip = {"field_mesh"}
     static_items = static_parameters._asdict()
+    if static_parameters.solver == "static_metric":
+        from PyPIC3D.relativity.interpolate_metric import RECONSTRUCTION
+        static_items["particle_metric_reconstruction"] = RECONSTRUCTION
     return {
         key: _output_value(value)
         for key, value in static_items.items()
@@ -209,13 +252,3 @@ def dynamic_parameters_for_output(dynamic_parameters):
         for key, value in dynamic_items.items()
         if key not in skip
     }
-
-
-def boundary_dict(static_parameters):
-    bc_x, bc_y, bc_z = static_parameters.boundary_conditions
-    return {"x": bc_x, "y": bc_y, "z": bc_z}
-
-
-def particle_boundary_dict(static_parameters):
-    bc_x, bc_y, bc_z = static_parameters.particle_boundary_conditions
-    return {"x": bc_x, "y": bc_y, "z": bc_z}

@@ -6,6 +6,13 @@ The runtime particle state stores ``(r, theta, phi)`` and covariant spatial
 momentum ``u_i``. The numerical advance repeatedly calls PyPIC3D's production
 hybrid geodesic particle pusher against one fixed Kerr-Schild metric and zero
 electromagnetic fields.
+
+The pusher is a staggered leapfrog, so the stored ``u_i`` sits half a step
+behind the stored position. The configured initial momentum is offset onto that
+half step before the run starts. The reported ``E = -u_0`` and ``u_phi``
+histories still combine ``x^n`` with ``u^{n+1/2}``, which leaves an ``O(dt)``
+offset in the diagnostic itself; that is separate from the integration error and
+is not corrected here.
 """
 
 from __future__ import annotations
@@ -38,7 +45,8 @@ import matplotlib.pyplot as plt
 
 from PyPIC3D.initialization import initialize_simulation
 from PyPIC3D.pusher.hybrid_boris_geodesic import hybrid_boris_geodesic_push
-from PyPIC3D.relativity.kerr_schild import (
+from PyPIC3D.pusher.particle_push import seed_leapfrog_velocity
+from PyPIC3D.relativity.metrics.kerr_schild import (
     _kerr_schild_spherical_metric_at_position,
 )
 
@@ -225,8 +233,20 @@ def run_orbit(config):
         ) = initialize_simulation(config)
 
     particles = install_exact_initial_state(particles, particle_config)
-    D, B = fields[:2]
+    D, B = fields[:2]  # native densities, as the production pusher reads them
     metric = fields[6]
+
+    particles = seed_leapfrog_velocity(
+        particles,
+        species_config,
+        D,
+        B,
+        static_parameters,
+        dynamic_parameters,
+        metric=metric,
+    )
+    # install_exact_initial_state overwrites the velocity that
+    # initialize_simulation already offset, so put it back on the half step
 
     initial_position = active_particle_position(particles)
     expected_position = np.asarray(

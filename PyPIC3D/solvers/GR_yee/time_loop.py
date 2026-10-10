@@ -1,0 +1,155 @@
+import jax.numpy as jnp
+from jax.experimental import checkify
+
+from PyPIC3D.deposition.GR_direct_deposition import GR_direct_deposition
+from PyPIC3D.deposition.Esirkepov import Esirkepov_current
+from PyPIC3D.diagnostics.static_metric import step_diagnostics
+from PyPIC3D.particles.particle_tile_communication import refresh_tiled_particle_tiles
+from PyPIC3D.pusher.hybrid_boris_geodesic import hybrid_boris_geodesic_push
+from PyPIC3D.utilities.field_helpers import add_external_fields
+
+from .static_metric import compute_covariant_E, compute_covariant_H, update_B, update_D
+
+
+__all__ = ["time_loop_static_metric"]
+
+
+def time_loop_static_metric(
+    particles,
+    species_config,
+    fields,
+    static_parameters,
+    dynamic_parameters,
+    return_diagnostics=False,
+    return_errors=False,
+    current_transform=None,
+):
+    """
+    Advance a tiled PIC system in a prescribed 3+1 metric.
+
+    The D/B/J slots, external D/B and previous D/B are native densities
+    ``sqrt(gamma) V^i``; the particle push divides by the grid-node volumes.
+    The particle velocity slot stores covariant spatial components ``u_i``.
+    An optional ``current_transform`` may apply a compatible filter to the
+    densitized current. Its caller must use the same commuting transform for
+    deposited charge when checking Gauss's law; arbitrary current-only
+    smoothing is not valid.
+    Empty particle storage takes a vacuum step, skipping the particle push,
+    deposition, current transform, and particle tile communication.
+    """
+
+    D_n, B_n_minushalf, J_n_minushalf, rho, phi, external_fields, metric, previous_fields, overflow_previous = fields
+    # unpack the fixed-metric field state
+
+    D_n_minusone, B_n_minusthreehalves = previous_fields
+    # unpack the previous fixed-metric field state.  Every D and B arrives with
+    # refreshed halos and walls from update_D/B or initialization.
+
+    D_n_minushalf = tuple( 0.5 * (D_n[i] + D_n_minusone[i]) for i in range(3) )
+    B_n_minusone = tuple( 0.5 * (B_n_minushalf[i] + B_n_minusthreehalves[i]) for i in range(3) )
+    # compute the centered fields for the current time step
+
+    E_n_minusonehalf = compute_covariant_E(D_n_minushalf, B_n_minushalf, metric)
+    # compute the covariant electric field from the centered displacement and magnetic fields
+
+    B_n = update_B(E_n_minusonehalf, B_n_minusone, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt)
+    # update the densitized magnetic field using the centered displacement field
+
+    particles_n = particles
+    # keep the time level n positions for the charge-conserving deposition.  The
+    # push does not retile and does not wrap, so particles_n and the pushed
+    # particles share one tile frame and differencing their positions gives the
+    # true displacement.
+
+    if particles.active.size:
+        push_D, push_B = add_external_fields(D_n, B_n, external_fields)
+        # Evolved and external fields have already been refreshed.
+        push_args = (particles, species_config, push_D, push_B, metric,
+                     static_parameters, dynamic_parameters)
+        if return_errors:
+            push_errors, (particles, centered_particles) = checkify.checkify(
+                lambda pts: hybrid_boris_geodesic_push(pts, *push_args[1:]))(particles)
+        else:
+            particles, centered_particles = hybrid_boris_geodesic_push(*push_args)
+
+        if static_parameters.current_deposition == "esirkepov":
+            # Endpoint deposition must precede wrapping and full-step migration.
+            # Midpoint particles are only needed by direct deposition.
+            centered_overflow = False
+            J_n_plushalf = Esirkepov_current(
+                particles_n, particles, species_config, J_n_minushalf,
+                static_parameters, dynamic_parameters,
+            )
+        else:
+            centered_particles, centered_overflow = refresh_tiled_particle_tiles(
+                centered_particles, static_parameters, dynamic_parameters,
+            )
+            J_n_plushalf = GR_direct_deposition(
+                centered_particles, species_config, J_n_minushalf,
+                metric, static_parameters, dynamic_parameters,
+            )
+        if current_transform is not None:
+            J_n_plushalf = current_transform(J_n_plushalf)
+    else:
+        # Storage shape is static under JIT, so vacuum runs never trace the
+        # particle kernels. Clear both time levels to exclude stale current.
+        J_n_plushalf = tuple(jnp.zeros_like(component) for component in J_n_minushalf)
+        J_n_minushalf = J_n_plushalf
+        centered_overflow = False
+        if return_errors:
+            push_errors, _ = checkify.checkify(lambda: None)()
+
+    boundary_diagnostics = None
+    if return_diagnostics:
+        boundary_diagnostics = step_diagnostics(particles_n, particles, J_n_plushalf, species_config,
+                                                static_parameters, dynamic_parameters)
+    fullstep_overflow = False
+    if particles.active.size:
+        particles, fullstep_overflow = refresh_tiled_particle_tiles(
+            particles,
+            static_parameters,
+            dynamic_parameters,
+        )
+    overflow = overflow_previous | centered_overflow | fullstep_overflow
+    # apply boundaries and restore full-step tile ownership for the next push while preserving all overflow events
+
+
+    E_n = compute_covariant_E(D_n, B_n, metric)
+    # compute the covariant electric field from the updated displacement and magnetic fields
+    H_n = compute_covariant_H(D_n, B_n, metric)
+    # compute the covariant magnetic field from the updated displacement and magnetic fields
+
+    B_n_plushalf = update_B(E_n, B_n_minushalf, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt)
+    # update the densitized magnetic field using the updated displacement field
+
+    J_n = tuple( 0.5 * (J_n_plushalf[i] + J_n_minushalf[i]) for i in range(3))
+    # compute the centered current for the current time step
+
+    D_n_plushalf = update_D(D_n_minushalf, H_n, J_n, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt)
+    # update the densitized displacement field using the updated magnetic field and current
+
+    H_n_plushalf = compute_covariant_H(D_n_plushalf, B_n_plushalf, metric)
+    # compute the covariant magnetic field from the updated displacement and magnetic fields
+
+    D_n_plusone = update_D(D_n, H_n_plushalf, J_n_plushalf, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt)
+    # update the densitized displacement field using the updated magnetic field and current
+
+
+    previous_fields = (D_n, B_n_minushalf)
+    # store the current fields for the next time step
+
+    fields = (
+        D_n_plusone,
+        B_n_plushalf,
+        J_n_plushalf,
+        rho,
+        phi,
+        external_fields,
+        metric,
+        previous_fields,
+        overflow,
+    )
+    # pack the fixed-metric field state
+
+    result = (particles, fields, boundary_diagnostics) if return_diagnostics else (particles, fields)
+    return (push_errors, result) if return_errors else result

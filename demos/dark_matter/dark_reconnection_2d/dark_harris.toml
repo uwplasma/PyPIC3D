@@ -1,0 +1,98 @@
+# Run from this directory:
+#   python initial_data.py
+#   PyPIC3D --config dark_harris.toml
+# Initial arrays are saved here; simulation outputs use the default data/ directory.
+# All dimensional quantities are SI. B0 denotes the field felt by particles.
+[simulation_parameters]
+name = "Dark-field electron-positron Harris reconnection"
+solver = "dark_matter_yee"
+Nt = 14000
+Nx = 300
+Ny = 1
+Nz = 300
+x_wind = 7.972018780303677e-4
+y_wind = 2.657339593434559e-6
+z_wind = 7.972018780303677e-4
+C = 2.99792458e8
+eps = 8.85418782e-12
+mu = 1.2566370610981894e-6
+sin_chi = 0.3
+dark_mu = 9407.905584128972 # m^-1; dark_mu * d_e = 0.5
+cfl = 0.5
+relativistic = true
+particle_pusher = "boris"
+shape_factor = 2
+guard_cells = 2
+current_calculation = "esirkepov"
+filter_j = "none"
+particle_tile_nx = 300
+particle_tile_ny = 1
+particle_tile_nz = 300
+particle_tile_capacity_factor = 1.25
+particle_batch_size = 256
+x_bc = "periodic"
+y_bc = "periodic"
+z_bc = "conducting"
+particle_x_bc = "periodic"
+particle_y_bc = "periodic"
+particle_z_bc = "reflecting"
+verbose = false
+
+[plotting]
+plotting_interval = 140
+plot_openpmd_fields = true
+plot_openpmd_particles = false
+plotchargedensity = true
+plotvelocities = false
+dump_fields = true
+dump_particles = false
+
+# Used by the generator and analysis. n_sheet and n_background are per species.
+[initial_data]
+seed = 20260906
+sheet_density = 1.0e22
+sheet_half_width_skin_depth = 0.5
+perturbation_fraction = 0.05
+n_sheet = 100000
+n_background = 450000
+
+# No ordinary field blocks: E_EM = B_EM = 0 at physical t=0.
+# Missing dark components are zero. The runtime supplies the A half-step seed.
+[dark_field1]
+name = "Dark Harris Ay with X-point seed"
+type = 4
+path = "dark_Ay.npy"
+
+[particle1]
+name = "electrons"
+N_particles = 550000
+charge = -1.602e-19
+mass = 9.1093837e-31
+vth = 14989622.9
+weight = 11258.808326179767
+initial_x = "electron_x.npy"
+initial_y = "electron_y.npy"
+initial_z = "electron_z.npy"
+initial_vx = "electron_vx.npy"
+initial_vy = "electron_vy.npy"
+initial_vz = "electron_vz.npy"
+x_bc = "periodic"
+y_bc = "periodic"
+z_bc = "reflecting"
+
+[particle2]
+name = "positrons"
+N_particles = 550000
+charge = 1.602e-19
+mass = 9.1093837e-31
+vth = 14989622.9
+weight = 11258.808326179767
+initial_x = "positron_x.npy"
+initial_y = "positron_y.npy"
+initial_z = "positron_z.npy"
+initial_vx = "positron_vx.npy"
+initial_vy = "positron_vy.npy"
+initial_vz = "positron_vz.npy"
+x_bc = "periodic"
+y_bc = "periodic"
+z_bc = "reflecting"

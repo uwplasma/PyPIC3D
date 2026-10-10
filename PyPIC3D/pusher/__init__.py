@@ -11,4 +11,5 @@ from PyPIC3D.pusher.higuera_cary import (
 )
 from PyPIC3D.pusher.particle_push import (
     particle_push,
+    seed_leapfrog_velocity,
 )

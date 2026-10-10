@@ -1,5 +1,3 @@
-import jax
-
 from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
 from PyPIC3D.particles.particle_tile_communication import (
@@ -7,37 +5,12 @@ from PyPIC3D.particles.particle_tile_communication import (
     update_tiled_particle_positions,
 )
 from PyPIC3D.pusher.particle_push import particle_push
-from PyPIC3D.utilities.field_helpers import add_external_fields
-from PyPIC3D.utilities.filters import tiled_bilinear_filter_vector, tiled_digital_filter_vector
+from PyPIC3D.utilities.field_helpers import yee_push_fields
 
 from .first_order_yee import update_B, update_E
 
 
 __all__ = ["time_loop_electrodynamic"]
-
-
-def _filter_electric_field_for_particles(E, static_parameters, dynamic_parameters):
-    """Apply the direct-current coupling filter to the electric gather field."""
-
-    current_filter = static_parameters.current_filter
-
-    def bilinear_filtered_field(E):
-        return tiled_bilinear_filter_vector(E, static_parameters)
-
-    def digital_filtered_field(E):
-        return tiled_digital_filter_vector(E, dynamic_parameters.alpha, static_parameters)
-
-    return jax.lax.cond(
-        current_filter == "bilinear",
-        bilinear_filtered_field,
-        lambda E: jax.lax.cond(
-            current_filter == "digital",
-            digital_filtered_field,
-            lambda E: E,
-            E,
-        ),
-        E,
-    )
 
 
 def time_loop_electrodynamic(
@@ -57,12 +30,9 @@ def time_loop_electrodynamic(
     dt = dynamic_parameters.dt
     # get the dynamic timestep used by the tiled push/deposition sequence
 
-    coupling_E = _filter_electric_field_for_particles(E, static_parameters, dynamic_parameters)
-    # pair filtered direct current with the adjoint-filtered electric gather;
-    # the symmetric digital and bilinear filters satisfy F.T = F.
-
-    push_E, push_B = add_external_fields(coupling_E, B, external_fields)
-    # prescribed external fields and the magnetic gather remain unfiltered
+    push_E, push_B = yee_push_fields(
+        E, B, external_fields, static_parameters, dynamic_parameters,
+    )
 
     particles = particle_push(
         particles,
@@ -100,15 +70,18 @@ def time_loop_electrodynamic(
 
     def esirkepov_deposition_step(state):
         particles, J_tiles, overflow_previous = state
-        J_tiles = Esirkepov_current(particles, species_config, J_tiles, static_parameters, dynamic_parameters)
-        # deposit current into the tiled J arrays using the Esirkepov method, which requires old and new particle positions
+        particles_old = particles
         particles = update_tiled_particle_positions(particles, species_config, dt)
-        # update particle positions to the new time step
+        J_tiles = Esirkepov_current(
+            particles_old, particles, species_config, J_tiles,
+            static_parameters, dynamic_parameters, coordinate_velocity=particles.u,
+        )
+        # Deposit from unwrapped endpoints before changing tile ownership.
         particles, overflow = refresh_tiled_particle_tiles(particles, static_parameters, dynamic_parameters)
         # refresh tile ownership after the full position update
         overflow = overflow_previous | overflow
         return particles, J_tiles, overflow
-    # if the Esirkepov deposition method is selected, first deposit current into the tiled J arrays, then refresh the particle tiles
+    # Esirkepov uses the full-step endpoints before refreshing particle tiles.
 
     if static_parameters.current_deposition == "esirkepov":
         particles, J, overflow = esirkepov_deposition_step((particles, J, overflow_previous))

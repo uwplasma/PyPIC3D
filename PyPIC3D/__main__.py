@@ -18,6 +18,7 @@ from PyPIC3D.diagnostics.async_writer import (
 from PyPIC3D.diagnostics.output_adapters import build_field_output_map
 from PyPIC3D.diagnostics.diagnostic_quantities import (
     compute_energy,
+    compute_dark_energy,
     compute_total_momentum,
 )
 from PyPIC3D.utilities.field_helpers import add_external_fields
@@ -27,6 +28,7 @@ from PyPIC3D.utilities.toml_helpers import (
     load_config_file,
 )
 from PyPIC3D.initialization import initialize_simulation
+from PyPIC3D.relativity.interpolate_metric import particle_lorentz_factor
 
 
 def _raise_if_tiled_particles_overflowed(fields):
@@ -84,7 +86,10 @@ def run_PyPIC3D(config_file):
             dynamic_parameters,
             species_config=species_config,
         )
-        initial_energy = e_energy + b_energy + kinetic_energy
+        dark_energy = (compute_dark_energy(fields[7], static_parameters, dynamic_parameters,
+                                              None if fields[6] is None else fields[6][1])
+                       if static_parameters.solver == "dark_matter_yee" else 0.0)
+        initial_energy = e_energy + b_energy + kinetic_energy + dark_energy
 
     field_writer = None
     particle_writer = None
@@ -126,7 +131,12 @@ def run_PyPIC3D(config_file):
                         dynamic_parameters,
                         species_config=species_config,
                     )
-                    total_energy = e_energy + b_energy + kinetic_energy
+                    dark_energy = (compute_dark_energy(fields[7], static_parameters, dynamic_parameters,
+                                                          None if fields[6] is None else fields[6][1])
+                                   if static_parameters.solver == "dark_matter_yee" else 0.0)
+                    total_energy = e_energy + b_energy + kinetic_energy + dark_energy
+                    if static_parameters.solver == "dark_matter_yee":
+                        write_data(f"{output_dir}/data/dark_field_energy.txt", t * dt, dark_energy)
                     write_data(f"{output_dir}/data/total_energy.txt", t * dt, total_energy)
                     write_data(
                         f"{output_dir}/data/energy_error.txt",
@@ -141,6 +151,11 @@ def run_PyPIC3D(config_file):
                     write_data(f"{output_dir}/data/total_momentum.txt", t * dt, total_momentum)
 
                 if particle_writer is not None:
+                    gamma = None
+                    if static_metric:
+                        metric = fields[6]
+                        gamma = particle_lorentz_factor(particles, metric, static_parameters, dynamic_parameters)
+                        # particle u holds covariant u_i, so Gamma needs the metric at each particle
                     enqueue_openpmd_particle_output(
                         particle_writer,
                         particles,
@@ -149,6 +164,7 @@ def run_PyPIC3D(config_file):
                         t,
                         species_config=species_config,
                         species_names=particle_species_names,
+                        gamma=gamma,
                     )
 
                 if field_writer is not None:
@@ -199,9 +215,19 @@ def run_PyPIC3D(config_file):
     )
 
 
-def main():
+def _configure_jax_runtime():
+    """Enable the requested precision and report JAX's selected backend."""
     jax.config.update("jax_enable_x64", True)
-    jax.config.update("jax_platform_name", "cpu")
+
+    devices = jax.devices()
+    backend = jax.default_backend()
+    print(f"Using JAX backend: {backend}")
+    print(f"JAX devices ({len(devices)}): {devices}")
+    return backend, devices
+
+
+def main():
+    _configure_jax_runtime()
 
     toml_file = load_config_file()
 
@@ -233,7 +259,12 @@ def main():
         print(f"Final Electric Field Energy: {e_energy}")
         print(f"Final Magnetic Field Energy: {b_energy}")
         print(f"Final Kinetic Energy: {kinetic_energy}")
-        print(f"Total Final Energy: {e_energy + b_energy + kinetic_energy}\n")
+        dark_energy = (compute_dark_energy(fields[7], static_parameters, dynamic_parameters,
+                                              None if fields[6] is None else fields[6][1])
+                       if static_parameters.solver == "dark_matter_yee" else 0.0)
+        if static_parameters.solver == "dark_matter_yee":
+            print(f"Final Dark Field Energy: {dark_energy}")
+        print(f"Total Final Energy: {e_energy + b_energy + kinetic_energy + dark_energy}\n")
 
     duration = end - start
     Nt = static_parameters.Nt

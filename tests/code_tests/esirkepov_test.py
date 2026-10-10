@@ -1,495 +1,83 @@
-import os
-from pathlib import Path
-import subprocess
-import sys
-import tempfile
-import unittest
-from types import SimpleNamespace
+"""Single-device numerical tests."""
 
-import jax
-import jax.numpy as jnp
-import numpy as np
-import toml
-
-from PyPIC3D.boundary_conditions.grid_and_stencil import (
-    BC_ABSORBING,
+from tests.support.esirkepov_fixtures import (
     BC_CONDUCTING,
     BC_PERIODIC,
-)
-from PyPIC3D.deposition.Esirkepov import Esirkepov_current
-from PyPIC3D.deposition.rho import compute_rho
-from PyPIC3D.boundary_conditions import ghost_cells
-from PyPIC3D.diagnostics.output_adapters import assemble_tiled_vector_field, fields_for_output
-from PyPIC3D.initialization import build_tiled_array, initialize_fields, initialize_simulation
-from PyPIC3D.utilities.parameters import build_static_parameters
-from PyPIC3D.particles.particle_tile_communication import (
+    Esirkepov_current,
+    SpeciesConfig,
+    TiledEsirkepovCurrentFixtures,
+    TiledParticles,
+    assemble_tiled_vector_field,
+    build_static_parameters,
+    compute_rho,
+    initialize_simulation,
+    jnp,
+    kernel_parameters_from_values,
+    os,
     refresh_tiled_particle_tiles,
-    update_tiled_particle_positions,
-)
-from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
-from PyPIC3D.solvers.yee.first_order_yee import (
+    tempfile,
+    tile_vector_field,
+    unittest,
     update_E,
+    update_tiled_particle_positions,
+    vector_field_for_output,
 )
-from PyPIC3D.utilities.grids import build_tiled_yee_grids
-from tests.kernel_fixtures import kernel_parameters_from_values
-
-jax.config.update("jax_enable_x64", True)
-
-os.environ["XLA_FLAGS"] = "--xla_force_host_platform_device_count=32"
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def _tile_axis_count(n_cells, cells_per_tile):
-    if int(n_cells) % int(cells_per_tile) != 0:
-        raise ValueError("Shared tile sizes must divide the physical grid dimensions exactly.")
-    return int(n_cells) // int(cells_per_tile)
-
-
-def tile_scalar_field(field, parameter_set, tile_shape, num_guard_cells=2):
-    tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
-    g = int(num_guard_cells)
-    Nx = int(field.shape[0]) - 2
-    Ny = int(field.shape[1]) - 2
-    Nz = int(field.shape[2]) - 2
-    ntx = _tile_axis_count(Nx, tile_nx)
-    nty = _tile_axis_count(Ny, tile_ny)
-    ntz = _tile_axis_count(Nz, tile_nz)
-
-    interior_tiles = field[1:-1, 1:-1, 1:-1]
-    interior_tiles = interior_tiles.reshape(ntx, tile_nx, nty, tile_ny, ntz, tile_nz)
-    interior_tiles = interior_tiles.transpose(0, 2, 4, 1, 3, 5)
-
-    field_tiles = jnp.zeros(
-        (
-            ntx,
-            nty,
-            ntz,
-            tile_nx + 2 * g,
-            tile_ny + 2 * g,
-            tile_nz + 2 * g,
-        ),
-        dtype=field.dtype,
-    )
-    field_tiles = field_tiles.at[:, :, :, g:-g, g:-g, g:-g].set(interior_tiles)
-
-    parameter_set = dict(parameter_set)
-    parameter_set["tile_shape"] = tuple(int(width) for width in tile_shape)
-    parameter_set["field_mesh"] = ghost_cells.make_field_mesh((ntx, nty, ntz))
-    static_parameters, _ = kernel_parameters_from_values(parameter_set)
-    return ghost_cells.update_tiled_ghost_cells(field_tiles, static_parameters, g)
-
-
-def tile_vector_field(field, parameter_set, tile_shape, num_guard_cells=2):
-    return tuple(tile_scalar_field(component, parameter_set, tile_shape, num_guard_cells) for component in field)
-
-
-def _update_ghost_cells(field, bc_x, bc_y, bc_z):
-    field = jax.lax.cond(
-        bc_x == BC_PERIODIC,
-        lambda f: f.at[0, :, :].set(f[-2, :, :]).at[-1, :, :].set(f[1, :, :]),
-        lambda f: f.at[0, :, :].set(0.0).at[-1, :, :].set(0.0),
-        operand=field,
-    )
-    field = jax.lax.cond(
-        bc_y == BC_PERIODIC,
-        lambda f: f.at[:, 0, :].set(f[:, -2, :]).at[:, -1, :].set(f[:, 1, :]),
-        lambda f: f.at[:, 0, :].set(0.0).at[:, -1, :].set(0.0),
-        operand=field,
-    )
-    field = jax.lax.cond(
-        bc_z == BC_PERIODIC,
-        lambda f: f.at[:, :, 0].set(f[:, :, -2]).at[:, :, -1].set(f[:, :, 1]),
-        lambda f: f.at[:, :, 0].set(0.0).at[:, :, -1].set(0.0),
-        operand=field,
-    )
-    return field
-
-
-class TestTiledEsirkepovCurrent(unittest.TestCase):
-
-    def _build_parameter_values(
-        self,
-        Nx=8,
-        Ny=1,
-        Nz=1,
-        dt=0.05,
-        shape_factor=1,
-        boundary_conditions=None,
-        particle_boundary_conditions=None,
-    ):
-        x_wind = 4.0 if Nx > 1 else 1.0
-        y_wind = 4.0 if Ny > 1 else 1.0
-        z_wind = 4.0 if Nz > 1 else 1.0
-        if boundary_conditions is None:
-            boundary_conditions = {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC}
-        if particle_boundary_conditions is None:
-            particle_boundary_conditions = {"x": 0, "y": 0, "z": 0}
-        parameter_set = {
-            "dx": x_wind / Nx,
-            "dy": y_wind / Ny,
-            "dz": z_wind / Nz,
-            "Nx": Nx,
-            "Ny": Ny,
-            "Nz": Nz,
-            "x_wind": x_wind,
-            "y_wind": y_wind,
-            "z_wind": z_wind,
-            "dt": dt,
-            "shape_factor": shape_factor,
-            "boundary_conditions": boundary_conditions,
-            "particle_boundary_conditions": particle_boundary_conditions,
-            "current_deposition": "esirkepov",
-            "current_filter": "none",
-            "guard_cells": 1,
-        }
-        center_grid = (
-            jnp.linspace(-x_wind / 2 - parameter_set["dx"] / 2, x_wind / 2 + parameter_set["dx"] / 2, Nx + 2),
-            jnp.linspace(-y_wind / 2 - parameter_set["dy"] / 2, y_wind / 2 + parameter_set["dy"] / 2, Ny + 2),
-            jnp.linspace(-z_wind / 2 - parameter_set["dz"] / 2, z_wind / 2 + parameter_set["dz"] / 2, Nz + 2),
-        )
-        parameter_set["grids"] = {"center": center_grid, "vertex": center_grid}
-        return parameter_set
-
-    def _empty_J(self, parameter_set):
-        shape = (parameter_set["Nx"] + 2, parameter_set["Ny"] + 2, parameter_set["Nz"] + 2)
-        return (jnp.zeros(shape), jnp.zeros(shape), jnp.zeros(shape))
-
-    def _species_config(self, charge=-1.0, mass=1.0, weight=0.5):
-        return SpeciesConfig(
-            charge=jnp.asarray([charge], dtype=float),
-            mass=jnp.asarray([mass], dtype=float),
-            weight=jnp.asarray([weight], dtype=float),
-            update_x=jnp.ones((1, 3), dtype=bool),
-        )
-
-    def _tile_index_for_position(self, position, parameter_set, tile_shape):
-        x, y, z = [float(component) for component in position]
-        tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
-
-        ix = int(jnp.floor((x + 0.5 * parameter_set["x_wind"]) / parameter_set["dx"]))
-        iy = int(jnp.floor((y + 0.5 * parameter_set["y_wind"]) / parameter_set["dy"]))
-        iz = int(jnp.floor((z + 0.5 * parameter_set["z_wind"]) / parameter_set["dz"]))
-
-        ix = min(max(ix, 0), int(parameter_set["Nx"]) - 1)
-        iy = min(max(iy, 0), int(parameter_set["Ny"]) - 1)
-        iz = min(max(iz, 0), int(parameter_set["Nz"]) - 1)
-
-        return ix // tile_nx, iy // tile_ny, iz // tile_nz
-
-    def _empty_tiled_particles(self, parameter_set, tile_shape, n_slots):
-        tile_nx, tile_ny, tile_nz = [int(width) for width in tile_shape]
-        ntx = _tile_axis_count(parameter_set["Nx"], tile_nx)
-        nty = _tile_axis_count(parameter_set["Ny"], tile_ny)
-        ntz = _tile_axis_count(parameter_set["Nz"], tile_nz)
-        shape = (ntx, nty, ntz, 1, n_slots, 3)
-
-        return TiledParticles(
-            x=jnp.zeros(shape),
-            u=jnp.zeros(shape),
-            active=jnp.zeros(shape[:-1], dtype=bool),
-        )
-
-    def _set_tiled_particle(self, particles, tile, slot, x, u, active=True):
-        tx, ty, tz = tile
-        return particles._replace(
-            x=particles.x.at[tx, ty, tz, 0, slot].set(jnp.asarray(x, dtype=float)),
-            u=particles.u.at[tx, ty, tz, 0, slot].set(jnp.asarray(u, dtype=float)),
-            active=particles.active.at[tx, ty, tz, 0, slot].set(active),
-        )
-
-    def _particles_from_arrays(self, parameter_set, tile_shape, x, u, active_mask=None):
-        x = jnp.asarray(x, dtype=float)
-        u = jnp.asarray(u, dtype=float)
-        active_mask = jnp.ones(x.shape[0], dtype=bool) if active_mask is None else jnp.asarray(active_mask, dtype=bool)
-        particles = self._empty_tiled_particles(parameter_set, tile_shape, max(1, int(x.shape[0])))
-        write_counts = {}
-
-        for particle_index in range(int(x.shape[0])):
-            tile = self._tile_index_for_position(x[particle_index], parameter_set, tile_shape)
-            slot = write_counts.get(tile, 0)
-            write_counts[tile] = slot + 1
-            particles = self._set_tiled_particle(
-                particles,
-                tile,
-                slot,
-                x[particle_index],
-                u[particle_index],
-                bool(active_mask[particle_index]),
+class TestTiledEsirkepovCurrent(TiledEsirkepovCurrentFixtures, unittest.TestCase):
+    def test_esirkepov_continuity_for_dimensions_and_shapes(self):
+        for shape_factor in (1, 2):
+            two_dimensional_case = (8, 8, 1) if shape_factor == 1 else (1, 8, 8)
+            cases = (
+                (8, 1, 1),
+                (1, 8, 1),
+                (1, 1, 8),
+                two_dimensional_case,
+                (4, 4, 4),
             )
+            for Nx, Ny, Nz in cases:
+                with self.subTest(shape_factor=shape_factor, shape=(Nx, Ny, Nz)):
+                    parameter_set = self._build_parameter_values(Nx=Nx, Ny=Ny, Nz=Nz, dt=0.05, shape_factor=shape_factor)
+                    active_axes = sum(int(width > 1) for width in (Nx, Ny, Nz))
+                    # The production tiled Yee startup promotes Esirkepov current storage to two guards.
+                    if shape_factor == 2 or active_axes == 3:
+                        parameter_set["guard_cells"] = 2
+                    x_old, u = self._basic_positions_and_velocities(parameter_set)
+                    self._assert_single_tile_continuity(parameter_set, x_old, u)
 
-        return particles, self._species_config()
-
-    def _one_tile_particles_from_tiled(self, particles):
-        n_species = particles.active.shape[3]
-
-        x_by_species = []
-        u_by_species = []
-        max_slots = 1
-        for species_index in range(n_species):
-            active = np.asarray(jax.device_get(particles.active[:, :, :, species_index, :])).reshape(-1)
-            x = np.asarray(jax.device_get(particles.x[:, :, :, species_index, :, :])).reshape(-1, 3)[active]
-            u = np.asarray(jax.device_get(particles.u[:, :, :, species_index, :, :])).reshape(-1, 3)[active]
-            x_by_species.append(x)
-            u_by_species.append(u)
-            max_slots = max(max_slots, int(x.shape[0]))
-
-        x_one_tile = jnp.zeros((1, 1, 1, n_species, max_slots, 3), dtype=particles.x.dtype)
-        u_one_tile = jnp.zeros((1, 1, 1, n_species, max_slots, 3), dtype=particles.u.dtype)
-        active_one_tile = jnp.zeros((1, 1, 1, n_species, max_slots), dtype=bool)
-
-        for species_index in range(n_species):
-            n_active = int(x_by_species[species_index].shape[0])
-            if n_active == 0:
-                continue
-            x_one_tile = x_one_tile.at[0, 0, 0, species_index, :n_active].set(jnp.asarray(x_by_species[species_index]))
-            u_one_tile = u_one_tile.at[0, 0, 0, species_index, :n_active].set(jnp.asarray(u_by_species[species_index]))
-            active_one_tile = active_one_tile.at[0, 0, 0, species_index, :n_active].set(True)
-
-        return TiledParticles(
-            x=x_one_tile,
-            u=u_one_tile,
-            active=active_one_tile,
-        )
-
-    def _one_dimensional_particles(self, parameter_set, x1, tile_shape):
-        x = jnp.stack((x1, jnp.zeros_like(x1), jnp.zeros_like(x1)), axis=-1)
-        u = jnp.stack(
-            (
-                jnp.array([0.08, -0.06, 0.05], dtype=float),
-                jnp.zeros_like(x1),
-                jnp.zeros_like(x1),
-            ),
-            axis=-1,
-        )
-        return self._particles_from_arrays(parameter_set, tile_shape, x, u)
-
-    def _tile_shape_for_parameters(self, parameter_set):
-        return (
-            2 if parameter_set["Nx"] > 1 else 1,
-            2 if parameter_set["Ny"] > 1 else 1,
-            2 if parameter_set["Nz"] > 1 else 1,
-        )
-
-    def _one_tile_shape_for_parameters(self, parameter_set):
-        return (int(parameter_set["Nx"]), int(parameter_set["Ny"]), int(parameter_set["Nz"]))
-
-    def _assert_tile_scalar_field_rebuilds_halos(self, parameter_set, tile_shape, num_guard_cells):
-        shape = (parameter_set["Nx"] + 2, parameter_set["Ny"] + 2, parameter_set["Nz"] + 2)
-        field = jnp.arange(jnp.prod(jnp.asarray(shape)), dtype=jnp.float64).reshape(shape)
-        field = field.at[0, :, :].set(-1001.0)
-        field = field.at[-1, :, :].set(-1002.0)
-        field = field.at[:, 0, :].set(-1003.0)
-        field = field.at[:, -1, :].set(-1004.0)
-        field = field.at[:, :, 0].set(-1005.0)
-        field = field.at[:, :, -1].set(-1006.0)
-
-        tiles = tile_scalar_field(field, parameter_set, tile_shape, num_guard_cells=num_guard_cells)
-        assembled = assemble_tiled_vector_field(
-            (tiles, tiles, tiles),
-            parameter_set,
-            tile_shape,
-            num_guard_cells=num_guard_cells,
-        )[0]
-        expected = _update_ghost_cells(
-            field,
-            parameter_set["boundary_conditions"]["x"],
-            parameter_set["boundary_conditions"]["y"],
-            parameter_set["boundary_conditions"]["z"],
-        )
-
-        self.assertTrue(jnp.allclose(assembled, expected, rtol=1.0e-15, atol=1.0e-15))
-
-    def test_tile_scalar_field_one_guard_rebuilds_periodic_halos_from_interiors(self):
-        parameter_set = self._build_parameter_values(Nx=8, Ny=6, Nz=4)
-        self._assert_tile_scalar_field_rebuilds_halos(parameter_set, (2, 3, 2), num_guard_cells=1)
-
-    def test_tile_scalar_field_two_guards_rebuilds_periodic_halos_from_interiors(self):
-        parameter_set = self._build_parameter_values(Nx=8, Ny=6, Nz=4)
-        self._assert_tile_scalar_field_rebuilds_halos(parameter_set, (2, 3, 2), num_guard_cells=2)
-
-    def test_tile_scalar_field_rebuilds_conducting_halos_from_interiors(self):
-        parameter_set = self._build_parameter_values(
-            Nx=8,
-            Ny=6,
-            Nz=4,
-            boundary_conditions={"x": BC_CONDUCTING, "y": BC_PERIODIC, "z": BC_PERIODIC},
-        )
-        self._assert_tile_scalar_field_rebuilds_halos(parameter_set, (2, 3, 2), num_guard_cells=1)
-
-    def test_source_has_no_legacy_particle_fixture_imports(self):
-        with open(__file__, "r") as source_file:
-            source = source_file.read()
-
-        banned_tokens = [
-            "tiled_" + "particle_" + "fixtures",
-            "particle_" + "species",
-            "to_" + "tiled_" + "particles",
-        ]
-        for token in banned_tokens:
-            self.assertNotIn(token, source)
-
-    def test_esirkepov_uses_shared_ghost_cell_folding(self):
-        source = (REPO_ROOT / "PyPIC3D" / "deposition" / "Esirkepov.py").read_text()
-
-        self.assertNotIn("fold_tiled_esirkepov_ghost_cells", source)
-        self.assertNotIn("fold_tiled_esirkepov_vector_ghost_cells", source)
-        self.assertNotIn('static_argnames=("static_parameters", "bc_type")', source)
-        self.assertNotIn("bc_type=bc_type", source)
-        self.assertIn("fold_tiled_vector_ghost_cells", source)
-        self.assertIn(
-            "fold_tiled_vector_ghost_cells((Jx, Jy, Jz), static_parameters, num_guard_cells=g, bc_type=1)",
-            source,
-        )
-        self.assertIn(
-            "update_tiled_vector_ghost_cells(J, static_parameters, num_guard_cells=g, bc_type=1)",
-            source,
-        )
-
-    def _parameters_with_tiled_grids(self, parameter_set, tile_shape):
-        g = int(parameter_set["guard_cells"])
-        parameter_set = dict(parameter_set)
-        grids = dict(parameter_set["grids"])
-        parameter_set["tile_shape"] = tile_shape
-        parameter_set["field_mesh"] = ghost_cells.make_field_mesh((
-            int(parameter_set["Nx"]) // int(tile_shape[0]),
-            int(parameter_set["Ny"]) // int(tile_shape[1]),
-            int(parameter_set["Nz"]) // int(tile_shape[2]),
-        ))
-        grid_static_parameters = SimpleNamespace(tile_shape=tile_shape, guard_cells=g)
-        grid_dynamic_parameters = SimpleNamespace(
-            dx=parameter_set["dx"],
-            dy=parameter_set["dy"],
-            dz=parameter_set["dz"],
-            grids=SimpleNamespace(vertex=grids["vertex"], center=grids["center"]),
-        )
-        tiled_center_grid, tiled_vertex_grid = build_tiled_yee_grids(
-            grid_static_parameters,
-            grid_dynamic_parameters,
-        )
-        grids["tiled_center_grid"] = tiled_center_grid
-        grids["tiled_vertex_grid"] = tiled_vertex_grid
-        parameter_set["grids"] = grids
-        return parameter_set
-
-    def _initialize_fields(self, parameter_set, dynamic_values=None):
-        static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set, dynamic_values)
-        return initialize_fields(static_parameters, dynamic_parameters)
-
-    def _build_tiled_array(self, parameter_set, dynamic_values=None):
-        static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set, dynamic_values)
-        return build_tiled_array(static_parameters, dynamic_parameters)
-
-    def _assembled_esirkepov_current(self, parameter_set, tiled_particles, species_config, dynamic_values, tile_shape):
-        parameter_set = self._parameters_with_tiled_grids(parameter_set, tile_shape)
-        g = int(parameter_set["guard_cells"])
-        _, _, J_template, _, _ = self._initialize_fields(parameter_set, dynamic_values)
-        static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set, dynamic_values)
-        J_tiles = Esirkepov_current(
-            tiled_particles,
-            species_config,
-            J_template,
-            static_parameters,
-            dynamic_parameters,
-        )
-        J_from_tiles = assemble_tiled_vector_field(J_tiles, parameter_set, tile_shape, num_guard_cells=g)
-
-        return J_tiles, J_from_tiles
-
-    def _assert_tiled_current_matches_reference(self, parameter_set, x_old, u, tile_shape=None):
-        dynamic_values = {"C": 1.0, "eps": 1.0, "alpha": 1.0}
-        if tile_shape is None:
-            tile_shape = self._tile_shape_for_parameters(parameter_set)
-
-        tiled_particles, species_config = self._particles_from_arrays(parameter_set, tile_shape, x_old, u)
-        J_tiles, J_from_tiles = self._assembled_esirkepov_current(
-            parameter_set,
-            tiled_particles,
-            species_config,
-            dynamic_values,
-            tile_shape,
-        )
-        _, J_reference = self._assembled_esirkepov_current(
-            parameter_set,
-            self._one_tile_particles_from_tiled(tiled_particles),
-            species_config,
-            dynamic_values,
-            self._one_tile_shape_for_parameters(parameter_set),
-        )
-
-        for reference_component, tiled_component in zip(J_reference, J_from_tiles):
-            self.assertTrue(
-                jnp.allclose(tiled_component, reference_component, rtol=1.0e-12, atol=1.0e-12),
-                f"max diff {jnp.max(jnp.abs(tiled_component - reference_component))}",
-            )
-
-    def _basic_positions_and_velocities(self, parameter_set):
-        dx, dy, dz = parameter_set["dx"], parameter_set["dy"], parameter_set["dz"]
-        x = jnp.array(
-            [
-                [-0.30 * parameter_set["x_wind"] if parameter_set["Nx"] > 1 else 0.0,
-                 -0.20 * parameter_set["y_wind"] if parameter_set["Ny"] > 1 else 0.0,
-                 -0.10 * parameter_set["z_wind"] if parameter_set["Nz"] > 1 else 0.0],
-                [0.05 * parameter_set["x_wind"] if parameter_set["Nx"] > 1 else 0.0,
-                 0.15 * parameter_set["y_wind"] if parameter_set["Ny"] > 1 else 0.0,
-                 0.20 * parameter_set["z_wind"] if parameter_set["Nz"] > 1 else 0.0],
-                [0.25 * parameter_set["x_wind"] if parameter_set["Nx"] > 1 else 0.0,
-                 -0.30 * parameter_set["y_wind"] if parameter_set["Ny"] > 1 else 0.0,
-                 0.30 * parameter_set["z_wind"] if parameter_set["Nz"] > 1 else 0.0],
-            ]
-        )
-        u = jnp.array(
-            [
-                [0.35 * dx / parameter_set["dt"] if parameter_set["Nx"] > 1 else 0.0,
-                 -0.20 * dy / parameter_set["dt"] if parameter_set["Ny"] > 1 else 0.0,
-                 0.25 * dz / parameter_set["dt"] if parameter_set["Nz"] > 1 else 0.0],
-                [-0.15 * dx / parameter_set["dt"] if parameter_set["Nx"] > 1 else 0.0,
-                 0.30 * dy / parameter_set["dt"] if parameter_set["Ny"] > 1 else 0.0,
-                 -0.10 * dz / parameter_set["dt"] if parameter_set["Nz"] > 1 else 0.0],
-                [0.10 * dx / parameter_set["dt"] if parameter_set["Nx"] > 1 else 0.0,
-                 0.15 * dy / parameter_set["dt"] if parameter_set["Ny"] > 1 else 0.0,
-                 0.20 * dz / parameter_set["dt"] if parameter_set["Nz"] > 1 else 0.0],
-            ]
-        )
-        return x, u
 
     def test_initialize_fields_builds_tiled_current_with_startup_guard_cells(self):
         parameter_set = self._build_parameter_values(Nx=8, Ny=1, Nz=1)
         parameter_set["guard_cells"] = 2
-        tile_shape = (2, 1, 1)
+        tile_shape = self._one_tile_shape_for_parameters(parameter_set)
         parameter_set["tile_shape"] = tile_shape
 
         _, _, J_tiles, _, _ = self._initialize_fields(parameter_set)
 
-        self.assertEqual(J_tiles[0].shape, (4, 1, 1, 6, 5, 5))
+        self.assertEqual(J_tiles[0].shape, (1, 1, 1, 12, 5, 5))
         self.assertTrue(jnp.allclose(J_tiles[0], 0.0))
 
-    def test_tiled_esirkepov_honors_one_guard_cell_startup_depth(self):
-        parameter_set = self._build_parameter_values(Nx=8, Ny=1, Nz=1, dt=0.05, shape_factor=1)
-        parameter_set["guard_cells"] = 1
-        x_old, u = self._basic_positions_and_velocities(parameter_set)
-
-        self._assert_tiled_current_matches_reference(parameter_set, x_old, u, tile_shape=(2, 1, 1))
 
     def test_shared_guard_current_tiles_assemble_to_one_guard_global_current(self):
         parameter_set = self._build_parameter_values(Nx=8, Ny=1, Nz=1)
         parameter_set["guard_cells"] = 2
-        tile_shape = (2, 1, 1)
+        tile_shape = self._one_tile_shape_for_parameters(parameter_set)
         parameter_set["tile_shape"] = tile_shape
         g = int(parameter_set["guard_cells"])
         _, _, J_tiles, _, _ = self._initialize_fields(parameter_set)
         Jx, Jy, Jz = J_tiles
-        Jx = Jx.at[1, 0, 0, 2, 2, 2].set(3.0)
+        Jx = Jx.at[0, 0, 0, 4, 2, 2].set(3.0)
 
         assembled = assemble_tiled_vector_field((Jx, Jy, Jz), parameter_set, tile_shape, num_guard_cells=g)
 
         self.assertEqual(assembled[0].shape, (10, 3, 3))
         self.assertEqual(float(assembled[0][3, 1, 1]), 3.0)
 
+
     def test_output_adapter_uses_parameter_guard_cells(self):
         parameter_set = self._build_parameter_values(Nx=8, Ny=1, Nz=1)
         parameter_set["guard_cells"] = 2
-        tile_shape = (2, 1, 1)
+        tile_shape = self._one_tile_shape_for_parameters(parameter_set)
         parameter_set["tile_shape"] = tile_shape
         shape = (parameter_set["Nx"] + 2, parameter_set["Ny"] + 2, parameter_set["Nz"] + 2)
         zeros = (jnp.zeros(shape), jnp.zeros(shape), jnp.zeros(shape))
@@ -498,22 +86,23 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         B_tiles = tile_vector_field(zeros, parameter_set, tile_shape, num_guard_cells=g)
         _, _, J_tiles, _, _ = self._initialize_fields(parameter_set)
         Jx, Jy, Jz = J_tiles
-        Jx = Jx.at[1, 0, 0, 2, 2, 2].set(7.0)
+        Jx = Jx.at[0, 0, 0, 4, 2, 2].set(7.0)
         rho = jnp.zeros(shape)
         phi = jnp.zeros(shape)
         fields = (E_tiles, B_tiles, (Jx, Jy, Jz), rho, phi, (E_tiles, B_tiles), None)
 
         static_parameters = build_static_parameters(parameter_set)
-        output_fields = fields_for_output(fields, static_parameters)
+        output_current = vector_field_for_output(fields[2], static_parameters)
 
-        self.assertEqual(output_fields[2][0].shape, shape)
-        self.assertEqual(float(output_fields[2][0][3, 1, 1]), 7.0)
-        self.assertEqual(fields[2][0].shape[-3:], (6, 5, 5))
+        self.assertEqual(output_current[0].shape, shape)
+        self.assertEqual(float(output_current[0][3, 1, 1]), 7.0)
+        self.assertEqual(fields[2][0].shape[-3:], (12, 5, 5))
+
 
     def test_update_E_reads_two_guard_current_interior(self):
         parameter_set = self._build_parameter_values(Nx=4, Ny=1, Nz=1, dt=0.25)
         dynamic_values = {"C": 1.0, "eps": 2.0}
-        tile_shape = (2, 1, 1)
+        tile_shape = self._one_tile_shape_for_parameters(parameter_set)
         parameter_set["guard_cells"] = 2
         g = int(parameter_set["guard_cells"])
         shape = (parameter_set["Nx"] + 2, parameter_set["Ny"] + 2, parameter_set["Nz"] + 2)
@@ -531,38 +120,6 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         self.assertIsNone(pml_state)
         self.assertTrue(jnp.allclose(E_after[0][:, :, :, g:-g, g:-g, g:-g], -0.5))
 
-    def test_tiled_esirkepov_matches_global_1d_periodic_current(self):
-        parameter_set = self._build_parameter_values(Nx=8, Ny=1, Nz=1, dt=0.05)
-        dynamic_values = {"C": 1.0, "eps": 1.0, "alpha": 1.0}
-        tile_shape = (2, 1, 1)
-        parameter_set = self._parameters_with_tiled_grids(parameter_set, tile_shape)
-        x_old = jnp.array([-1.10, -0.10, 1.05])
-        tiled_particles, species_config = self._one_dimensional_particles(parameter_set, x_old, tile_shape)
-
-        g = int(parameter_set["guard_cells"])
-        _, _, J_template, _, _ = self._initialize_fields(parameter_set, dynamic_values)
-        static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set, dynamic_values)
-        J_tiles = Esirkepov_current(
-            tiled_particles,
-            species_config,
-            J_template,
-            static_parameters,
-            dynamic_parameters,
-        )
-        J_from_tiles = assemble_tiled_vector_field(J_tiles, parameter_set, tile_shape, num_guard_cells=g)
-        _, J_reference = self._assembled_esirkepov_current(
-            parameter_set,
-            self._one_tile_particles_from_tiled(tiled_particles),
-            species_config,
-            dynamic_values,
-            self._one_tile_shape_for_parameters(parameter_set),
-        )
-
-        for reference_component, tiled_component in zip(J_reference, J_from_tiles):
-            self.assertTrue(
-                jnp.allclose(tiled_component, reference_component, rtol=1.0e-12, atol=1.0e-12),
-                f"max diff {jnp.max(jnp.abs(tiled_component - reference_component))}",
-            )
 
     def test_tiled_esirkepov_masks_current_per_species_direction(self):
         parameter_set = self._build_parameter_values(Nx=4, Ny=4, Nz=4, dt=0.05)
@@ -598,10 +155,12 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
 
         masked_current = Esirkepov_current(
             particles,
+            update_tiled_particle_positions(particles, species_config, dynamic_parameters.dt),
             species_config,
             J_template,
             static_parameters,
             dynamic_parameters,
+            coordinate_velocity=particles.u,
         )
 
         slot_mask = species_config.update_x.reshape((1, 1, 1, 2, 1, 3))
@@ -609,20 +168,23 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         reference_config = species_config._replace(update_x=jnp.ones_like(species_config.update_x))
         reference_current = Esirkepov_current(
             reference_particles,
+            update_tiled_particle_positions(reference_particles, reference_config, dynamic_parameters.dt),
             reference_config,
             J_template,
             static_parameters,
             dynamic_parameters,
+            coordinate_velocity=reference_particles.u,
         )
 
         for masked_component, reference_component in zip(masked_current, reference_current):
             self.assertTrue(jnp.allclose(masked_component, reference_component))
             self.assertGreater(float(jnp.max(jnp.abs(masked_component))), 0.0)
 
+
     def test_tiled_esirkepov_zeroes_disabled_current_in_reduced_dimensions(self):
         parameter_set = self._build_parameter_values(Nx=8, Ny=1, Nz=1, dt=0.05)
         parameter_set["guard_cells"] = 2
-        tile_shape = (8, 1, 1)
+        tile_shape = self._one_tile_shape_for_parameters(parameter_set)
         parameter_set = self._parameters_with_tiled_grids(parameter_set, tile_shape)
         particles = TiledParticles(
             x=jnp.asarray([[[[[[0.0, 0.0, 0.0]]]]]]),
@@ -644,19 +206,22 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
 
         current = Esirkepov_current(
             particles,
+            update_tiled_particle_positions(particles, species_config, dynamic_parameters.dt),
             species_config,
             J_template,
             static_parameters,
             dynamic_parameters,
+            coordinate_velocity=particles.u,
         )
 
         for component in current:
             self.assertTrue(jnp.allclose(component, 0.0))
 
+
     def test_public_Esirkepov_current_dispatches_tiled_particles_to_tile_local_current(self):
         parameter_set = self._build_parameter_values(Nx=8, Ny=1, Nz=1, dt=0.05, shape_factor=1)
         parameter_set["guard_cells"] = 2
-        parameter_set = self._parameters_with_tiled_grids(parameter_set, (2, 1, 1))
+        parameter_set = self._parameters_with_tiled_grids(parameter_set, (8, 1, 1))
         dynamic_values = {"C": 1.0, "eps": 1.0, "alpha": 1.0}
         x_old = jnp.array([-1.10, -0.10, 1.05])
         tiled_particles, species_config = self._one_dimensional_particles(parameter_set, x_old, parameter_set["tile_shape"])
@@ -665,156 +230,107 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set, dynamic_values)
         J_tiles = Esirkepov_current(
             tiled_particles,
+            update_tiled_particle_positions(tiled_particles, species_config, dynamic_parameters.dt),
             species_config,
             J_template,
             static_parameters,
             dynamic_parameters,
+            coordinate_velocity=tiled_particles.u,
         )
-        J_from_tiles = assemble_tiled_vector_field(
-            J_tiles,
-            parameter_set,
-            parameter_set["tile_shape"],
-            num_guard_cells=int(parameter_set["guard_cells"]),
-        )
-        _, J_reference = self._assembled_esirkepov_current(
-            parameter_set,
-            self._one_tile_particles_from_tiled(tiled_particles),
-            species_config,
-            dynamic_values,
-            self._one_tile_shape_for_parameters(parameter_set),
-        )
-
         for tile_component in J_tiles:
             self.assertEqual(tile_component.ndim, 6)
-        for reference_component, tiled_component in zip(J_reference, J_from_tiles):
-            self.assertTrue(
-                jnp.allclose(tiled_component, reference_component, rtol=1.0e-12, atol=1.0e-12),
-                f"max diff {jnp.max(jnp.abs(tiled_component - reference_component))}",
-            )
+            self.assertEqual(tile_component.shape[:3], (1, 1, 1))
+        self._assert_single_tile_continuity(
+            parameter_set, tiled_particles.x[tiled_particles.active],
+            tiled_particles.u[tiled_particles.active], current=J_tiles)
 
-    def test_tiled_esirkepov_matches_global_current_for_dimensions_and_shapes(self):
-        cases = [
-            (8, 1, 1),
-            (1, 8, 1),
-            (1, 1, 8),
-            (8, 8, 1),
-            (8, 1, 8),
-            (1, 8, 8),
-            (6, 6, 6),
-        ]
-        for shape_factor in (1, 2):
-            for Nx, Ny, Nz in cases:
-                with self.subTest(shape_factor=shape_factor, shape=(Nx, Ny, Nz)):
-                    parameter_set = self._build_parameter_values(Nx=Nx, Ny=Ny, Nz=Nz, dt=0.05, shape_factor=shape_factor)
-                    active_axes = sum(int(width > 1) for width in (Nx, Ny, Nz))
-                    # The production tiled Yee startup promotes Esirkepov current storage to two guards.
-                    if shape_factor == 2 or active_axes == 3:
-                        parameter_set["guard_cells"] = 2
-                    x_old, u = self._basic_positions_and_velocities(parameter_set)
-                    self._assert_tiled_current_matches_reference(parameter_set, x_old, u)
 
-    def test_tiled_esirkepov_folds_internal_tile_and_periodic_boundary_crossings(self):
-        parameter_set = self._build_parameter_values(Nx=8, Ny=1, Nz=1, dt=0.05)
-        dx = parameter_set["dx"]
-        dt = parameter_set["dt"]
-        x_old = jnp.array(
-            [
-                [-1.0 * dx, 0.0, 0.0],
-                [0.5 * parameter_set["x_wind"] - 0.2 * dx, 0.0, 0.0],
-                [-0.5 * parameter_set["x_wind"] + 0.2 * dx, 0.0, 0.0],
-            ]
-        )
-        u = jnp.array(
-            [
-                [0.7 * dx / dt, 0.0, 0.0],
-                [0.6 * dx / dt, 0.0, 0.0],
-                [-0.6 * dx / dt, 0.0, 0.0],
-            ]
-        )
-
-        self._assert_tiled_current_matches_reference(parameter_set, x_old, u, tile_shape=(2, 1, 1))
-
-    def test_tiled_esirkepov_uses_particle_boundaries_for_current_ghosts(self):
-        tile_shape = (2, 1, 1)
-        periodic_particle_parameters = self._build_parameter_values(
+    def test_esirkepov_current_refresh_uses_reflecting_vector_parity(self):
+        parameter_set = self._build_parameter_values(
             Nx=4,
             Ny=1,
-            Nz=1,
+            Nz=4,
             dt=0.05,
-            boundary_conditions={"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},
-            particle_boundary_conditions={"x": 0, "y": 0, "z": 0},
-        )
-        absorbing_particle_parameters = self._build_parameter_values(
-            Nx=4,
-            Ny=1,
-            Nz=1,
-            dt=0.05,
-            boundary_conditions={"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},
-            particle_boundary_conditions={
-                "x": BC_ABSORBING,
+            shape_factor=2,
+            boundary_conditions={
+                "x": BC_PERIODIC,
                 "y": BC_PERIODIC,
-                "z": BC_PERIODIC,
+                "z": BC_CONDUCTING,
+            },
+            particle_boundary_conditions={
+                "x": BC_PERIODIC,
+                "y": BC_PERIODIC,
+                "z": BC_CONDUCTING,
             },
         )
-        periodic_particle_parameters["guard_cells"] = 2
-        absorbing_particle_parameters["guard_cells"] = 2
-        periodic_particle_parameters = self._parameters_with_tiled_grids(periodic_particle_parameters, tile_shape)
-        absorbing_particle_parameters = self._parameters_with_tiled_grids(absorbing_particle_parameters, tile_shape)
-
-        dx = periodic_particle_parameters["dx"]
-        dt = periodic_particle_parameters["dt"]
-        x_old = jnp.array([[1.75, 0.0, 0.0], [-1.75, 0.0, 0.0]])
-        u = jnp.array([[0.6 * dx / dt, 0.0, 0.0], [-0.6 * dx / dt, 0.0, 0.0]])
-        particles, species_config = self._particles_from_arrays(periodic_particle_parameters, tile_shape, x_old, u)
-        dynamic_values = {"C": 1.0, "eps": 1.0, "alpha": 1.0}
-
-        _, _, J_template, _, _ = self._initialize_fields(periodic_particle_parameters, dynamic_values)
-        static_periodic, dynamic_periodic = kernel_parameters_from_values(periodic_particle_parameters, dynamic_values)
-        static_absorbing, dynamic_absorbing = kernel_parameters_from_values(absorbing_particle_parameters, dynamic_values)
-
-        periodic_bc_current = Esirkepov_current(
-            particles,
-            species_config,
-            J_template,
-            static_periodic,
-            dynamic_periodic,
-        )
-        absorbing_bc_current = Esirkepov_current(
-            particles,
-            species_config,
-            J_template,
-            static_absorbing,
-            dynamic_absorbing,
-        )
-
-        max_difference = max(
-            float(jnp.max(jnp.abs(periodic_component - absorbing_component)))
-            for periodic_component, absorbing_component in zip(periodic_bc_current, absorbing_bc_current)
-        )
-        self.assertGreater(max_difference, 1.0e-12)
-
-    def test_tiled_esirkepov_satisfies_tile_local_discrete_continuity(self):
-        parameter_set = self._build_parameter_values(Nx=8, Ny=1, Nz=1, dt=0.05, shape_factor=1)
-        dynamic_values = {"C": 1.0, "eps": 1.0, "alpha": 1.0}
-        tile_shape = (2, 1, 1)
-        parameter_set = self._parameters_with_tiled_grids(parameter_set, tile_shape)
-        dx = parameter_set["dx"]
+        parameter_set["guard_cells"] = 2
+        tile_shape = (4, 1, 4)
         x_old = jnp.array(
             [
-                [-1.0 * dx, 0.0, 0.0],
-                [0.5 * parameter_set["x_wind"] - 0.2 * dx, 0.0, 0.0],
-                [0.25 * parameter_set["x_wind"], 0.0, 0.0],
+                [-0.2, 0.0, -1.99],
+                [0.2, 0.0, 1.99],
             ]
         )
         u = jnp.array(
             [
-                [0.7 * dx / parameter_set["dt"], 0.0, 0.0],
-                [0.6 * dx / parameter_set["dt"], 0.0, 0.0],
-                [-0.4 * dx / parameter_set["dt"], 0.0, 0.0],
+                [0.3, -0.2, 0.25],
+                [-0.1, 0.4, -0.15],
             ]
         )
+        particles, species_config = self._particles_from_arrays(
+            parameter_set,
+            tile_shape,
+            x_old,
+            u,
+        )
+        current_tiles, _ = self._assembled_esirkepov_current(
+            parameter_set,
+            particles,
+            species_config,
+            {"C": 1.0, "eps": 1.0, "alpha": 1.0},
+            tile_shape,
+        )
+        g = int(parameter_set["guard_cells"])
+        n = tile_shape[2]
+
+        # Jx and Jy are tangential to the z-walls and collocated in z: even
+        # images about the wall nodes g and g+n, so ghost g-k mirrors g+k.
+        for component in (0, 1):
+            current = current_tiles[component][0, 0, 0]
+            self.assertGreater(float(jnp.max(jnp.abs(current[g:-g, g:-g, g:-g]))), 0.0)
+            for k in range(1, g + 1):
+                self.assertTrue(jnp.allclose(current[g:-g, g:-g, g - k], current[g:-g, g:-g, g + k], atol=1.0e-12))
+            for k in range(1, g):
+                self.assertTrue(jnp.allclose(current[g:-g, g:-g, g + n + k], current[g:-g, g:-g, g + n - k], atol=1.0e-12))
+        # Jz is normal and staggered in z: odd images about the wall faces
+        current = current_tiles[2][0, 0, 0]
+        self.assertGreater(float(jnp.max(jnp.abs(current[g:-g, g:-g, g:-g]))), 0.0)
+        self.assertTrue(jnp.allclose(current[g:-g, g:-g, :g],
+                                     -jnp.flip(current[g:-g, g:-g, g:2 * g], axis=-1), atol=1.0e-12))
+        self.assertTrue(jnp.allclose(current[g:-g, g:-g, -g:],
+                                     -jnp.flip(current[g:-g, g:-g, -2 * g:-g], axis=-1), atol=1.0e-12))
+
+
+    def test_tiled_esirkepov_satisfies_discrete_continuity_at_conducting_particle_walls(self):
+        walls = {"x": BC_CONDUCTING, "y": BC_PERIODIC, "z": BC_PERIODIC}
+        parameter_set = self._build_parameter_values(
+            Nx=8, Ny=1, Nz=1, dt=0.05, shape_factor=1, particle_boundary_conditions=walls)
+        dynamic_values = {"C": 1.0, "eps": 1.0, "alpha": 1.0}
+        tile_shape = self._one_tile_shape_for_parameters(parameter_set)
+        parameter_set = self._parameters_with_tiled_grids(parameter_set, tile_shape)
+        dx, dt = parameter_set["dx"], parameter_set["dt"]
+        x_min = -0.5 * parameter_set["x_wind"]
+        x_max = 0.5 * parameter_set["x_wind"]
+        # two particles cross a wall during the step and reflect; one stays inside
+        x_old = jnp.array([[x_min + 0.3 * dx, 0.0, 0.0],
+                           [x_max - 0.2 * dx, 0.0, 0.0],
+                           [0.1 * dx, 0.0, 0.0]])
+        u = jnp.array([[-0.7 * dx / dt, 0.0, 0.0],
+                       [0.6 * dx / dt, 0.0, 0.0],
+                       [0.4 * dx / dt, 0.0, 0.0]])
         tiled_particles, species_config = self._particles_from_arrays(parameter_set, tile_shape, x_old, u)
         g = int(parameter_set["guard_cells"])
+        n = tile_shape[0]
         rho_tiles = self._build_tiled_array(parameter_set, dynamic_values)
         static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set, dynamic_values)
 
@@ -822,94 +338,37 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
         _, _, J_template, _, _ = self._initialize_fields(parameter_set, dynamic_values)
         J_tiles = Esirkepov_current(
             tiled_particles,
+            update_tiled_particle_positions(tiled_particles, species_config, dynamic_parameters.dt),
             species_config,
             J_template,
             static_parameters,
             dynamic_parameters,
+            coordinate_velocity=tiled_particles.u,
         )
-        new_particles = update_tiled_particle_positions(tiled_particles, species_config, parameter_set["dt"])
+        new_particles = update_tiled_particle_positions(tiled_particles, species_config, dt)
         new_particles, overflow = refresh_tiled_particle_tiles(new_particles, static_parameters, dynamic_parameters)
         rho_new = compute_rho(new_particles, species_config, rho_tiles, static_parameters, dynamic_parameters)
 
         self.assertFalse(bool(overflow))
-        drhodt = (rho_new[:, :, :, g:-g, g:-g, g:-g] - rho_old[:, :, :, g:-g, g:-g, g:-g]) / parameter_set["dt"]
-        dJxdx = (J_tiles[0][:, :, :, g:-g, g:-g, g:-g] - J_tiles[0][:, :, :, g - 1:-g - 1, g:-g, g:-g]) / parameter_set["dx"]
+        # every owned C node, including both wall nodes g and g+n
+        owned = (slice(None),) * 3 + (slice(g, g + n + 1), slice(g, -g), slice(g, -g))
+        before = (slice(None),) * 3 + (slice(g - 1, g + n), slice(g, -g), slice(g, -g))
+        drhodt = (rho_new[owned] - rho_old[owned]) / dt
+        dJxdx = (J_tiles[0][owned] - J_tiles[0][before]) / dx
         continuity = drhodt + dJxdx
         scale = jnp.maximum(1.0, jnp.max(jnp.abs(drhodt)) + jnp.max(jnp.abs(dJxdx)))
-
+        self.assertGreater(float(jnp.max(jnp.abs(rho_new[owned][0, 0, 0, 0]))), 0.0)
         self.assertLessEqual(float(jnp.max(jnp.abs(continuity))), float(1.0e-12 * scale))
 
-    def test_initialize_tiled_yee_esirkepov_uses_two_guard_current_tiles(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            x_path = os.path.join(tmpdir, "x.npy")
-            zeros_path = os.path.join(tmpdir, "zeros.npy")
-            vx_path = os.path.join(tmpdir, "vx.npy")
-            np.save(x_path, np.array([-1.5, -0.5, 0.5, 1.5]))
-            np.save(zeros_path, np.zeros(4))
-            np.save(vx_path, np.array([0.10, -0.05, 0.07, -0.02]))
-
-            config = {
-                "simulation_parameters": {
-                    "name": "tiled yee esirkepov init smoke",
-                    "output_dir": tmpdir,
-                    "solver": "electrodynamic_yee",
-                    "Nx": 8,
-                    "Ny": 1,
-                    "Nz": 1,
-                    "x_wind": 4.0,
-                    "y_wind": 1.0,
-                    "z_wind": 1.0,
-                    "dt": 0.01,
-                    "Nt": 1,
-                    "shape_factor": 1,
-                    "guard_cells": 2,
-                    "particle_tile_nx": 2,
-                    "particle_tile_ny": 1,
-                    "particle_tile_nz": 1,
-                    "current_calculation": "esirkepov",
-                    "filter_j": "none",
-                    "particle_pusher": "boris",
-                    "relativistic": False,
-                },
-                "plotting": {"plotting_interval": 1},
-                "particle1": {
-                    "name": "electrons",
-                    "N_particles": 4,
-                    "charge": -1.0,
-                    "mass": 2.0,
-                    "weight": 0.5,
-                    "temperature": 1.0,
-                    "initial_x": x_path,
-                    "initial_y": zeros_path,
-                    "initial_z": zeros_path,
-                    "initial_vx": vx_path,
-                    "initial_vy": zeros_path,
-                    "initial_vz": zeros_path,
-                },
-            }
-            config_path = os.path.join(tmpdir, "tiled_yee_esirkepov.toml")
-            with open(config_path, "w") as f:
-                toml.dump(config, f)
-
-            _loop, particles, fields, static_parameters, *_rest = initialize_simulation(toml.load(config_path))
-            E_tiles, _B_tiles, J_tiles, *_ = fields
-
-            self.assertIsInstance(particles, TiledParticles)
-            self.assertEqual(E_tiles[0].shape[-3:], (6, 5, 5))
-            self.assertEqual(J_tiles[0].shape[-3:], (6, 5, 5))
-            self.assertEqual(int(static_parameters.guard_cells), 2)
-            self.assertFalse(hasattr(static_parameters, "current_guard_cells"))
-            self.assertEqual(static_parameters.current_deposition, "esirkepov")
-            self.assertEqual(static_parameters.current_filter, "none")
 
     def test_initialize_rejects_filtered_esirkepov_current(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             x_path = os.path.join(tmpdir, "x.npy")
             zeros_path = os.path.join(tmpdir, "zeros.npy")
             vx_path = os.path.join(tmpdir, "vx.npy")
-            np.save(x_path, np.array([-1.5, -0.5, 0.5, 1.5]))
-            np.save(zeros_path, np.zeros(4))
-            np.save(vx_path, np.array([0.10, -0.05, 0.07, -0.02]))
+            jnp.save(x_path, jnp.array([-1.5, -0.5, 0.5, 1.5]))
+            jnp.save(zeros_path, jnp.zeros(4))
+            jnp.save(vx_path, jnp.array([0.10, -0.05, 0.07, -0.02]))
 
             config = {
                 "simulation_parameters": {
@@ -953,169 +412,6 @@ class TestTiledEsirkepovCurrent(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Esirkepov current filtering is not supported"):
                 initialize_simulation(config)
 
-    def test_tiled_yee_esirkepov_loop_advances_particles_after_deposition(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            x_initial = np.array([-1.5, -0.5, 0.5, 1.5])
-            vx_initial = np.array([0.10, -0.05, 0.07, -0.02])
-            x_path = os.path.join(tmpdir, "x.npy")
-            zeros_path = os.path.join(tmpdir, "zeros.npy")
-            vx_path = os.path.join(tmpdir, "vx.npy")
-            np.save(x_path, x_initial)
-            np.save(zeros_path, np.zeros(4))
-            np.save(vx_path, vx_initial)
-
-            config = {
-                "simulation_parameters": {
-                    "name": "tiled yee esirkepov step smoke",
-                    "output_dir": tmpdir,
-                    "solver": "electrodynamic_yee",
-                    "Nx": 8,
-                    "Ny": 1,
-                    "Nz": 1,
-                    "x_wind": 4.0,
-                    "y_wind": 1.0,
-                    "z_wind": 1.0,
-                    "dt": 0.01,
-                    "Nt": 1,
-                    "shape_factor": 1,
-                    "particle_tile_nx": 2,
-                    "particle_tile_ny": 1,
-                    "particle_tile_nz": 1,
-                    "current_calculation": "esirkepov",
-                    "filter_j": "none",
-                    "particle_pusher": "boris",
-                    "relativistic": False,
-                },
-                "plotting": {"plotting_interval": 1},
-                "particle1": {
-                    "name": "electrons",
-                    "N_particles": 4,
-                    "charge": -1.0,
-                    "mass": 2.0,
-                    "weight": 0.5,
-                    "temperature": 1.0,
-                    "initial_x": x_path,
-                    "initial_y": zeros_path,
-                    "initial_z": zeros_path,
-                    "initial_vx": vx_path,
-                    "initial_vy": zeros_path,
-                    "initial_vz": zeros_path,
-                },
-            }
-            config_path = os.path.join(tmpdir, "tiled_yee_esirkepov_step.toml")
-            with open(config_path, "w") as f:
-                toml.dump(config, f)
-
-            (
-                loop,
-                particles,
-                fields,
-                static_parameters,
-                dynamic_parameters,
-                _plotting_parameters,
-                _plasma_parameters,
-                species_config,
-            ) = initialize_simulation(toml.load(config_path))
-
-            particles, fields = loop(
-                particles,
-                species_config,
-                fields,
-                static_parameters,
-                dynamic_parameters,
-            )
-
-            active_x = np.asarray(particles.x[..., 0][particles.active])
-            expected_x = np.sort(x_initial + vx_initial * float(dynamic_parameters.dt))
-            self.assertTrue(np.allclose(np.sort(active_x), expected_x, rtol=1.0e-12, atol=1.0e-12))
-            self.assertEqual(int(static_parameters.guard_cells), 2)
-            self.assertEqual(fields[2][0].shape[-3:], (6, 5, 5))
-            self.assertFalse(bool(fields[-1]))
-
-    def test_tiled_yee_esirkepov_staging_uses_parameter_contract_not_function_identity(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            x_initial = np.array([-1.5, -0.5, 0.5, 1.5])
-            vx_initial = np.array([0.10, -0.05, 0.07, -0.02])
-            x_path = os.path.join(tmpdir, "x.npy")
-            zeros_path = os.path.join(tmpdir, "zeros.npy")
-            vx_path = os.path.join(tmpdir, "vx.npy")
-            np.save(x_path, x_initial)
-            np.save(zeros_path, np.zeros(4))
-            np.save(vx_path, vx_initial)
-
-            config = {
-                "simulation_parameters": {
-                    "name": "tiled yee esirkepov alias staging",
-                    "output_dir": tmpdir,
-                    "solver": "electrodynamic_yee",
-                    "Nx": 8,
-                    "Ny": 1,
-                    "Nz": 1,
-                    "x_wind": 4.0,
-                    "y_wind": 1.0,
-                    "z_wind": 1.0,
-                    "dt": 0.01,
-                    "Nt": 1,
-                    "shape_factor": 1,
-                    "particle_tile_nx": 2,
-                    "particle_tile_ny": 1,
-                    "particle_tile_nz": 1,
-                    "current_calculation": "esirkepov",
-                    "filter_j": "none",
-                    "particle_pusher": "boris",
-                    "relativistic": False,
-                },
-                "plotting": {"plotting_interval": 1},
-                "particle1": {
-                    "name": "electrons",
-                    "N_particles": 4,
-                    "charge": -1.0,
-                    "mass": 2.0,
-                    "weight": 0.5,
-                    "temperature": 1.0,
-                    "initial_x": x_path,
-                    "initial_y": zeros_path,
-                    "initial_z": zeros_path,
-                    "initial_vx": vx_path,
-                    "initial_vy": zeros_path,
-                    "initial_vz": zeros_path,
-                },
-            }
-
-            (
-                loop,
-                particles,
-                fields,
-                static_parameters,
-                dynamic_parameters,
-                _plotting_parameters,
-                _plasma_parameters,
-                species_config,
-            ) = initialize_simulation(config)
-            self.assertEqual(static_parameters.current_deposition, "esirkepov")
-            initial_particles = particles
-            initial_fields = fields
-            particles, fields = loop(
-                particles,
-                species_config,
-                fields,
-                static_parameters,
-                dynamic_parameters,
-            )
-
-            reference_J = Esirkepov_current(
-                initial_particles,
-                species_config,
-                initial_fields[2],
-                static_parameters,
-                dynamic_parameters,
-            )
-
-            for reference_component, tiled_component in zip(reference_J, fields[2]):
-                self.assertTrue(
-                    jnp.allclose(tiled_component, reference_component, rtol=1.0e-12, atol=1.0e-12),
-                    f"max diff {jnp.max(jnp.abs(tiled_component - reference_component))}",
-                )
 
 
 if __name__ == "__main__":

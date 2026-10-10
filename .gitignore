@@ -29,3 +29,10 @@ demos/ot_vortex/*/
 *.mp4
 *.pmd
 *.png
+*.npz
+*.json
+*.log
+
+# nohup output from long demo runs
+nohup.out
+/research_archive/

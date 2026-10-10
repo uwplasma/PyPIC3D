@@ -2,6 +2,7 @@ import argparse
 from datetime import datetime
 import importlib.metadata
 import os
+from numbers import Integral
 
 import jax
 import jax.numpy as jnp
@@ -171,6 +172,34 @@ def load_external_fields_from_toml(fields, external_fields, config, static_param
         print(f"Field loaded successfully: {field_name}")
 
     return fields, (external_E, external_B)
+
+
+def load_dark_fields_from_toml(config, static_parameters, dynamic_parameters):
+    """Load dark_fieldN physical t=0 data, then seed the Proca leapfrog.
+
+    Types 0..2 are E', 3..5 are A', and 6 is phi'. All are evolved fields.
+    """
+    from PyPIC3D.solvers.dark_matter_yee.dark_photon_fields import initialize_dark_photon_fields
+
+    E, A, phi = initialize_dark_photon_fields(static_parameters, dynamic_parameters)
+    components = [*E, *A, phi]
+    for key, block in config.items():
+        if not key.startswith("dark_field"):
+            continue
+        field_type = block["type"]
+        if isinstance(field_type, bool) or not isinstance(field_type, Integral) or not 0 <= field_type <= 6:
+            raise ValueError("Dark field type must be an integer from 0 through 6")
+        if not block.get("evolve", True):
+            raise ValueError("Dark initial fields must be evolved (evolve=true)")
+        values = jnp.load(block["path"])
+        if not jnp.issubdtype(values.dtype, jnp.number) or jnp.iscomplexobj(values) or not bool(jnp.all(jnp.isfinite(values))):
+            raise ValueError("Dark initial fields must contain finite real numeric values")
+        components[field_type] = _add_external_field_to_tiled_component(
+            components[field_type], values, static_parameters, dynamic_parameters, block.get("name", key),
+        )
+    return initialize_dark_photon_fields(
+        static_parameters, dynamic_parameters, E=components[:3], A=components[3:6], phi=components[6],
+    )
 
 
 def update_parameters_from_toml(config, static_parameters, dynamic_parameters, plotting_parameters):

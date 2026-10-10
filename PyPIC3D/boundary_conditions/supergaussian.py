@@ -3,6 +3,7 @@ import math
 import jax.numpy as jnp
 
 from PyPIC3D.boundary_conditions import ghost_cells
+from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING
 
 
 SUPERGAUSSIAN_WALLS = ["-x", "+x", "-y", "+y", "-z", "+z"]
@@ -152,7 +153,7 @@ def build_supergaussian_envelope(static_parameters, dynamic_parameters, step_dt,
     return envelope
 
 
-def apply_tiled_supergaussian_absorber(field_tiles, static_parameters, dynamic_parameters, step_dt):
+def apply_tiled_supergaussian_absorber(field_tiles, static_parameters, dynamic_parameters, step_dt, *, locations=None):
     """
     Multiply a tiled vector field by the configured supergaussian envelope.
     """
@@ -171,4 +172,6 @@ def apply_tiled_supergaussian_absorber(field_tiles, static_parameters, dynamic_p
         damped,
         static_parameters,
         num_guard_cells=int(static_parameters.guard_cells),
+        locations=locations,
+        preserve_exterior=tuple(bc == BC_CONDUCTING for bc in static_parameters.boundary_conditions) if locations is not None else False,
     )

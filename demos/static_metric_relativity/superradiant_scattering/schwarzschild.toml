@@ -1,0 +1,6 @@
+# Matched nonrotating control of kerr.toml, including packet carrier and energy.
+[physics]
+spin = 0.0
+
+[output]
+output_directory = "data/superradiant_schwarzschild"

@@ -43,7 +43,7 @@ def kernel_parameters(
     dz=None,
     dt=0.05,
     tile_shape=None,
-    guard_cells=2,
+    guard_cells=None,
     shape_factor=1,
     boundary_conditions=(BC_PERIODIC, BC_PERIODIC, BC_PERIODIC),
     particle_boundary_conditions=(0, 0, 0),
@@ -60,6 +60,8 @@ def kernel_parameters(
     metric="flat_cartesian",
     metric_mass=1.0,
     metric_spin=0.0,
+    sin_chi=0.0,
+    dark_mu=0.0,
     C=1.0,
     eps=1.0,
     mu=1.0,
@@ -69,13 +71,15 @@ def kernel_parameters(
     output_dir=".",
     Nt=1,
     verbose=False,
-    GPUs=False,
     benchmark=False,
     pml_active=False,
     supergaussian_active=False,
     supergaussian_layers=(),
     particle_tile_capacity_factor=1.0,
+    particle_batch_size=256,
 ):
+    if guard_cells is None:
+        guard_cells = 3 if solver == "static_metric" or particle_pusher == "hybrid_boris_geodesic" else 2
     if dx is None:
         dx = x_wind / Nx
     if dy is None:
@@ -103,7 +107,6 @@ def kernel_parameters(
         output_dir=output_dir,
         Nt=int(Nt),
         verbose=bool(verbose),
-        GPUs=bool(GPUs),
         benchmark=bool(benchmark),
         solver=solver,
         electrostatic=bool(electrostatic),
@@ -114,6 +117,8 @@ def kernel_parameters(
         metric=metric,
         metric_mass=float(metric_mass),
         metric_spin=float(metric_spin),
+        sin_chi=float(sin_chi),
+        dark_mu=float(dark_mu),
         shape_factor=int(shape_factor),
         guard_cells=int(guard_cells),
         tile_shape=tile_shape,
@@ -122,6 +127,7 @@ def kernel_parameters(
         electrostatic_local_cg_tol=float(electrostatic_local_cg_tol),
         electrostatic_local_cg_max_iterations=int(electrostatic_local_cg_max_iterations),
         particle_tile_capacity_factor=float(particle_tile_capacity_factor),
+        particle_batch_size=int(particle_batch_size),
         pml_active=bool(pml_active),
         supergaussian_active=bool(supergaussian_active),
         supergaussian_layers=tuple(supergaussian_layers),
@@ -237,6 +243,8 @@ def kernel_parameters_from_values(parameter_set, dynamic_values=None):
         boundary_conditions=_axis_tuple(parameter_set.get("boundary_conditions", (0, 0, 0))),
         particle_boundary_conditions=_axis_tuple(parameter_set.get("particle_boundary_conditions", (0, 0, 0))),
         solver=parameter_set.get("solver", "electrodynamic_yee"),
+        sin_chi=parameter_set.get("sin_chi", 0.0),
+        dark_mu=parameter_set.get("dark_mu", 0.0),
         electrostatic=parameter_set.get("electrostatic", False),
         relativistic=parameter_set.get("relativistic", True),
         particle_pusher=parameter_set.get("particle_pusher", "boris"),
@@ -255,12 +263,12 @@ def kernel_parameters_from_values(parameter_set, dynamic_values=None):
         output_dir=parameter_set.get("output_dir", "."),
         Nt=parameter_set.get("Nt", 1),
         verbose=parameter_set.get("verbose", False),
-        GPUs=parameter_set.get("GPUs", False),
         benchmark=parameter_set.get("benchmark", False),
         pml_active=parameter_set.get("pml_active", False),
         supergaussian_active=parameter_set.get("supergaussian", (False, False, False, False, ()))[0],
         supergaussian_layers=parameter_set.get("supergaussian", (False, False, False, False, ()))[-1],
         particle_tile_capacity_factor=parameter_set.get("particle_tile_capacity_factor", 1.0),
+        particle_batch_size=parameter_set.get("particle_batch_size", 256),
     )
 
 
@@ -293,7 +301,6 @@ def particle_parameters_from_values(parameter_set, tile_shape=None, dynamic_valu
         output_dir=parameter_set.get("output_dir", "."),
         Nt=int(parameter_set.get("Nt", 1)),
         verbose=bool(parameter_set.get("verbose", False)),
-        GPUs=bool(parameter_set.get("GPUs", False)),
         benchmark=bool(parameter_set.get("benchmark", False)),
         solver=parameter_set.get("solver", "electrodynamic_yee"),
         electrostatic=bool(parameter_set.get("electrostatic", False)),
@@ -304,6 +311,8 @@ def particle_parameters_from_values(parameter_set, tile_shape=None, dynamic_valu
         metric=parameter_set.get("metric", "flat_cartesian"),
         metric_mass=float(parameter_set.get("metric_mass", 1.0)),
         metric_spin=float(parameter_set.get("metric_spin", 0.0)),
+        sin_chi=float(parameter_set.get("sin_chi", 0.0)),
+        dark_mu=float(parameter_set.get("dark_mu", 0.0)),
         shape_factor=int(parameter_set.get("shape_factor", 1)),
         guard_cells=int(parameter_set.get("guard_cells", 2)),
         tile_shape=tile_shape,
@@ -312,6 +321,7 @@ def particle_parameters_from_values(parameter_set, tile_shape=None, dynamic_valu
         electrostatic_local_cg_tol=float(parameter_set.get("electrostatic_local_cg_tol", 1.0e-6)),
         electrostatic_local_cg_max_iterations=int(parameter_set.get("electrostatic_local_cg_max_iterations", 500)),
         particle_tile_capacity_factor=float(parameter_set.get("particle_tile_capacity_factor", 1.0)),
+        particle_batch_size=int(parameter_set.get("particle_batch_size", 256)),
         pml_active=bool(parameter_set.get("pml_active", False)),
         supergaussian_active=bool(parameter_set.get("supergaussian", (False, False, False, False, ()))[0]),
         supergaussian_layers=tuple(parameter_set.get("supergaussian", (False, False, False, False, ()))[-1]),
@@ -503,6 +513,24 @@ def vector_tiles_from_global(field, static_parameters, dynamic_parameters, num_g
         field_tiles_from_global(component, static_parameters, dynamic_parameters, num_guard_cells)
         for component in field
     )
+
+
+def tile_scalar_field(field, parameter_set, tile_shape, num_guard_cells=2):
+    """Tile a global field (one ghost layer) using a raw parameter dictionary."""
+    parameter_set = dict(parameter_set)
+    parameter_set["tile_shape"] = tuple(int(width) for width in tile_shape)
+    parameter_set["field_mesh"] = make_field_mesh(
+        tuple(
+            _tile_axis_count(parameter_set[axis], width)
+            for axis, width in zip(("Nx", "Ny", "Nz"), tile_shape)
+        )
+    )
+    static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set)
+    return field_tiles_from_global(field, static_parameters, dynamic_parameters, num_guard_cells)
+
+
+def tile_vector_field(field, parameter_set, tile_shape, num_guard_cells=2):
+    return tuple(tile_scalar_field(component, parameter_set, tile_shape, num_guard_cells) for component in field)
 
 
 def particle_species(

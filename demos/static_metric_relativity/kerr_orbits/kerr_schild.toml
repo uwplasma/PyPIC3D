@@ -27,7 +27,7 @@ particle_tile_nx = 1024
 particle_tile_ny = 250
 particle_tile_nz = 1
 particle_tile_capacity_factor = 2.0
-guard_cells = 2
+guard_cells = 3
 shape_factor = 1
 
 x_bc = "constant"

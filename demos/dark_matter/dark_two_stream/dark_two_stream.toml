@@ -1,0 +1,98 @@
+# Run from this directory:
+#   python initial_data.py
+#   PyPIC3D --config dark_two_stream.toml
+# All quantities are SI. Particle paths are relative to the working directory.
+
+[simulation_parameters]
+name = "Warm Maxwell-Proca two-stream instability"
+solver = "dark_matter_yee"
+t_wind = 5.413e-8
+Nx = 100
+Ny = 1
+Nz = 1
+x_wind = 1.0
+y_wind = 1.0
+z_wind = 1.0
+particle_tile_nx = 100
+particle_tile_ny = 1
+particle_tile_nz = 1
+particle_tile_capacity_factor = 1.0
+particle_batch_size = 256
+x_bc = "periodic"
+y_bc = "periodic"
+z_bc = "periodic"
+cfl = 0.5
+C = 2.99792458e8
+eps = 8.85418782e-12
+mu = 1.2566370610981894e-06 # 1 / (eps * C^2)
+sin_chi = 0.3
+dark_mu = 4.20734328240245 # m^-1; C * dark_mu / omega_pe = 0.5 for BOTH beams
+relativistic = true
+particle_pusher = "boris"
+shape_factor = 2
+guard_cells = 2
+current_calculation = "esirkepov"
+filter_j = "none"
+verbose = false
+# Choose a new directory for each execution to preserve earlier output.
+output_dir = "runs/standalone"
+
+[plotting]
+plotting_interval = 8
+plot_openpmd_particles = true
+plot_openpmd_fields = true
+plotchargedensity = true
+dump_particles = true
+dump_fields = true
+
+# Used only by initial_data.py. Rerun it after changing loading parameters.
+[initial_data]
+seed = 42
+beam_speed = 5.0e7
+seed_mode = 4
+seed_fraction = 0.01
+
+# weight = n_beam * volume / N_particles. Each shared position has two
+# electrons and two ions of the same weight, so initial charge cancels locally.
+
+[particle1]
+name = "electron1"
+N_particles = 1500
+charge = -1.602e-19
+mass = 9.1093837e-31
+vth = 14989622.9
+weight = 666666666666.6666
+initial_x = "initial_data/electron1_initial_x.npy"
+initial_y = "initial_data/electron1_initial_y.npy"
+initial_z = "initial_data/electron1_initial_z.npy"
+initial_vx = "initial_data/electron1_initial_vx.npy"
+initial_vy = "initial_data/electron1_initial_vy.npy"
+initial_vz = "initial_data/electron1_initial_vz.npy"
+
+[particle2]
+name = "electron2"
+N_particles = 1500
+charge = -1.602e-19
+mass = 9.1093837e-31
+vth = 14989622.9
+weight = 666666666666.6666
+initial_x = "initial_data/electron2_initial_x.npy"
+initial_y = "initial_data/electron2_initial_y.npy"
+initial_z = "initial_data/electron2_initial_z.npy"
+initial_vx = "initial_data/electron2_initial_vx.npy"
+initial_vy = "initial_data/electron2_initial_vy.npy"
+initial_vz = "initial_data/electron2_initial_vz.npy"
+
+[particle3]
+name = "ion1"
+N_particles = 3000
+charge = 1.602e-19
+mass = 1.67e-27
+vth = 34982.78402326697
+weight = 666666666666.6666
+initial_x = "initial_data/ion1_initial_x.npy"
+initial_y = "initial_data/ion1_initial_y.npy"
+initial_z = "initial_data/ion1_initial_z.npy"
+initial_vx = "initial_data/ion1_initial_vx.npy"
+initial_vy = "initial_data/ion1_initial_vy.npy"
+initial_vz = "initial_data/ion1_initial_vz.npy"

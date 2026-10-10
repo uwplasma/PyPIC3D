@@ -9,6 +9,10 @@ on:
 jobs:
   test-coverage:
     runs-on: self-hosted
+    env:
+      JAX_PLATFORMS: cpu
+      JAX_ENABLE_X64: "1"
+      JAX_NUM_CPU_DEVICES: "1"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -24,18 +28,35 @@ jobs:
           pip install .
           pip install coverage
 
-      - name: Run tests with coverage
+      - name: Clear coverage data
+        id: coverage_setup
+        run: python -m coverage erase
+
+      - name: Code test coverage
+        run: python -m coverage run --append --context code -m unittest discover -s tests/code_tests -t . -p '*test*.py'
+
+      - name: Physics test coverage
+        if: ${{ !cancelled() && steps.coverage_setup.outcome == 'success' }}
+        run: python -m coverage run --append --context physics -m unittest discover -s tests/physics_tests -t . -p '*test*.py'
+
+      - name: Distributed test coverage
+        if: ${{ !cancelled() && steps.coverage_setup.outcome == 'success' }}
         env:
-          JAX_NUM_CPU_DEVICES: "16"
-        run: |
-          coverage run -m unittest tests/code_tests/*.py
-          coverage xml
+          JAX_NUM_CPU_DEVICES: "8"
+        run: python -m coverage run --append --context distributed -m unittest discover -s tests/distributed_tests -t . -p '*test*.py'
+
+      - name: Generate coverage report
+        id: coverage_report
+        if: ${{ !cancelled() && steps.coverage_setup.outcome == 'success' }}
+        run: python -m coverage xml
 
       - name: Upload coverage report
+        if: ${{ !cancelled() && steps.coverage_report.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: coverage.xml
 
       - name: Display coverage summary
-        run: coverage report
+        if: ${{ !cancelled() && steps.coverage_report.outcome == 'success' }}
+        run: python -m coverage report

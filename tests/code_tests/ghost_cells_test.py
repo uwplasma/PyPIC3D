@@ -1,61 +1,21 @@
-import unittest
-from types import SimpleNamespace
+"""Single-device numerical tests."""
 
-import jax
-import jax.numpy as jnp
+from tests.support.ghost_cells_fixtures import (
+    BC_CONDUCTING,
+    BC_CONSTANT,
+    BC_PERIODIC,
+    GhostCellsFixtures,
+    SimpleNamespace,
+    _assert_allclose,
+    _particle_wall_parameters,
+    ghost_cells,
+    jax,
+    jnp,
+    unittest,
+)
 
-from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING, BC_CONSTANT, BC_PERIODIC
-from PyPIC3D.boundary_conditions import ghost_cells
 
-jax.config.update("jax_enable_x64", True)
-
-
-class TestGhostCells(unittest.TestCase):
-    """Tests for the tiled ghost-cell boundary condition approach."""
-
-    def setUp(self):
-        self.tile_shape = (2, 2, 2)
-        self.g = 1
-        self.parameter_set = {
-            "tile_shape": self.tile_shape,
-            "boundary_conditions": {"x": BC_PERIODIC, "y": BC_PERIODIC, "z": BC_PERIODIC},
-        }
-
-    def _parameters_with_field_mesh(self, tile_grid_shape):
-        parameter_set = dict(self.parameter_set)
-        try:
-            parameter_set["field_mesh"] = ghost_cells.make_field_mesh(tile_grid_shape)
-        except ValueError as exc:
-            self.skipTest(str(exc))
-        return SimpleNamespace(
-            tile_shape=tuple(int(width) for width in parameter_set["tile_shape"]),
-            guard_cells=self.g,
-            boundary_conditions=(
-                int(parameter_set["boundary_conditions"]["x"]),
-                int(parameter_set["boundary_conditions"]["y"]),
-                int(parameter_set["boundary_conditions"]["z"]),
-            ),
-            field_mesh=parameter_set["field_mesh"],
-        )
-
-    def test_update_tiled_ghost_cells_periodic_refreshes_neighbor_halos(self):
-        # this tests the communication of ghost cells between two tiles in a periodic domain
-
-        parameter_set = self._parameters_with_field_mesh((2, 1, 1))
-        field_tiles = jnp.zeros((2, 1, 1, 4, 4, 4))
-        field_tiles = field_tiles.at[0, 0, 0, 1:3, 1:3, 1:3].set(1.0)
-        field_tiles = field_tiles.at[1, 0, 0, 1:3, 1:3, 1:3].set(2.0)
-        # create two tiles, one with a value of 1.0 and one with a value of 2.0 constant 
-        # across the tile
-
-        result = ghost_cells.update_tiled_ghost_cells(field_tiles, parameter_set, self.g)
-        # call the update ghost cells method to communicate the ghost cells between the two tiles
-
-        self.assertTrue(jnp.all(result[0, 0, 0, -1, 1:3, 1:3] == 2.0))
-        # make sure the ghost cell on the first tile has been updated from 1.0 to 2.0
-        self.assertTrue(jnp.all(result[1, 0, 0, 0, 1:3, 1:3] == 1.0))
-        # make sure the ghost cell on the second tile has been updated from 2.0 to 1.0
-
+class TestGhostCells(GhostCellsFixtures, unittest.TestCase):
     def test_update_tiled_ghost_cells_requires_static_field_mesh(self):
         # tiled halo exchange should use the startup-owned field mesh, not infer
         # a device mesh from the current array shape.
@@ -63,6 +23,7 @@ class TestGhostCells(unittest.TestCase):
         field_tiles = jnp.zeros((1, 1, 1, 4, 4, 4))
 
         incomplete_parameters = SimpleNamespace(
+            solver="electrodynamic_yee",
             tile_shape=self.tile_shape,
             guard_cells=self.g,
             boundary_conditions=(BC_PERIODIC, BC_PERIODIC, BC_PERIODIC),
@@ -71,33 +32,12 @@ class TestGhostCells(unittest.TestCase):
         with self.assertRaises(AttributeError):
             ghost_cells.update_tiled_ghost_cells(field_tiles, incomplete_parameters, self.g)
 
-    def test_fold_tiled_ghost_cells_periodic_adds_to_owner_tile(self):
-        # this tests the folding of ghost cells back to the owner tile in a periodic domain
-        # this is used to confirm the current and charge deposition is correct when using ghost cells
-
-        parameter_set = self._parameters_with_field_mesh((2, 1, 1))
-        field_tiles = jnp.zeros((2, 1, 1, 4, 4, 4))
-        # create two tiles with a shape of (4, 4, 4) and a ghost cell width of 1
-        field_tiles = field_tiles.at[0, 0, 0, -1, 2, 2].set(3.0)
-        # set the ghost cell on the first tile at the right x boundary to a value of 3.0
-        field_tiles = field_tiles.at[1, 0, 0, 0, 2, 2].set(5.0)
-        # set the ghost cell on the second tile at the left x boundary to a value of 5.0
-
-        result = ghost_cells.fold_tiled_ghost_cells(field_tiles, parameter_set, self.g)
-        # call the fold ghost cells method to add the ghost cell values back to the owner tile
-
-        self.assertAlmostEqual(float(result[1, 0, 0, 1, 2, 2]), 3.0)
-        # make sure the ghost cell value of 3.0 on the first tile has been added to the owner tile
-        self.assertAlmostEqual(float(result[0, 0, 0, -2, 2, 2]), 5.0)
-        # make sure the ghost cell value of 5.0 on the second tile has been added to the owner tile
-        self.assertEqual(float(result[0, 0, 0, -1, 2, 2]), 0.0)
-        self.assertEqual(float(result[1, 0, 0, 0, 2, 2]), 0.0)
-        # make sure the ghost cell values have been reset to 0.0 after folding
 
     def test_apply_tiled_zero_boundary_zeros_global_tangential_faces(self):
         # this tests the application of axis-wise conducting boundary conditions to a tiled electric field
 
         parameter_set = SimpleNamespace(
+            solver="electrodynamic_yee",
             tile_shape=self.tile_shape,
             guard_cells=self.g,
             field_mesh=ghost_cells.make_field_mesh((1, 1, 1)),
@@ -123,7 +63,7 @@ class TestGhostCells(unittest.TestCase):
         self.assertTrue(jnp.all(Ez[0, 0, 0, :, 1, :] == 0.0))
         self.assertTrue(jnp.all(Ex[0, 0, 0, :, :, 1] == 0.0))
         self.assertTrue(jnp.all(Ey[0, 0, 0, :, :, 1] == 0.0))
-        # make sure the tangential faces of the electric field components have been zeroed out
+
 
     def test_apply_tiled_zero_boundary_periodic_axis_keeps_refreshed_field(self):
         parameter_set = self._parameters_with_field_mesh((1, 1, 1))
@@ -134,10 +74,11 @@ class TestGhostCells(unittest.TestCase):
         # periodic field boundaries do not zero the physical plane
 
         self.assertTrue(jnp.allclose(result, refreshed))
-        # confirm the field has not been modified after an already consistent periodic halo refresh
+
 
     def test_apply_tiled_constant_boundary_copies_adjacent_interior_to_global_ghosts(self):
         parameter_set = SimpleNamespace(
+            solver="electrodynamic_yee",
             tile_shape=self.tile_shape,
             guard_cells=self.g,
             field_mesh=ghost_cells.make_field_mesh((1, 1, 1)),
@@ -151,6 +92,7 @@ class TestGhostCells(unittest.TestCase):
         self.assertTrue(jnp.allclose(result[0, 0, 0, -1, :, :], result[0, 0, 0, -2, :, :]))
         self.assertTrue(jnp.allclose(result[0, 0, 0, 1:-1, 1:-1, 1:-1], field[0, 0, 0, 1:-1, 1:-1, 1:-1]))
 
+
     def test_apply_tiled_constant_boundary_periodic_axis_keeps_refreshed_field(self):
         parameter_set = self._parameters_with_field_mesh((1, 1, 1))
         field = jnp.arange(4 * 4 * 4, dtype=float).reshape((1, 1, 1, 4, 4, 4))
@@ -160,8 +102,10 @@ class TestGhostCells(unittest.TestCase):
 
         self.assertTrue(jnp.allclose(result, refreshed))
 
+
     def test_update_tiled_ghost_cells_constant_copies_adjacent_global_interiors(self):
         parameter_set = SimpleNamespace(
+            solver="electrodynamic_yee",
             tile_shape=self.tile_shape,
             guard_cells=self.g,
             field_mesh=ghost_cells.make_field_mesh((1, 1, 1)),
@@ -179,5 +123,161 @@ class TestGhostCells(unittest.TestCase):
         self.assertTrue(jnp.allclose(result[0, 0, 0, 2, :, :], 7.0))
 
 
-if __name__ == '__main__':
+    def test_particle_scalar_fold_and_refresh_mirror_both_reflecting_walls(self):
+        g = 2
+        parameters = _particle_wall_parameters((2, 2, 4), g, (BC_PERIODIC, BC_PERIODIC, BC_CONDUCTING))
+        deposits = jnp.zeros((1, 1, 1, 6, 6, 8), dtype=float)
+        line = (0, 0, 0, g, g)
+        # owned C nodes are 2..6 (walls at 2 and 6); ghosts are 0, 1 and 7
+        deposits = deposits.at[line].set(jnp.array([1.0, 2.0, 10.0, 20.0, 30.0, 40.0, 3.0, 4.0]))
+
+        even = ghost_cells.fold_tiled_ghost_cells(
+            deposits, parameters, g, bc_type=ghost_cells.BC_TYPE_PARTICLE)
+        odd = ghost_cells.fold_tiled_ghost_cells(
+            deposits, parameters, g, bc_type=ghost_cells.BC_TYPE_PARTICLE, reflecting_parity=(1, 1, -1))
+
+        _assert_allclose(self, even[line], [0.0, 0.0, 20.0, 22.0, 31.0, 44.0, 6.0, 0.0])
+        _assert_allclose(self, odd[line], [0.0, 0.0, 0.0, 18.0, 29.0, 36.0, 0.0, 0.0])
+
+        refreshed_even = ghost_cells.update_tiled_ghost_cells(
+            even, parameters, g, bc_type=ghost_cells.BC_TYPE_PARTICLE)
+        refreshed_odd = ghost_cells.update_tiled_ghost_cells(
+            odd, parameters, g, bc_type=ghost_cells.BC_TYPE_PARTICLE, reflecting_parity=(1, 1, -1))
+        _assert_allclose(self, refreshed_even[line], [31.0, 22.0, 20.0, 22.0, 31.0, 44.0, 6.0, 44.0])
+        _assert_allclose(self, refreshed_odd[line], [-29.0, -18.0, 0.0, 18.0, 29.0, 36.0, 0.0, -36.0])
+
+
+    def test_particle_vector_has_tangential_even_and_normal_odd_wall_parity(self):
+        g = 2
+        parameters = _particle_wall_parameters((2, 2, 4), g, (BC_PERIODIC, BC_PERIODIC, BC_CONDUCTING))
+        scalar = jnp.zeros((1, 1, 1, 6, 6, 8), dtype=float)
+        line = (0, 0, 0, g, g)
+        scalar = scalar.at[line].set(jnp.array([1.0, 2.0, 10.0, 20.0, 30.0, 40.0, 3.0, 4.0]))
+        vector = (scalar, scalar, scalar)
+
+        folded = ghost_cells.fold_tiled_vector_ghost_cells(
+            vector, parameters, g, bc_type=ghost_cells.BC_TYPE_PARTICLE)
+        refreshed = ghost_cells.update_tiled_vector_ghost_cells(
+            folded, parameters, g, bc_type=ghost_cells.BC_TYPE_PARTICLE)
+
+        # Jx and Jy are tangential to the z-wall and collocated in z: even C images
+        for component in (0, 1):
+            _assert_allclose(self, folded[component][line], [0.0, 0.0, 20.0, 22.0, 31.0, 44.0, 6.0, 0.0])
+            _assert_allclose(self, refreshed[component][line], [31.0, 22.0, 20.0, 22.0, 31.0, 44.0, 6.0, 44.0])
+        # Jz is normal and staggered in z: odd V images, owned nodes 2..5
+        _assert_allclose(self, folded[2][line], [0.0, 0.0, 8.0, 19.0, 26.0, 37.0, 0.0, 0.0])
+        _assert_allclose(self, refreshed[2][line], [-19.0, -8.0, 8.0, 19.0, 26.0, 37.0, -37.0, -26.0])
+
+
+    def test_particle_vector_reflection_parity_applies_on_every_axis(self):
+        g = 1
+        tile_shape = (2, 2, 2)
+        scalar = jnp.zeros((1, 1, 1, 4, 4, 4), dtype=float)
+        scalar = scalar.at[0, 0, 0, g:-g, g:-g, g:-g].set(7.0)
+        vector = (scalar, scalar, scalar)
+
+        for wall_axis in range(3):
+            particle_boundaries = [BC_PERIODIC, BC_PERIODIC, BC_PERIODIC]
+            particle_boundaries[wall_axis] = BC_CONDUCTING
+            parameters = _particle_wall_parameters(tile_shape, g, tuple(particle_boundaries))
+            refreshed = ghost_cells.update_tiled_vector_ghost_cells(
+                vector, parameters, g, bc_type=ghost_cells.BC_TYPE_PARTICLE)
+            lower_ghost = [0, 0, 0, g, g, g]
+            lower_ghost[3 + wall_axis] = 0
+            upper_end = [0, 0, 0, g, g, g]
+            upper_end[3 + wall_axis] = -1
+            for component in range(3):
+                with self.subTest(wall_axis=wall_axis, component=component):
+                    if component == wall_axis:
+                        # normal component, staggered: odd images on both sides
+                        self.assertEqual(float(refreshed[component][tuple(lower_ghost)]), -7.0)
+                        self.assertEqual(float(refreshed[component][tuple(upper_end)]), -7.0)
+                    else:
+                        # tangential, collocated: even image of C1; the upper
+                        # wall node is owned and keeps its (empty) deposit
+                        self.assertEqual(float(refreshed[component][tuple(lower_ghost)]), 7.0)
+                        self.assertEqual(float(refreshed[component][tuple(upper_end)]), 0.0)
+
+
+    def test_reduced_reflecting_axis_uses_scalar_parity(self):
+        g = 1
+        parameters = _particle_wall_parameters((1, 2, 2), g, (BC_CONDUCTING, BC_PERIODIC, BC_PERIODIC))
+        deposits = jnp.zeros((1, 1, 1, 3, 4, 4), dtype=float)
+        line = (0, 0, 0, slice(None), g, g)
+        # a one-cell axis has two owned wall nodes, 1 and 2
+        deposits = deposits.at[line].set(jnp.array([2.0, 10.0, 3.0]))
+
+        even = ghost_cells.fold_tiled_ghost_cells(
+            deposits, parameters, g, bc_type=ghost_cells.BC_TYPE_PARTICLE)
+        odd = ghost_cells.fold_tiled_ghost_cells(
+            deposits, parameters, g, bc_type=ghost_cells.BC_TYPE_PARTICLE, reflecting_parity=(-1, 1, 1))
+        # the ghost folds onto C1, then both wall nodes are doubled;
+        # trapezoid weights conserve the deposit: (20 + 10) / 2 = 15
+        _assert_allclose(self, even[line], [0.0, 20.0, 10.0])
+        _assert_allclose(self, odd[line], [0.0, 0.0, 0.0])
+
+        refreshed_even = ghost_cells.update_tiled_ghost_cells(
+            even, parameters, g, bc_type=ghost_cells.BC_TYPE_PARTICLE)
+        _assert_allclose(self, refreshed_even[line], [10.0, 20.0, 10.0])
+
+
+    def test_reflecting_corner_composes_axis_parity(self):
+        g = 1
+        parameters = _particle_wall_parameters((2, 2, 2), g, (BC_CONDUCTING, BC_PERIODIC, BC_CONDUCTING))
+        parity = (-1, 1, -1)
+        # C1 in x and z, the first node inside both walls
+        field = jnp.zeros((1, 1, 1, 4, 4, 4), dtype=float)
+        field = field.at[0, 0, 0, 2, g, 2].set(7.0)
+        refreshed = ghost_cells.update_tiled_ghost_cells(
+            field, parameters, g, bc_type=ghost_cells.BC_TYPE_PARTICLE, reflecting_parity=parity)
+        self.assertEqual(float(refreshed[0, 0, 0, 0, g, 2]), -7.0)
+        self.assertEqual(float(refreshed[0, 0, 0, 2, g, 0]), -7.0)
+        self.assertEqual(float(refreshed[0, 0, 0, 0, g, 0]), 7.0)
+
+        deposits = jnp.zeros_like(field).at[0, 0, 0, 0, g, 0].set(3.0)
+        folded = ghost_cells.fold_tiled_ghost_cells(
+            deposits, parameters, g, bc_type=ghost_cells.BC_TYPE_PARTICLE, reflecting_parity=parity)
+        self.assertEqual(float(folded[0, 0, 0, 2, g, 2]), 3.0)
+
+
+    def test_flat_and_static_metric_fold_particle_walls_identically(self):
+        g = 2
+        rng = jax.random.PRNGKey(0)
+        scalar_key, vector_key = jax.random.split(rng)
+        scalar = jax.random.normal(scalar_key, (1, 1, 1, 6, 6, 8))
+        vector = tuple(jax.random.normal(key, (1, 1, 1, 6, 6, 8)) for key in jax.random.split(vector_key, 3))
+        walls = (BC_CONDUCTING, BC_PERIODIC, BC_CONDUCTING)
+        results = []
+        for solver in ("electrodynamic_yee", "static_metric"):
+            parameters = _particle_wall_parameters((2, 2, 4), g, walls, solver=solver)
+            results.append((
+                ghost_cells.fold_tiled_ghost_cells(scalar, parameters, g, bc_type=ghost_cells.BC_TYPE_PARTICLE),
+                ghost_cells.fold_tiled_vector_ghost_cells(vector, parameters, g, bc_type=ghost_cells.BC_TYPE_PARTICLE),
+            ))
+        (flat_rho, flat_J), (gr_rho, gr_J) = results
+        _assert_allclose(self, flat_rho, gr_rho, rtol=0.0, atol=0.0)
+        for flat, gr in zip(flat_J, gr_J):
+            _assert_allclose(self, flat, gr, rtol=0.0, atol=0.0)
+
+
+    def test_reflecting_parity_is_rejected_for_field_boundaries(self):
+        parameters = SimpleNamespace(
+            solver="electrodynamic_yee",
+            tile_shape=(2, 2, 2),
+            guard_cells=1,
+            field_mesh=ghost_cells.make_field_mesh((1, 1, 1)),
+            boundary_conditions=(BC_CONDUCTING, BC_PERIODIC, BC_PERIODIC),
+            particle_boundary_conditions=(BC_CONDUCTING, BC_PERIODIC, BC_PERIODIC),
+        )
+        scalar = jnp.zeros((1, 1, 1, 4, 4, 4), dtype=float)
+        with self.assertRaisesRegex(ValueError, "only valid for particle"):
+            ghost_cells.update_tiled_ghost_cells(
+                scalar,
+                parameters,
+                reflecting_parity=(1, 1, 1),
+            )
+
+
+
+if __name__ == "__main__":
     unittest.main()

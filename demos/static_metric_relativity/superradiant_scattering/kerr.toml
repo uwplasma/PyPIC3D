@@ -1,0 +1,26 @@
+[physics]
+mass = 1.0
+spin = 0.9
+
+[grid]
+cells = 128
+half_width = 8.0
+
+[interior]
+core_radius = 0.35
+absorber_radius = 0.70
+absorber_rate = 20.0
+
+[packet]
+packet_inner = 3.0
+packet_outer = 6.0
+omega = 0.25
+initial_energy = 1.e-6
+
+[time]
+courant = 0.2
+end_time = 500.0
+output_interval = 0.5
+
+[output]
+output_directory = "data/superradiant_scattering"

@@ -3,6 +3,7 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 
+from PyPIC3D.relativity.field_state import physical_fields
 from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.diagnostics.fluid_quantities import compute_velocity_field
 from PyPIC3D.particles.particle_class import TiledParticles
@@ -132,12 +133,20 @@ def build_field_output_map(
     requested.
     """
 
+    if getattr(static_parameters, "solver", None) == "static_metric":
+        fields = physical_fields(fields)
     E, B, J, rho, *_rest = fields
     field_map = {
         "E": E,
         "B": B,
         "J": J,
     }
+    if getattr(static_parameters, "solver", None) == "dark_matter_yee":
+        from PyPIC3D.solvers.dark_matter_yee.dark_photon_fields import synchronized_dark_fields
+        dark_E, dark_A, dark_phi, dark_B = synchronized_dark_fields(
+            fields[7], static_parameters, dynamic_parameters, None if fields[6] is None else fields[6][1],
+        )
+        field_map.update(dark_E=dark_E, dark_A=dark_A, dark_phi=dark_phi, dark_B=dark_B)
 
     if include_charge_density:
         field_map["rho"] = compute_rho(
@@ -180,40 +189,6 @@ def field_map_for_output(field_map, static_parameters):
             output_map[name] = scalar_field_for_output(field, static_parameters)
 
     return output_map
-
-
-def fields_for_output(fields, static_parameters):
-    """
-    Assemble tile-major fields at the I/O boundary.
-
-    The live solver state is left untouched.  The particle-retile overflow flag
-    is a Python-driver diagnostic, not a physical field, so it is not included
-    in the returned output tuple.
-    """
-
-    E, B, J, rho, phi, external_fields, *rest = fields
-    external_E, external_B = external_fields
-
-    output_fields = (
-        vector_field_for_output(E, static_parameters),
-        vector_field_for_output(B, static_parameters),
-        vector_field_for_output(J, static_parameters),
-        scalar_field_for_output(rho, static_parameters),
-        scalar_field_for_output(phi, static_parameters),
-        (
-            vector_field_for_output(external_E, static_parameters),
-            vector_field_for_output(external_B, static_parameters),
-        ),
-    )
-
-    if not rest:
-        return output_fields
-
-    if getattr(static_parameters, "solver", None) == "static_metric":
-        return output_fields
-
-    pml_state = rest[0]
-    return output_fields + (pml_state,)
 
 
 def _axis_diagnostic_position(x, u, dt, axis_min, axis_max, bc):

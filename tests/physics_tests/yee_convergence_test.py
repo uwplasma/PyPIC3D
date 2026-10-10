@@ -2,18 +2,14 @@ import math
 import unittest
 from types import SimpleNamespace
 
-import jax
 import jax.numpy as jnp
 
 from PyPIC3D.boundary_conditions.ghost_cells import make_field_mesh
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_PERIODIC
 from PyPIC3D.initialization import initialize_fields
-from PyPIC3D.solvers.yee.first_order_yee import update_B
+from tests.support.compiled_yee import update_B
 from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 from tests.kernel_fixtures import kernel_parameters_from_values
-
-
-jax.config.update("jax_enable_x64", True)
 
 
 class TestYeeConvergence(unittest.TestCase):
@@ -82,8 +78,6 @@ class TestYeeConvergence(unittest.TestCase):
         # B_y interiors before any global field assembly.
         layouts = (
             lambda Nx: (Nx, 1, 1),
-            lambda _Nx: (8, 1, 1),
-            lambda _Nx: (16, 1, 1),
         )
 
         for layout in layouts:

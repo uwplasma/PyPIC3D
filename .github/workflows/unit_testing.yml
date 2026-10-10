@@ -14,6 +14,10 @@ jobs:
   build:
 
     runs-on: self-hosted
+    env:
+      JAX_PLATFORMS: cpu
+      JAX_ENABLE_X64: "1"
+      JAX_NUM_CPU_DEVICES: "1"
 
     steps:
     - uses: actions/checkout@v4
@@ -22,11 +26,17 @@ jobs:
       with:
         python-version: "3.12"
     - name: Install dependencies
+      id: install
       run: |
         python -m pip install --upgrade pip
         pip install .
-    - name: Test with unittest
+    - name: Code tests
+      run: python -m unittest discover -s tests/code_tests -t . -p '*test*.py'
+    - name: Physics tests
+      if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+      run: python -m unittest discover -s tests/physics_tests -t . -p '*test*.py'
+    - name: Distributed tests
+      if: ${{ !cancelled() && steps.install.outcome == 'success' }}
       env:
-        JAX_NUM_CPU_DEVICES: "16"
-      run: |
-        python -m unittest tests/code_tests/*.py tests/physics_tests/*.py
+        JAX_NUM_CPU_DEVICES: "8"
+      run: python -m unittest discover -s tests/distributed_tests -t . -p '*test*.py'

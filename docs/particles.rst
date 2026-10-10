@@ -79,6 +79,45 @@ Particle slots have fixed capacity after initialization. Retiling moves active
 particles between adjacent tile owners; insufficient destination capacity is a
 hard runtime error. See :doc:`tiling` for exact shapes and capacity selection.
 
+Leapfrog Time Staggering
+------------------------
+
+Positions and velocities are staggered in time. Every solver advances
+``u^{n-1/2}`` to ``u^{n+1/2}`` using the force gathered at ``x^n``, then moves
+the position with the new velocity. The scheme is second-order accurate in
+``dt`` only if the run begins from ``u^{-1/2}``, so ``initialize_simulation``
+pushes the configured ``initial_vx/vy/vz`` back half a step with the same
+pusher the run will use. This happens once, unconditionally, after the initial
+energy report, and is announced on startup. Code that overwrites
+``particles.u`` after ``initialize_simulation`` returns must reapply
+``PyPIC3D.pusher.particle_push.seed_leapfrog_velocity`` itself.
+
+One consequence is that diagnostics reading ``particles.x`` and ``particles.u``
+from the same state combine two time levels, which leaves an ``O(dt)`` offset in
+reported kinetic energies and momenta. That offset is a property of the
+diagnostic, not of the trajectory.
+
+For the ``static_metric`` solver ``u`` is the covariant spatial four-velocity
+``u_i`` in the active chart, so ``initial_vx/vy/vz`` are read as ``u_1``,
+``u_2`` and ``u_3`` and are not three-velocity components.
+
+Particle Output
+---------------
+
+openPMD particle series contain ``position``, ``momentum``, ``weighting``,
+``charge``, ``mass``, and a scalar ``gamma`` record for every solver.
+
+For flat runs, ``gamma`` is the Lorentz factor of the stored velocity,
+``momentum`` is ``m*gamma*v``, and runtime snapshots shift positions back by
+``u*dt/2`` so that position and velocity refer to the same time level.
+
+For the ``static_metric`` solver, ``momentum`` is ``m*u_i``, the covariant
+spatial components in units with ``c=1``; ``u_i`` already includes the
+Lorentz factor. ``gamma`` is ``sqrt(1 + gamma^ij u_i u_j)``, computed by
+``relativity.interpolate_metric.particle_lorentz_factor`` with the same
+Hermite metric sample the pusher uses. Positions are written as stored, with
+no half-step shift.
+
 Shape Factors
 -------------
 

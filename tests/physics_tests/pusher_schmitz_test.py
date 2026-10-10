@@ -1,14 +1,9 @@
 import math
 import unittest
 
-import jax
-
 from PyPIC3D.pusher.boris import relativistic_boris_single_particle
 from PyPIC3D.pusher.higuera_cary import higuera_cary_single_particle
 from tests.kernel_fixtures import kernel_parameters
-
-
-jax.config.update("jax_enable_x64", True)
 
 
 class TestSchmitzParticlePusherBenchmarks(unittest.TestCase):

@@ -1,6 +1,5 @@
 import unittest
 
-import jax
 import jax.numpy as jnp
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import (
@@ -18,8 +17,6 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
     uniform_axis_spacing,
     wrap_periodic_position,
 )
-
-jax.config.update("jax_enable_x64", True)
 
 
 class TestGhostCellHelpers(unittest.TestCase):

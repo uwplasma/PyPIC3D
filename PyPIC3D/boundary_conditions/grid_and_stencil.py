@@ -203,6 +203,15 @@ def collapse_axis_stencil(points, weights, axis_size, ghost_cells=False):
     return collapsed_points, collapsed_weights
 
 
+def collapse_tiled_axis_stencil(points, weights, local_n, reduced_axis, g):
+    """Collapse a tile-local stencil onto interior index ``g`` on a reduced axis."""
+    if reduced_axis:
+        collapsed_points = jnp.full((1, points.shape[1]), int(g), dtype=points.dtype)
+        collapsed_weights = jnp.sum(weights, axis=0, keepdims=True)
+        return collapsed_points, collapsed_weights
+    return collapse_axis_stencil(points, weights, local_n, ghost_cells=True)
+
+
 def prepare_particle_axis_stencil(position, grid_axis, axis_size, shape_factor, bc, wind=None, ghost_cells=False):
     """
     Prepare particle stencil data for one axis (anchor, offset, grid indices).

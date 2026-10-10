@@ -1,12 +1,10 @@
 import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
-import jax.numpy as jnp
 import os
 import plotly.graph_objects as go
 import jax
 import numpy as np
-from functools import partial
 
 from PyPIC3D.diagnostics.output_adapters import particles_for_output
 from PyPIC3D.utilities.grids import grid_axis_width
@@ -71,48 +69,6 @@ def plot_positions(particles, t, static_parameters, dynamic_parameters, path, sp
 
     fig.write_html(f"{path}/data/positions/particles.{t:09}.html")
 
-def write_particles_phase_space(particles, t, path, static_parameters, dynamic_parameters, species_config=None, species_names=None):
-    """
-    Write the phase space of the particles to a file.
-
-    Args:
-        particles (Particles): The particles to be written.
-        t (ndarray): The time values.
-        name (str): The name of the plot.
-
-    Returns:
-        None
-    """
-    if not os.path.exists(f"{path}/data/phase_space/x"):
-        os.makedirs(f"{path}/data/phase_space/x")
-    if not os.path.exists(f"{path}/data/phase_space/y"):
-        os.makedirs(f"{path}/data/phase_space/y")
-    if not os.path.exists(f"{path}/data/phase_space/z"):
-        os.makedirs(f"{path}/data/phase_space/z")
-    # Create directory if it doesn't exist
-
-    particles = particles_for_output(
-        particles,
-        species_config=species_config,
-        species_names=species_names,
-        static_parameters=static_parameters,
-        dynamic_parameters=dynamic_parameters,
-    )
-    # Tiled storage contains fixed-capacity inactive slots; phase-space output
-    # writes only active particles and otherwise keeps the old species-list path.
-
-    for species in particles:
-        x, y, z = species.x_diagnostic[:, 0], species.x_diagnostic[:, 1], species.x_diagnostic[:, 2]
-        vx, vy, vz = species.u[:, 0], species.u[:, 1], species.u[:, 2]
-        name = species.name.replace(" ", "")
-
-        x_phase_space = jnp.stack((x, vx), axis=-1)
-        y_phase_space = jnp.stack((y, vy), axis=-1)
-        z_phase_space = jnp.stack((z, vz), axis=-1)
-
-        jnp.save(f"{path}/data/phase_space/x/{name}_phase_space.{t:09}.npy", x_phase_space)
-        jnp.save(f"{path}/data/phase_space/y/{name}_phase_space.{t:09}.npy", y_phase_space)
-        jnp.save(f"{path}/data/phase_space/z/{name}_phase_space.{t:09}.npy", z_phase_space)
     # write the phase space of the particles to a file
 
 def particles_phase_space(particles, static_parameters, dynamic_parameters, t, name, path, species_config=None, species_names=None):
