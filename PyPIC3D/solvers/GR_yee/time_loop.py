@@ -1,3 +1,4 @@
+import jax.numpy as jnp
 from jax.experimental import checkify
 
 from PyPIC3D.deposition.GR_direct_deposition import GR_direct_deposition
@@ -33,6 +34,8 @@ def time_loop_static_metric(
     densitized current. Its caller must use the same commuting transform for
     deposited charge when checking Gauss's law; arbitrary current-only
     smoothing is not valid.
+    Empty particle storage takes a vacuum step, skipping the particle push,
+    deposition, current transform, and particle tile communication.
     """
 
     D_n, B_n_minushalf, J_n_minushalf, rho, phi, external_fields, metric, previous_fields, overflow_previous = fields
@@ -52,53 +55,61 @@ def time_loop_static_metric(
     B_n = update_B(E_n_minusonehalf, B_n_minusone, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt)
     # update the densitized magnetic field using the centered displacement field
 
-    push_D, push_B = add_external_fields(D_n, B_n, external_fields)
-    # particles see evolved fields plus prescribed external fields; both are
-    # refreshed and the refresh is linear, so their sum needs no second refresh
-
     particles_n = particles
     # keep the time level n positions for the charge-conserving deposition.  The
     # push does not retile and does not wrap, so particles_n and the pushed
     # particles share one tile frame and differencing their positions gives the
     # true displacement.
 
-    push_args = (particles, species_config, push_D, push_B, metric,
-               static_parameters, dynamic_parameters)
-    if return_errors:
-        push_errors, (particles, centered_particles) = checkify.checkify(
-            lambda pts: hybrid_boris_geodesic_push(pts, *push_args[1:]))(particles)
-    else:
-        particles, centered_particles = hybrid_boris_geodesic_push(*push_args)
-    # advance full-step particles and keep the intermediate particles (x_n_plushalf, v_n_plushalf) for the centered current deposition
+    if particles.active.size:
+        push_D, push_B = add_external_fields(D_n, B_n, external_fields)
+        # Evolved and external fields have already been refreshed.
+        push_args = (particles, species_config, push_D, push_B, metric,
+                     static_parameters, dynamic_parameters)
+        if return_errors:
+            push_errors, (particles, centered_particles) = checkify.checkify(
+                lambda pts: hybrid_boris_geodesic_push(pts, *push_args[1:]))(particles)
+        else:
+            particles, centered_particles = hybrid_boris_geodesic_push(*push_args)
 
-    if static_parameters.current_deposition == "esirkepov":
-        # Endpoint deposition must precede wrapping and full-step migration.
-        # Midpoint particles are only needed by direct deposition.
-        centered_overflow = False
-        J_n_plushalf = Esirkepov_current(
-            particles_n, particles, species_config, J_n_minushalf,
-            static_parameters, dynamic_parameters,
-        )
+        if static_parameters.current_deposition == "esirkepov":
+            # Endpoint deposition must precede wrapping and full-step migration.
+            # Midpoint particles are only needed by direct deposition.
+            centered_overflow = False
+            J_n_plushalf = Esirkepov_current(
+                particles_n, particles, species_config, J_n_minushalf,
+                static_parameters, dynamic_parameters,
+            )
+        else:
+            centered_particles, centered_overflow = refresh_tiled_particle_tiles(
+                centered_particles, static_parameters, dynamic_parameters,
+            )
+            J_n_plushalf = GR_direct_deposition(
+                centered_particles, species_config, J_n_minushalf,
+                metric, static_parameters, dynamic_parameters,
+            )
+        if current_transform is not None:
+            J_n_plushalf = current_transform(J_n_plushalf)
     else:
-        centered_particles, centered_overflow = refresh_tiled_particle_tiles(
-            centered_particles, static_parameters, dynamic_parameters,
-        )
-        J_n_plushalf = GR_direct_deposition(
-            centered_particles, species_config, J_n_minushalf,
-            metric, static_parameters, dynamic_parameters,
-        )
-    if current_transform is not None:
-        J_n_plushalf = current_transform(J_n_plushalf)
+        # Storage shape is static under JIT, so vacuum runs never trace the
+        # particle kernels. Clear both time levels to exclude stale current.
+        J_n_plushalf = tuple(jnp.zeros_like(component) for component in J_n_minushalf)
+        J_n_minushalf = J_n_plushalf
+        centered_overflow = False
+        if return_errors:
+            push_errors, _ = checkify.checkify(lambda: None)()
 
     boundary_diagnostics = None
     if return_diagnostics:
         boundary_diagnostics = step_diagnostics(particles_n, particles, J_n_plushalf, species_config,
                                                 static_parameters, dynamic_parameters)
-    particles, fullstep_overflow = refresh_tiled_particle_tiles(
-        particles,
-        static_parameters,
-        dynamic_parameters,
-    )
+    fullstep_overflow = False
+    if particles.active.size:
+        particles, fullstep_overflow = refresh_tiled_particle_tiles(
+            particles,
+            static_parameters,
+            dynamic_parameters,
+        )
     overflow = overflow_previous | centered_overflow | fullstep_overflow
     # apply boundaries and restore full-step tile ownership for the next push while preserving all overflow events
 
