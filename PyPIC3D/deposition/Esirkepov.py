@@ -9,8 +9,8 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.boundary_conditions.ghost_cells import (
     BC_TYPE_PARTICLE,
-    fold_tiled_vector_ghost_cells,
-    update_tiled_vector_ghost_cells,
+    fold_tiled_ghost_cells,
+    update_tiled_ghost_cells,
 )
 from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
 
@@ -123,10 +123,10 @@ def _deposit_esirkepov_tiles(
     for _ in range(3):
         deposit_tiles = jax.vmap(deposit_tiles, in_axes=(0, 0, 0, 0, 0, 0, 0), out_axes=0)
     current = deposit_tiles(old_positions, endpoints, coordinate_velocity, active, *tile_indices)
-    current = fold_tiled_vector_ghost_cells(
+    current = fold_tiled_ghost_cells(
         current, static, num_guard_cells=guard, bc_type=BC_TYPE_PARTICLE,
     )
-    return update_tiled_vector_ghost_cells(
+    return update_tiled_ghost_cells(
         current, static, num_guard_cells=guard, bc_type=BC_TYPE_PARTICLE,
     )
 

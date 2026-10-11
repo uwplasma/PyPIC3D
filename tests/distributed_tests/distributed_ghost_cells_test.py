@@ -24,7 +24,7 @@ class TestDistributedGhostCells(DistributedGhostCellsFixtures, unittest.TestCase
         bcs = (BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
         tiles = _coordinate_tiles(mesh_shape, tile_shape)
 
-        updater = ghost_cells.make_distributed_ghost_updater(_mesh(mesh_shape), tile_shape, bcs, 1)
+        updater = ghost_cells.make_tiled_halo_op(_mesh(mesh_shape), tile_shape, bcs, 1)
         actual = jax.jit(updater)(tiles)
 
         self.assert_allclose(actual, _reference_update(tiles, bcs, tile_shape))
@@ -37,7 +37,7 @@ class TestDistributedGhostCells(DistributedGhostCellsFixtures, unittest.TestCase
         bcs = (BC_PERIODIC, BC_CONDUCTING, BC_PERIODIC)
         tiles = _coordinate_tiles(mesh_shape, tile_shape)
 
-        updater = ghost_cells.make_distributed_ghost_updater(_mesh(mesh_shape), tile_shape, bcs, 1)
+        updater = ghost_cells.make_tiled_halo_op(_mesh(mesh_shape), tile_shape, bcs, 1)
         actual = jax.jit(updater)(tiles)
 
         self.assert_allclose(actual, _reference_update(tiles, bcs, tile_shape))
@@ -50,7 +50,7 @@ class TestDistributedGhostCells(DistributedGhostCellsFixtures, unittest.TestCase
         bcs = (BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
         tiles = _coordinate_tiles(mesh_shape, tile_shape)
 
-        updater = ghost_cells.make_distributed_ghost_updater(_mesh(mesh_shape), tile_shape, bcs, 1)
+        updater = ghost_cells.make_tiled_halo_op(_mesh(mesh_shape), tile_shape, bcs, 1)
         actual = jax.jit(updater)(tiles)
 
         self.assert_allclose(actual, _reference_update(tiles, bcs, tile_shape))
@@ -72,7 +72,7 @@ class TestDistributedGhostCells(DistributedGhostCellsFixtures, unittest.TestCase
             particle_boundary_conditions=particle_bcs,
         )
 
-        refreshed = ghost_cells.update_tiled_vector_ghost_cells(
+        refreshed = ghost_cells.update_tiled_ghost_cells(
             stacked,
             static_parameters,
             1,
@@ -127,7 +127,7 @@ class TestDistributedGhostCells(DistributedGhostCellsFixtures, unittest.TestCase
         self.assert_allclose(refreshed[1, 0, 0, -1, g:-g, g:-g], 0.0)
 
         stacked = jnp.stack((tiles, tiles, tiles), axis=0)
-        vector = ghost_cells.update_tiled_vector_ghost_cells(
+        vector = ghost_cells.update_tiled_ghost_cells(
             stacked,
             static_parameters,
             g,
@@ -171,7 +171,7 @@ class TestDistributedGhostCells(DistributedGhostCellsFixtures, unittest.TestCase
         bcs = (BC_PERIODIC, BC_CONDUCTING, BC_CONDUCTING)
         tiles = _coordinate_tiles(mesh_shape, tile_shape)
         stacked = jnp.stack((tiles, tiles + 1000.0, tiles + 2000.0), axis=0)
-        updater = ghost_cells.make_distributed_vector_ghost_updater(_mesh(mesh_shape), tile_shape, bcs, 1)
+        updater = ghost_cells.make_tiled_halo_op(_mesh(mesh_shape), tile_shape, bcs, 1, vector=True)
 
         stacked_actual = jax.jit(updater)(stacked)
         tuple_actual = updater((stacked[0], stacked[1], stacked[2]))
@@ -233,8 +233,8 @@ class TestDistributedGhostCells(DistributedGhostCellsFixtures, unittest.TestCase
         tiles = tiles.at[:, :, :, :, -1, :].set(4.0)
         tiles = tiles.at[:, :, :, :, :, 0].set(5.0)
         tiles = tiles.at[:, :, :, :, :, -1].set(6.0)
-        folder = ghost_cells.make_distributed_ghost_folder(_mesh(mesh_shape), tile_shape, bcs, 1)
-        vector_folder = ghost_cells.make_distributed_vector_ghost_folder(_mesh(mesh_shape), tile_shape, bcs, 1)
+        folder = ghost_cells.make_tiled_halo_op(_mesh(mesh_shape), tile_shape, bcs, 1, fold=True)
+        vector_folder = ghost_cells.make_tiled_halo_op(_mesh(mesh_shape), tile_shape, bcs, 1, fold=True, vector=True)
 
         actual = jax.jit(folder)(tiles)
         vector_actual = jax.jit(vector_folder)((tiles, tiles + 1.0, tiles + 2.0))

@@ -18,7 +18,7 @@ from matplotlib.collections import LineCollection
 
 import wald_solution as wald
 
-from PyPIC3D.boundary_conditions.ghost_cells import update_tiled_vector_ghost_cells
+from PyPIC3D.boundary_conditions.ghost_cells import update_tiled_ghost_cells
 from PyPIC3D.relativity.core import B_FIELD_LOCATIONS
 from PyPIC3D.relativity.field_state import densitize_vector
 
@@ -105,7 +105,7 @@ def restore_tiled_magnetic_field(B, static_parameters):
         jnp.zeros(tiled_shape, dtype=component.dtype).at[interior].set(component)
         for component in B
     )
-    return update_tiled_vector_ghost_cells(
+    return update_tiled_ghost_cells(
         B_tiled,
         static_parameters,
         num_guard_cells=guard_cells,

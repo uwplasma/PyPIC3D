@@ -38,7 +38,7 @@ from PyPIC3D.diagnostics.openPMD import (
 from PyPIC3D.diagnostics.plotting import plot_initial_histograms
 from PyPIC3D.boundary_conditions.ghost_cells import (
     apply_tiled_pec_boundary,
-    update_tiled_vector_ghost_cells,
+    update_tiled_ghost_cells,
 )
 from PyPIC3D.boundary_conditions.staggered import refresh_fields
 from PyPIC3D.solvers.electrostatic.time_loop import time_loop_electrostatic
@@ -725,11 +725,11 @@ def initialize_simulation(toml_file):
         J = densitize_vector(J, metric.D)
     elif solver in ("electrodynamic_yee", "dark_matter_yee"):
         E = apply_tiled_pec_boundary(E, static_parameters)
-        E = update_tiled_vector_ghost_cells(E, static_parameters, guard_cells, locations=D_FIELD_LOCATIONS)
-        B = update_tiled_vector_ghost_cells(B, static_parameters, guard_cells, locations=B_FIELD_LOCATIONS)
+        E = update_tiled_ghost_cells(E, static_parameters, guard_cells, location=D_FIELD_LOCATIONS)
+        B = update_tiled_ghost_cells(B, static_parameters, guard_cells, location=B_FIELD_LOCATIONS)
     else:
-        E = update_tiled_vector_ghost_cells(E, static_parameters, num_guard_cells=guard_cells)
-        B = update_tiled_vector_ghost_cells(B, static_parameters, num_guard_cells=guard_cells)
+        E = update_tiled_ghost_cells(E, static_parameters, num_guard_cells=guard_cells)
+        B = update_tiled_ghost_cells(B, static_parameters, num_guard_cells=guard_cells)
     external_E, external_B = external_fields
     if static_metric:
         external_E = refresh_fields(densitize_vector(external_E, metric.D), static_parameters,
@@ -738,8 +738,8 @@ def initialize_simulation(toml_file):
                                     B_FIELD_LOCATIONS, 'B', metric=metric)
         # the time loop adds these to refreshed D/B without refreshing the sum
     else:
-        external_E = update_tiled_vector_ghost_cells(external_E, static_parameters, num_guard_cells=guard_cells)
-        external_B = update_tiled_vector_ghost_cells(external_B, static_parameters, num_guard_cells=guard_cells)
+        external_E = update_tiled_ghost_cells(external_E, static_parameters, num_guard_cells=guard_cells)
+        external_B = update_tiled_ghost_cells(external_B, static_parameters, num_guard_cells=guard_cells)
     external_fields = (external_E, external_B)
 
     dark_fields = load_dark_fields_from_toml(config, static_parameters, dynamic_parameters) if dark_matter else None

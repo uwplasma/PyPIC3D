@@ -14,8 +14,9 @@ from itertools import combinations
 import jax.numpy as jnp
 
 from .grid_and_stencil import BC_CONDUCTING, BC_CONSTANT
-from .ghost_cells import update_tiled_vector_ghost_cells
-from .ownership import boundary_plane, face_mask, staggered_mirror
+from .ghost_cells import (
+    boundary_plane, face_mask, staggered_mirror, update_tiled_ghost_cells,
+)
 from PyPIC3D.relativity.core import B_FIELD_LOCATIONS, D_FIELD_LOCATIONS
 from PyPIC3D.relativity.field_interpolation import copy_densities, metric_at_location, reconstruct_vector
 
@@ -62,8 +63,8 @@ def _reflect_vector(vector, metric, location, axis, static, field_kind):
 def _exchange_preserving_walls(fields, static, locations, rounds):
     """Communicate owner values without replacing conducting exterior slabs."""
     for _ in range(rounds):
-        fields = update_tiled_vector_ghost_cells(
-            fields, static, static.guard_cells, locations=locations,
+        fields = update_tiled_ghost_cells(
+            fields, static, static.guard_cells, location=locations,
             preserve_exterior=tuple(bc == BC_CONDUCTING for bc in static.boundary_conditions),
         )
     return fields

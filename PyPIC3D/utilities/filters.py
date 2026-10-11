@@ -10,7 +10,7 @@ from PyPIC3D.boundary_conditions.ghost_cells import (
     SCALAR_TILE_SPEC,
     VECTOR_TILE_SPEC,
     update_tiled_ghost_cells,
-    update_tiled_vector_ghost_cells,
+    update_tiled_ghost_cells,
 )
 
 
@@ -163,7 +163,7 @@ def _tiled_vector_filter(field_tiles, static_parameters, filter_function, filter
     g = int(static_parameters.guard_cells)
     mesh = static_parameters.field_mesh
 
-    field_tiles = update_tiled_vector_ghost_cells(
+    field_tiles = update_tiled_ghost_cells(
         field_tiles,
         static_parameters,
         num_guard_cells=g,
@@ -194,7 +194,7 @@ def _tiled_vector_filter(field_tiles, static_parameters, filter_function, filter
     filtered_tiles = mapped_filter(stacked_tiles, *filter_args)
     field_tiles = _restore_vector_field(filtered_tiles, field_tiles)
 
-    return update_tiled_vector_ghost_cells(
+    return update_tiled_ghost_cells(
         field_tiles,
         static_parameters,
         num_guard_cells=g,

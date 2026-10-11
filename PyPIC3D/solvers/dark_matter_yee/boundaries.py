@@ -6,9 +6,9 @@ import jax
 import jax.numpy as jnp
 
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING
-from PyPIC3D.boundary_conditions.ghost_cells import update_tiled_vector_ghost_cells, update_tiled_ghost_cells
-from PyPIC3D.boundary_conditions.halo_exchange import make_distributed_ghost_updater
-from PyPIC3D.boundary_conditions.ownership import face_mask
+from PyPIC3D.boundary_conditions.ghost_cells import (
+    face_mask, make_tiled_halo_op, update_tiled_ghost_cells,
+)
 from PyPIC3D.relativity.core import D_FIELD_LOCATIONS, B_FIELD_LOCATIONS
 
 
@@ -31,7 +31,7 @@ def dark_field_boundaries(field, static, kind="E"):
     if BC_CONDUCTING not in static.boundary_conditions:
         if scalar:
             return update_tiled_ghost_cells(field, static, static.guard_cells, location=locations[0])
-        return update_tiled_vector_ghost_cells(field, static, static.guard_cells, locations=locations)
+        return update_tiled_ghost_cells(field, static, static.guard_cells, location=locations)
 
     result = []
     for component, (value, location) in enumerate(zip((field,) if scalar else field, locations)):
@@ -45,7 +45,7 @@ def dark_field_boundaries(field, static, kind="E"):
             if bc == BC_CONDUCTING and location[axis] == "C" and parity[axis] == -1:
                 wall = face_mask(value.shape, axis, static.tile_shape[axis], static.guard_cells)
                 value = jnp.where(wall, 0., value)
-        refresh = make_distributed_ghost_updater(
+        refresh = make_tiled_halo_op(
             static.field_mesh, static.tile_shape, static.boundary_conditions, static.guard_cells,
             reflecting_parity=parity, location=location,
         )

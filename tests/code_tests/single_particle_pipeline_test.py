@@ -11,9 +11,9 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
 from PyPIC3D.boundary_conditions.ghost_cells import (
     BC_TYPE_PARTICLE,
     fold_tiled_ghost_cells,
-    fold_tiled_vector_ghost_cells,
+    fold_tiled_ghost_cells,
     update_tiled_ghost_cells,
-    update_tiled_vector_ghost_cells,
+    update_tiled_ghost_cells,
 )
 from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
@@ -331,13 +331,13 @@ def _manual_direct_current_tiles(particles, species_config, static_parameters, d
         charge_density * u[2],
     )
 
-    J = fold_tiled_vector_ghost_cells(
+    J = fold_tiled_ghost_cells(
         (Jx, Jy, Jz),
         static_parameters,
         g,
         bc_type=BC_TYPE_PARTICLE,
     )
-    J = update_tiled_vector_ghost_cells(
+    J = update_tiled_ghost_cells(
         J,
         static_parameters,
         g,
@@ -346,7 +346,7 @@ def _manual_direct_current_tiles(particles, species_config, static_parameters, d
 
     if static_parameters.current_filter == "digital":
         J = digital_filter_vector(J, dynamic_parameters.alpha, num_guard_cells=g)
-        J = update_tiled_vector_ghost_cells(
+        J = update_tiled_ghost_cells(
             J,
             static_parameters,
             g,
@@ -405,7 +405,7 @@ def _periodic_test_electric_field(static_parameters, dynamic_parameters):
                         tx, ty, tz, g:-g, g:-g, g:-g
                     ].set(tile_interior)
 
-    return update_tiled_vector_ghost_cells(
+    return update_tiled_ghost_cells(
         tuple(E),
         static_parameters,
         num_guard_cells=g,
@@ -519,13 +519,13 @@ def _manual_esirkepov_current_tiles_1d(particles, species_config, static_paramet
         Jy = Jy.at[tx, ty, tz, ix, ypt, zpt].add(dJy * Jy_weights[i], mode="drop")
         Jz = Jz.at[tx, ty, tz, ix, ypt, zpt].add(dJz * Jy_weights[i], mode="drop")
 
-    J = fold_tiled_vector_ghost_cells(
+    J = fold_tiled_ghost_cells(
         (Jx, Jy, Jz),
         static_parameters,
         g,
         bc_type=BC_TYPE_PARTICLE,
     )
-    return update_tiled_vector_ghost_cells(
+    return update_tiled_ghost_cells(
         J,
         static_parameters,
         g,

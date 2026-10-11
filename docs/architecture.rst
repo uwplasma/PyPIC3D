@@ -54,13 +54,13 @@ particle gathering reconstruct ``A_prime`` and its curl at integer time.
 
 See :doc:`tiling` for the array shapes, guard ownership, and sharding structure.
 
-Boundary code separates mesh transport from physical policy.
-``boundary_conditions.halo_exchange`` implements distributed refresh/folding,
-and ``ownership`` defines staggered endpoints and reflected indices.
-``ghost_cells`` retains the public field/particle adapters; ``sources`` supplies
-staggered source parity. ``staggered`` stages horizon extrapolation and field
-refresh, while ``pec`` handles metric-aware wall projections. Transport and
-ownership do not depend on the solver or PEC implementation.
+``boundary_conditions.ghost_cells`` holds the whole ghost-cell story in one
+module: index geometry and node ownership, distributed refresh/folding, and the
+public field/particle adapters including staggered source parity. Physical
+policy is layered above it and stays separate --- ``staggered`` stages horizon
+extrapolation and field refresh, while ``pec`` handles metric-aware wall
+projections. Transport and ownership do not depend on the solver or PEC
+implementation.
 
 Execution Flow
 --------------

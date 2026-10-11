@@ -42,7 +42,7 @@ from tests.support.dark_photon_fixtures import (
     unittest,
     update_dark_E,
     update_tiled_ghost_cells,
-    update_tiled_vector_ghost_cells,
+    update_tiled_ghost_cells,
     wave,
     wave_errors,
 )
@@ -111,7 +111,7 @@ class TestDarkPhoton(DarkPhotonFixtures, unittest.TestCase):
             noise = jnp.asarray(np.random.default_rng(42).normal(size=zero.shape))
             noise = update_tiled_ghost_cells(noise, s, g, location=("C", "C", "C"))
             E = dark_gradient(noise, s, d)
-            E = update_tiled_vector_ghost_cells(E, s, g, locations=D_FIELD_LOCATIONS)
+            E = update_tiled_ghost_cells(E, s, g, location=D_FIELD_LOCATIONS)
             for component in compute_dark_B(E, s, d):
                 np.testing.assert_allclose(component[interior(s)], 0., atol=4e-14)
             phi = -dark_divergence(E, s, d)/s.dark_mu**2

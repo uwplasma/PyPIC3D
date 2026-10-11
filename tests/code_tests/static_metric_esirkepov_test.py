@@ -23,7 +23,7 @@ from tests.support.static_metric_esirkepov_fixtures import (
     np,
     unittest,
     update_D,
-    update_tiled_vector_ghost_cells,
+    update_tiled_ghost_cells,
 )
 
 
@@ -263,12 +263,12 @@ class TestGaussConstraintPreservation(GaussConstraintPreservationFixtures, unitt
         key = jax.random.PRNGKey(0)
         shape = empty_tiled_vector(static_parameters, dynamic_parameters)[0].shape
         keys = jax.random.split(key, 6)
-        D = update_tiled_vector_ghost_cells(
+        D = update_tiled_ghost_cells(
             tuple(jax.random.normal(keys[i], shape) for i in range(3)),
             static_parameters,
             int(static_parameters.guard_cells),
         )
-        H = update_tiled_vector_ghost_cells(
+        H = update_tiled_ghost_cells(
             tuple(jax.random.normal(keys[3 + i], shape) for i in range(3)),
             static_parameters,
             int(static_parameters.guard_cells),

@@ -12,8 +12,8 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.boundary_conditions.ghost_cells import (
     BC_TYPE_PARTICLE,
-    fold_tiled_vector_ghost_cells,
-    update_tiled_vector_ghost_cells,
+    fold_tiled_ghost_cells,
+    update_tiled_ghost_cells,
 )
 
 from PyPIC3D.utilities.filters import (
@@ -282,7 +282,7 @@ def J_from_rhov(
     )
     # compute the current density contributions for all tiles by applying the vectorized deposit function to the particle data and tile indices
 
-    J = fold_tiled_vector_ghost_cells(
+    J = fold_tiled_ghost_cells(
         (Jx, Jy, Jz),
         static_parameters,
         g,
@@ -312,7 +312,7 @@ def J_from_rhov(
         lambda J: jax.lax.cond(
             current_filter == "digital",
             digital_filtered_current,
-            lambda J: update_tiled_vector_ghost_cells(
+            lambda J: update_tiled_ghost_cells(
                 J,
                 static_parameters,
                 g,

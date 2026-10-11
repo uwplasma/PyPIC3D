@@ -10,11 +10,7 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
     BC_PERIODIC,
     wrap_periodic_position,
 )
-from PyPIC3D.boundary_conditions.ghost_cells import MESH_AXES
-from PyPIC3D.boundary_conditions.halo_exchange import (
-    _send_negative_permutation,
-    _send_positive_permutation,
-)
+from PyPIC3D.boundary_conditions.ghost_cells import MESH_AXES, axis_permutations
 from PyPIC3D.particles.particle_class import TiledParticles
 from PyPIC3D.utilities.grids import grid_domain_bounds
 
@@ -389,6 +385,10 @@ def _build_distributed_particle_refresher(static_parameters):
     mesh_shape = tuple(int(width) for width in mesh.devices.shape)
     tile_shape = tuple(int(width) for width in static_parameters.tile_shape)
     particle_boundary_conditions = tuple(int(bc) for bc in static_parameters.particle_boundary_conditions)
+    permutations = tuple(
+        axis_permutations(mesh_shape[axis], particle_boundary_conditions[axis])
+        for axis in range(3)
+    )
     axis_communication = tuple(
         (
             axis,
@@ -399,8 +399,8 @@ def _build_distributed_particle_refresher(static_parameters):
                 axis,
                 2 if mesh_shape[axis] == 2 else 1,
             ),
-            _send_negative_permutation(mesh_shape[axis], particle_boundary_conditions[axis]),
-            _send_positive_permutation(mesh_shape[axis], particle_boundary_conditions[axis]),
+            permutations[axis][1],
+            permutations[axis][0],
         )
         for axis in range(3)
     )
