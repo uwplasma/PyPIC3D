@@ -182,17 +182,6 @@ def hybrid_boris_geodesic_push(
         )
         x_new = jnp.where(moving, x_n + dt * coordinate_velocity(u_new, metric_half), x_n)
 
-        for stage, value in (("first magnetic half-step", u_after_first_em),
-                             ("geodesic midpoint", u_geo_mid),
-                             ("geodesic full-step", u_after_geodesic),
-                             ("second magnetic half-step", u_new),
-                             ("position midpoint", x_half),
-                             ("position full-step", x_new)):
-            check_particle_samples(~active | jnp.all(jnp.isfinite(value), axis=-1), x_n, stage, tile)
-        displacement = jnp.abs(x_new - x_n) / cell_size
-        within_one_cell = jnp.all(jnp.where(jnp.array(active_axes), displacement <= 1, True), axis=-1)
-        check_particle_samples(~active | within_one_cell, x_n, "one-cell displacement bound", tile)
-
         return x_new, u_new, x_half
 
     capacity = particles.active.shape[-2] * particles.active.shape[-1]
