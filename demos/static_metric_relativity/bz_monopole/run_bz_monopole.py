@@ -109,10 +109,7 @@ def apply_sponge(fields, background, p, static, dynamic):
 
 def make_step(p, species, static, dynamic, background, *,
               current_filter_passes=0):
-    """Check deterministic kernels, leaving rejection sampling outside checkify.
-
-    Errors cross the host boundary before any failed state can be consumed.
-    """
+    """Build the jitted inject/evolve step pair for one simulation."""
     injection_steps = max(1, math.ceil(p.injection_interval/float(dynamic.dt)))
     @jax.jit
     def inject(particles, fields, key, index):
@@ -126,12 +123,12 @@ def make_step(p, species, static, dynamic, background, *,
         transform = None
         if current_filter_passes:
             transform = lambda current: filter_current(current, static, current_filter_passes)
-        errors, (particles, fields, boundary) = time_loop_static_metric(
+        particles, fields, boundary = time_loop_static_metric(
             particles, species, fields, static, dynamic, return_diagnostics=True,
-            return_errors=True, current_transform=transform)
+            current_transform=transform)
         fields = apply_sponge(fields, background, p, static, dynamic)
         finite = finite_state(particles, fields)
-        return errors, (particles, fields, boundary), finite
+        return (particles, fields, boundary), finite
     checked = jax.jit(evolve)
     def execute(particles, fields, key, index):
         if int(index) % injection_steps == 0:
@@ -139,16 +136,13 @@ def make_step(p, species, static, dynamic, background, *,
             # schedules must draw the same candidates during dt refinement.
             event = index // injection_steps
             particles, key, report = inject(particles, fields, key, event)
-            for error in report.errors:
-                error.throw()
             requested, inserted, rejected = report.requested, report.inserted, report.rejected
             if bool(jnp.any(rejected)):
                 raise RuntimeError(f"Injection capacity failure at step {index}: "
                                    f"requested={requested}, inserted={inserted}, rejected={rejected}")
         else:
             requested = inserted = rejected = jnp.zeros(p.devices, jnp.int64)
-        errors, (particles, fields, boundary), finite = checked(particles, fields)
-        errors.throw()
+        (particles, fields, boundary), finite = checked(particles, fields)
         if not bool(finite):
             raise FloatingPointError(f'Nonfinite particle or field state at step {index}')
         if bool(boundary.invalid_push):

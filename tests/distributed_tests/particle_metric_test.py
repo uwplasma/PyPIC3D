@@ -2,7 +2,6 @@
 
 from tests.support.particle_metric_fixtures_shared import (
     ParticleMetricConsumersFixtures,
-    checkify,
     consumer_runtime,
     coordinate_velocity,
     densitize_vector,
@@ -21,9 +20,8 @@ class TestParticleMetricConsumers(ParticleMetricConsumersFixtures, unittest.Test
         for tile_shape in ((8, 8, 1), (4, 8, 1)):
             s, d, m, D, B, p, species = consumer_runtime(tile_shape=tile_shape)
             D, B = densitize_vector(D, m.D), densitize_vector(B, m.B)
-            err, (new, mid) = jax.jit(checkify.checkify(
-                lambda p: hybrid_boris_geodesic_push(p, species, D, B, m, s, d)))(p)
-            err.throw()
+            new, mid = jax.jit(
+                lambda p: hybrid_boris_geodesic_push(p, species, D, B, m, s, d))(p)
             self.assertGreater(float(mid.x.reshape(-1, 3)[0, 0]), 1.5)
             for tx in range(p.x.shape[0]):
                 grid = tuple(a[tx, 0, 0] for a in d.grids.tiled_center_grid)

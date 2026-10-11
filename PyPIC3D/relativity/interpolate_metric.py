@@ -15,8 +15,9 @@ providers populate the grid, not particle samples.  There is no lower-order
 or analytic fallback.
 
 The four-point stencil needs three guard cells to cover midpoint samples
-before tile migration.  Points outside the stencil return NaN, and invalid
-metrics are reported through checkify rather than clamped or repaired.
+before tile migration.  Points outside the stencil return NaN; nothing is
+clamped or repaired.  :func:`particle_metric_valid` is available to callers
+that want to test a sample explicitly.
 """
 
 from functools import partial
@@ -24,7 +25,6 @@ from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
-from jax.experimental import checkify
 
 from PyPIC3D.relativity.core import covariant_lorentz_factor
 
@@ -186,7 +186,6 @@ def interpolate_metric(
             grad_gamma_inv=-jnp.einsum("...ij,...jlk,...lm->...kim", gamma_inv, grad_gamma, gamma_inv),
         )
 
-    check_particle_samples(particle_metric_valid(sampled, position, metric_name), position, "particle metric")
     return sampled
 
 
@@ -247,22 +246,6 @@ def particle_metric_valid(metric, position, metric_name):
     elif metric_name == "flat_cylindrical":
         valid &= position[..., 0] != 0
     return valid
-
-
-def check_particle_samples(valid, position, stage, tile=None):
-    """Report the first invalid particle through checkify (active only under checkify)."""
-
-    if valid.size == 0:
-        return
-    slot = jnp.argmax((~valid).reshape(-1))
-    tile = jnp.asarray((-1, -1, -1)) if tile is None else jnp.asarray(tile)
-    checkify.debug_check(
-        jnp.all(valid),
-        stage + ": invalid particle sample; tile={tile}, flattened species/slot={slot}, position={position}",
-        tile=tile,
-        slot=slot,
-        position=position.reshape(-1, 3)[slot],
-    )
 
 
 @partial(jax.jit, static_argnames="static_parameters")

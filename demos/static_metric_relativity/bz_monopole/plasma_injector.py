@@ -3,7 +3,6 @@ from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
-from jax.experimental import checkify
 
 from PyPIC3D.particles.particle_class import TiledParticles, SpeciesConfig
 from PyPIC3D.particles.particle_tile_communication import shard_tiled_particles
@@ -16,7 +15,6 @@ class InjectionReport(NamedTuple):
     inserted: jax.Array
     rejected: jax.Array
     newborn: jax.Array
-    errors: tuple = ()
 
 
 def empty_particles(p, static):
@@ -141,9 +139,9 @@ def inject_pairs(particles, species, magnetization, D, B, metric, static, dynami
             keys,rlo[cell],rhi[cell],tlo[cell],thi[cell])
         momenta = jax.vmap(lambda k: thermal_momentum(jax.random.fold_in(k, 2), p.temperature))(keys)
         # Birth transformation and backward initialization use the same metric.
-        birth_errors, covariant = checkify.checkify(lambda: birth_covariant_momentum(
+        covariant = birth_covariant_momentum(
             momenta, positions, ranks < inserted, primitive_metric,
-            (rline,tline,pline), static))()
+            (rline,tline,pline), static)
         newborn = jnp.zeros_like(active)
         for s in range(2):
             indices = jnp.nonzero(~active[s], size=slots, fill_value=slots)[0][:candidate_capacity]
@@ -152,15 +150,15 @@ def inject_pairs(particles, species, magnetization, D, B, metric, static, dynami
             u = u.at[s, indices].set(covariant, mode="drop")
             active = active.at[s, indices].set(True, mode="drop")
             newborn = newborn.at[s, indices].set(True, mode="drop")
-        return x, u, active, newborn, requested, inserted, birth_errors
+        return x, u, active, newborn, requested, inserted
 
-    x, u, active, newborn, requested, inserted, birth_errors = jax.vmap(one_tile)(
+    x, u, active, newborn, requested, inserted = jax.vmap(one_tile)(
         particles.x[:, 0, 0], particles.u[:, 0, 0], particles.active[:, 0, 0],
         sigma[:, 0, 0], valid[:, 0, 0], rgrid[:, 0, 0],
         tgrid[:, 0, 0], dynamic.grids.tiled_center_grid[2][:,0,0],
         jax.tree.map(lambda a: a[:,0,0], metric.center), jnp.arange(p.devices))
     result = TiledParticles(x[:, None, None], u[:, None, None], active[:, None, None])
     newborn = newborn[:, None, None]
-    seed_errors, seeded = checkify.checkify(lambda pts: seed_leapfrog_velocity(pts, species, D, B, static, dynamic, metric))(result._replace(active=newborn))
+    seeded = seed_leapfrog_velocity(result._replace(active=newborn), species, D, B, static, dynamic, metric)
     result = result._replace(u=jnp.where(newborn[..., None], seeded.u, result.u))
-    return result, next_key, InjectionReport(requested, inserted, requested-inserted, newborn, (birth_errors, seed_errors))
+    return result, next_key, InjectionReport(requested, inserted, requested-inserted, newborn)

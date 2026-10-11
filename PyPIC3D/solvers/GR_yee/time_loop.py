@@ -1,5 +1,4 @@
 import jax.numpy as jnp
-from jax.experimental import checkify
 
 from PyPIC3D.deposition.GR_direct_deposition import GR_direct_deposition
 from PyPIC3D.deposition.Esirkepov import Esirkepov_current
@@ -21,7 +20,6 @@ def time_loop_static_metric(
     static_parameters,
     dynamic_parameters,
     return_diagnostics=False,
-    return_errors=False,
     current_transform=None,
 ):
     """
@@ -64,13 +62,10 @@ def time_loop_static_metric(
     if particles.active.size:
         push_D, push_B = add_external_fields(D_n, B_n, external_fields)
         # Evolved and external fields have already been refreshed.
-        push_args = (particles, species_config, push_D, push_B, metric,
-                     static_parameters, dynamic_parameters)
-        if return_errors:
-            push_errors, (particles, centered_particles) = checkify.checkify(
-                lambda pts: hybrid_boris_geodesic_push(pts, *push_args[1:]))(particles)
-        else:
-            particles, centered_particles = hybrid_boris_geodesic_push(*push_args)
+        particles, centered_particles = hybrid_boris_geodesic_push(
+            particles, species_config, push_D, push_B, metric,
+            static_parameters, dynamic_parameters,
+        )
 
         if static_parameters.current_deposition == "esirkepov":
             # Endpoint deposition must precede wrapping and full-step migration.
@@ -96,8 +91,6 @@ def time_loop_static_metric(
         J_n_plushalf = tuple(jnp.zeros_like(component) for component in J_n_minushalf)
         J_n_minushalf = J_n_plushalf
         centered_overflow = False
-        if return_errors:
-            push_errors, _ = checkify.checkify(lambda: None)()
 
     boundary_diagnostics = None
     if return_diagnostics:
@@ -151,5 +144,4 @@ def time_loop_static_metric(
     )
     # pack the fixed-metric field state
 
-    result = (particles, fields, boundary_diagnostics) if return_diagnostics else (particles, fields)
-    return (push_errors, result) if return_errors else result
+    return (particles, fields, boundary_diagnostics) if return_diagnostics else (particles, fields)

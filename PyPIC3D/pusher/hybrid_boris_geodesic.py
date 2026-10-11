@@ -1,4 +1,5 @@
 from functools import partial
+from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -16,7 +17,6 @@ from PyPIC3D.relativity.core import (
     lower_vector,
 )
 from PyPIC3D.relativity.interpolate_metric import (
-    check_particle_samples,
     interpolate_metric,
     particle_active_axes,
     safe_inactive_positions,
@@ -91,6 +91,36 @@ def gather_vector(field, locations, position, center_grid, vertex_grid,
     return jnp.stack(components, axis=-1).reshape(position.shape)
 
 
+class TileFields(NamedTuple):
+    """One tile's coordinate axes, cell-centered metric and physical D^i/B^i."""
+
+    center_grid: tuple
+    vertex_grid: tuple
+    metric: object
+    D: tuple
+    B: tuple
+
+
+def tile_fields(tx, ty, tz, metric, D_tiles, B_tiles, dynamic_parameters):
+    """
+    Slice the tiled grids, metric and native field densities down to one tile.
+
+    ``D_tiles``/``B_tiles`` are native densities ``sqrt(gamma) V^i``; each
+    component is divided by its own grid-node ``sqrt_gamma`` here, so the
+    returned tile carries the physical contravariant field the particles see.
+    """
+
+    return TileFields(
+        center_grid=tuple(axis[tx, ty, tz] for axis in dynamic_parameters.grids.tiled_center_grid),
+        vertex_grid=tuple(axis[tx, ty, tz] for axis in dynamic_parameters.grids.tiled_vertex_grid),
+        metric=jax.tree.map(lambda array: array[tx, ty, tz], metric.center),
+        D=tuple(component[tx, ty, tz] / sample.sqrt_gamma[tx, ty, tz]
+                for component, sample in zip(D_tiles, metric.D)),
+        B=tuple(component[tx, ty, tz] / sample.sqrt_gamma[tx, ty, tz]
+                for component, sample in zip(B_tiles, metric.B)),
+    )
+
+
 @partial(jax.jit, static_argnames="static_parameters")
 def hybrid_boris_geodesic_push(
     particles,
@@ -129,40 +159,46 @@ def hybrid_boris_geodesic_push(
     ntx, nty, ntz = particles.active.shape[:3]
     active_axes = particle_active_axes((ntx, nty, ntz), static_parameters.tile_shape)
     inactive_axis_indices = (g, g, g)
-    q_over_m = species_config.charge / species_config.mass
-    cell_size = jnp.array([dynamic_parameters.dx, dynamic_parameters.dy, dynamic_parameters.dz])
+    species_q_over_m = species_config.charge / species_config.mass
 
-    def push_active_batch(x_n, u_old, active, q_over_m_batch, update_x, tx, ty, tz):
-        tile = jnp.array([tx, ty, tz])
-        center_grid = tuple(axis[tx, ty, tz] for axis in dynamic_parameters.grids.tiled_center_grid)
-        vertex_grid = tuple(axis[tx, ty, tz] for axis in dynamic_parameters.grids.tiled_vertex_grid)
-        tile_metric = jax.tree.map(lambda array: array[tx, ty, tz], metric.center)
-        D_tile = tuple(component[tx, ty, tz] / sample.sqrt_gamma[tx, ty, tz]
-                       for component, sample in zip(D_tiles, metric.D))
-        B_tile = tuple(component[tx, ty, tz] / sample.sqrt_gamma[tx, ty, tz]
-                       for component, sample in zip(B_tiles, metric.B))
+    def sample_metric(tile, position, derivatives=True):
+        """Hermite metric sample at one particle position in this tile."""
 
-        live = active[..., jnp.newaxis]
+        return interpolate_metric(
+            tile.metric, position, tile.center_grid, metric_name,
+            active_axes, inactive_axis_indices, derivatives=derivatives,
+        )
+
+    def gather(field, locations, tile, position):
+        """Gather one staggered tile-local vector field to a particle position."""
+
+        return gather_vector(field, locations, position, tile.center_grid, tile.vertex_grid,
+                             shape_factor, active_axes, inactive_axis_indices)
+
+    def geodesic_step(x_n, u_old, active, update_x, q_over_m, tile):
+        """
+        Advance one particle from ``(x^n, u^{n-1/2})`` to ``(x^{n+1}, u^{n+1/2})``.
+
+        ``x_n``, ``u_old`` and ``update_x`` are single vectors; ``active`` and
+        ``q_over_m`` are scalars.  Also returns the centred ``x^{n+1/2}``.
+        """
+
         # update_x freezes individual velocity and coordinate components per species
-        moving = live & update_x
-        x_n = safe_inactive_positions(x_n, active, center_grid, active_axes, g)
-        u_old = jnp.where(live, u_old, 0.0)
+        moving = active & update_x
+        x_n = safe_inactive_positions(x_n, active, tile.center_grid, active_axes, g)
+        u_old = jnp.where(active, u_old, 0.0)
 
         # Every force in the velocity update is sampled once, at x^n.
-        metric_n = interpolate_metric(
-            tile_metric, x_n, center_grid, metric_name, active_axes, inactive_axis_indices
-        )
-        D_con = gather_vector(D_tile, D_FIELD_LOCATIONS, x_n, center_grid, vertex_grid,
-                              shape_factor, active_axes, inactive_axis_indices)
-        B_con = gather_vector(B_tile, B_FIELD_LOCATIONS, x_n, center_grid, vertex_grid,
-                              shape_factor, active_axes, inactive_axis_indices)
+        metric_n = sample_metric(tile, x_n)
+        D_con = gather(tile.D, D_FIELD_LOCATIONS, tile, x_n)
+        B_con = gather(tile.B, B_FIELD_LOCATIONS, tile, x_n)
         E_cov = lower_vector(D_con, metric_n.gamma)
         # EM(dt/2) is a quarter-step electric kick, a half-step rotation, and a quarter-step kick.
-        electric_kick = (q_over_m_batch * dt / 4.0)[..., jnp.newaxis] * metric_n.lapse[..., jnp.newaxis] * E_cov
+        electric_kick = q_over_m * dt / 4.0 * metric_n.lapse * E_cov
 
         def electromagnetic_half_step(u):
             u = u + electric_kick
-            u = magnetic_boris_rotation(u, B_con, metric_n, q_over_m_batch, dt / 2.0)
+            u = magnetic_boris_rotation(u, B_con, metric_n, q_over_m, dt / 2.0)
             return u + electric_kick
 
         u_after_first_em = jnp.where(moving, electromagnetic_half_step(u_old), u_old)
@@ -176,75 +212,89 @@ def hybrid_boris_geodesic_push(
 
         # midpoint rule for the position; x^{n+1/2} is also the deposition position
         x_half = jnp.where(moving, x_n + 0.5 * dt * coordinate_velocity(u_new, metric_n), x_n)
-        metric_half = interpolate_metric(
-            tile_metric, x_half, center_grid, metric_name, active_axes, inactive_axis_indices,
-            derivatives=False,
-        )
+        metric_half = sample_metric(tile, x_half, derivatives=False)
         x_new = jnp.where(moving, x_n + dt * coordinate_velocity(u_new, metric_half), x_n)
 
         return x_new, u_new, x_half
 
-    capacity = particles.active.shape[-2] * particles.active.shape[-1]
-    if capacity == 0:
-        return particles, particles
-    batch_size = min(int(static_parameters.particle_batch_size), capacity)
-    slots = particles.active.shape[-1]
-    tile_shape = particles.active.shape[:3]
-    x_flat = particles.x.reshape(tile_shape + (capacity, 3))
-    u_flat = particles.u.reshape(tile_shape + (capacity, 3))
+    push_particles = jax.vmap(geodesic_step, in_axes=(0, 0, 0, 0, 0, None))
 
-    def map_tiles(function):
-        if tile_shape == (1, 1, 1):
-            # Keep the direct single-tile dispatch used by active-only batching.
-            def one_tile(*args):
-                result = function(*(value[0, 0, 0] for value in args))
-                return jax.tree.map(lambda value: value[None, None, None], result)
-            return one_tile
-        for _ in range(3):
-            function = jax.vmap(function)
-        return function
-
-    def prepare(active):
-        _, _, indices, count = prepare_particle_batches(active, static_parameters.particle_batch_size)
-        return indices, count
-
-    indices, counts = map_tiles(prepare)(particles.active)
-    n_batches = jnp.max(number_of_particle_batches(counts, batch_size))
-    tx, ty, tz = jnp.meshgrid(jnp.arange(ntx), jnp.arange(nty), jnp.arange(ntz), indexing="ij")
-
-    def push_selected(index_array, count, x, u, tx, ty, tz, batch_index):
-        selected, valid = particle_batch_indices(index_array, count, batch_index, batch_size)
-        species = selected // slots
-        new_x, new_u, mid_x = push_active_batch(
-            x[selected], u[selected], valid, q_over_m[species],
-            species_config.update_x[species], tx, ty, tz,
+    def push_one_tile(tx, ty, tz, x_tile, u_tile, active_tile):
+        particle_capacity, batch_size, active_indices, n_active = prepare_particle_batches(
+            active_tile,
+            static_parameters.particle_batch_size,
         )
-        return jnp.where(valid, selected, capacity), new_x, new_u, mid_x
+        if particle_capacity == 0:
+            return x_tile, u_tile, x_tile
 
-    def write_tile(destination, values, original):
-        # Padded lanes must not overwrite their repeated live source index.
-        return original.at[destination].set(values, mode="drop")
+        slots_per_species = active_tile.shape[-1]
 
-    def advance_batch(state):
-        batch_index, full_x, full_u, half_x = state
-        destination, new_x, new_u, mid_x = map_tiles(push_selected)(
-            indices, counts, x_flat, u_flat, tx, ty, tz,
-            jnp.broadcast_to(batch_index, tile_shape),
+        x_flat = x_tile.reshape(-1, 3)
+        u_flat = u_tile.reshape(-1, 3)
+
+        tile = tile_fields(tx, ty, tz, metric, D_tiles, B_tiles, dynamic_parameters)
+
+        n_batches = number_of_particle_batches(n_active, batch_size)
+
+        def push_batch(batch_state):
+            # Each active particle appears in exactly one batch, so every batch
+            # reads the tile's original slots rather than the loop carry.
+            batch_index, current_x, current_u, current_half = batch_state
+            particle_indices, valid = particle_batch_indices(
+                active_indices,
+                n_active,
+                batch_index,
+                batch_size,
+            )
+
+            species_indices = particle_indices // slots_per_species
+
+            new_x, new_u, mid_x = push_particles(
+                x_flat[particle_indices],
+                u_flat[particle_indices],
+                valid,
+                species_config.update_x[species_indices],
+                species_q_over_m[species_indices],
+                tile,
+            )
+
+            # Padded lanes repeat a live source index, so their writes are dropped.
+            destination = jnp.where(valid, particle_indices, particle_capacity)
+
+            return (batch_index + 1,
+                    current_x.at[destination].set(new_x, mode="drop"),
+                    current_u.at[destination].set(new_u, mode="drop"),
+                    current_half.at[destination].set(mid_x, mode="drop"))
+
+        def batches_remaining(batch_state):
+            batch_index, _, _, _ = batch_state
+            return batch_index < n_batches
+
+        _, new_x, new_u, new_half = jax.lax.while_loop(
+            batches_remaining,
+            push_batch,
+            (jnp.asarray(0), x_flat, u_flat, x_flat),
         )
-        return (batch_index + 1,
-                map_tiles(write_tile)(destination, new_x, full_x),
-                map_tiles(write_tile)(destination, new_u, full_u),
-                map_tiles(write_tile)(destination, mid_x, half_x))
 
-    # Keep the dynamic loop outside vmap: checkify rejects vmap-of-while.
-    # Tiles share the maximum active batch count; padded lanes use safe metrics.
-    _, x_new, u_new, x_half = jax.lax.while_loop(
-        lambda state: state[0] < n_batches,
-        advance_batch, (jnp.asarray(0), x_flat, u_flat, x_flat),
+        return (new_x.reshape(x_tile.shape),
+                new_u.reshape(u_tile.shape),
+                new_half.reshape(x_tile.shape))
+
+    push_tiles = push_one_tile
+    tx = jnp.arange(ntx)
+    ty = jnp.arange(nty)
+    tz = jnp.arange(ntz)
+
+    push_tiles = jax.vmap(push_tiles, in_axes=(None, None, 0, 0, 0, 0), out_axes=0)
+    push_tiles = jax.vmap(push_tiles, in_axes=(None, 0, None, 0, 0, 0), out_axes=0)
+    push_tiles = jax.vmap(push_tiles, in_axes=(0, None, None, 0, 0, 0), out_axes=0)
+
+    x_new, u_new, x_half = push_tiles(
+        tx, ty, tz,
+        particles.x,
+        particles.u,
+        particles.active,
     )
-    x_new = x_new.reshape(particles.x.shape)
-    u_new = u_new.reshape(particles.u.shape)
-    x_half = x_half.reshape(particles.x.shape)
 
     full_step = TiledParticles(x=x_new, u=u_new, active=particles.active)
     half_step = TiledParticles(x=x_half, u=u_new, active=particles.active)

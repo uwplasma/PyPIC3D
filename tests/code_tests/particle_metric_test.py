@@ -9,7 +9,6 @@ from tests.support.particle_metric_fixtures_shared import (
     SpeciesConfig,
     TiledParticles,
     build_static_parameters,
-    checkify,
     consumer_runtime,
     densitize_vector,
     hybrid_boris_geodesic_push,
@@ -327,49 +326,38 @@ class TestParticleMetricConsumers(ParticleMetricConsumersFixtures, unittest.Test
 
 
 class TestCheckedSampling(CheckedSamplingFixtures, unittest.TestCase):
-    def test_checked_sampler_reports_stencil_and_tensor_errors(self):
+    def test_sampler_marks_stencil_and_tensor_failures_invalid(self):
         grid, m = manufactured()
-        get = jax.jit(checkify.checkify(
+        get = jax.jit(
             lambda q, metric: interpolate_metric(metric, q, grid, "numerical", (True, True, False), (3, 3, 3))
-        ))
+        )
         q = jnp.array([[0.23, 0.35, 3.0]])
-        errors, _ = get(q, m)
-        errors.throw()
+        self.assertTrue(bool(particle_metric_valid(get(q, m), q, "numerical")[0]))
         for pos, metric in [
             (q.at[0, 0].set(-5.0), m),
             (q, m._replace(gamma=m.gamma.at[..., 0, 0].set(-1.0))),
             (q, m._replace(lapse=-m.lapse)),
         ]:
-            errors, _ = get(pos, metric)
-            with self.assertRaisesRegex(Exception, "particle metric.*tile=.*flattened species/slot"):
-                errors.throw()
+            self.assertFalse(bool(particle_metric_valid(get(pos, metric), pos, "numerical")[0]))
 
 
-    def test_checked_pusher_and_seed_preserve_inactive_slots(self):
+    def test_pusher_and_seed_preserve_inactive_slots(self):
         s, d, m, D, B = make_runtime("spherical", 16, 32)
         D, B = densitize_vector(D, m.D), densitize_vector(B, m.B)
         x = jnp.array([[[[[[2.0, 0.7, 0.0], [0.0, 0.0, 0.0]]]]]])
         p = TiledParticles(x, jnp.zeros_like(x), jnp.array([[[[[True, False]]]]]))
         sp = SpeciesConfig(jnp.ones(1), jnp.ones(1), jnp.ones(1), jnp.ones((1, 3), bool))
-        seed = jax.jit(checkify.checkify(lambda p: seed_leapfrog_velocity(p, sp, D, B, s, d, m)))
-        errors, seeded = seed(p)
-        errors.throw()
-        push = jax.jit(checkify.checkify(lambda p: hybrid_boris_geodesic_push(p, sp, D, B, m, s, d)))
-        errors, (new, mid) = push(seeded)
-        errors.throw()
+        seeded = jax.jit(lambda p: seed_leapfrog_velocity(p, sp, D, B, s, d, m))(p)
+        push = jax.jit(lambda p: hybrid_boris_geodesic_push(p, sp, D, B, m, s, d))
+        new, mid = push(seeded)
         self.assertTrue(np.isfinite(np.asarray(new.x)).all())
         self.assertTrue(np.isfinite(np.asarray(new.u)).all())
         np.testing.assert_array_equal(new.x[..., 1, :], p.x[..., 1, :])
         np.testing.assert_array_equal(mid.x[..., 1, :], p.x[..., 1, :])
-        # Invalid active metric samples must fail the functionalized pusher too.
-        errors, _ = push(p._replace(x=p.x.at[..., 0, 1].set(0.0)))
-        with self.assertRaisesRegex(Exception, "invalid particle sample"):
-            errors.throw()
-        far = d._replace(dt=jnp.asarray(100.0))
-        errors, _ = checkify.checkify(
-            lambda p: hybrid_boris_geodesic_push(p, sp, D, B, m, s, far)
-        )(p._replace(u=p.u.at[..., 0, 0].set(10.0)))
-        self.assertIsNotNone(errors.get())
+        # An active particle on the polar axis has no valid metric sample, so
+        # the pusher propagates NaN rather than repairing it.
+        invalid, _ = push(p._replace(x=p.x.at[..., 0, 1].set(0.0)))
+        self.assertFalse(np.isfinite(np.asarray(invalid.u)[..., 0, :]).all())
 
 
     def test_guard_cell_default_minimum_and_metadata(self):

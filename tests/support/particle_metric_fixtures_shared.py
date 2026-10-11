@@ -5,7 +5,6 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 import numpy as np
-from jax.experimental import checkify
 from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
 from PyPIC3D.pusher.hybrid_boris_geodesic import coordinate_velocity, hybrid_boris_geodesic_push
 from PyPIC3D.pusher.particle_push import seed_leapfrog_velocity
