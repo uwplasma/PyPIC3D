@@ -1,6 +1,6 @@
 """Focused cross-device regression tests."""
 
-from tests.support.particle_metric_fixtures_shared import (
+from tests.support.particle_metric_fixtures import (
     ParticleMetricConsumersFixtures,
     consumer_runtime,
     coordinate_velocity,

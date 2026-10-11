@@ -1,11 +1,7 @@
 """Single-device numerical tests."""
 
-from tests.support.particle_metric_fixtures_shared import (
-    SamplingFixtures,
+from tests.support.particle_metric_fixtures import (
     GR_direct_deposition,
-    HermiteFixtures,
-    ParticleMetricConsumersFixtures,
-    ParticleMetricFixtures,
     SpeciesConfig,
     TiledParticles,
     build_static_parameters,
@@ -31,10 +27,11 @@ from tests.support.particle_metric_fixtures_shared import (
     seed_leapfrog_velocity,
     static_parameters_for_output,
     unittest,
+    assert_same_tree,
 )
 
 
-class TestHermite(HermiteFixtures, unittest.TestCase):
+class TestHermite(unittest.TestCase):
     def test_tensor_quadratic_reproduction(self):
         grid = tuple(jnp.arange(-3, 14, dtype=float) * h for h in (0.1, 0.13, 0.17))
 
@@ -91,7 +88,7 @@ class TestHermite(HermiteFixtures, unittest.TestCase):
 
 
 
-class TestParticleMetric(ParticleMetricFixtures, unittest.TestCase):
+class TestParticleMetric(unittest.TestCase):
     def test_shared_reconstruction_for_every_supported_chart(self):
         providers = (
             ("flat_cartesian", initialize_flat_cartesian_metric),
@@ -248,7 +245,7 @@ class TestParticleMetric(ParticleMetricFixtures, unittest.TestCase):
 
 
 
-class TestParticleMetricConsumers(ParticleMetricConsumersFixtures, unittest.TestCase):
+class TestParticleMetricConsumers(unittest.TestCase):
     def test_pusher_and_direct_deposition_use_supplied_primitives(self):
         first_order_push = None
         for order in (1, 2):
@@ -275,7 +272,7 @@ class TestParticleMetricConsumers(ParticleMetricConsumersFixtures, unittest.Test
                 for name, run in (("push", push), ("deposit", deposit)):
                     original = run(m)
                     same = run(poisoned)
-                    self.assert_same_tree(same, original)
+                    assert_same_tree(same, original)
                     different = run(changed)
                     if name == "deposit":
                         self.assertTrue(all(bool(jnp.isfinite(a).all()) for a in original))
@@ -288,7 +285,7 @@ class TestParticleMetricConsumers(ParticleMetricConsumersFixtures, unittest.Test
                         if order == 1:
                             first_order_push = original
                         else:
-                            self.assert_same_tree(original, first_order_push)
+                            assert_same_tree(original, first_order_push)
                     difference = max(float(jnp.max(jnp.abs(jnp.nan_to_num(a)-jnp.nan_to_num(b))))
                                      for a, b in zip(jax.tree.leaves(original), jax.tree.leaves(different))
                                      if a.dtype != jnp.bool_)
@@ -296,7 +293,7 @@ class TestParticleMetricConsumers(ParticleMetricConsumersFixtures, unittest.Test
 
 
 
-class TestSampling(SamplingFixtures, unittest.TestCase):
+class TestSampling(unittest.TestCase):
     def test_pusher_and_seed_preserve_inactive_slots(self):
         s, d, m, D, B = make_runtime("spherical", 16, 32)
         D, B = densitize_vector(D, m.D), densitize_vector(B, m.B)
