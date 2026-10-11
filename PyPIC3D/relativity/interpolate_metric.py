@@ -16,8 +16,7 @@ or analytic fallback.
 
 The four-point stencil needs three guard cells to cover midpoint samples
 before tile migration.  Points outside the stencil return NaN; nothing is
-clamped or repaired.  :func:`particle_metric_valid` is available to callers
-that want to test a sample explicitly.
+clamped or repaired.
 """
 
 from functools import partial
@@ -31,12 +30,6 @@ from PyPIC3D.relativity.core import covariant_lorentz_factor
 RECONSTRUCTION = "cardinal_cubic_hermite_consistent_v1"
 
 SPHERICAL_METRICS = ("flat_spherical", "kerr_schild_spherical")
-
-
-def on_spherical_axis(position):
-    """Recognize the singular theta endpoints, including floating-point pi."""
-    theta = position[..., 1]
-    return (jnp.abs(theta) < 1e-14) | (jnp.abs(jnp.abs(theta) - jnp.pi) < 1e-14)
 
 
 class ParticleMetric(NamedTuple):
@@ -205,47 +198,6 @@ def safe_inactive_positions(position, active, grid, active_axes, guard_cells):
         )
     )
     return jnp.where(active[..., None], position, interior)
-
-
-def positive_definite_3x3(gamma):
-    """Sylvester criterion for a symmetric 3x3 tensor, without an eigensolver."""
-
-    a, d, f = gamma[..., 0, 0], gamma[..., 1, 1], gamma[..., 2, 2]
-    b = (gamma[..., 0, 1] + gamma[..., 1, 0]) / 2
-    c = (gamma[..., 0, 2] + gamma[..., 2, 0]) / 2
-    e = (gamma[..., 1, 2] + gamma[..., 2, 1]) / 2
-    minor = a * d - b * b
-    determinant = a * (d * f - e * e) - b * (b * f - c * e) + c * (b * e - c * d)
-    return (a > 0) & (minor > 0) & (determinant > 0) & jnp.isfinite(minor) & jnp.isfinite(determinant)
-
-
-def particle_metric_valid(metric, position, metric_name):
-    """Per-particle validity of a sampled metric; nothing is repaired."""
-
-    symmetric = jnp.abs(metric.gamma - jnp.swapaxes(metric.gamma, -1, -2)) <= (
-        32 * jnp.finfo(metric.gamma.dtype).eps * jnp.maximum(1.0, jnp.abs(metric.gamma))
-    )
-    valid = (
-        jnp.isfinite(metric.lapse)
-        & (metric.lapse > 0)
-        & jnp.all(jnp.isfinite(metric.shift), axis=-1)
-        & jnp.all(jnp.isfinite(metric.gamma), axis=(-2, -1))
-        & jnp.all(jnp.isfinite(metric.gamma_inv), axis=(-2, -1))
-        & jnp.all(symmetric, axis=(-2, -1))
-        & positive_definite_3x3(metric.gamma)
-    )
-    if metric.grad_lapse is not None:
-        valid &= (
-            jnp.all(jnp.isfinite(metric.grad_lapse), axis=-1)
-            & jnp.all(jnp.isfinite(metric.grad_shift), axis=(-2, -1))
-            & jnp.all(jnp.isfinite(metric.grad_gamma_inv), axis=(-3, -2, -1))
-        )
-
-    if metric_name in SPHERICAL_METRICS:
-        valid &= ~on_spherical_axis(position) & (position[..., 0] != 0)
-    elif metric_name == "flat_cylindrical":
-        valid &= position[..., 0] != 0
-    return valid
 
 
 @partial(jax.jit, static_argnames="static_parameters")

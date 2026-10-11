@@ -1,7 +1,7 @@
 """Single-device numerical tests."""
 
 from tests.support.particle_metric_fixtures_shared import (
-    CheckedSamplingFixtures,
+    SamplingFixtures,
     GR_direct_deposition,
     HermiteFixtures,
     ParticleMetricConsumersFixtures,
@@ -26,8 +26,6 @@ from tests.support.particle_metric_fixtures_shared import (
     manufactured,
     np,
     partial,
-    particle_metric_valid,
-    positive_definite_3x3,
     sample_metric,
     sampled_rotation_checks,
     seed_leapfrog_velocity,
@@ -169,7 +167,6 @@ class TestParticleMetric(ParticleMetricFixtures, unittest.TestCase):
                 a.grad_shift[:, :, k], (plus.shift - minus.shift) / (2 * eps), atol=1e-10
             )
         np.testing.assert_array_equal(dh[:, 2], 0.0)
-        self.assertTrue(np.asarray(particle_metric_valid(a, q, "numerical")).all())
 
 
     def test_adjacent_radial_tiles_agree(self):
@@ -230,10 +227,6 @@ class TestParticleMetric(ParticleMetricFixtures, unittest.TestCase):
         np.testing.assert_allclose(b.gamma_inv, a.gamma_inv / 2, atol=1e-12)
         np.testing.assert_allclose(b.lapse, 0.7 * a.lapse, atol=1e-12)
         np.testing.assert_allclose(b.shift, a.shift + 0.1, atol=1e-12)
-        axes = q.at[:, 1].set(jnp.array([0.0, jnp.pi, 0.0, jnp.pi]))
-        self.assertFalse(
-            np.asarray(particle_metric_valid(sample_metric(axes, m, s, d), axes, s.metric)).any()
-        )
 
 
     def test_sampled_rotation_invariants(self):
@@ -242,7 +235,7 @@ class TestParticleMetric(ParticleMetricFixtures, unittest.TestCase):
                 self.assertLess(row[key], 1e-12, (key, row))
 
 
-    def test_signed_orientation_and_invalid_metrics(self):
+    def test_signed_orientation(self):
         grid, m = manufactured()
         for chart, q in [
             ("flat_cylindrical", jnp.array([[-0.15, 0.25, 3.0]])),
@@ -251,29 +244,7 @@ class TestParticleMetric(ParticleMetricFixtures, unittest.TestCase):
             a = interpolate_metric(m, q, grid, chart, (True, True, False), (3, 3, 3))
             self.assertLess(float(a.sqrt_gamma[0]), 0.0)
             np.testing.assert_allclose(a.sqrt_gamma**2, jnp.linalg.det(a.gamma), rtol=1e-12)
-            self.assertTrue(bool(particle_metric_valid(a, q, chart)[0]))
-        q = jnp.array([[0.25, 0.35, 3.0]])
-        for tensor in (jnp.diag(jnp.array([-1.0, 1.0, 1.0])), jnp.zeros((3, 3))):
-            bad = m._replace(gamma=jnp.broadcast_to(tensor, m.gamma.shape))
-            a = interpolate_metric(bad, q, grid, "numerical", (True, True, False), (3, 3, 3))
-            self.assertFalse(bool(particle_metric_valid(a, q, "numerical")[0]))
 
-
-    def test_positive_definite_matches_eigenvalue_signs(self):
-        rng = np.random.default_rng(519)
-        q, _ = np.linalg.qr(rng.normal(size=(2000, 3, 3)))
-        values = np.exp(rng.uniform(-4, 4, size=(2000, 3)))
-        values[500:1000, 0] *= -1
-        values[1000:1500, :2] *= -1
-        values[1500:] *= -1
-        tensors = np.einsum("nij,nj,nkj->nik", q, values, q)
-        expected = np.linalg.eigvalsh(tensors).min(-1) > 0
-        np.testing.assert_array_equal(np.asarray(jax.jit(positive_definite_3x3)(jnp.asarray(tensors))), expected)
-        edge = jnp.array([np.diag([1.0, 1.0, 0.0]), np.diag([1.0, 1.0, 1e-20]),
-                          np.diag([1.0, 1.0, -1e-20]), np.diag([1.0, np.nan, 1.0])])
-        np.testing.assert_array_equal(positive_definite_3x3(edge), [False, True, False, False])
-        # a singular non-diagonal tensor is rejected without a floor or repair
-        self.assertFalse(bool(positive_definite_3x3(jnp.ones((3, 3)))))
 
 
 
@@ -325,22 +296,7 @@ class TestParticleMetricConsumers(ParticleMetricConsumersFixtures, unittest.Test
 
 
 
-class TestCheckedSampling(CheckedSamplingFixtures, unittest.TestCase):
-    def test_sampler_marks_stencil_and_tensor_failures_invalid(self):
-        grid, m = manufactured()
-        get = jax.jit(
-            lambda q, metric: interpolate_metric(metric, q, grid, "numerical", (True, True, False), (3, 3, 3))
-        )
-        q = jnp.array([[0.23, 0.35, 3.0]])
-        self.assertTrue(bool(particle_metric_valid(get(q, m), q, "numerical")[0]))
-        for pos, metric in [
-            (q.at[0, 0].set(-5.0), m),
-            (q, m._replace(gamma=m.gamma.at[..., 0, 0].set(-1.0))),
-            (q, m._replace(lapse=-m.lapse)),
-        ]:
-            self.assertFalse(bool(particle_metric_valid(get(pos, metric), pos, "numerical")[0]))
-
-
+class TestSampling(SamplingFixtures, unittest.TestCase):
     def test_pusher_and_seed_preserve_inactive_slots(self):
         s, d, m, D, B = make_runtime("spherical", 16, 32)
         D, B = densitize_vector(D, m.D), densitize_vector(B, m.B)
