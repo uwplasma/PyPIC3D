@@ -73,8 +73,8 @@ Particle Boundary Folds
 -----------------------
 
 At a reflecting particle wall, every solver folds particle deposits by the
-nodal method of images about the wall nodes, in ``boundary_conditions/sources.py``
-and ``halo_exchange._staggered_conducting_axis``:
+nodal method of images about the wall nodes, in
+``ghost_cells.source_boundaries`` and ``ghost_cells._conducting_axis``:
 
 - Charge and fluid moments sit on collocated C nodes. The upper wall node at
   ``g+n`` is an owned physical node. A deposit in the exterior guard region is

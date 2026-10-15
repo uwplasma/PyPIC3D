@@ -25,7 +25,7 @@ from PyPIC3D.relativity.field_state import densitize_fields
 import jax
 import jax.numpy as jnp
 
-from PyPIC3D.boundary_conditions.ghost_cells import update_tiled_vector_ghost_cells
+from PyPIC3D.boundary_conditions.ghost_cells import update_tiled_ghost_cells
 from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.initialization import (

@@ -1114,12 +1114,10 @@ class TestStaticMetricTimeLoop(StaticMetricTimeLoopFixtures, unittest.TestCase):
                             side_effect=AssertionError("vacuum called " + name),
                         ))
                     result = jax.jit(lambda p, f: time_loop_static_metric(
-                        p, empty_species, f, static, d, return_errors=checked,
+                        p, empty_species, f, static, d,
                         return_diagnostics=checked, current_transform=transform,
                     ))(particles, stale_fields)
                 if checked:
-                    errors, result = result
-                    errors.throw()
                     new, updated, diagnostics = result
                     self.assertEqual(diagnostics.absorbed_count.shape, (2, nspecies))
                     for value in diagnostics:
@@ -1135,9 +1133,8 @@ class TestStaticMetricTimeLoop(StaticMetricTimeLoopFixtures, unittest.TestCase):
                 transform.assert_not_called()
 
     def test_particle_boundaries_and_prior_overflow_for_both_schemes(self):
-        for scheme, bc, checked in itertools.product(
-                ('GR_direct', 'esirkepov'), (1, 2), (False, True)):
-            with self.subTest(scheme=scheme, boundary=bc, checked=checked):
+        for scheme, bc in itertools.product(('GR_direct', 'esirkepov'), (1, 2)):
+            with self.subTest(scheme=scheme, boundary=bc):
                 s, d = kernel_parameters(
                     Nx=8, Ny=1, Nz=1, x_wind=8., tile_shape=(8, 1, 1), dt=.2,
                     solver='static_metric', particle_pusher='hybrid_boris_geodesic',
@@ -1153,13 +1150,8 @@ class TestStaticMetricTimeLoop(StaticMetricTimeLoopFixtures, unittest.TestCase):
                 fields = densitize_fields((zero, zero, zero, jnp.zeros_like(zero[0]),
                           jnp.zeros_like(zero[0]), (zero, zero), metric,
                           (zero, zero), jnp.asarray(True)))
-                if checked:
-                    errors, (new, updated) = jax.jit(lambda p, f: time_loop_static_metric(
-                        p, species, f, s, d, return_errors=True))(particles, fields)
-                    errors.throw()
-                else:
-                    new, updated = jax.jit(lambda p, f: time_loop_static_metric(
-                        p, species, f, s, d))(particles, fields)
+                new, updated = jax.jit(lambda p, f: time_loop_static_metric(
+                    p, species, f, s, d))(particles, fields)
                 self.assertTrue(bool(updated[-1]))  # Previous overflow remains sticky.
                 self.assertEqual(int(new.active.sum()), 1 if bc == 1 else 0)
                 if bc == 1:

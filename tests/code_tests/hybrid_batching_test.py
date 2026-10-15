@@ -3,7 +3,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import unittest
-from jax.experimental import checkify
 from tests.support.particle_metric_fixtures import make_runtime
 from PyPIC3D.particles.particle_class import TiledParticles, SpeciesConfig
 from PyPIC3D.pusher.hybrid_boris_geodesic import hybrid_boris_geodesic_push
@@ -20,10 +19,7 @@ class TestHybridBatching(unittest.TestCase):
             return jax.tree.map(lambda value: jnp.concatenate((value,value),axis=0)
                                 if hasattr(value,'ndim') and value.ndim >= 3 else value, tree)
         def execute(p,dd,mm,ee,bb):
-            error,result=jax.jit(checkify.checkify(lambda p:hybrid_boris_geodesic_push(
-                p,species,ee,bb,mm,s,dd)))(p)
-            error.throw()
-            return result
+            return jax.jit(lambda p:hybrid_boris_geodesic_push(p,species,ee,bb,mm,s,dd))(p)
         single=execute(particles,d,m,D,B)
         # Duplicate supplied tile geometry so both lanes represent the same local
         # problem; the two-tile branch exercises the existing vmapped kernel.
@@ -47,10 +43,8 @@ class TestHybridBatching(unittest.TestCase):
                 species=SpeciesConfig(jnp.array([-1.,1.]),jnp.array([1.,2.]),jnp.ones(2),
                                       jnp.array([[True,True,True],[True,False,True]]))
                 def execute(p,metric,batch):
-                    errors,result=jax.jit(checkify.checkify(lambda p:hybrid_boris_geodesic_push(
-                        p,species,D,B,metric,s._replace(particle_batch_size=batch),d)))(p)
-                    errors.throw()
-                    return result
+                    return jax.jit(lambda p:hybrid_boris_geodesic_push(
+                        p,species,D,B,metric,s._replace(particle_batch_size=batch),d))(p)
                 expected=execute(particles,m,18)
                 actual=execute(particles,m,4)
                 for a,b in zip(jax.tree.leaves(expected),jax.tree.leaves(actual)):
@@ -58,14 +52,38 @@ class TestHybridBatching(unittest.TestCase):
                 for result in actual:
                     np.testing.assert_array_equal(np.asarray(result.x)[~active],x[~active])
                     np.testing.assert_array_equal(np.asarray(result.u)[~active],u[~active])
-                # Invalid metric everywhere demonstrates the all-inactive case executes no
-                # sampler; merely masking the final particle update would still raise.
+                # An all-inactive tile runs no batches, so a poisoned metric is
+                # never sampled and the stored slots come back untouched.
                 poison=m._replace(center=m.center._replace(gamma=jnp.full_like(m.center.gamma,jnp.nan)))
                 empty=particles._replace(active=jnp.zeros_like(particles.active))
-                execute(empty,poison,4)
-                invalid=particles._replace(x=particles.x.at[0,0,0,0,1,1].set(0.))
-                with self.assertRaisesRegex(Exception,'invalid particle sample'):
-                    execute(invalid,m,4)
+                for result in execute(empty,poison,4):
+                    np.testing.assert_array_equal(np.asarray(result.x),x)
+
+
+    def test_tiles_with_unequal_active_counts_match_isolated_tiles(self):
+        s,d,m,D,B=make_runtime('spherical',16,32)
+        s=s._replace(particle_batch_size=2)
+        species=SpeciesConfig(jnp.ones(1),jnp.ones(1),jnp.ones(1),jnp.ones((1,3),bool))
+        def make(active_slots):
+            x=np.tile([2.,.7,.2],(1,1,1,1,4,1))
+            x[...,1]+=.05*np.arange(4)
+            u=np.tile([.01,.02,.003],(1,1,1,1,4,1))
+            active=np.zeros((1,1,1,1,4),bool); active[...,active_slots]=True
+            x[~active]=np.nan; u[~active]=np.nan
+            return TiledParticles(jnp.array(x),jnp.array(u),jnp.array(active))
+        def duplicate(tree):
+            return jax.tree.map(lambda value: jnp.concatenate((value,value),axis=0)
+                                if hasattr(value,'ndim') and value.ndim >= 3 else value, tree)
+        def execute(p,dd,mm,ee,bb):
+            return jax.jit(lambda p:hybrid_boris_geodesic_push(p,species,ee,bb,mm,s,dd))(p)
+        # Three active particles in tile 0 and one in tile 1 need two batches and
+        # one; each lane of the vmapped batch loop has to stop on its own count.
+        crowded,sparse=make([0,1,2]),make([0])
+        stacked=jax.tree.map(lambda a,b: jnp.concatenate((a,b),axis=0),crowded,sparse)
+        together=execute(stacked,duplicate(d),duplicate(m),duplicate(D),duplicate(B))
+        for lane,alone in ((0,execute(crowded,d,m,D,B)),(1,execute(sparse,d,m,D,B))):
+            for a,b in zip(jax.tree.leaves(alone),jax.tree.leaves(together)):
+                np.testing.assert_allclose(a,b[lane:lane+1],rtol=1e-12,atol=1e-12,equal_nan=True)
 
 
 if __name__=='__main__':

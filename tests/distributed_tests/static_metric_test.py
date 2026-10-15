@@ -21,8 +21,8 @@ from tests.support.static_metric_fixtures import (
 
 class TestStaticMetricTimeLoop(StaticMetricTimeLoopFixtures, unittest.TestCase):
     def test_static_metric_time_loop_migrates_only_required_particle_states(self):
-        for scheme, checked in itertools.product(("GR_direct", "esirkepov"), (False, True)):
-            with self.subTest(scheme=scheme, checked=checked):
+        for scheme in ("GR_direct", "esirkepov"):
+            with self.subTest(scheme=scheme):
                 static_parameters, dynamic_parameters = kernel_parameters(
                     guard_cells=3,
                     Nx=8,
@@ -64,17 +64,9 @@ class TestStaticMetricTimeLoop(StaticMetricTimeLoopFixtures, unittest.TestCase):
                 module = importlib.import_module('PyPIC3D.solvers.GR_yee.time_loop')
                 with patch.object(module, 'refresh_tiled_particle_tiles',
                                   wraps=module.refresh_tiled_particle_tiles) as refresh:
-                    if checked:
-                        errors, (particles, fields) = jax.jit(
-                            lambda p, f: time_loop_static_metric(
-                                p, species, f, static_parameters, dynamic_parameters, return_errors=True
-                            )
-                        )(particles, fields)
-                        errors.throw()
-                    else:
-                        particles, fields = jax.jit(lambda p, f: time_loop_static_metric(
-                            p, species, f, static_parameters, dynamic_parameters
-                        ))(particles, fields)
+                    particles, fields = jax.jit(lambda p, f: time_loop_static_metric(
+                        p, species, f, static_parameters, dynamic_parameters
+                    ))(particles, fields)
 
                     self.assertEqual(refresh.call_count, 2 if scheme == 'GR_direct' else 1)
 

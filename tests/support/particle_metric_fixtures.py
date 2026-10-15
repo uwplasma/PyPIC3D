@@ -1,17 +1,45 @@
 """Small supplied-metric fixtures for production regression tests."""
+import unittest
 from types import SimpleNamespace
-from functools import lru_cache
+from functools import lru_cache, partial
 import numpy as np
 import jax
 import jax.numpy as jnp
-from PyPIC3D.utilities.parameters import build_static_parameters, build_dynamic_parameters
+from PyPIC3D.utilities.parameters import (
+    build_static_parameters,
+    build_dynamic_parameters,
+    static_parameters_for_output,
+)
 from PyPIC3D.utilities.grids import build_yee_grid, build_tiled_yee_grids
+from PyPIC3D.deposition.GR_direct_deposition import GR_direct_deposition
 from PyPIC3D.relativity.core import B_FIELD_LOCATIONS, Metric, build_yee_metric
-from PyPIC3D.relativity.interpolate_metric import interpolate_metric
-from PyPIC3D.relativity.metrics.flat import initialize_flat_cartesian_metric, initialize_flat_spherical_metric
-from PyPIC3D.pusher.hybrid_boris_geodesic import magnetic_boris_rotation, gather_vector
+from PyPIC3D.relativity.field_state import densitize_vector
+from PyPIC3D.relativity.interpolate_metric import interpolate_hermite, interpolate_metric
+from PyPIC3D.relativity.metrics.flat import (
+    initialize_flat_cartesian_metric,
+    initialize_flat_cylindrical_metric,
+    initialize_flat_spherical_metric,
+)
+from PyPIC3D.relativity.metrics.kerr_schild import (
+    initialize_kerr_schild_cartesian_metric,
+    initialize_kerr_schild_spherical_metric,
+)
+from PyPIC3D.pusher.hybrid_boris_geodesic import (
+    coordinate_velocity,
+    gather_vector,
+    hybrid_boris_geodesic_push,
+    magnetic_boris_rotation,
+)
+from PyPIC3D.pusher.particle_push import seed_leapfrog_velocity
 from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
 from tests.kernel_fixtures import kernel_parameters, empty_tiled_vector
+
+
+def assert_same_tree(self, actual, expected):
+    self.assertEqual(jax.tree.structure(actual), jax.tree.structure(expected))
+    for a, b in zip(jax.tree.leaves(actual), jax.tree.leaves(expected)):
+        np.testing.assert_allclose(a, b, rtol=2e-14, atol=2e-14)
+
 
 PERIOD = 2*np.pi*np.sqrt(1.16)
 

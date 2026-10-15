@@ -5,7 +5,7 @@ from unittest.mock import patch
 import jax.numpy as jnp
 import numpy as np
 
-from PyPIC3D.boundary_conditions.ownership import owned_nodes
+from PyPIC3D.boundary_conditions.ghost_cells import owned_nodes
 from PyPIC3D.boundary_conditions.staggered import refresh_fields
 from PyPIC3D.boundary_conditions.supergaussian import apply_tiled_supergaussian_absorber
 from PyPIC3D.diagnostics.output_adapters import build_field_output_map, field_map_for_output

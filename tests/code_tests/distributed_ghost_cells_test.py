@@ -47,9 +47,9 @@ class TestDistributedGhostCells(DistributedGhostCellsFixtures, unittest.TestCase
 
         sharded_stacked = jax.device_put(stacked, sharding)
         stacked_actual = jax.jit(
-            lambda field: ghost_cells.update_tiled_vector_ghost_cells(field, static_parameters, 1)
+            lambda field: ghost_cells.update_tiled_ghost_cells(field, static_parameters, 1)
         )(sharded_stacked)
-        tuple_actual = ghost_cells.update_tiled_vector_ghost_cells((stacked[0], stacked[1], stacked[2]), static_parameters, 1)
+        tuple_actual = ghost_cells.update_tiled_ghost_cells((stacked[0], stacked[1], stacked[2]), static_parameters, 1)
 
         self.assertEqual(stacked_actual.sharding, sharding)
         self.assertEqual(stacked_actual.shape, stacked.shape)
@@ -163,7 +163,7 @@ class TestDistributedGhostCells(DistributedGhostCellsFixtures, unittest.TestCase
             (BC_PERIODIC, BC_PERIODIC, BC_PERIODIC),
             (BC_CONDUCTING, BC_CONDUCTING, BC_CONDUCTING),
         ):
-            updater = ghost_cells.make_distributed_ghost_updater(_mesh(mesh_shape), tile_shape, bcs, 1)
+            updater = ghost_cells.make_tiled_halo_op(_mesh(mesh_shape), tile_shape, bcs, 1)
             actual = jax.jit(updater)(tiles)
             self.assert_allclose(actual, _reference_update(tiles, bcs, tile_shape))
 
@@ -271,7 +271,7 @@ class TestDistributedGhostCells(DistributedGhostCellsFixtures, unittest.TestCase
         mesh_shape = (1, 1, 1)
         tile_shape = (2, 2, 2)
         bcs = (BC_PERIODIC, BC_PERIODIC, BC_PERIODIC)
-        updater = ghost_cells.make_distributed_ghost_updater(_mesh(mesh_shape), tile_shape, bcs, 1)
+        updater = ghost_cells.make_tiled_halo_op(_mesh(mesh_shape), tile_shape, bcs, 1)
         tiles = _coordinate_tiles((2, 1, 1), tile_shape)
 
         with self.assertRaisesRegex(ValueError, "one logical tile per device"):

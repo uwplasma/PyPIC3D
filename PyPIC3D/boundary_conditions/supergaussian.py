@@ -168,10 +168,10 @@ def apply_tiled_supergaussian_absorber(field_tiles, static_parameters, dynamic_p
     )
     damped = tuple(component * envelope for component in field_tiles)
 
-    return ghost_cells.update_tiled_vector_ghost_cells(
+    return ghost_cells.update_tiled_ghost_cells(
         damped,
         static_parameters,
         num_guard_cells=int(static_parameters.guard_cells),
-        locations=locations,
+        location=locations,
         preserve_exterior=tuple(bc == BC_CONDUCTING for bc in static_parameters.boundary_conditions) if locations is not None else False,
     )

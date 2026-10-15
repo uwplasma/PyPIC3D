@@ -1,15 +1,10 @@
 """Single-device numerical tests."""
 
-from tests.support.particle_metric_fixtures_shared import (
-    CheckedSamplingFixtures,
+from tests.support.particle_metric_fixtures import (
     GR_direct_deposition,
-    HermiteFixtures,
-    ParticleMetricConsumersFixtures,
-    ParticleMetricFixtures,
     SpeciesConfig,
     TiledParticles,
     build_static_parameters,
-    checkify,
     consumer_runtime,
     densitize_vector,
     hybrid_boris_geodesic_push,
@@ -27,17 +22,16 @@ from tests.support.particle_metric_fixtures_shared import (
     manufactured,
     np,
     partial,
-    particle_metric_valid,
-    positive_definite_3x3,
     sample_metric,
     sampled_rotation_checks,
     seed_leapfrog_velocity,
     static_parameters_for_output,
     unittest,
+    assert_same_tree,
 )
 
 
-class TestHermite(HermiteFixtures, unittest.TestCase):
+class TestHermite(unittest.TestCase):
     def test_tensor_quadratic_reproduction(self):
         grid = tuple(jnp.arange(-3, 14, dtype=float) * h for h in (0.1, 0.13, 0.17))
 
@@ -94,7 +88,7 @@ class TestHermite(HermiteFixtures, unittest.TestCase):
 
 
 
-class TestParticleMetric(ParticleMetricFixtures, unittest.TestCase):
+class TestParticleMetric(unittest.TestCase):
     def test_shared_reconstruction_for_every_supported_chart(self):
         providers = (
             ("flat_cartesian", initialize_flat_cartesian_metric),
@@ -170,7 +164,6 @@ class TestParticleMetric(ParticleMetricFixtures, unittest.TestCase):
                 a.grad_shift[:, :, k], (plus.shift - minus.shift) / (2 * eps), atol=1e-10
             )
         np.testing.assert_array_equal(dh[:, 2], 0.0)
-        self.assertTrue(np.asarray(particle_metric_valid(a, q, "numerical")).all())
 
 
     def test_adjacent_radial_tiles_agree(self):
@@ -231,10 +224,6 @@ class TestParticleMetric(ParticleMetricFixtures, unittest.TestCase):
         np.testing.assert_allclose(b.gamma_inv, a.gamma_inv / 2, atol=1e-12)
         np.testing.assert_allclose(b.lapse, 0.7 * a.lapse, atol=1e-12)
         np.testing.assert_allclose(b.shift, a.shift + 0.1, atol=1e-12)
-        axes = q.at[:, 1].set(jnp.array([0.0, jnp.pi, 0.0, jnp.pi]))
-        self.assertFalse(
-            np.asarray(particle_metric_valid(sample_metric(axes, m, s, d), axes, s.metric)).any()
-        )
 
 
     def test_sampled_rotation_invariants(self):
@@ -243,7 +232,7 @@ class TestParticleMetric(ParticleMetricFixtures, unittest.TestCase):
                 self.assertLess(row[key], 1e-12, (key, row))
 
 
-    def test_signed_orientation_and_invalid_metrics(self):
+    def test_signed_orientation(self):
         grid, m = manufactured()
         for chart, q in [
             ("flat_cylindrical", jnp.array([[-0.15, 0.25, 3.0]])),
@@ -252,33 +241,11 @@ class TestParticleMetric(ParticleMetricFixtures, unittest.TestCase):
             a = interpolate_metric(m, q, grid, chart, (True, True, False), (3, 3, 3))
             self.assertLess(float(a.sqrt_gamma[0]), 0.0)
             np.testing.assert_allclose(a.sqrt_gamma**2, jnp.linalg.det(a.gamma), rtol=1e-12)
-            self.assertTrue(bool(particle_metric_valid(a, q, chart)[0]))
-        q = jnp.array([[0.25, 0.35, 3.0]])
-        for tensor in (jnp.diag(jnp.array([-1.0, 1.0, 1.0])), jnp.zeros((3, 3))):
-            bad = m._replace(gamma=jnp.broadcast_to(tensor, m.gamma.shape))
-            a = interpolate_metric(bad, q, grid, "numerical", (True, True, False), (3, 3, 3))
-            self.assertFalse(bool(particle_metric_valid(a, q, "numerical")[0]))
-
-
-    def test_positive_definite_matches_eigenvalue_signs(self):
-        rng = np.random.default_rng(519)
-        q, _ = np.linalg.qr(rng.normal(size=(2000, 3, 3)))
-        values = np.exp(rng.uniform(-4, 4, size=(2000, 3)))
-        values[500:1000, 0] *= -1
-        values[1000:1500, :2] *= -1
-        values[1500:] *= -1
-        tensors = np.einsum("nij,nj,nkj->nik", q, values, q)
-        expected = np.linalg.eigvalsh(tensors).min(-1) > 0
-        np.testing.assert_array_equal(np.asarray(jax.jit(positive_definite_3x3)(jnp.asarray(tensors))), expected)
-        edge = jnp.array([np.diag([1.0, 1.0, 0.0]), np.diag([1.0, 1.0, 1e-20]),
-                          np.diag([1.0, 1.0, -1e-20]), np.diag([1.0, np.nan, 1.0])])
-        np.testing.assert_array_equal(positive_definite_3x3(edge), [False, True, False, False])
-        # a singular non-diagonal tensor is rejected without a floor or repair
-        self.assertFalse(bool(positive_definite_3x3(jnp.ones((3, 3)))))
 
 
 
-class TestParticleMetricConsumers(ParticleMetricConsumersFixtures, unittest.TestCase):
+
+class TestParticleMetricConsumers(unittest.TestCase):
     def test_pusher_and_direct_deposition_use_supplied_primitives(self):
         first_order_push = None
         for order in (1, 2):
@@ -305,7 +272,7 @@ class TestParticleMetricConsumers(ParticleMetricConsumersFixtures, unittest.Test
                 for name, run in (("push", push), ("deposit", deposit)):
                     original = run(m)
                     same = run(poisoned)
-                    self.assert_same_tree(same, original)
+                    assert_same_tree(same, original)
                     different = run(changed)
                     if name == "deposit":
                         self.assertTrue(all(bool(jnp.isfinite(a).all()) for a in original))
@@ -318,7 +285,7 @@ class TestParticleMetricConsumers(ParticleMetricConsumersFixtures, unittest.Test
                         if order == 1:
                             first_order_push = original
                         else:
-                            self.assert_same_tree(original, first_order_push)
+                            assert_same_tree(original, first_order_push)
                     difference = max(float(jnp.max(jnp.abs(jnp.nan_to_num(a)-jnp.nan_to_num(b))))
                                      for a, b in zip(jax.tree.leaves(original), jax.tree.leaves(different))
                                      if a.dtype != jnp.bool_)
@@ -326,50 +293,24 @@ class TestParticleMetricConsumers(ParticleMetricConsumersFixtures, unittest.Test
 
 
 
-class TestCheckedSampling(CheckedSamplingFixtures, unittest.TestCase):
-    def test_checked_sampler_reports_stencil_and_tensor_errors(self):
-        grid, m = manufactured()
-        get = jax.jit(checkify.checkify(
-            lambda q, metric: interpolate_metric(metric, q, grid, "numerical", (True, True, False), (3, 3, 3))
-        ))
-        q = jnp.array([[0.23, 0.35, 3.0]])
-        errors, _ = get(q, m)
-        errors.throw()
-        for pos, metric in [
-            (q.at[0, 0].set(-5.0), m),
-            (q, m._replace(gamma=m.gamma.at[..., 0, 0].set(-1.0))),
-            (q, m._replace(lapse=-m.lapse)),
-        ]:
-            errors, _ = get(pos, metric)
-            with self.assertRaisesRegex(Exception, "particle metric.*tile=.*flattened species/slot"):
-                errors.throw()
-
-
-    def test_checked_pusher_and_seed_preserve_inactive_slots(self):
+class TestSampling(unittest.TestCase):
+    def test_pusher_and_seed_preserve_inactive_slots(self):
         s, d, m, D, B = make_runtime("spherical", 16, 32)
         D, B = densitize_vector(D, m.D), densitize_vector(B, m.B)
         x = jnp.array([[[[[[2.0, 0.7, 0.0], [0.0, 0.0, 0.0]]]]]])
         p = TiledParticles(x, jnp.zeros_like(x), jnp.array([[[[[True, False]]]]]))
         sp = SpeciesConfig(jnp.ones(1), jnp.ones(1), jnp.ones(1), jnp.ones((1, 3), bool))
-        seed = jax.jit(checkify.checkify(lambda p: seed_leapfrog_velocity(p, sp, D, B, s, d, m)))
-        errors, seeded = seed(p)
-        errors.throw()
-        push = jax.jit(checkify.checkify(lambda p: hybrid_boris_geodesic_push(p, sp, D, B, m, s, d)))
-        errors, (new, mid) = push(seeded)
-        errors.throw()
+        seeded = jax.jit(lambda p: seed_leapfrog_velocity(p, sp, D, B, s, d, m))(p)
+        push = jax.jit(lambda p: hybrid_boris_geodesic_push(p, sp, D, B, m, s, d))
+        new, mid = push(seeded)
         self.assertTrue(np.isfinite(np.asarray(new.x)).all())
         self.assertTrue(np.isfinite(np.asarray(new.u)).all())
         np.testing.assert_array_equal(new.x[..., 1, :], p.x[..., 1, :])
         np.testing.assert_array_equal(mid.x[..., 1, :], p.x[..., 1, :])
-        # Invalid active metric samples must fail the functionalized pusher too.
-        errors, _ = push(p._replace(x=p.x.at[..., 0, 1].set(0.0)))
-        with self.assertRaisesRegex(Exception, "invalid particle sample"):
-            errors.throw()
-        far = d._replace(dt=jnp.asarray(100.0))
-        errors, _ = checkify.checkify(
-            lambda p: hybrid_boris_geodesic_push(p, sp, D, B, m, s, far)
-        )(p._replace(u=p.u.at[..., 0, 0].set(10.0)))
-        self.assertIsNotNone(errors.get())
+        # An active particle on the polar axis has no valid metric sample, so
+        # the pusher propagates NaN rather than repairing it.
+        invalid, _ = push(p._replace(x=p.x.at[..., 0, 1].set(0.0)))
+        self.assertFalse(np.isfinite(np.asarray(invalid.u)[..., 0, :]).all())
 
 
     def test_guard_cell_default_minimum_and_metadata(self):

@@ -19,7 +19,7 @@ def yee_derivatives_e_to_b(E_tiles, static_parameters, dynamic_parameters):
     active = slice(g, -g)
     forward = slice(g + 1, None if g == 1 else -g + 1)
 
-    Ex, Ey, Ez = ghost_cells.update_tiled_vector_ghost_cells(E_tiles, static_parameters, g, locations=D_FIELD_LOCATIONS)
+    Ex, Ey, Ez = ghost_cells.update_tiled_ghost_cells(E_tiles, static_parameters, g, location=D_FIELD_LOCATIONS)
     dx, dy, dz = dynamic_parameters.dx, dynamic_parameters.dy, dynamic_parameters.dz
 
     dEz_dy = (Ez[:, :, :, active, forward, active] - Ez[:, :, :, active, active, active]) / dy
@@ -44,7 +44,7 @@ def yee_derivatives_b_to_e(B_tiles, static_parameters, dynamic_parameters):
     active = slice(g, -g)
     backward = slice(g - 1, -g - 1)
 
-    Bx, By, Bz = ghost_cells.update_tiled_vector_ghost_cells(B_tiles, static_parameters, g, locations=B_FIELD_LOCATIONS)
+    Bx, By, Bz = ghost_cells.update_tiled_ghost_cells(B_tiles, static_parameters, g, location=B_FIELD_LOCATIONS)
     dx, dy, dz = dynamic_parameters.dx, dynamic_parameters.dy, dynamic_parameters.dz
 
     dBz_dy = (Bz[:, :, :, active, active, active] - Bz[:, :, :, active, backward, active]) / dy
@@ -139,7 +139,7 @@ def update_E(E_tiles, B_tiles, J_tiles, static_parameters, dynamic_parameters, p
     # A supergaussian layer is a field-only sponge: it damps the evolved fields
     # after the Maxwell update without changing the deposited current.
 
-    return ghost_cells.update_tiled_vector_ghost_cells(E_tiles, static_parameters, g, locations=D_FIELD_LOCATIONS), pml_state
+    return ghost_cells.update_tiled_ghost_cells(E_tiles, static_parameters, g, location=D_FIELD_LOCATIONS), pml_state
 
 
 def update_B(E_tiles, B_tiles, static_parameters, dynamic_parameters, pml_state=None):
@@ -184,4 +184,4 @@ def update_B(E_tiles, B_tiles, static_parameters, dynamic_parameters, pml_state=
     # The B update is split into half steps, so the sponge uses the same half
     # timestep as Faraday's-law update here.
 
-    return ghost_cells.update_tiled_vector_ghost_cells((Bx, By, Bz), static_parameters, g, locations=B_FIELD_LOCATIONS), pml_state
+    return ghost_cells.update_tiled_ghost_cells((Bx, By, Bz), static_parameters, g, location=B_FIELD_LOCATIONS), pml_state

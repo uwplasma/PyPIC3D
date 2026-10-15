@@ -15,8 +15,8 @@ providers populate the grid, not particle samples.  There is no lower-order
 or analytic fallback.
 
 The four-point stencil needs three guard cells to cover midpoint samples
-before tile migration.  Points outside the stencil return NaN, and invalid
-metrics are reported through checkify rather than clamped or repaired.
+before tile migration.  Points outside the stencil return NaN; nothing is
+clamped or repaired.
 """
 
 from functools import partial
@@ -24,19 +24,12 @@ from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
-from jax.experimental import checkify
 
 from PyPIC3D.relativity.core import covariant_lorentz_factor
 
 RECONSTRUCTION = "cardinal_cubic_hermite_consistent_v1"
 
 SPHERICAL_METRICS = ("flat_spherical", "kerr_schild_spherical")
-
-
-def on_spherical_axis(position):
-    """Recognize the singular theta endpoints, including floating-point pi."""
-    theta = position[..., 1]
-    return (jnp.abs(theta) < 1e-14) | (jnp.abs(jnp.abs(theta) - jnp.pi) < 1e-14)
 
 
 class ParticleMetric(NamedTuple):
@@ -186,7 +179,6 @@ def interpolate_metric(
             grad_gamma_inv=-jnp.einsum("...ij,...jlk,...lm->...kim", gamma_inv, grad_gamma, gamma_inv),
         )
 
-    check_particle_samples(particle_metric_valid(sampled, position, metric_name), position, "particle metric")
     return sampled
 
 
@@ -206,63 +198,6 @@ def safe_inactive_positions(position, active, grid, active_axes, guard_cells):
         )
     )
     return jnp.where(active[..., None], position, interior)
-
-
-def positive_definite_3x3(gamma):
-    """Sylvester criterion for a symmetric 3x3 tensor, without an eigensolver."""
-
-    a, d, f = gamma[..., 0, 0], gamma[..., 1, 1], gamma[..., 2, 2]
-    b = (gamma[..., 0, 1] + gamma[..., 1, 0]) / 2
-    c = (gamma[..., 0, 2] + gamma[..., 2, 0]) / 2
-    e = (gamma[..., 1, 2] + gamma[..., 2, 1]) / 2
-    minor = a * d - b * b
-    determinant = a * (d * f - e * e) - b * (b * f - c * e) + c * (b * e - c * d)
-    return (a > 0) & (minor > 0) & (determinant > 0) & jnp.isfinite(minor) & jnp.isfinite(determinant)
-
-
-def particle_metric_valid(metric, position, metric_name):
-    """Per-particle validity of a sampled metric; nothing is repaired."""
-
-    symmetric = jnp.abs(metric.gamma - jnp.swapaxes(metric.gamma, -1, -2)) <= (
-        32 * jnp.finfo(metric.gamma.dtype).eps * jnp.maximum(1.0, jnp.abs(metric.gamma))
-    )
-    valid = (
-        jnp.isfinite(metric.lapse)
-        & (metric.lapse > 0)
-        & jnp.all(jnp.isfinite(metric.shift), axis=-1)
-        & jnp.all(jnp.isfinite(metric.gamma), axis=(-2, -1))
-        & jnp.all(jnp.isfinite(metric.gamma_inv), axis=(-2, -1))
-        & jnp.all(symmetric, axis=(-2, -1))
-        & positive_definite_3x3(metric.gamma)
-    )
-    if metric.grad_lapse is not None:
-        valid &= (
-            jnp.all(jnp.isfinite(metric.grad_lapse), axis=-1)
-            & jnp.all(jnp.isfinite(metric.grad_shift), axis=(-2, -1))
-            & jnp.all(jnp.isfinite(metric.grad_gamma_inv), axis=(-3, -2, -1))
-        )
-
-    if metric_name in SPHERICAL_METRICS:
-        valid &= ~on_spherical_axis(position) & (position[..., 0] != 0)
-    elif metric_name == "flat_cylindrical":
-        valid &= position[..., 0] != 0
-    return valid
-
-
-def check_particle_samples(valid, position, stage, tile=None):
-    """Report the first invalid particle through checkify (active only under checkify)."""
-
-    if valid.size == 0:
-        return
-    slot = jnp.argmax((~valid).reshape(-1))
-    tile = jnp.asarray((-1, -1, -1)) if tile is None else jnp.asarray(tile)
-    checkify.debug_check(
-        jnp.all(valid),
-        stage + ": invalid particle sample; tile={tile}, flattened species/slot={slot}, position={position}",
-        tile=tile,
-        slot=slot,
-        position=position.reshape(-1, 3)[slot],
-    )
 
 
 @partial(jax.jit, static_argnames="static_parameters")

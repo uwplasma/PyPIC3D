@@ -33,11 +33,11 @@ def _apply_tiled_phi_constant_boundaries(field_tiles, static_parameters, g):
     # between axes and erase an already-filled conducting face.
     for axis, boundary_condition in enumerate(boundary_conditions):
         if int(boundary_condition) == BC_CONDUCTING:
-            apply_boundary = ghost_cells.make_distributed_constant_boundary(
+            apply_boundary = ghost_cells.make_tiled_wall_op(
                 static_parameters.field_mesh,
-                static_parameters.tile_shape,
                 axis,
                 g,
+                constant=True,
             )
             field_tiles = apply_boundary(field_tiles)
 
@@ -417,7 +417,7 @@ def _centered_tiled_electrostatic_gradient(phi_tiles, static_parameters, dynamic
         -1.0 * (phi_tiles[:, :, :, active, active, forward] - phi_tiles[:, :, :, active, active, backward]) / (2.0 * dz)
     )
 
-    return ghost_cells.update_tiled_vector_ghost_cells((Ex, Ey, Ez), static_parameters, g)
+    return ghost_cells.update_tiled_ghost_cells((Ex, Ey, Ez), static_parameters, g)
 
 
 def calculate_electrostatic_fields(

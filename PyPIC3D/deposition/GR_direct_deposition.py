@@ -5,8 +5,8 @@ import jax.numpy as jnp
 
 from PyPIC3D.boundary_conditions.ghost_cells import (
     BC_TYPE_PARTICLE,
-    fold_tiled_vector_ghost_cells,
-    update_tiled_vector_ghost_cells,
+    fold_tiled_ghost_cells,
+    update_tiled_ghost_cells,
 )
 from PyPIC3D.boundary_conditions.grid_and_stencil import (
     collapse_tiled_axis_stencil,
@@ -255,7 +255,7 @@ def GR_direct_deposition(
         tz,
     )
 
-    conformal_J = fold_tiled_vector_ghost_cells(
+    conformal_J = fold_tiled_ghost_cells(
         (Jx, Jy, Jz),
         static_parameters,
         g,
@@ -283,7 +283,7 @@ def GR_direct_deposition(
         lambda conformal_J: jax.lax.cond(
             current_filter == "digital",
             digital_filtered_current,
-            lambda conformal_J: update_tiled_vector_ghost_cells(
+            lambda conformal_J: update_tiled_ghost_cells(
                 conformal_J,
                 static_parameters,
                 g,

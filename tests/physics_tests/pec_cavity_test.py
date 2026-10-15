@@ -4,7 +4,7 @@ import unittest
 import jax
 import jax.numpy as jnp
 
-from PyPIC3D.boundary_conditions.ghost_cells import update_tiled_vector_ghost_cells, apply_tiled_pec_boundary
+from PyPIC3D.boundary_conditions.ghost_cells import update_tiled_ghost_cells, apply_tiled_pec_boundary
 from PyPIC3D.relativity.core import D_FIELD_LOCATIONS, B_FIELD_LOCATIONS
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_CONDUCTING
 from PyPIC3D.solvers.yee.first_order_yee import (
@@ -130,8 +130,8 @@ class TestPECStandingWaveCavity(unittest.TestCase):
             for component, values in zip(E, E_values)
         )
         E = apply_tiled_pec_boundary(E, static_parameters)
-        E = update_tiled_vector_ghost_cells(E, static_parameters, g, locations=D_FIELD_LOCATIONS)
-        B = update_tiled_vector_ghost_cells(B, static_parameters, g, locations=B_FIELD_LOCATIONS)
+        E = update_tiled_ghost_cells(E, static_parameters, g, location=D_FIELD_LOCATIONS)
+        B = update_tiled_ghost_cells(B, static_parameters, g, location=B_FIELD_LOCATIONS)
 
         return (
             E,

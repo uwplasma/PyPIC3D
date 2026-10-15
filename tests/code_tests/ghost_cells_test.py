@@ -155,9 +155,9 @@ class TestGhostCells(GhostCellsFixtures, unittest.TestCase):
         scalar = scalar.at[line].set(jnp.array([1.0, 2.0, 10.0, 20.0, 30.0, 40.0, 3.0, 4.0]))
         vector = (scalar, scalar, scalar)
 
-        folded = ghost_cells.fold_tiled_vector_ghost_cells(
+        folded = ghost_cells.fold_tiled_ghost_cells(
             vector, parameters, g, bc_type=ghost_cells.BC_TYPE_PARTICLE)
-        refreshed = ghost_cells.update_tiled_vector_ghost_cells(
+        refreshed = ghost_cells.update_tiled_ghost_cells(
             folded, parameters, g, bc_type=ghost_cells.BC_TYPE_PARTICLE)
 
         # Jx and Jy are tangential to the z-wall and collocated in z: even C images
@@ -180,7 +180,7 @@ class TestGhostCells(GhostCellsFixtures, unittest.TestCase):
             particle_boundaries = [BC_PERIODIC, BC_PERIODIC, BC_PERIODIC]
             particle_boundaries[wall_axis] = BC_CONDUCTING
             parameters = _particle_wall_parameters(tile_shape, g, tuple(particle_boundaries))
-            refreshed = ghost_cells.update_tiled_vector_ghost_cells(
+            refreshed = ghost_cells.update_tiled_ghost_cells(
                 vector, parameters, g, bc_type=ghost_cells.BC_TYPE_PARTICLE)
             lower_ghost = [0, 0, 0, g, g, g]
             lower_ghost[3 + wall_axis] = 0
@@ -252,7 +252,7 @@ class TestGhostCells(GhostCellsFixtures, unittest.TestCase):
             parameters = _particle_wall_parameters((2, 2, 4), g, walls, solver=solver)
             results.append((
                 ghost_cells.fold_tiled_ghost_cells(scalar, parameters, g, bc_type=ghost_cells.BC_TYPE_PARTICLE),
-                ghost_cells.fold_tiled_vector_ghost_cells(vector, parameters, g, bc_type=ghost_cells.BC_TYPE_PARTICLE),
+                ghost_cells.fold_tiled_ghost_cells(vector, parameters, g, bc_type=ghost_cells.BC_TYPE_PARTICLE),
             ))
         (flat_rho, flat_J), (gr_rho, gr_J) = results
         _assert_allclose(self, flat_rho, gr_rho, rtol=0.0, atol=0.0)

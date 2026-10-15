@@ -4,7 +4,7 @@ from functools import partial
 import jax
 
 from .grid_and_stencil import BC_CONDUCTING, BC_CONSTANT
-from .ghost_cells import update_tiled_vector_ghost_cells
+from .ghost_cells import update_tiled_ghost_cells
 from .pec import enforce_pec_B, enforce_pec_D
 from PyPIC3D.relativity.field_interpolation import copy_densities
 
@@ -41,8 +41,8 @@ def refresh_fields(vector, static, locations, field_kind=None, metric=None):
     if field_kind not in (None, 'D', 'B'):
         raise ValueError("field_kind must be D, B, or None for auxiliary fields")
     if field_kind is None:
-        return update_tiled_vector_ghost_cells(
-            vector, static, static.guard_cells, locations=locations, preserve_exterior=True)
+        return update_tiled_ghost_cells(
+            vector, static, static.guard_cells, location=locations, preserve_exterior=True)
     if metric is None:
         raise ValueError('D/B density refresh requires a Yee metric')
 
@@ -52,8 +52,8 @@ def refresh_fields(vector, static, locations, field_kind=None, metric=None):
     if BC_CONDUCTING in static.boundary_conditions:
         enforce_pec = enforce_pec_D if field_kind == 'D' else enforce_pec_B
         return enforce_pec(vector, static, locations, metric)
-    exchange = partial(update_tiled_vector_ghost_cells, static_parameters=static,
-                       num_guard_cells=static.guard_cells, locations=locations)
+    exchange = partial(update_tiled_ghost_cells, static_parameters=static,
+                       num_guard_cells=static.guard_cells, location=locations)
     # Periodic and tile-seam halos copy the same physical point; constant
     # extrapolation copies the adjacent physical value.
     if BC_CONSTANT in static.boundary_conditions:
