@@ -23,6 +23,7 @@ def time_loop_static_metric(
     return_diagnostics=False,
     current_transform=None,
     *,
+    absorber=None,
     pair_injector=None,
     injection_key=None,
     step=0,
@@ -69,6 +70,8 @@ def time_loop_static_metric(
     D_n, B_n_minushalf, J_n_minushalf, rho, phi, external_fields, metric, previous_fields, overflow_previous = fields
     # unpack the fixed-metric field state
 
+    d_absorber, b_absorber = (None, None) if absorber is None else absorber
+
     D_n_minusone, B_n_minusthreehalves = previous_fields
     # unpack the previous fixed-metric field state.  Every D and B arrives with
     # refreshed halos and walls from update_D/B or initialization.
@@ -80,7 +83,7 @@ def time_loop_static_metric(
     E_n_minusonehalf = compute_covariant_E(D_n_minushalf, B_n_minushalf, metric)
     # compute the covariant electric field from the centered displacement and magnetic fields
 
-    B_n = update_B(E_n_minusonehalf, B_n_minusone, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt)
+    B_n = update_B(E_n_minusonehalf, B_n_minusone, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt, absorber=b_absorber)
     # update the densitized magnetic field using the centered displacement field
 
     particles_n = particles
@@ -142,19 +145,19 @@ def time_loop_static_metric(
     H_n = compute_covariant_H(D_n, B_n, metric)
     # compute the covariant magnetic field from the updated displacement and magnetic fields
 
-    B_n_plushalf = update_B(E_n, B_n_minushalf, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt)
+    B_n_plushalf = update_B(E_n, B_n_minushalf, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt, absorber=b_absorber)
     # update the densitized magnetic field using the updated displacement field
 
     J_n = tuple( 0.5 * (J_n_plushalf[i] + J_n_minushalf[i]) for i in range(3))
     # compute the centered current for the current time step
 
-    D_n_plushalf = update_D(D_n_minushalf, H_n, J_n, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt)
+    D_n_plushalf = update_D(D_n_minushalf, H_n, J_n, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt, absorber=d_absorber)
     # update the densitized displacement field using the updated magnetic field and current
 
     H_n_plushalf = compute_covariant_H(D_n_plushalf, B_n_plushalf, metric)
     # compute the covariant magnetic field from the updated displacement and magnetic fields
 
-    D_n_plusone = update_D(D_n, H_n_plushalf, J_n_plushalf, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt)
+    D_n_plusone = update_D(D_n, H_n_plushalf, J_n_plushalf, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt, absorber=d_absorber)
     # update the densitized displacement field using the updated magnetic field and current
 
 
