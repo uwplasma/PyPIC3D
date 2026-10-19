@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 
 from PyPIC3D.deposition.GR_direct_deposition import GR_direct_deposition
@@ -21,6 +22,11 @@ def time_loop_static_metric(
     dynamic_parameters,
     return_diagnostics=False,
     current_transform=None,
+    *,
+    pair_injector=None,
+    injection_key=None,
+    step=0,
+    injection_interval_steps=1,
 ):
     """
     Advance a tiled PIC system in a prescribed 3+1 metric.
@@ -32,9 +38,33 @@ def time_loop_static_metric(
     densitized current. Its caller must use the same commuting transform for
     deposited charge when checking Gauss's law; arbitrary current-only
     smoothing is not valid.
+    An optional pair_injector(particles, species, fields, static, dynamic,
+    key, event) returns (particles, next_key, (requested, inserted)). Injection runs
+    before the push at step zero and every injection_interval_steps thereafter.
+    Pass step and injection_key as JAX inputs; close over the callable and interval.
+    Enabled calls append (next_key, counts) to the usual outputs. The caller must
+    reject any nonzero requested - inserted counts on the host.
     Empty particle storage takes a vacuum step, skipping the particle push,
     deposition, current transform, and particle tile communication.
     """
+
+    if pair_injector is not None:
+        if static_parameters.solver != "static_metric":
+            raise ValueError("Pair injection requires solver='static_metric'")
+        if injection_key is None or injection_interval_steps < 1:
+            raise ValueError("Pair injection requires an RNG key and a positive step interval")
+
+        def inject(_):
+            return pair_injector(
+                particles, species_config, fields, static_parameters,
+                dynamic_parameters, injection_key, step // injection_interval_steps)
+
+        def skip(_):
+            zero = jnp.zeros(particles.active.shape[:3], dtype=jnp.int32)
+            return particles, injection_key, (zero, zero)
+
+        particles, injection_key, injection_counts = jax.lax.cond(
+            step % injection_interval_steps == 0, inject, skip, operand=None)
 
     D_n, B_n_minushalf, J_n_minushalf, rho, phi, external_fields, metric, previous_fields, overflow_previous = fields
     # unpack the fixed-metric field state
@@ -144,4 +174,5 @@ def time_loop_static_metric(
     )
     # pack the fixed-metric field state
 
-    return (particles, fields, boundary_diagnostics) if return_diagnostics else (particles, fields)
+    result = (particles, fields, boundary_diagnostics) if return_diagnostics else (particles, fields)
+    return result + (injection_key, injection_counts) if pair_injector is not None else result

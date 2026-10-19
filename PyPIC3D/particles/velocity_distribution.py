@@ -1,4 +1,4 @@
-"""Thermal three-velocity sampling in the plasma rest frame."""
+"""Thermal velocity and momentum sampling in the plasma rest frame."""
 
 from functools import partial
 
@@ -99,6 +99,21 @@ def maxwell_juttner(N_particles, mass, Tx, Ty, Tz, kb, key, c=1.0):
     See Livadiotis (2016), Ann. Geophys. 34, 1145-1158:
     https://doi.org/10.5194/angeo-34-1145-2016
     """
+    ux, uy, uz = maxwell_juttner_momentum(N_particles, mass, Tx, Ty, Tz, kb, key, c)
+    gamma = jnp.sqrt(1.0 + ux**2 + uy**2 + uz**2)
+    return c * ux / gamma, c * uy / gamma, c * uz / gamma
+
+
+@partial(jax.jit, static_argnames=("N_particles",))
+def maxwell_juttner_momentum(N_particles, mass, Tx, Ty, Tz, kb, key, c=1.0):
+    """Return rest-frame spatial four-velocities ``u_i = p_i/(mass*c)``.
+
+    Arguments, temperature law, RNG convention, and invalid-temperature behavior
+    match ``maxwell_juttner``. Each component has shape ``(N_particles,)``.
+    Components are dimensionless and orthonormal, before any coordinate-metric
+    transformation or leapfrog seeding. Sampling momentum directly avoids loss
+    of precision from inverting three-velocities that round to the speed of light.
+    """
     if any(jnp.ndim(value) != 0 for value in (mass, Tx, Ty, Tz, kb, c)):
         raise ValueError("mass, Tx, Ty, Tz, kb, and c must be scalars; use jax.vmap for batches")
     dtype = jnp.result_type(mass, Tx, Ty, Tz, kb, c, 1.0)
@@ -130,9 +145,7 @@ def maxwell_juttner(N_particles, mass, Tx, Ty, Tz, kb, key, c=1.0):
     ux = p_hat * sin_polar * jnp.cos(azimuth) * scale[0]
     uy = p_hat * sin_polar * jnp.sin(azimuth) * scale[1]
     uz = p_hat * mu * scale[2]
-    gamma = jnp.sqrt(1.0 + ux**2 + uy**2 + uz**2)
-    vx = jnp.where(valid_temperature, c * ux / gamma, jnp.nan)
-    vy = jnp.where(valid_temperature, c * uy / gamma, jnp.nan)
-    vz = jnp.where(valid_temperature, c * uz / gamma, jnp.nan)
-
-    return vx, vy, vz
+    ux = jnp.where(valid_temperature, ux, jnp.nan)
+    uy = jnp.where(valid_temperature, uy, jnp.nan)
+    uz = jnp.where(valid_temperature, uz, jnp.nan)
+    return ux, uy, uz

@@ -68,6 +68,7 @@ The Sphinx documentation lives in `docs/`:
 - `chargeconservation.rst`: current deposition and filtering.
 - `grid.rst`: coordinate grids, Yee staggering, and boundaries.
 - `particles.rst`: species initialization and tiled particle state.
+- [Pair injection](docs/pair_injection.md): optional compiled pair sources for the static-metric solver.
 - `demos.rst`: runnable examples.
 - `architecture.rst`: runtime objects, modules, and data flow.
 - `development.rst`: setup, tests, documentation builds, and debugging.
