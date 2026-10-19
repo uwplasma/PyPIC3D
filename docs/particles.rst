@@ -60,11 +60,44 @@ for each independent sample; repeating a key repeats the sample.
 - ``maxwellian(N_particles, mass, Tx, Ty, Tz, kb, key)`` draws independent
   Gaussian components with variance ``kb*T_i/mass``. Directional temperatures
   may differ or be zero.
-- ``maxwell_juttner(theta, N_particles, key, c=1.0)`` draws isotropic
+- ``maxwell_juttner(N_particles, mass, Tx, Ty, Tz, kb, key, c=1.0)`` draws
   rest-frame three-velocities using the modified Canfield four-Gamma rejection
-  method, without an inverse-CDF table or momentum cutoff. Here
-  ``theta = kb*T/(mass*c**2)`` is a nonnegative scalar. The returned velocities
-  have the units of ``c``; ``theta=0`` returns zeros.
+  method. Its first seven arguments match ``maxwellian``, including physical
+  temperature units. ``mass``, ``kb``, and ``c`` must be positive finite
+  scalars. The returned velocities have the units of ``c``. This replaces
+  the earlier dimensionless ``theta`` interface.
+
+Maxwell-Juttner sampling supports isotropic, axisymmetric, and triaxial
+temperatures through one momentum-space transformation. Define
+
+.. math::
+
+   \Theta_i = \frac{k_b T_i}{mc^2}, \qquad
+   \Theta_0 = \frac{\Theta_x+\Theta_y+\Theta_z}{3}.
+
+The sampler draws one isotropic dimensionless momentum vector at
+``Theta0``, then rescales its components:
+
+.. math::
+
+   u_i = q_i\sqrt{\frac{\Theta_i}{\Theta_0}}, \qquad
+   f(\mathbf{u}) \propto \exp\left[-\frac{1}{\Theta_0}
+   \sqrt{1+\sum_i\frac{\Theta_0}{\Theta_i}u_i^2}\right].
+
+Here ``u = p/(mass*c)`` is dimensionless momentum. The returned physical
+velocity is ``v = c*u/sqrt(1 + sum(u**2))``, using the Lorentz factor after
+rescaling. Equal temperatures recover the isotropic distribution. Directional
+temperatures parameterize the distribution shape; they are not measured
+relativistic pressure temperatures. See `Livadiotis (2016), Annales
+Geophysicae 34, 1145-1158 <https://doi.org/10.5194/angeo-34-1145-2016>`_.
+
+Each directional temperature is scalar per call; use ``jax.vmap`` over keys
+and temperatures for batches. Temperatures must be positive and finite,
+except that ``Tx = Ty = Tz = 0`` returns zero velocities. Negative, nonfinite,
+or partly zero temperatures return NaNs, including under JIT and ``vmap``.
+Unsupported argument shapes raise ``ValueError``. Extreme temperatures may
+exceed the floating-point range or make speeds round to ``c``. No velocity
+clipping, momentum cutoff, or pressure-matching solve is applied.
 
 For example, in normalized units:
 
@@ -73,11 +106,13 @@ For example, in normalized units:
    import jax
    from PyPIC3D.particles.velocity_distribution import maxwellian, maxwell_juttner
 
-   maxwell_key, juttner_key = jax.random.split(jax.random.key(42))
+   maxwell_key, isotropic_key, triaxial_key = jax.random.split(jax.random.key(42), 3)
    vx, vy, vz = maxwellian(10000, mass=1.0, Tx=0.01, Ty=0.02,
                            Tz=0.01, kb=1.0, key=maxwell_key)
-   vx, vy, vz = maxwell_juttner(theta=1.0, N_particles=10000,
-                               key=juttner_key, c=1.0)
+   vx, vy, vz = maxwell_juttner(10000, mass=1.0, Tx=1.0, Ty=1.0,
+                               Tz=1.0, kb=1.0, key=isotropic_key, c=1.0)
+   vx, vy, vz = maxwell_juttner(10000, mass=1.0, Tx=0.2, Ty=0.5,
+                               Tz=1.0, kb=1.0, key=triaxial_key, c=1.0)
 
 TOML initialization continues to use the Maxwellian. It now uses JAX random
 keys instead of NumPy's global random state, so previous random realizations
