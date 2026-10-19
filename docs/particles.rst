@@ -49,6 +49,45 @@ A scalar initial position places particles within a sub-cell interval around
 that coordinate when the axis contains more than one cell. A scalar initial
 velocity is added to the sampled thermal velocity.
 
+Callable Velocity Distributions
+-------------------------------
+
+``PyPIC3D.particles.velocity_distribution`` provides two JAX samplers. Both
+return a tuple ``(vx, vy, vz)`` of arrays with shape ``(N_particles,)`` and
+are JIT-compiled with a static particle count. Supply a fresh JAX random key
+for each independent sample; repeating a key repeats the sample.
+
+- ``maxwellian(N_particles, mass, Tx, Ty, Tz, kb, key)`` draws independent
+  Gaussian components with variance ``kb*T_i/mass``. Directional temperatures
+  may differ or be zero.
+- ``maxwell_juttner(theta, N_particles, key, c=1.0)`` draws isotropic
+  rest-frame three-velocities using the modified Canfield four-Gamma rejection
+  method, without an inverse-CDF table or momentum cutoff. Here
+  ``theta = kb*T/(mass*c**2)`` is a nonnegative scalar. The returned velocities
+  have the units of ``c``; ``theta=0`` returns zeros.
+
+For example, in normalized units:
+
+.. code-block:: python
+
+   import jax
+   from PyPIC3D.particles.velocity_distribution import maxwellian, maxwell_juttner
+
+   maxwell_key, juttner_key = jax.random.split(jax.random.key(42))
+   vx, vy, vz = maxwellian(10000, mass=1.0, Tx=0.01, Ty=0.02,
+                           Tz=0.01, kb=1.0, key=maxwell_key)
+   vx, vy, vz = maxwell_juttner(theta=1.0, N_particles=10000,
+                               key=juttner_key, c=1.0)
+
+TOML initialization continues to use the Maxwellian. It now uses JAX random
+keys instead of NumPy's global random state, so previous random realizations
+change, including x positions from the split position/sampling key. External
+arrays and scalar offsets retain their existing behavior. Maxwell-Juttner
+sampling is available through the callable API only. Its output is
+three-velocity; static-metric callers must convert it to the appropriate
+covariant four-velocity before assigning particle state. Neither sampler
+applies a bulk boost or performs leapfrog time centering.
+
 Particle Boundary Conditions
 ----------------------------
 
