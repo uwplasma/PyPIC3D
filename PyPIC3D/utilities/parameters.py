@@ -51,6 +51,7 @@ class StaticParameters(NamedTuple):
     metric_backreaction: bool = True
     lapse_deleting: bool = False
     lapse_threshold: float = 0.1
+    collisions: tuple = ()
 
 
 class DynamicParameters(NamedTuple):
@@ -259,7 +260,7 @@ def _output_value(value):
 
 
 def static_parameters_for_output(static_parameters):
-    skip = {"field_mesh"}
+    skip = {"field_mesh", "collisions"}
     static_items = static_parameters._asdict()
     if static_parameters.solver in ("static_metric", "dynamic_metric"):
         from PyPIC3D.relativity.interpolate_metric import RECONSTRUCTION

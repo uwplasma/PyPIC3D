@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 
 from PyPIC3D.relativity.field_state import densitize_vector
+from PyPIC3D.collisions import load_collisions_from_toml
 from PyPIC3D.particles.particle_initialization import load_particles_from_toml
 from PyPIC3D.pusher.particle_push import seed_leapfrog_velocity
 from PyPIC3D.particles.particle_tile_communication import shard_tiled_particles
@@ -724,7 +725,11 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
             "Reducing particle_batch_size from "
             f"{static_parameters.particle_batch_size} to tile capacity {effective_batch_size}."
         )
-    static_parameters = static_parameters._replace(particle_batch_size=effective_batch_size)
+    static_parameters = static_parameters._replace(
+        particle_batch_size=effective_batch_size,
+        collisions=load_collisions_from_toml(config, particle_species_names),
+    )
+    particles = particles._replace(key=jax.random.PRNGKey(int(config.get("simulation_parameters", {}).get("seed", 0))))
     particles = shard_tiled_particles(particles, static_parameters)
     if static_parameters.lapse_deleting:
         # Initial output and leapfrog histories must use the surviving ensemble.

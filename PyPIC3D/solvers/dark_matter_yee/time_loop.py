@@ -1,5 +1,6 @@
 """Coupled Maxwell-Proca PIC with E'/phi' at n and A' at n-1/2."""
 
+from PyPIC3D.collisions import apply_collisions
 from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
 from PyPIC3D.particles.particle_tile_communication import (
@@ -41,6 +42,8 @@ def time_loop_dark_photon(particles, species_config, fields, static_parameters, 
     )
     particles = particle_push(particles, species_config, push_E, push_B, static_parameters, dynamic_parameters)
     # first push the particles with the integer-time force fields, including adjoint current filtering
+    particles, collision_overflow = apply_collisions(particles, species_config, static_parameters, dynamic_parameters)
+    overflow = overflow | collision_overflow
 
 
     if static_parameters.current_deposition == "esirkepov":

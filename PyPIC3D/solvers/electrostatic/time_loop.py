@@ -1,3 +1,4 @@
+from PyPIC3D.collisions import apply_collisions
 from PyPIC3D.particles.particle_tile_communication import (
     refresh_tiled_particle_tiles,
     update_tiled_particle_positions,
@@ -43,6 +44,8 @@ def time_loop_electrostatic(
         dynamic_parameters,
     )
     # push velocities using the selected tiled particle pusher
+    particles, collision_overflow = apply_collisions(particles, species_config, static_parameters, dynamic_parameters)
+    overflow_previous = overflow_previous | collision_overflow
 
     particles = update_tiled_particle_positions(particles, species_config, dt)
     # update particle forward positions before depositing rho

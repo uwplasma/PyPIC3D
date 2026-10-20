@@ -39,7 +39,7 @@ def shard_tiled_particles(tiled_particles, static_parameters):
     state_sharding = NamedSharding(mesh, PARTICLE_STATE_TILE_SPEC)
     active_sharding = NamedSharding(mesh, PARTICLE_ACTIVE_TILE_SPEC)
 
-    return TiledParticles(
+    return tiled_particles._replace(
         x=jax.device_put(tiled_particles.x, state_sharding),
         u=jax.device_put(tiled_particles.u, state_sharding),
         active=jax.device_put(tiled_particles.active, active_sharding),
@@ -484,7 +484,7 @@ def _build_distributed_particle_refresher(static_parameters):
             tiled_particles.active,
             dynamic_parameters,
         )
-        return TiledParticles(x=x, u=u, active=active), overflow
+        return tiled_particles._replace(x=x, u=u, active=active), overflow
 
     return refresh
 
