@@ -45,9 +45,15 @@ def time_loop_static_metric(
     Pass step and injection_key as JAX inputs; close over the callable and interval.
     Enabled calls append (next_key, counts) to the usual outputs. The caller must
     reject any nonzero requested - inserted counts on the host.
+    E/H use target-site lapse-metric coefficients and unlimited upstream
+    reconstruction of the shift cross products, with velocity -beta. At least
+    two guards are required. Native curls and time staggering are unchanged.
     Empty particle storage takes a vacuum step, skipping the particle push,
     deposition, current transform, and particle tile communication.
     """
+
+    if static_parameters.guard_cells < 2:
+        raise ValueError("Upstream shift reconstruction requires guard_cells >= 2")
 
     if pair_injector is not None:
         if static_parameters.solver != "static_metric":
@@ -80,7 +86,8 @@ def time_loop_static_metric(
     B_n_minusone = tuple( 0.5 * (B_n_minushalf[i] + B_n_minusthreehalves[i]) for i in range(3) )
     # compute the centered fields for the current time step
 
-    E_n_minusonehalf = compute_covariant_E(D_n_minushalf, B_n_minushalf, metric)
+    E_n_minusonehalf = compute_covariant_E(
+        D_n_minushalf, B_n_minushalf, metric)
     # compute the covariant electric field from the centered displacement and magnetic fields
 
     B_n = update_B(E_n_minusonehalf, B_n_minusone, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt, absorber=b_absorber)
@@ -140,9 +147,11 @@ def time_loop_static_metric(
     # apply boundaries and restore full-step tile ownership for the next push while preserving all overflow events
 
 
-    E_n = compute_covariant_E(D_n, B_n, metric)
+    E_n = compute_covariant_E(
+        D_n, B_n, metric)
     # compute the covariant electric field from the updated displacement and magnetic fields
-    H_n = compute_covariant_H(D_n, B_n, metric)
+    H_n = compute_covariant_H(
+        D_n, B_n, metric)
     # compute the covariant magnetic field from the updated displacement and magnetic fields
 
     B_n_plushalf = update_B(E_n, B_n_minushalf, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt, absorber=b_absorber)
@@ -154,7 +163,8 @@ def time_loop_static_metric(
     D_n_plushalf = update_D(D_n_minushalf, H_n, J_n, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt, absorber=d_absorber)
     # update the densitized displacement field using the updated magnetic field and current
 
-    H_n_plushalf = compute_covariant_H(D_n_plushalf, B_n_plushalf, metric)
+    H_n_plushalf = compute_covariant_H(
+        D_n_plushalf, B_n_plushalf, metric)
     # compute the covariant magnetic field from the updated displacement and magnetic fields
 
     D_n_plusone = update_D(D_n, H_n_plushalf, J_n_plushalf, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt, absorber=d_absorber)

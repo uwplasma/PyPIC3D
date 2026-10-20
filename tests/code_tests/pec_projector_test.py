@@ -189,11 +189,15 @@ class TestStaggeredProjectors(StaggeredProjectorsFixtures, unittest.TestCase):
         captured=[]
         def push(particles,species,D,B,*args):
             captured.append((D,B));return particles,particles
+        from PyPIC3D.particles.particle_class import TiledParticles
+        # Nonempty storage selects the mocked particle push/deposition branch.
+        position=jnp.zeros((1,1,1,1,1,3))
+        particles=TiledParticles(position,position,jnp.ones(position.shape[:-1],dtype=bool))
         module='PyPIC3D.solvers.GR_yee.time_loop.'
         with patch(module+'hybrid_boris_geodesic_push',side_effect=push), \
              patch(module+'GR_direct_deposition',return_value=z), \
              patch(module+'refresh_tiled_particle_tiles',side_effect=lambda p,*args:(p,False)):
-            _,result=time_loop_static_metric(None,None,fields,s,d)
+            _,result=time_loop_static_metric(particles,None,fields,s,d)
         result = physical_fields(result)
         for D,B in (*captured,(result[0],result[1]),result[7]):
             for wall in (s.guard_cells,s.guard_cells+s.tile_shape[0]):

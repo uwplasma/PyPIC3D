@@ -8,74 +8,71 @@ from PyPIC3D.boundary_conditions.ghost_cells import owned_nodes
 from PyPIC3D.relativity.field_interpolation import reconstruct_vector
 
 
-def _shift_cross_component(beta, vector_components, component):
-    beta_x = beta[..., 0]
-    beta_y = beta[..., 1]
-    beta_z = beta[..., 2]
-    vector_x, vector_y, vector_z = vector_components
+def _upwind_shift_product(field, beta, source, axis):
+    """Return target beta times the native field reconstructed upstream for -beta.
 
-    if component == 0:
-        return beta_y * vector_z - beta_z * vector_y
-    if component == 1:
-        return beta_z * vector_x - beta_x * vector_z
-    return beta_x * vector_y - beta_y * vector_x
+    Each shift cross-product transfer changes only this axis. C->V brackets
+    current/upper samples; V->C brackets lower/current samples. The unlimited
+    centered slope gives second-order reconstruction and needs two guards.
+    """
+    slope = .5 * (jnp.roll(field, -1, axis=axis+3)
+                  - jnp.roll(field, 1, axis=axis+3))
+    if source[axis] == "C":
+        left = field + .5*slope
+        right = jnp.roll(field - .5*slope, -1, axis=axis+3)
+    else:
+        left = jnp.roll(field + .5*slope, 1, axis=axis+3)
+        right = field - .5*slope
+    return beta * jnp.where(beta > 0, right, left)
 
 
 def compute_covariant_E(D_tiles, B_tiles, metric):
-    """
-    Compute covariant E_i from densitized D/B using FPIC Eq. (10).
+    """Compute E_i from native densitized D/B and target-site geometry.
 
-    Densities are averaged to each target location and divided by the target
-    sqrt_gamma, the metric-weighted transfer of the physical vector on a
-    regular coordinate domain. All metric samples, including halos, must have
-    finite positive sqrt_gamma.
+    The lapse-metric term averages D to the target, divides by its sqrt_gamma,
+    lowers the index with target gamma, then multiplies target lapse. Only
+    beta cross B uses upstream reconstruction, with transport velocity -beta.
+    Metric samples and fields, including at least two guards, must be valid.
     """
-
     E_cov = []
     for i, target_location in enumerate(D_FIELD_LOCATIONS):
-        volume = metric.D[i].sqrt_gamma
-        D_on_target = [value / volume for value in
+        sample = metric.D[i]
+        D_on_target = [value / sample.sqrt_gamma for value in
                        reconstruct_vector(D_tiles, D_FIELD_LOCATIONS, target_location)]
-        B_on_target = [value / volume for value in
-                       reconstruct_vector(B_tiles, B_FIELD_LOCATIONS, target_location)]
-
         D_lower_i = 0.0
         for j in range(3):
-            D_lower_i = D_lower_i + metric.D[i].gamma[..., i, j] * D_on_target[j]
+            D_lower_i = D_lower_i + sample.gamma[..., i, j] * D_on_target[j]
+        electric = sample.lapse * D_lower_i
 
-        shift_cross = _shift_cross_component(metric.D[i].shift, tuple(B_on_target), i)
-        E_cov.append(
-            metric.D[i].lapse * D_lower_i
-            + metric.D[i].sqrt_gamma * shift_cross
-        )
+        # E_shift = beta x B_density at D_i's native location.
+        j, k = (i+1) % 3, (i+2) % 3
+        electric += _upwind_shift_product(
+            B_tiles[k], sample.shift[..., j], B_FIELD_LOCATIONS[k], j)
+        electric -= _upwind_shift_product(
+            B_tiles[j], sample.shift[..., k], B_FIELD_LOCATIONS[j], k)
+        E_cov.append(electric)
     return tuple(E_cov)
 
 
 def compute_covariant_H(D_tiles, B_tiles, metric):
-    """
-    Compute covariant H_i from densitized D/B using FPIC Eq. (9).
-
-    Uses the same transfers and regular-domain requirements as
-    ``compute_covariant_E``.
-    """
-
+    """Compute H_i with the same metric transfer and opposite shift-cross sign."""
     H_cov = []
     for i, target_location in enumerate(B_FIELD_LOCATIONS):
-        volume = metric.B[i].sqrt_gamma
-        B_on_target = [value / volume for value in
+        sample = metric.B[i]
+        B_on_target = [value / sample.sqrt_gamma for value in
                        reconstruct_vector(B_tiles, B_FIELD_LOCATIONS, target_location)]
-        D_on_target = [value / volume for value in
-                       reconstruct_vector(D_tiles, D_FIELD_LOCATIONS, target_location)]
-
         B_lower_i = 0.0
         for j in range(3):
-            B_lower_i = B_lower_i + metric.B[i].gamma[..., i, j] * B_on_target[j]
+            B_lower_i = B_lower_i + sample.gamma[..., i, j] * B_on_target[j]
+        magnetic = sample.lapse * B_lower_i
 
-        shift_cross = _shift_cross_component(metric.B[i].shift, tuple(D_on_target), i)
-        H_cov.append(
-            metric.B[i].lapse * B_lower_i
-            - metric.B[i].sqrt_gamma * shift_cross
-        )
+        # H_shift = -beta x D_density at B_i's native location.
+        j, k = (i+1) % 3, (i+2) % 3
+        magnetic -= _upwind_shift_product(
+            D_tiles[k], sample.shift[..., j], D_FIELD_LOCATIONS[k], j)
+        magnetic += _upwind_shift_product(
+            D_tiles[j], sample.shift[..., k], D_FIELD_LOCATIONS[j], k)
+        H_cov.append(magnetic)
     return tuple(H_cov)
 
 
