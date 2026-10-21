@@ -109,40 +109,34 @@ def apply_sponge(fields, background, p, static, dynamic):
 
 def make_step(p, species, static, dynamic, background, *,
               current_filter_passes=0):
-    """Build the jitted inject/evolve step pair for one simulation."""
+    """Build one compiled step with conditional injection followed by evolution."""
     injection_steps = max(1, math.ceil(p.injection_interval/float(dynamic.dt)))
-    @jax.jit
-    def inject(particles, fields, key, index):
+    def inject(particles, species, fields, static, dynamic, key, index):
         metric = fields[6]
         # magnetization reads the physical field; the leapfrog seed reads densities
         mag = measure_magnetization(particles, species, physical_vector(fields[1], metric.B),
                                     metric, static, dynamic)
         return inject_pairs(particles, species, mag, fields[0], fields[1], metric,
                             static, dynamic, p, key, index)
-    def evolve(particles, fields):
+    def evolve(particles, fields, key, index):
         transform = None
         if current_filter_passes:
             transform = lambda current: filter_current(current, static, current_filter_passes)
-        particles, fields, boundary = time_loop_static_metric(
+        particles, fields, boundary, key, counts = time_loop_static_metric(
             particles, species, fields, static, dynamic, return_diagnostics=True,
-            current_transform=transform)
+            current_transform=transform, pair_injector=inject, injection_key=key,
+            step=index, injection_interval_steps=injection_steps)
         fields = apply_sponge(fields, background, p, static, dynamic)
         finite = finite_state(particles, fields)
-        return (particles, fields, boundary), finite
+        return (particles, fields, boundary, key, counts), finite
     checked = jax.jit(evolve)
     def execute(particles, fields, key, index):
-        if int(index) % injection_steps == 0:
-            # Key by injection event, not timestep: matched physical injection
-            # schedules must draw the same candidates during dt refinement.
-            event = index // injection_steps
-            particles, key, report = inject(particles, fields, key, event)
-            requested, inserted, rejected = report.requested, report.inserted, report.rejected
-            if bool(jnp.any(rejected)):
-                raise RuntimeError(f"Injection capacity failure at step {index}: "
-                                   f"requested={requested}, inserted={inserted}, rejected={rejected}")
-        else:
-            requested = inserted = rejected = jnp.zeros(p.devices, jnp.int64)
-        (particles, fields, boundary), finite = checked(particles, fields)
+        (particles, fields, boundary, key, counts), finite = checked(particles, fields, key, index)
+        requested, inserted = jax.device_get(counts)
+        rejected = requested - inserted
+        if rejected.any():
+            raise RuntimeError(f"Injection capacity/species failure at step {index}: "
+                               f"requested={requested}, inserted={inserted}, rejected={rejected}")
         if not bool(finite):
             raise FloatingPointError(f'Nonfinite particle or field state at step {index}')
         if bool(boundary.invalid_push):
@@ -150,7 +144,7 @@ def make_step(p, species, static, dynamic, background, *,
         if bool(fields[-1]):
             raise RuntimeError(f'Particle migration/capacity failure at step {index}')
         check_sharding(particles, fields, static)
-        return particles, fields, key, (requested, inserted, rejected, boundary)
+        return particles, fields, key, boundary, counts
     return execute
 
 
@@ -215,11 +209,10 @@ def evolve(particles, species, fields, key, p, static, dynamic, background, outp
               dynamic_ncols=True) as progress:
         progress.set_postfix(time='0 M', active=int(particles.active.sum()), refresh=False)
         for step in range(1, target+1):
-            new, newfields, newkey, report = execute(particles, fields, key, step-1)
+            new, newfields, newkey, boundary, _ = execute(particles, fields, key, step-1)
             if step % p.constraint_check_interval == 0 or step == target:
                 check_state(new, newfields, step)
             particles, fields, key = new, newfields, newkey
-            _, _, _, boundary = report
             budget.accumulate(boundary, dt)
             now = time.perf_counter()
             if now-last_refresh >= 1. or step == target:

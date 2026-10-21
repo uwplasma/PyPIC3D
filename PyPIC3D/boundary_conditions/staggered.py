@@ -2,6 +2,7 @@
 from functools import partial
 
 import jax
+import jax.numpy as jnp
 
 from .grid_and_stencil import BC_CONDUCTING, BC_CONSTANT
 from .ghost_cells import update_tiled_ghost_cells
@@ -30,7 +31,7 @@ def freeze_horizon_layers(vector, static):
 
 
 @partial(jax.jit, static_argnames=('static', 'locations', 'field_kind'))
-def refresh_fields(vector, static, locations, field_kind=None, metric=None):
+def refresh_fields(vector, static, locations, field_kind=None, metric=None, absorber=None):
     """Refresh fields; D/B are native densities and require the Yee metric.
 
     Auxiliary E/H retain their computed physical exterior values. Only D/B
@@ -45,6 +46,21 @@ def refresh_fields(vector, static, locations, field_kind=None, metric=None):
             vector, static, static.guard_cells, location=locations, preserve_exterior=True)
     if metric is None:
         raise ValueError('D/B density refresh requires a Yee metric')
+
+    if absorber is not None:
+        # Exchange tile seams, but keep the prescribed exterior native densities.
+        # Each kind carries (rates, references, exterior_masks), all runtime arrays.
+        if static.supergaussian_active or static.pml_active or BC_CONDUCTING in static.boundary_conditions or static.horizon_field_cells:
+            raise ValueError('Reference sponge cannot be combined with another absorber, PEC, or horizon freezing')
+        _, reference, exterior = absorber
+        vector = update_tiled_ghost_cells(
+            vector, static, static.guard_cells, location=locations, preserve_exterior=True)
+        refreshed = tuple(jnp.where(mask, initial, value)
+                          for value, initial, mask in zip(vector, reference, exterior))
+        # Bound fusion across successive predictor/history updates. Without
+        # this identity barrier, GPU compilation of a full BSSN step can spend
+        # many minutes revisiting the same large fused boundary expressions.
+        return jax.lax.optimization_barrier(refreshed)
 
     volumes = tuple(sample.sqrt_gamma for sample in (metric.D if field_kind == 'D' else metric.B))
     if static.horizon_field_cells:

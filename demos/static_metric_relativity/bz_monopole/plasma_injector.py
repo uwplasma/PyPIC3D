@@ -1,20 +1,11 @@
 """Neutral thermal pair injection into fixed-capacity tiled particle storage."""
-from typing import NamedTuple
-
 import jax
 import jax.numpy as jnp
 
 from PyPIC3D.particles.particle_class import TiledParticles, SpeciesConfig
 from PyPIC3D.particles.particle_tile_communication import shard_tiled_particles
-from PyPIC3D.pusher.particle_push import seed_leapfrog_velocity
-from PyPIC3D.relativity.interpolate_metric import interpolate_metric, safe_inactive_positions
-
-
-class InjectionReport(NamedTuple):
-    requested: jax.Array
-    inserted: jax.Array
-    rejected: jax.Array
-    newborn: jax.Array
+from PyPIC3D.particles.velocity_distribution import maxwell_juttner_momentum
+from PyPIC3D.relativity.pair_injection import insert_pairs
 
 
 def empty_particles(p, static):
@@ -25,42 +16,6 @@ def empty_particles(p, static):
     species = SpeciesConfig(charge=jnp.array([-1., 1.]), mass=jnp.ones(2),
                             weight=jnp.full(2, p.weight), update_x=jnp.ones((2, 3), bool))
     return shard_tiled_particles(particles, static), species
-
-
-def thermal_momentum(key, temperature):
-    """Exact isotropic Maxwell--Juttner draw, density proportional to exp(-gamma/T).
-
-    Propose |u| from Gamma(3,T): p^2 exp(-p/T). Acceptance exp((p-gamma)/T)
-    leaves the desired relativistic radial density, without a finite tail cutoff.
-    """
-    key, direction_key = jax.random.split(key)
-    direction = jax.random.normal(direction_key, (3,), dtype=jnp.float64)
-    direction /= jnp.linalg.norm(direction)
-    def draw(state):
-        key, _, _ = state
-        key, k1, k2 = jax.random.split(key, 3)
-        # Three exponential variates avoid gamma sampler compilation overhead.
-        radius = -temperature*jnp.log(jax.random.uniform(k1, (3,), minval=1e-15, dtype=jnp.float64)).sum()
-        accept = jax.random.uniform(k2, dtype=jnp.float64) < jnp.exp((radius-jnp.sqrt(1+radius**2))/temperature)
-        return key, radius, accept
-    _, radius, _ = jax.lax.while_loop(lambda s: ~s[2], draw, (key, jnp.array(0.), jnp.array(False)))
-    return radius*direction
-
-
-def orthonormal_to_covariant(momentum, gamma):
-    """Transform with the supplied grid-interpolated covariant spatial metric."""
-    return jnp.linalg.cholesky(gamma) @ momentum
-
-
-def birth_covariant_momentum(momentum, positions, active, metric, grid, static):
-    """Use exactly the pusher reconstruction; unused candidates are safely masked."""
-    g = static.guard_cells
-    evaluation = safe_inactive_positions(positions, active, grid, (True,True,False), g)
-    sampled = interpolate_metric(
-        metric, evaluation, grid, static.metric, (True,True,False), (g,g,g),
-        derivatives=False)
-    covariant = jax.vmap(orthonormal_to_covariant)(momentum, sampled.gamma)
-    return jnp.where(active[...,None], covariant, 0.)
 
 
 def sample_position(key, rlo, rhi, tlo, thi, spin):
@@ -102,7 +57,7 @@ def inject_pairs(particles, species, magnetization, D, B, metric, static, dynami
     next_key, event_key = jax.random.split(key)
     event_key = jax.random.fold_in(event_key, step)
 
-    def one_tile(x, u, active, sig, valid, rline, tline, pline, primitive_metric, tile_id):
+    def one_tile(sig, valid, rline, tline, tile_id):
         rr, tt = jnp.meshgrid(rline[g:-g], tline[g:-g+1], indexing="ij")
         rr, tt = rr.reshape(-1), tt.reshape(-1)
         cells = jnp.arange(nr*nt)
@@ -128,8 +83,6 @@ def inject_pairs(particles, species, magnetization, D, B, metric, static, dynami
         counts = jnp.where(eligible, jnp.floor(expected+rounding).astype(jnp.int32), 0)
         cumulative = jnp.cumsum(counts)
         requested = jnp.sum(counts)
-        free = jnp.sum(~active, axis=-1)
-        inserted = jnp.minimum(jnp.minimum(free[0], free[1]), jnp.minimum(requested, candidate_capacity))
         ranks = jnp.arange(candidate_capacity)
         cell = jnp.minimum(jnp.searchsorted(cumulative, ranks, side="right"), nr*nt-1)
         offset = ranks-jnp.where(cell>0, cumulative[jnp.maximum(cell-1, 0)], 0)
@@ -137,28 +90,20 @@ def inject_pairs(particles, species, magnetization, D, B, metric, static, dynami
         # Cell and ordinal keys make samples independent of the tile decomposition.
         positions=jax.vmap(lambda k,rl,rh,tl,th:sample_position(jax.random.fold_in(k,1),rl,rh,tl,th,p.spin))(
             keys,rlo[cell],rhi[cell],tlo[cell],thi[cell])
-        momenta = jax.vmap(lambda k: thermal_momentum(jax.random.fold_in(k, 2), p.temperature))(keys)
-        # Birth transformation and backward initialization use the same metric.
-        covariant = birth_covariant_momentum(
-            momenta, positions, ranks < inserted, primitive_metric,
-            (rline,tline,pline), static)
-        newborn = jnp.zeros_like(active)
-        for s in range(2):
-            indices = jnp.nonzero(~active[s], size=slots, fill_value=slots)[0][:candidate_capacity]
-            indices = jnp.where(ranks<inserted, indices, slots)
-            x = x.at[s, indices].set(positions, mode="drop")
-            u = u.at[s, indices].set(covariant, mode="drop")
-            active = active.at[s, indices].set(True, mode="drop")
-            newborn = newborn.at[s, indices].set(True, mode="drop")
-        return x, u, active, newborn, requested, inserted
+        def sample_momentum(key):
+            # The BZ temperature is dimensionless: m = kb = c = 1.
+            u = maxwell_juttner_momentum(
+                1, 1., p.temperature, p.temperature, p.temperature, 1.,
+                jax.random.fold_in(key, 2))
+            return jnp.stack(u, axis=-1)[0]
 
-    x, u, active, newborn, requested, inserted = jax.vmap(one_tile)(
-        particles.x[:, 0, 0], particles.u[:, 0, 0], particles.active[:, 0, 0],
+        momenta = jax.vmap(sample_momentum)(keys)
+        return positions, momenta, requested
+
+    positions, momenta, requested = jax.vmap(one_tile)(
         sigma[:, 0, 0], valid[:, 0, 0], rgrid[:, 0, 0],
-        tgrid[:, 0, 0], dynamic.grids.tiled_center_grid[2][:,0,0],
-        jax.tree.map(lambda a: a[:,0,0], metric.center), jnp.arange(p.devices))
-    result = TiledParticles(x[:, None, None], u[:, None, None], active[:, None, None])
-    newborn = newborn[:, None, None]
-    seeded = seed_leapfrog_velocity(result._replace(active=newborn), species, D, B, static, dynamic, metric)
-    result = result._replace(u=jnp.where(newborn[..., None], seeded.u, result.u))
-    return result, next_key, InjectionReport(requested, inserted, requested-inserted, newborn)
+        tgrid[:, 0, 0], jnp.arange(p.devices))
+    result, counts = insert_pairs(
+        particles, species, positions[:, None, None], momenta[:, None, None],
+        requested[:, None, None], D, B, metric, static, dynamic)
+    return result, next_key, counts

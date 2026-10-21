@@ -40,7 +40,13 @@ def _raise_if_tiled_particles_overflowed(fields):
         raise RuntimeError("tiled particle tile capacity overflowed during periodic retile")
 
 
-def run_PyPIC3D(config_file):
+def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
+                injection_interval_steps=1):
+    """Run a simulation, optionally injecting neutral pairs in the static solver.
+
+    The injector follows time_loop_static_metric's callable contract. Supply an
+    explicit RNG key and reserve enough particle slots in the initial configuration.
+    """
     (
         loop,
         particles,
@@ -58,18 +64,30 @@ def run_PyPIC3D(config_file):
     particle_species_names = plotting_parameters.get("particle_species_names")
     static_metric = static_parameters.solver == "static_metric"
 
+    if pair_injector is not None:
+        if not static_metric:
+            raise ValueError("Pair injection requires solver='static_metric'")
+        if injection_key is None or injection_interval_steps < 1:
+            raise ValueError("Pair injection requires an RNG key and a positive step interval")
+
     def loop_with_static_parameters(
         particles,
         species_config,
         fields,
         dynamic_parameters,
+        key,
+        step,
     ):
+        injection = {} if pair_injector is None else dict(
+            pair_injector=pair_injector, injection_key=key, step=step,
+            injection_interval_steps=injection_interval_steps)
         return loop(
             particles,
             species_config,
             fields,
             static_parameters,
             dynamic_parameters,
+            **injection,
         )
 
     jit_loop = jax.jit(loop_with_static_parameters)
@@ -180,12 +198,25 @@ def run_PyPIC3D(config_file):
                     plotting_parameters["field_map"] = field_map
                     enqueue_openpmd_field_output(field_writer, field_map, dynamic_parameters, plot_num, t)
 
-            particles, fields = jit_loop(
+            result = jit_loop(
                 particles,
                 species_config,
                 fields,
                 dynamic_parameters,
+                injection_key,
+                t,
             )
+            if pair_injector is None:
+                particles, fields = result
+            else:
+                particles, fields, injection_key, counts = result
+                requested, inserted = jax.device_get(counts)
+                rejected = requested - inserted
+                if rejected.any():
+                    raise RuntimeError(
+                        f"Pair injection capacity/species failure at step {t}: "
+                        f"requested={requested}, inserted={inserted}, "
+                        f"rejected={rejected}")
             _raise_if_tiled_particles_overflowed(fields)
 
     except BaseException as exc:

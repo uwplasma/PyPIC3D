@@ -5,6 +5,7 @@ import math
 
 from PyPIC3D.utilities.plasma_quantities import T_to_vth, vth_to_T
 from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
+from PyPIC3D.particles.velocity_distribution import maxwellian
 from PyPIC3D.utilities.grids import grid_domain_bounds
 
 
@@ -65,16 +66,12 @@ def initial_particles(
     key2,
     key3,
 ):
+    key1, velocity_key = jax.random.split(key1)
     x = jax.random.uniform(key1, shape=(N_particles,), minval=minx, maxval=maxx)
     y = jax.random.uniform(key2, shape=(N_particles,), minval=miny, maxval=maxy)
     z = jax.random.uniform(key3, shape=(N_particles,), minval=minz, maxval=maxz)
 
-    std_x = T_to_vth(Tx, mass, kb)
-    std_y = T_to_vth(Ty, mass, kb)
-    std_z = T_to_vth(Tz, mass, kb)
-    vx = np.random.normal(0, std_x, N_particles)
-    vy = np.random.normal(0, std_y, N_particles)
-    vz = np.random.normal(0, std_z, N_particles)
+    vx, vy, vz = maxwellian(N_particles, mass, Tx, Ty, Tz, kb, velocity_key)
 
     return x, y, z, vx, vy, vz
 

@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 
 from PyPIC3D.deposition.GR_direct_deposition import GR_direct_deposition
@@ -21,6 +22,12 @@ def time_loop_static_metric(
     dynamic_parameters,
     return_diagnostics=False,
     current_transform=None,
+    *,
+    absorber=None,
+    pair_injector=None,
+    injection_key=None,
+    step=0,
+    injection_interval_steps=1,
 ):
     """
     Advance a tiled PIC system in a prescribed 3+1 metric.
@@ -32,12 +39,44 @@ def time_loop_static_metric(
     densitized current. Its caller must use the same commuting transform for
     deposited charge when checking Gauss's law; arbitrary current-only
     smoothing is not valid.
+    An optional pair_injector(particles, species, fields, static, dynamic,
+    key, event) returns (particles, next_key, (requested, inserted)). Injection runs
+    before the push at step zero and every injection_interval_steps thereafter.
+    Pass step and injection_key as JAX inputs; close over the callable and interval.
+    Enabled calls append (next_key, counts) to the usual outputs. The caller must
+    reject any nonzero requested - inserted counts on the host.
+    E/H use target-site lapse-metric coefficients and unlimited upstream
+    reconstruction of the shift cross products, with velocity -beta. At least
+    two guards are required. Native curls and time staggering are unchanged.
     Empty particle storage takes a vacuum step, skipping the particle push,
     deposition, current transform, and particle tile communication.
     """
 
+    if static_parameters.guard_cells < 2:
+        raise ValueError("Upstream shift reconstruction requires guard_cells >= 2")
+
+    if pair_injector is not None:
+        if static_parameters.solver != "static_metric":
+            raise ValueError("Pair injection requires solver='static_metric'")
+        if injection_key is None or injection_interval_steps < 1:
+            raise ValueError("Pair injection requires an RNG key and a positive step interval")
+
+        def inject(_):
+            return pair_injector(
+                particles, species_config, fields, static_parameters,
+                dynamic_parameters, injection_key, step // injection_interval_steps)
+
+        def skip(_):
+            zero = jnp.zeros(particles.active.shape[:3], dtype=jnp.int32)
+            return particles, injection_key, (zero, zero)
+
+        particles, injection_key, injection_counts = jax.lax.cond(
+            step % injection_interval_steps == 0, inject, skip, operand=None)
+
     D_n, B_n_minushalf, J_n_minushalf, rho, phi, external_fields, metric, previous_fields, overflow_previous = fields
     # unpack the fixed-metric field state
+
+    d_absorber, b_absorber = (None, None) if absorber is None else absorber
 
     D_n_minusone, B_n_minusthreehalves = previous_fields
     # unpack the previous fixed-metric field state.  Every D and B arrives with
@@ -47,10 +86,11 @@ def time_loop_static_metric(
     B_n_minusone = tuple( 0.5 * (B_n_minushalf[i] + B_n_minusthreehalves[i]) for i in range(3) )
     # compute the centered fields for the current time step
 
-    E_n_minusonehalf = compute_covariant_E(D_n_minushalf, B_n_minushalf, metric)
+    E_n_minusonehalf = compute_covariant_E(
+        D_n_minushalf, B_n_minushalf, metric)
     # compute the covariant electric field from the centered displacement and magnetic fields
 
-    B_n = update_B(E_n_minusonehalf, B_n_minusone, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt)
+    B_n = update_B(E_n_minusonehalf, B_n_minusone, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt, absorber=b_absorber)
     # update the densitized magnetic field using the centered displacement field
 
     particles_n = particles
@@ -107,24 +147,27 @@ def time_loop_static_metric(
     # apply boundaries and restore full-step tile ownership for the next push while preserving all overflow events
 
 
-    E_n = compute_covariant_E(D_n, B_n, metric)
+    E_n = compute_covariant_E(
+        D_n, B_n, metric)
     # compute the covariant electric field from the updated displacement and magnetic fields
-    H_n = compute_covariant_H(D_n, B_n, metric)
+    H_n = compute_covariant_H(
+        D_n, B_n, metric)
     # compute the covariant magnetic field from the updated displacement and magnetic fields
 
-    B_n_plushalf = update_B(E_n, B_n_minushalf, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt)
+    B_n_plushalf = update_B(E_n, B_n_minushalf, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt, absorber=b_absorber)
     # update the densitized magnetic field using the updated displacement field
 
     J_n = tuple( 0.5 * (J_n_plushalf[i] + J_n_minushalf[i]) for i in range(3))
     # compute the centered current for the current time step
 
-    D_n_plushalf = update_D(D_n_minushalf, H_n, J_n, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt)
+    D_n_plushalf = update_D(D_n_minushalf, H_n, J_n, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt, absorber=d_absorber)
     # update the densitized displacement field using the updated magnetic field and current
 
-    H_n_plushalf = compute_covariant_H(D_n_plushalf, B_n_plushalf, metric)
+    H_n_plushalf = compute_covariant_H(
+        D_n_plushalf, B_n_plushalf, metric)
     # compute the covariant magnetic field from the updated displacement and magnetic fields
 
-    D_n_plusone = update_D(D_n, H_n_plushalf, J_n_plushalf, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt)
+    D_n_plusone = update_D(D_n, H_n_plushalf, J_n_plushalf, metric, static_parameters, dynamic_parameters, dynamic_parameters.dt, absorber=d_absorber)
     # update the densitized displacement field using the updated magnetic field and current
 
 
@@ -144,4 +187,5 @@ def time_loop_static_metric(
     )
     # pack the fixed-metric field state
 
-    return (particles, fields, boundary_diagnostics) if return_diagnostics else (particles, fields)
+    result = (particles, fields, boundary_diagnostics) if return_diagnostics else (particles, fields)
+    return result + (injection_key, injection_counts) if pair_injector is not None else result
