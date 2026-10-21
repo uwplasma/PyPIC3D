@@ -76,18 +76,37 @@ class TestDensitizedMaxwell(unittest.TestCase):
         _, _, m = coupled_setup((8, 6, 1), (8, 6, 1), (0, 0, 0))
         D, B, _ = random_vectors(m)
         density_D, density_B = densitize_vector(D, m.D), densitize_vector(B, m.B)
+
+        def upstream(value, location, axis, beta):
+            # Independent three-point half-node weights for the shift term.
+            def neighbor(offset):
+                indices = (jnp.arange(value.shape[axis+3])+offset) % value.shape[axis+3]
+                return jnp.take(value, indices, axis=axis+3)
+            if location[axis] == 'C':
+                left = -.25*neighbor(-1)+value+.25*neighbor(1)
+                right = .25*value+neighbor(1)-.25*neighbor(2)
+            else:
+                left = -.25*neighbor(-2)+neighbor(-1)+.25*value
+                right = .25*neighbor(-1)+value-.25*neighbor(1)
+            return beta*jnp.where(beta > 0, right, left)
+
         for magnetic, locations, samples, compute in (
                 (False, D_FIELD_LOCATIONS, m.D, compute_covariant_E),
                 (True, B_FIELD_LOCATIONS, m.B, compute_covariant_H)):
+            own, other = (density_B, density_D) if magnetic else (density_D, density_B)
+            other_locations = D_FIELD_LOCATIONS if magnetic else B_FIELD_LOCATIONS
+            sign = -1 if magnetic else 1
             expected = []
             for i, (location, sample) in enumerate(zip(locations, samples)):
-                # metric-weighted transfer of the physical vector to this location
-                dd = jnp.stack(reconstruct_vector(density_D, D_FIELD_LOCATIONS, location), axis=-1)/sample.sqrt_gamma[..., None]
-                bb = jnp.stack(reconstruct_vector(density_B, B_FIELD_LOCATIONS, location), axis=-1)/sample.sqrt_gamma[..., None]
-                lower = jnp.sum(sample.gamma[..., i, :]*(bb if magnetic else dd), axis=-1)
-                cross = jnp.cross(sample.shift, dd if magnetic else bb)[..., i]
-                expected.append(sample.lapse*lower + (-1 if magnetic else 1)*sample.sqrt_gamma*cross)
-            self.assert_vectors_close(compute(density_D, density_B, m), expected)
+                vector = jnp.stack(reconstruct_vector(own, locations, location), axis=-1)
+                lower = jnp.sum(sample.gamma[..., i, :]*vector/sample.sqrt_gamma[..., None], axis=-1)
+                j, k = (i+1) % 3, (i+2) % 3
+                cross = (upstream(other[k], other_locations[k], j, sample.shift[..., j])
+                         - upstream(other[j], other_locations[j], k, sample.shift[..., k]))
+                expected.append(sample.lapse*lower+sign*cross)
+            actual = compute(density_D, density_B, m)
+            self.assertTrue(bool(jnp.allclose(jnp.stack(actual), jnp.stack(expected),
+                                             rtol=3e-13, atol=3e-13)))
 
     def test_updates_match_physical_equations_and_boundaries(self):
         # Non-orthogonal conducting edges on the complete physical domain.
@@ -192,19 +211,23 @@ class TestDensitizedMaxwell(unittest.TestCase):
             self.assert_vectors_close(DD, tuple(2*a for a in state[0]))
             self.assert_vectors_close(BB, tuple(2*a for a in state[1]))
             return particles, particles
-        def fake_update_D(DD, H, JJ, *args):
+        def fake_update_D(DD, H, JJ, *args, absorber=None):
+            self.assertIsNone(absorber)
             captured.append(JJ)
             return DD
         def transform(JJ):
             self.assert_vectors_close(JJ, new_J)
             return tuple(2*a for a in JJ)
+        # Nonempty storage selects the mocked particle push/deposition branch.
+        position = jnp.zeros((1, 1, 1, 1, 1, 3))
+        particles = TiledParticles(position, position, jnp.ones(position.shape[:-1], dtype=bool))
         module = 'PyPIC3D.solvers.GR_yee.time_loop.'
         with patch(module+'hybrid_boris_geodesic_push', side_effect=push), \
              patch(module+'GR_direct_deposition', return_value=new_J), \
              patch(module+'refresh_tiled_particle_tiles', side_effect=lambda p,*a:(p,False)), \
-             patch(module+'update_B', side_effect=lambda E,B,*a:B), \
+             patch(module+'update_B', side_effect=lambda E,B,*a,absorber=None:B), \
              patch(module+'update_D', side_effect=fake_update_D):
-            _, result = time_loop_static_metric(None, None, state, s, d, current_transform=transform)
+            _, result = time_loop_static_metric(particles, None, state, s, d, current_transform=transform)
         filtered = tuple(2*a for a in new_J)
         self.assert_vectors_close(captured[0], tuple((a+b)/2 for a,b in zip(state[2], filtered)))
         self.assert_vectors_close(captured[1], filtered)
