@@ -40,6 +40,7 @@ class TiledFieldSnapshot:
     step: int
     time: float
     fields: Mapping[str, SnapshotFieldValue]
+    current_time_offset: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -108,7 +109,7 @@ def prefetch_field_map_to_host(field_map):
             _prefetch(value)
 
 
-def make_tiled_field_snapshot(field_map, *, step, time):
+def make_tiled_field_snapshot(field_map, *, step, time, current_time_offset=None):
     copied = {}
 
     for name, value in field_map.items():
@@ -122,6 +123,7 @@ def make_tiled_field_snapshot(field_map, *, step, time):
         step=int(step),
         time=float(time),
         fields=copied,
+        current_time_offset=current_time_offset,
     )
 
 
@@ -236,8 +238,9 @@ class AsyncTiledOpenPMDFieldWriter:
         except queue.Full:
             return False
 
-    def enqueue_fields(self, field_map, *, step, time, block=True):
-        snapshot = make_tiled_field_snapshot(field_map, step=step, time=time)
+    def enqueue_fields(self, field_map, *, step, time, block=True, current_time_offset=None):
+        snapshot = make_tiled_field_snapshot(field_map, step=step, time=time,
+                                             current_time_offset=current_time_offset)
         return self.enqueue(snapshot, block=block)
 
     def close(self, raise_errors=None):
@@ -448,11 +451,18 @@ def create_async_tiled_openpmd_particle_writer(
 
 def enqueue_openpmd_field_output(field_writer, field_map, dynamic_parameters, plot_t, t, *, block=True):
     prefetch_field_map_to_host(field_map)
+    offsets = {}
+    if dynamic_parameters.bssn_parameters is not None:
+        # The seed current is at the initial common time; subsequent currents
+        # are centered on the final native particle substep.
+        offsets["current_time_offset"] = 0.0 if t == 0 else -float(dynamic_parameters.dt) / 4
     return field_writer.enqueue_fields(
         field_map,
         step=int(plot_t),
-        time=float(t * dynamic_parameters.dt),
+        time=float(dynamic_parameters.bssn_parameters.time if dynamic_parameters.bssn_parameters is not None
+                   else t * dynamic_parameters.dt),
         block=block,
+        **offsets,
     )
 
 
@@ -472,7 +482,8 @@ def enqueue_openpmd_particle_output(
     return particle_writer.enqueue_particles(
         particles,
         step=int(plot_t),
-        time=float(t * dynamic_parameters.dt),
+        time=float(dynamic_parameters.bssn_parameters.time if dynamic_parameters.bssn_parameters is not None
+                   else t * dynamic_parameters.dt),
         species_config=species_config,
         species_names=species_names,
         gamma=gamma,

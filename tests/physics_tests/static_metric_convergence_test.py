@@ -12,7 +12,7 @@ from PyPIC3D.pusher.hybrid_boris_geodesic import (
 from PyPIC3D.relativity.metrics.flat import initialize_flat_cartesian_metric
 from PyPIC3D.relativity.interpolate_metric import interpolate_metric
 from PyPIC3D.relativity.metrics.kerr_schild import initialize_kerr_schild_spherical_metric
-from PyPIC3D.solvers.GR_yee.static_metric import update_B
+from PyPIC3D.solvers.GR_yee.curved_maxwell import update_B
 from tests.kernel_fixtures import empty_tiled_vector, kernel_parameters
 
 

@@ -38,7 +38,7 @@ from PyPIC3D.relativity.metrics.flat import (
     initialize_flat_cartesian_metric,
     initialize_flat_spherical_metric,
 )
-from PyPIC3D.solvers.GR_yee.static_metric import update_D
+from PyPIC3D.solvers.GR_yee.curved_maxwell import update_D
 from PyPIC3D.solvers.GR_yee.time_loop import time_loop_static_metric
 from tests.kernel_fixtures import (
     empty_tiled_scalar,

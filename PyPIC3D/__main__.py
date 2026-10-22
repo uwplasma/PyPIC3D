@@ -41,7 +41,7 @@ def _raise_if_tiled_particles_overflowed(fields):
 
 
 def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
-                injection_interval_steps=1):
+                injection_interval_steps=1, bssn_state=None, bssn_evolution_parameters=None):
     """Run a simulation, optionally injecting neutral pairs in the static solver.
 
     The injector follows time_loop_static_metric's callable contract. Supply an
@@ -56,13 +56,16 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
         plotting_parameters,
         plasma_parameters,
         species_config,
-    ) = initialize_simulation(config_file)
+    ) = initialize_simulation(config_file, bssn_state=bssn_state,
+                              bssn_evolution_parameters=bssn_evolution_parameters)
 
     dt = dynamic_parameters.dt
     Nt = static_parameters.Nt
     output_dir = static_parameters.output_dir
     particle_species_names = plotting_parameters.get("particle_species_names")
     static_metric = static_parameters.solver == "static_metric"
+    dynamic_metric = static_parameters.solver == "dynamic_metric"
+    gr_metric = static_metric or dynamic_metric
 
     if pair_injector is not None:
         if not static_metric:
@@ -93,7 +96,7 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
     jit_loop = jax.jit(loop_with_static_parameters)
 
     initial_energy = None
-    if not static_metric:
+    if not gr_metric:
         E, B, J, rho, phi, external_fields, *rest = fields
         total_E, total_B = add_external_fields(E, B, external_fields)
         e_energy, b_energy, kinetic_energy = compute_energy(
@@ -138,7 +141,15 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
             if t % plotting_parameters["plotting_interval"] == 0:
                 plot_num = t // plotting_parameters["plotting_interval"]
 
-                if not static_metric:
+                if dynamic_metric:
+                    from PyPIC3D.diagnostics.static_metric import bssn_constraint_norms
+                    norms = bssn_constraint_norms(particles, species_config, fields,
+                                                 static_parameters, dynamic_parameters)
+                    for name, value in norms.items():
+                        write_data(f"{output_dir}/data/{name}.txt",
+                                   dynamic_parameters.bssn_parameters.time, value)
+
+                if not gr_metric:
                     E, B, J, rho, phi, external_fields, *rest = fields
                     total_E, total_B = add_external_fields(E, B, external_fields)
                     e_energy, b_energy, kinetic_energy = compute_energy(
@@ -170,13 +181,18 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
 
                 if particle_writer is not None:
                     gamma = None
-                    if static_metric:
+                    output_particles = particles
+                    if dynamic_metric:
+                        from PyPIC3D.relativity.dynamical_relativity import synchronize_particles
+                        output_particles = synchronize_particles(
+                            particles, species_config, fields, static_parameters, dynamic_parameters)
+                    if gr_metric:
                         metric = fields[6]
-                        gamma = particle_lorentz_factor(particles, metric, static_parameters, dynamic_parameters)
+                        gamma = particle_lorentz_factor(output_particles, metric, static_parameters, dynamic_parameters)
                         # particle u holds covariant u_i, so Gamma needs the metric at each particle
                     enqueue_openpmd_particle_output(
                         particle_writer,
-                        particles,
+                        output_particles,
                         dynamic_parameters,
                         plot_num,
                         t,
@@ -206,7 +222,9 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
                 injection_key,
                 t,
             )
-            if pair_injector is None:
+            if dynamic_metric:
+                particles, fields, dynamic_parameters = result
+            elif pair_injector is None:
                 particles, fields = result
             else:
                 particles, fields, injection_key, counts = result
@@ -274,8 +292,8 @@ def main():
     ) = block_until_ready(run_PyPIC3D(toml_file))
     end = time.time()
 
-    if static_parameters.solver == "static_metric":
-        print("Skipping final flat-space energy diagnostics for static_metric fields and covariant particle u_i\n")
+    if static_parameters.solver in ("static_metric", "dynamic_metric"):
+        print("Skipping final flat-space energy diagnostics for GR fields and covariant particle u_i\n")
     else:
         E, B, J, rho, phi, external_fields, *rest = fields
         total_E, total_B = add_external_fields(E, B, external_fields)

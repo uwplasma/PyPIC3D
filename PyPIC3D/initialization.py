@@ -99,7 +99,7 @@ def validate_field_solver(solver):
     Keep the active field-solver names explicit so stale configs do not silently
     fall through to a different numerical update.
     """
-    supported_solvers = ("electrodynamic_yee", "electrostatic", "static_metric", "dark_matter_yee")
+    supported_solvers = ("electrodynamic_yee", "electrostatic", "static_metric", "dynamic_metric", "dark_matter_yee")
     if solver not in supported_solvers:
         raise ValueError(
             f"Unsupported solver: {solver}. Use one of {supported_solvers}."
@@ -167,17 +167,17 @@ def _validate_tiled_yee_configuration(static_config, dynamic_config):
     Keep the first tile-native PIC path tied to the kernels that exist today.
     """
 
-    if static_config["solver"] == "static_metric":
+    if static_config["solver"] in ("static_metric", "dynamic_metric"):
         if static_config["current_calculation"] not in ("GR_direct_deposition", "esirkepov"):
             raise ValueError(
-                "static_metric requires current_calculation='GR_direct_deposition' "
+                "GR solvers require current_calculation='GR_direct_deposition' "
                 "or current_calculation='esirkepov'"
             )
         if static_config["particle_pusher"] != "hybrid_boris_geodesic":
-            raise ValueError("static_metric requires particle_pusher='hybrid_boris_geodesic'")
+            raise ValueError("GR solvers require particle_pusher='hybrid_boris_geodesic'")
     elif static_config["current_calculation"] not in ("j_from_rhov", "esirkepov"):
         raise ValueError("Yee runtime currently supports current_calculation='j_from_rhov' or 'esirkepov'")
-    if static_config["solver"] != "static_metric" and static_config["particle_pusher"] not in ("boris", "higuera_cary"):
+    if static_config["solver"] not in ("static_metric", "dynamic_metric") and static_config["particle_pusher"] not in ("boris", "higuera_cary"):
         raise ValueError("Yee runtime currently supports only particle_pusher='boris' or 'higuera_cary'")
     if static_config["filter_j"] not in ("none", "digital", "bilinear"):
         raise ValueError("Yee runtime currently supports only filter_j='none', filter_j='digital', or 'bilinear'")
@@ -201,7 +201,7 @@ def _validate_static_metric_conducting_widths(static_parameters, grid_shape):
     mirror images reach the opposite wall and the projection is no longer exact.
     """
 
-    if static_parameters.solver != "static_metric":
+    if static_parameters.solver not in ("static_metric", "dynamic_metric"):
         return
     g = int(static_parameters.guard_cells)
     for axis, (bc, cells) in enumerate(zip(static_parameters.boundary_conditions, grid_shape)):
@@ -463,7 +463,7 @@ def setup_write_dir(static_config, plotting_parameters):
     make_dir(f"{output_dir}/data")
 
 
-def initialize_simulation(toml_file):
+def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_parameters=None):
     """
     Initialize particles, fields, grids, and the timestep loop from split parameters.
     """
@@ -486,7 +486,27 @@ def initialize_simulation(toml_file):
     validate_field_solver(solver)
     electrostatic = solver == "electrostatic"
     static_metric = solver == "static_metric"
+    dynamic_metric = solver == "dynamic_metric"
+    gr_metric = static_metric or dynamic_metric
     dark_matter = solver == "dark_matter_yee"
+    if dynamic_metric:
+        # Common-time D/B and particle u seed one consistent PIC history.
+        # Legacy history/current files would otherwise be silently discarded.
+        for key, block in config.items():
+            if key.startswith("previous_field"):
+                raise ValueError("dynamic_metric requires common-time D/B; previous_field history is seeded internally")
+            if key.startswith("field") and block.get("type") in (6, 7, 8):
+                raise ValueError("dynamic_metric seeds current from common-time particles; initial J field files are unsupported")
+            if key.startswith("particle") and any(block.get(axis + "_bc", "periodic") != "periodic" for axis in "xyz"):
+                raise ValueError("dynamic_metric particle species require periodic boundaries")
+        # The GR Maxwell/pusher kernels use Gaussian units with c=1.
+        for key, value in (("C", 1.0), ("eps", 1.0), ("mu", 1.0), ("kb", 1.0)):
+            if key not in config.get("simulation_parameters", {}) and key not in config.get("dynamic_parameters", {}):
+                dynamic_config[key] = value
+        for key, value in (("particle_pusher", "hybrid_boris_geodesic"),
+                           ("current_calculation", "esirkepov"), ("filter_j", "none")):
+            if key not in config.get("simulation_parameters", {}) and key not in config.get("static_parameters", {}):
+                static_config[key] = value
     if dark_matter:
         if any(static_config[axis + "_bc"] not in ("periodic", "conducting") for axis in "xyz"):
             raise ValueError("dark_matter_yee supports periodic or conducting field boundaries")
@@ -564,8 +584,8 @@ def initialize_simulation(toml_file):
     pml_active = bool(raw_pml)
     if pml_active and electrostatic:
         raise ValueError("PML is only supported for the electrodynamic_yee and dark_matter_yee solvers")
-    if pml_active and static_metric:
-        raise ValueError("PML is not yet supported for the static_metric solver")
+    if pml_active and gr_metric:
+        raise ValueError("PML is not supported for the GR metric solvers")
 
     raw_supergaussian = config.get("supergaussian", [])
     supergaussian_active = bool(raw_supergaussian)
@@ -623,6 +643,21 @@ def initialize_simulation(toml_file):
         if static_metric
         else None
     )
+    if dynamic_metric:
+        from PyPIC3D.relativity.bssn_parameters import build_bssn_parameters
+        from PyPIC3D.relativity.dynamical_relativity import build_bssn_metric
+
+        bssn_config = dict(config.get("bssn_parameters", {}))
+        gravity_G = bssn_config.pop("gravity_G", 1.0)
+        initial_time = bssn_config.pop("time", 0.0)
+        bssn = build_bssn_parameters(
+            static_parameters, dynamic_parameters, state=bssn_state,
+            evolution_parameters=(bssn_config if bssn_evolution_parameters is None
+                                  else bssn_evolution_parameters),
+            gravity_G=gravity_G, time=initial_time,
+        )
+        dynamic_parameters = dynamic_parameters._replace(bssn_parameters=bssn)
+        metric = build_bssn_metric(bssn.state, static_parameters, dynamic_parameters)
 
     particles, species_config, particle_species_names, particle_metadata = load_particles_from_toml(
         config,
@@ -753,8 +788,8 @@ def initialize_simulation(toml_file):
             dark_fields, dark_pml = initialize_dark_pml(dark_fields, static_parameters, dynamic_parameters, pml_profiles)
             pml_state = pml_state, dark_pml
 
-    if static_metric:
-        print("Skipping flat-space energy diagnostics for static_metric fields and covariant particle u_i\n")
+    if gr_metric:
+        print("Skipping flat-space energy diagnostics for GR fields and covariant particle u_i\n")
     else:
         total_E, total_B = add_external_fields(E, B, external_fields)
         e_energy, b_energy, kinetic_energy = compute_energy(
@@ -775,20 +810,16 @@ def initialize_simulation(toml_file):
 
     if dark_matter:
         seed_E, seed_B = dark_photon_push_fields(E, B, dark_fields, external_fields, static_parameters, dynamic_parameters, dark_pml)
-    elif not static_metric and not electrostatic:
+    elif not gr_metric and not electrostatic:
         seed_E, seed_B = yee_push_fields(E, B, external_fields, static_parameters, dynamic_parameters)
     else:
         seed_E, seed_B = add_external_fields(E, B, external_fields)
-    particles = seed_leapfrog_velocity(
-        particles,
-        species_config,
-        seed_E,
-        seed_B,
-        static_parameters,
-        dynamic_parameters,
-        metric=metric if static_metric else None,
-    )
-    print("Offset particle velocities to u^(-dt/2) for the leapfrog start")
+    if not dynamic_metric:
+        particles = seed_leapfrog_velocity(
+            particles, species_config, seed_E, seed_B,
+            static_parameters, dynamic_parameters, metric=metric if static_metric else None,
+        )
+        print("Offset particle velocities to u^(-dt/2) for the leapfrog start")
     # every time loop advances u^{n-1/2} to u^{n+1/2} with the force at x^n, so
     # the run has to begin from a velocity that is half a step behind the
     # positions.  Starting from the configured u(0) leaves an O(dt) error in the
@@ -801,7 +832,11 @@ def initialize_simulation(toml_file):
         print("Non-relativistic simulation")
     print(f"Using {static_parameters.particle_pusher} particle pusher")
 
-    if static_metric:
+    if dynamic_metric:
+        from PyPIC3D.solvers.GR_yee.time_loop_dynamical_relativity import time_loop_dynamical_relativity
+        print("Using dynamic_metric BSSN-PIC solver (Gaussian units, c=1)")
+        evolve_loop = time_loop_dynamical_relativity
+    elif static_metric:
         print(f"Using static_metric solver with {static_parameters.metric} metric")
         evolve_loop = time_loop_static_metric
     elif electrostatic:
@@ -824,7 +859,18 @@ def initialize_simulation(toml_file):
     print(f"Using tiled Yee storage with tile shape: {tile_shape}")
 
     overflow = jnp.asarray(False)
-    if static_metric:
+    if dynamic_metric:
+        from PyPIC3D.relativity.dynamical_relativity import initialize_dynamical_relativity
+        from PyPIC3D.diagnostics.static_metric import bssn_constraint_norms
+
+        fields = (E, B, J, rho, phi, external_fields, metric, None, overflow)
+        particles, fields, dynamic_parameters = initialize_dynamical_relativity(
+            particles, species_config, fields, static_parameters, dynamic_parameters,
+        )
+        norms = bssn_constraint_norms(particles, species_config, fields, static_parameters, dynamic_parameters)
+        print(f"Initial Einstein constraints: Hamiltonian RMS={float(norms['hamiltonian_l2']):.6e}, "
+              f"momentum RMS={float(norms['momentum_l2']):.6e}")
+    elif static_metric:
         fields = (E, B, J, rho, phi, external_fields, metric, static_metric_state, overflow)
     elif electrostatic:
         fields = (E, B, J, rho, phi, external_fields, None, overflow)

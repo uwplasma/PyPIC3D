@@ -19,7 +19,7 @@ from PyPIC3D.relativity.core import (
 )
 from PyPIC3D.relativity.field_state import densitize_vector, physical_vector
 from PyPIC3D.relativity.interpolate_metric import interpolate_metric
-from PyPIC3D.solvers.GR_yee.static_metric import compute_covariant_E, compute_covariant_H, update_B, update_D
+from PyPIC3D.solvers.GR_yee.curved_maxwell import compute_covariant_E, compute_covariant_H, update_B, update_D
 from tests.kernel_fixtures import kernel_parameters
 
 

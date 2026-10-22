@@ -19,7 +19,7 @@ from PyPIC3D.relativity.field_interpolation import reconstruct_vector
 from PyPIC3D.relativity.field_state import (
     densitize_vector, physical_vector, densitize_fields, physical_fields,
 )
-from PyPIC3D.solvers.GR_yee.static_metric import compute_covariant_E, compute_covariant_H, update_D, update_B
+from PyPIC3D.solvers.GR_yee.curved_maxwell import compute_covariant_E, compute_covariant_H, update_D, update_B
 from PyPIC3D.solvers.GR_yee.time_loop import time_loop_static_metric
 from tests.support.pec_projector_fixtures import coupled_setup
 

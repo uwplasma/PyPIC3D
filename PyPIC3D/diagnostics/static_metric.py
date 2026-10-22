@@ -15,6 +15,34 @@ def divergence(vector, dynamic, *, forward=False):
     return result
 
 
+def electromagnetic_constraints(particles, species, fields, static, dynamic):
+    """Densitized Gauss residuals, with charge on C and magnetic divergence on V."""
+    from PyPIC3D.deposition.rho import compute_rho
+
+    charge = compute_rho(particles, species, fields[3], static._replace(current_filter="none"), dynamic)
+    magnetic = fields[7][2] if static.solver == "dynamic_metric" else fields[1]
+    return divergence(fields[0], dynamic) - 4 * jnp.pi * charge, divergence(magnetic, dynamic, forward=True)
+
+
+def bssn_constraint_norms(particles, species, fields, static, dynamic):
+    """Einstein constraint norms using the common-time PIC and EM sources."""
+    from JAX_BSSN.bssn.constraints import compute_all_constraints_with_matter
+    from JAX_BSSN.diagnostics.constraints import compute_constraint_norms
+    from PyPIC3D.relativity.dynamical_relativity import synchronize_particles
+    from PyPIC3D.relativity.energy_momentum_tensor import (
+        electromagnetic_moments, compute_energy_momentum_tensor,
+    )
+
+    bssn = dynamic.bssn_parameters
+    common_particles = synchronize_particles(particles, species, fields, static, dynamic)
+    moments = electromagnetic_moments(fields[0], fields[7][2], static)
+    rho, momentum, _ = compute_energy_momentum_tensor(
+        common_particles, species, moments, bssn.state, static, dynamic)
+    violations = compute_all_constraints_with_matter(
+        bssn.state, bssn.evolution_parameters, bssn.gravity_G * rho, bssn.gravity_G * momentum)
+    return compute_constraint_norms(violations)
+
+
 def node_weights(static, template):
     """Nodal quadrature on reflecting endpoints; ordinary ownership elsewhere."""
     weight = jnp.zeros_like(template)

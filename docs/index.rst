@@ -77,6 +77,7 @@ Contents
    usage
    tiling
    solvers
+   einstein_maxwell
    chargeconservation
    grid
    particles

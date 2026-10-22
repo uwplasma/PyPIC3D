@@ -194,6 +194,8 @@ def _plasma_frequency(N_per_cell, charge, mass, weight, dynamic_parameters):
     dx, dy, dz = dynamic_parameters.dx, dynamic_parameters.dy, dynamic_parameters.dz
     # get spatial resolution of the simulation domain
     eps = dynamic_parameters.eps
+    if getattr(dynamic_parameters, "bssn_parameters", None) is not None:
+        eps = 1.0 / (4.0 * jnp.pi)
     n = N_per_cell * weight / (dx * dy * dz)
     # define the number density
     sqrt_n = jnp.sqrt(n)
@@ -205,6 +207,8 @@ def _plasma_frequency(N_per_cell, charge, mass, weight, dynamic_parameters):
 
 def _debye_length(N_per_cell, charge, temperature, weight, dynamic_parameters):
     eps = dynamic_parameters.eps
+    if getattr(dynamic_parameters, "bssn_parameters", None) is not None:
+        eps = 1.0 / (4.0 * jnp.pi)
     kb = dynamic_parameters.kb
     dx, dy, dz = dynamic_parameters.dx, dynamic_parameters.dy, dynamic_parameters.dz
     n = N_per_cell * weight / (dx * dy * dz)
@@ -378,7 +382,8 @@ def load_particles_from_toml(config, static_parameters, dynamic_parameters):
         print(f"Mass: {mass}")
         print(f"Temperature: {T}")
         print(f"Thermal Velocity: {vth}")
-        print(f"Particle Kinetic Energy: {kinetic_energy}")
+        if getattr(dynamic_parameters, "bssn_parameters", None) is None:
+            print(f"Particle Kinetic Energy: {kinetic_energy}")
         print(f"Particle Species Plasma Frequency: {pf}")
         print(f"Time Steps Per Plasma Period: {(1 / (dt * pf))}")
         print(f"Particle Species Debye Length: {dl}")
