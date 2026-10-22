@@ -11,7 +11,7 @@ from PyPIC3D.boundary_conditions.staggered import refresh_fields
 from PyPIC3D.diagnostics.output_adapters import scalar_field_for_output
 from PyPIC3D.relativity.core import B_FIELD_LOCATIONS, D_FIELD_LOCATIONS
 from PyPIC3D.relativity.field_state import densitize_vector
-from PyPIC3D.solvers.GR_yee.static_metric import (
+from PyPIC3D.solvers.GR_yee.curved_maxwell import (
     compute_covariant_E, compute_covariant_H, update_B, update_D,
 )
 from tests.kernel_fixtures import vector_tiles_from_global

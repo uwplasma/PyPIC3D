@@ -42,7 +42,7 @@ from PyPIC3D.relativity.metrics.kerr_schild import (
     initialize_kerr_schild_cartesian_metric,
     initialize_kerr_schild_spherical_metric,
 )
-from PyPIC3D.solvers.GR_yee.static_metric import (
+from PyPIC3D.solvers.GR_yee.curved_maxwell import (
     compute_covariant_E,
     compute_covariant_H,
     update_D,

@@ -11,7 +11,7 @@ from PyPIC3D.diagnostics.static_metric import divergence, node_weights
 from PyPIC3D.relativity.field_state import physical_vector
 from PyPIC3D.relativity.core import B_FIELD_LOCATIONS, D_FIELD_LOCATIONS
 from PyPIC3D.relativity.field_interpolation import location_interpolate as _location_interpolate
-from PyPIC3D.solvers.GR_yee.static_metric import compute_covariant_E, compute_covariant_H, update_B
+from PyPIC3D.solvers.GR_yee.curved_maxwell import compute_covariant_E, compute_covariant_H, update_B
 
 if __package__:
     from .current_filter import smooth_conformal

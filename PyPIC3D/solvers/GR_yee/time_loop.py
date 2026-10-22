@@ -8,7 +8,7 @@ from PyPIC3D.particles.particle_tile_communication import refresh_tiled_particle
 from PyPIC3D.pusher.hybrid_boris_geodesic import hybrid_boris_geodesic_push
 from PyPIC3D.utilities.field_helpers import add_external_fields
 
-from .static_metric import compute_covariant_E, compute_covariant_H, update_B, update_D
+from .curved_maxwell import compute_covariant_E, compute_covariant_H, update_B, update_D
 
 
 __all__ = ["time_loop_static_metric"]

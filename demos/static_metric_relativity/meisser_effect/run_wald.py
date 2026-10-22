@@ -20,7 +20,7 @@ from PyPIC3D.diagnostics.async_writer import (
 )
 from PyPIC3D.relativity.core import B_FIELD_LOCATIONS, D_FIELD_LOCATIONS
 from PyPIC3D.relativity.field_state import physical_vector
-from PyPIC3D.solvers.GR_yee.static_metric import (
+from PyPIC3D.solvers.GR_yee.curved_maxwell import (
     compute_covariant_E,
     compute_covariant_H,
     update_B,

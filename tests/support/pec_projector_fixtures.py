@@ -12,7 +12,7 @@ from PyPIC3D.boundary_conditions.ghost_cells import apply_tiled_pec_boundary
 from PyPIC3D.relativity.core import Metric, YeeMetric, D_FIELD_LOCATIONS, B_FIELD_LOCATIONS, build_yee_metric
 from PyPIC3D.relativity.field_interpolation import copy_densities, reconstruct_vector
 from PyPIC3D.relativity.field_state import densitize_fields, physical_fields
-from PyPIC3D.solvers.GR_yee.static_metric import compute_covariant_E, compute_covariant_H, update_B, update_D
+from PyPIC3D.solvers.GR_yee.curved_maxwell import compute_covariant_E, compute_covariant_H, update_B, update_D
 from PyPIC3D.diagnostics.static_metric import divergence
 from tests.kernel_fixtures import kernel_parameters
 
