@@ -171,3 +171,105 @@ or:
    filter_j = "none"
 
 See :doc:`chargeconservation` for deposition timing and filter behavior.
+
+Dynamical BSSN-PIC Solver
+------------------------
+
+``solver = "dynamic_metric"`` evolves geometry with JAX BSSN while keeping
+Maxwell, particles, and stress-energy in PyPIC3D. Install JAX BSSN separately
+or use the ``relativity`` optional dependency. Importing ordinary PyPIC3D
+solvers does not import JAX BSSN.
+
+The first particle path uses one device, one periodic Cartesian tile, and
+equal spacing on resolved axes. Enable JAX float64 (the CLI does this), use
+Gaussian electromagnetic units with ``C = eps = mu = 1``, and keep ``dt``
+fixed. ``gravity_G`` scales both particle and EM gravitational sources;
+``gravity_G = 0`` gives the two-half-step fixed-background control when the
+initial geometry is stationary. It does not freeze arbitrary vacuum BSSN
+initial data.
+
+A minimal configuration is:
+
+.. code-block:: toml
+
+   [static_parameters]
+   solver = "dynamic_metric"
+   Nt = 10
+   output_dir = "dynamic_run"
+
+   [dynamic_parameters]
+   Nx = 16
+   Ny = 1
+   Nz = 1
+   x_wind = 4.0
+   y_wind = 0.25
+   z_wind = 0.25
+   dt = 0.01
+
+   [bssn_parameters]
+   gravity_G = 1.0
+   gauge = 0
+   zero_shift = 1
+   nu = 0.002
+
+Normal particle blocks and evolved ``fieldN`` blocks may be added. Initial
+fields are physical contravariant D/B at native Yee sites, and initial
+particle momentum is covariant ``u_i`` at the position time. Initialization
+performs densitization and the leapfrog offset once. Nonzero prescribed
+external fields are rejected. The default pusher is
+``hybrid_boris_geodesic``, current deposition is ``esirkepov``, and current
+filtering is disabled. Initial geometry is exactly flat, with harmonic lapse
+and initially zero frozen shift. This is not a matter constraint solve:
+the initial Hamiltonian and momentum residuals are reported explicitly.
+
+Python callers may provide ``bssn_state`` and ``bssn_evolution_parameters``
+to ``initialize_simulation`` or ``run_PyPIC3D``. The latter may be the native
+JAX BSSN parameter tuple or a dictionary of overrides. Its six gravity face
+codes are independent of the three EM boundary codes: BSSN code 1 means
+Sommerfeld, whereas EM code 1 means conducting.
+
+The four coupling modules are:
+
+* ``relativity/bssn_parameters.py``: ``BSSNParameters`` and its constructor.
+* ``relativity/dynamical_relativity.py``: metric/grid transfer, initialization,
+  common-time views, and history corrections after a metric change.
+* ``relativity/energy_momentum_tensor.py``: Gaussian EM moments and PIC
+  deposition of physical Eulerian ``rho``, ``S_i``, and ``S_ij``.
+* ``solvers/GR_yee/time_loop_dynamical_relativity.py``: the explicit PIC
+  half-step and complete coupled step.
+
+The loop performs PIC+EM for ``h=dt/2``, projected BSSN RK4 for ``dt``, then
+PIC+EM for ``h``. Its overall order is two. Each gravity RK stage resamples
+particle geometry and recomputes particle stress from fixed midpoint
+positions and covariant momenta. EM sources average native field products
+before contracting with the stage metric; averaging fields before squaring
+would erase unresolved field energy. Particle sources include rest mass and
+neutral species, and are not smoothed by the current filter.
+
+``dynamic_parameters.bssn_parameters`` holds ``state``,
+``evolution_parameters``, ``gravity_G``, and ``time``. The dynamic loop returns
+``particles, fields, dynamic_parameters``; other solver signatures are
+unchanged. Field slot 7 stores
+``(D_previous, B_previous, B_synchronized, half_dt, absorber)``. Particle
+momentum and B are half a native step behind the integer position/D time.
+Metric changes correct these lagged samples without redensitizing the
+common-time fields or resetting the leapfrog. This assumes smooth metric
+changes; abrupt replacement or changing ``dt`` requires a new initialization.
+
+Output includes the BSSN fields and physical common-time D/B. The existing
+``E`` mesh name denotes the physical contravariant displacement as in the
+static GR solver. Particle output synchronizes momentum to the position time.
+J retains the last half-step current and is marked with a time offset
+of ``-dt/4`` (zero for the common-time initial seed). The native endpoint
+Esirkepov current remains unchanged by the
+predictor-history correction; charge budgets across a full macro step must
+use the average of the two substep currents. Gaussian normalization is
+recorded in field and parameter metadata. Flat-space total-energy conservation
+reports are not applied to dynamical spacetime.
+
+Generic EM-only runs retain conducting and constant exterior boundaries and
+reference sponges. ``make_reference_sponge`` in
+``boundary_conditions/reference_sponge.py`` accepts fixed native D/B reference
+arrays, the static and dynamic parameters, and a coordinate ``width``. All
+particle boundary conditions remain periodic in this first coupling.
+Charged-black-hole setup, old checkpoints, and their migration are deferred.

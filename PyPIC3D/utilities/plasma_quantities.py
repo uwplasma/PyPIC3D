@@ -87,8 +87,11 @@ def build_plasma_parameters_dict(static_parameters, dynamic_parameters, electron
         * grid_axis_width(dynamic_parameters.grids.center[2])
     )
     density = weight * N / volume
-    theoretical_freq = jnp.sqrt(density) * jnp.abs(q) / jnp.sqrt(dynamic_parameters.eps * me)
-    debye = jnp.sqrt(dynamic_parameters.eps * kb * Te / (density * q**2))
+    eps = dynamic_parameters.eps
+    if getattr(dynamic_parameters, "bssn_parameters", None) is not None:
+        eps = 1.0 / (4.0 * jnp.pi)
+    theoretical_freq = jnp.sqrt(density) * jnp.abs(q) / jnp.sqrt(eps * me)
+    debye = jnp.sqrt(eps * kb * Te / (density * q**2))
     thermal_velocity = jnp.sqrt(3*kb*Te/me)
 
     plasma_parameters = {

@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from PyPIC3D.boundary_conditions.supergaussian import apply_tiled_supergaussian_absorber
 from PyPIC3D.relativity.core import B_FIELD_LOCATIONS, D_FIELD_LOCATIONS
 from PyPIC3D.boundary_conditions.staggered import refresh_fields
-from PyPIC3D.boundary_conditions.reference_sponge import sponge_advance
+from PyPIC3D.boundary_conditions.absorbing_sponge import sponge_advance
 from PyPIC3D.boundary_conditions.ghost_cells import owned_nodes
 from PyPIC3D.relativity.field_interpolation import reconstruct_vector
 

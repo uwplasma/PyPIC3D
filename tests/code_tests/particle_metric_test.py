@@ -272,7 +272,7 @@ class TestParticleMetricConsumers(unittest.TestCase):
                 for name, run in (("push", push), ("deposit", deposit)):
                     original = run(m)
                     same = run(poisoned)
-                    assert_same_tree(same, original)
+                    assert_same_tree(self, same, original)
                     different = run(changed)
                     if name == "deposit":
                         self.assertTrue(all(bool(jnp.isfinite(a).all()) for a in original))
@@ -285,7 +285,7 @@ class TestParticleMetricConsumers(unittest.TestCase):
                         if order == 1:
                             first_order_push = original
                         else:
-                            assert_same_tree(original, first_order_push)
+                            assert_same_tree(self, original, first_order_push)
                     difference = max(float(jnp.max(jnp.abs(jnp.nan_to_num(a)-jnp.nan_to_num(b))))
                                      for a, b in zip(jax.tree.leaves(original), jax.tree.leaves(different))
                                      if a.dtype != jnp.bool_)

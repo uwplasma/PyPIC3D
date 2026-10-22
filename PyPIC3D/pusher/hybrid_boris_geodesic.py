@@ -121,7 +121,7 @@ def tile_fields(tx, ty, tz, metric, D_tiles, B_tiles, dynamic_parameters):
     )
 
 
-@partial(jax.jit, static_argnames="static_parameters")
+@partial(jax.jit, static_argnames=("static_parameters", "advance_positions"))
 def hybrid_boris_geodesic_push(
     particles,
     species_config,
@@ -130,6 +130,8 @@ def hybrid_boris_geodesic_push(
     metric,
     static_parameters,
     dynamic_parameters,
+    *,
+    advance_positions=True,
 ):
     """
     Explicit Strang-split second-order 3+1 particle push.
@@ -150,6 +152,8 @@ def hybrid_boris_geodesic_push(
 
     Returns the full-step particles ``(x^{n+1}, u^{n+1/2})`` and the centred
     particles ``(x^{n+1/2}, u^{n+1/2})`` used for the current deposition.
+    ``advance_positions=False`` applies only the momentum operator, for
+    initializing and synchronizing leapfrog momenta in a changing metric.
     """
 
     g = int(static_parameters.guard_cells)
@@ -211,9 +215,13 @@ def hybrid_boris_geodesic_push(
         u_new = jnp.where(moving, electromagnetic_half_step(u_after_geodesic), u_old)
 
         # midpoint rule for the position; x^{n+1/2} is also the deposition position
-        x_half = jnp.where(moving, x_n + 0.5 * dt * coordinate_velocity(u_new, metric_n), x_n)
-        metric_half = sample_metric(tile, x_half, derivatives=False)
-        x_new = jnp.where(moving, x_n + dt * coordinate_velocity(u_new, metric_half), x_n)
+        if advance_positions:
+            x_half = jnp.where(moving, x_n + 0.5 * dt * coordinate_velocity(u_new, metric_n), x_n)
+            metric_half = sample_metric(tile, x_half, derivatives=False)
+            x_new = jnp.where(moving, x_n + dt * coordinate_velocity(u_new, metric_half), x_n)
+        else:
+            x_half = x_n
+            x_new = x_n
 
         return x_new, u_new, x_half
 

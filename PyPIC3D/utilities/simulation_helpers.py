@@ -57,10 +57,12 @@ def print_stats(static_parameters, dynamic_parameters):
     y_wind = grid_axis_width(dynamic_parameters.grids.center[1])
     z_wind = grid_axis_width(dynamic_parameters.grids.center[2])
     t_wind = Nt*dt
-    print(f'\ntime window: {t_wind} s with {Nt} time steps of {dt} s')
-    print(f'x window: {x_wind} m [{x_bounds[0]}, {x_bounds[1]}] with dx: {dx} m')
-    print(f'y window: {y_wind} m [{y_bounds[0]}, {y_bounds[1]}] with dy: {dy} m')
-    print(f'z window: {z_wind} m [{z_bounds[0]}, {z_bounds[1]}] with dz: {dz} m\n')
+    time_unit = 'code units' if static_parameters.solver == 'dynamic_metric' else 's'
+    length_unit = 'code units' if static_parameters.solver == 'dynamic_metric' else 'm'
+    print(f'\ntime window: {t_wind} {time_unit} with {Nt} time steps of {dt} {time_unit}')
+    print(f'x window: {x_wind} {length_unit} [{x_bounds[0]}, {x_bounds[1]}] with dx: {dx} {length_unit}')
+    print(f'y window: {y_wind} {length_unit} [{y_bounds[0]}, {y_bounds[1]}] with dy: {dy} {length_unit}')
+    print(f'z window: {z_wind} {length_unit} [{z_bounds[0]}, {z_bounds[1]}] with dz: {dz} {length_unit}\n')
 
 
 def courant_condition(courant_number, dx, dy, dz, dynamic_parameters):

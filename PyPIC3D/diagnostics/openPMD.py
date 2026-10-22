@@ -108,6 +108,12 @@ def _configure_openpmd_mesh(
     mesh.grid_global_offset = offsets
 
     mesh.unit_SI = 1.0
+    if getattr(dynamic_parameters, "bssn_parameters", None) is not None:
+        mesh.set_attribute("normalization", "Gaussian, c=1")
+        # D and the reconstructed B are at the common time. The retained
+        # current is centered in the last h=dt/2 particle substep.
+        mesh.time_offset = -float(dynamic_parameters.dt) / 4 if quantity_name == "J" else 0.0
+        return
     if quantity_name in DARK_MESH_LOCATIONS:
         mesh.time_offset = 0.0  # reconstructed integer-time output
     unit_exponents = MESH_UNIT_EXPONENTS.get(quantity_name)
@@ -118,10 +124,13 @@ def _configure_openpmd_mesh(
         }
 
 
-def _set_dark_mesh_position(record, name, component_index, active_dims):
-    """Record dark Yee positions; a 'V' location sits half a cell past the base C node."""
-    if name in DARK_MESH_LOCATIONS:
-        location = DARK_MESH_LOCATIONS[name][component_index]
+def _set_mesh_position(record, name, component_index, active_dims, dynamic_parameters):
+    """Record native Yee offsets for dark and dynamical GR fields."""
+    locations = DARK_MESH_LOCATIONS.get(name)
+    if getattr(dynamic_parameters, "bssn_parameters", None) is not None:
+        locations = {"E": D_FIELD_LOCATIONS, "B": B_FIELD_LOCATIONS, "J": D_FIELD_LOCATIONS}.get(name)
+    if locations is not None:
+        location = locations[component_index]
         record.position = [0.5 if point == "V" else 0.0 for point, active in zip(location, active_dims) if active]
 
 
@@ -138,7 +147,7 @@ def _write_openpmd_scalar_mesh(iteration, name, data, dynamic_parameters, active
     record.reset_dataset(io.Dataset(array.dtype, array.shape))
     record.store_chunk(array, [0] * array.ndim, array.shape)
     record.unit_SI = 1.0
-    _set_dark_mesh_position(record, name, 0, active_dims)
+    _set_mesh_position(record, name, 0, active_dims, dynamic_parameters)
 
 
 def _write_openpmd_vector_mesh(iteration, name, components, dynamic_parameters, active_dims=(1,1,1)):
@@ -155,7 +164,7 @@ def _write_openpmd_vector_mesh(iteration, name, components, dynamic_parameters, 
         record.reset_dataset(io.Dataset(array.dtype, array.shape))
         record.store_chunk(array, [0] * array.ndim, array.shape)
         record.unit_SI = 1.0
-        _set_dark_mesh_position(record, name, component_index, active_dims)
+        _set_mesh_position(record, name, component_index, active_dims, dynamic_parameters)
 
 
 def _field_map_to_interior(field_map):
@@ -248,7 +257,7 @@ def _reset_scalar_mesh_record(iteration, name, *, dynamic_parameters, layout):
     record = mesh[io.Mesh_Record_Component.SCALAR]
     record.reset_dataset(io.Dataset(np.dtype(layout.dtype), list(layout.global_shape)))
     record.unit_SI = 1.0
-    _set_dark_mesh_position(record, name, 0, layout.active_dims)
+    _set_mesh_position(record, name, 0, layout.active_dims, dynamic_parameters)
     return record
 
 
@@ -263,7 +272,7 @@ def _reset_vector_mesh_record(iteration, name, component_name, *, dynamic_parame
     record = mesh[component_name]
     record.reset_dataset(io.Dataset(np.dtype(layout.dtype), list(layout.global_shape)))
     record.unit_SI = 1.0
-    _set_dark_mesh_position(record, name, "xyz".index(component_name), layout.active_dims)
+    _set_mesh_position(record, name, "xyz".index(component_name), layout.active_dims, dynamic_parameters)
     return record
 
 
@@ -344,6 +353,9 @@ def write_tiled_field_snapshot_openpmd(
                     layout=layout,
                 )
 
+        current_offset = getattr(snapshot, "current_time_offset", None)
+        if current_offset is not None and "J" in snapshot.fields:
+            iteration.meshes["J"].time_offset = current_offset
         series.flush()
     finally:
         series.close()
@@ -642,7 +654,8 @@ def write_openpmd_initial_particles(
         series.set_attribute("softwareVersion", importlib.metadata.version("PyPIC3D"))
 
         iteration = series.iterations[0]
-        iteration.time = 0.0
+        bssn = getattr(dynamic_parameters, "bssn_parameters", None)
+        iteration.time = float(bssn.time) if bssn is not None else 0.0
         iteration.dt = float(dynamic_parameters.dt)
         iteration.time_unit_SI = 1.0
 
@@ -675,17 +688,17 @@ def write_openpmd_initial_particles(
         if np.ndim(particle_weight) == 0:
             weights = _ensure_openpmd_array(np.full(num_particles, float(particle_weight), dtype=np.float64))
         else:
-            weights = _ensure_openpmd_array(particle_weight, squeeze=True)
+            weights = _ensure_openpmd_array(particle_weight).reshape(-1)
 
         if np.ndim(particle_mass) == 0:
             masses = _ensure_openpmd_array(np.full(num_particles, float(particle_mass), dtype=np.float64))
         else:
-            masses = _ensure_openpmd_array(particle_mass, squeeze=True)
+            masses = _ensure_openpmd_array(particle_mass).reshape(-1)
 
         if np.ndim(particle_charge) == 0:
             charges = _ensure_openpmd_array(np.full(num_particles, float(particle_charge), dtype=np.float64))
         else:
-            charges = _ensure_openpmd_array(particle_charge, squeeze=True)
+            charges = _ensure_openpmd_array(particle_charge).reshape(-1)
 
         position = species_group["position"]
         for component, data in zip(("x", "y", "z"), (x, y, z)):
@@ -763,9 +776,13 @@ def write_openpmd_initial_fields(field_map, static_parameters, dynamic_parameter
     # create the openPMD series
 
     iteration = series.iterations[0]
-    iteration.time = 0.0
+    bssn = getattr(dynamic_parameters, "bssn_parameters", None)
+    iteration.time = float(bssn.time) if bssn is not None else 0.0
     iteration.dt = float(dynamic_parameters.dt)
     iteration.time_unit_SI = 1.0
     write_openpmd_fields_to_iteration(iteration, field_map, dynamic_parameters, active_dims)
+    if bssn is not None and "J" in field_map:
+        # Initial current comes directly from the common-time particle state.
+        iteration.meshes["J"].time_offset = 0.0
     series.flush()
     series.close()

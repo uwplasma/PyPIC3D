@@ -19,6 +19,12 @@ def physical_vector(vector, samples):
     return tuple(value / sample.sqrt_gamma for value, sample in zip(vector, samples))
 
 
+def synchronized_physical_fields(fields):
+    """Physical D/B at the common integer time of a dynamic-metric state."""
+    metric = fields[6]
+    return physical_vector(fields[0], metric.D), physical_vector(fields[7][2], metric.B)
+
+
 def _convert_fields(fields, convert):
     D, B, J, rho, phi, external, metric, previous, overflow = fields
     return (convert(D, metric.D), convert(B, metric.B), convert(J, metric.D),

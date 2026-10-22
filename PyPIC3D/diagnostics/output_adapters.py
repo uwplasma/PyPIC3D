@@ -3,7 +3,7 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 
-from PyPIC3D.relativity.field_state import physical_fields
+from PyPIC3D.relativity.field_state import physical_fields, physical_vector, synchronized_physical_fields
 from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.diagnostics.fluid_quantities import compute_velocity_field
 from PyPIC3D.particles.particle_class import TiledParticles
@@ -133,14 +133,31 @@ def build_field_output_map(
     requested.
     """
 
+    dynamic_metric = getattr(static_parameters, "solver", None) == "dynamic_metric"
     if getattr(static_parameters, "solver", None) == "static_metric":
         fields = physical_fields(fields)
     E, B, J, rho, *_rest = fields
+    if dynamic_metric:
+        E, B = synchronized_physical_fields(fields)
+        J = physical_vector(J, fields[6].D)
     field_map = {
         "E": E,
         "B": B,
         "J": J,
     }
+    if dynamic_metric:
+        from PyPIC3D.relativity.dynamical_relativity import bssn_to_tiles
+
+        state = dynamic_parameters.bssn_parameters.state
+        for name in ("conformal_factor", "trace_K", "lapse"):
+            field_map[name] = bssn_to_tiles(getattr(state, name), static_parameters)
+        for name in ("conformal_connection", "shift"):
+            field_map[name] = tuple(bssn_to_tiles(v, static_parameters) for v in getattr(state, name))
+        for name in ("conformal_metric", "traceless_K"):
+            for i in range(3):
+                for j in range(i, 3):
+                    field_map[f"{name}_{'xyz'[i]}{'xyz'[j]}"] = bssn_to_tiles(
+                        getattr(state, name)[i, j], static_parameters)
     if getattr(static_parameters, "solver", None) == "dark_matter_yee":
         from PyPIC3D.solvers.dark_matter_yee.dark_photon_fields import synchronized_dark_fields
         dark_E, dark_A, dark_phi, dark_B = synchronized_dark_fields(
@@ -156,8 +173,37 @@ def build_field_output_map(
             static_parameters,
             dynamic_parameters,
         )
+        if dynamic_metric:
+            field_map["rho"] = field_map["rho"] / fields[6].center.sqrt_gamma
 
     if include_fluid_velocity:
+        if dynamic_metric:
+            from PyPIC3D.relativity.dynamical_relativity import synchronize_particles
+            from PyPIC3D.relativity.interpolate_metric import (
+                interpolate_metric, particle_active_axes, safe_inactive_positions,
+            )
+            from PyPIC3D.relativity.core import contravariant_three_velocity
+
+            particles = synchronize_particles(particles, species_config, fields,
+                                               static_parameters, dynamic_parameters)
+            counts = particles.active.shape[:3]
+            g = static_parameters.guard_cells
+            active_axes = particle_active_axes(counts, static_parameters.tile_shape)
+
+            def velocity_at_particles(x, u, active, tx, ty, tz):
+                grid = tuple(a[tx, ty, tz] for a in dynamic_parameters.grids.tiled_center_grid)
+                x = safe_inactive_positions(x, active, grid, active_axes, g)
+                sampled = interpolate_metric(
+                    jax.tree.map(lambda a: a[tx, ty, tz], fields[6].center),
+                    x, grid, static_parameters.metric, active_axes, (g, g, g), derivatives=False)
+                velocity = contravariant_three_velocity(jnp.where(active[..., None], u, 0.0), sampled.gamma_inv)
+                return jnp.where(active[..., None], velocity, 0.0)
+
+            for _ in range(3):
+                velocity_at_particles = jax.vmap(velocity_at_particles)
+            indices = jnp.meshgrid(*(jnp.arange(n) for n in counts), indexing="ij")
+            particles = particles._replace(u=velocity_at_particles(
+                particles.x, particles.u, particles.active, *indices))
         velocity_template = J[0]
         field_map["fluid_velocity"] = tuple(
             compute_velocity_field(

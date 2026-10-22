@@ -65,6 +65,7 @@ class DynamicParameters(NamedTuple):
     kb: jnp.ndarray
     alpha: jnp.ndarray
     grids: GridParameters
+    bssn_parameters: object = None
 
 
 def _axis_tuple(axis_values):
@@ -130,7 +131,7 @@ def build_static_parameters(static_config):
     if horizon_cells and (static_config.get('solver') != 'static_metric'
                           or static_config.get('metric') != 'kerr_schild_spherical'):
         raise ValueError('Horizon field layers require the spherical Kerr-Schild solver')
-    hybrid = (static_config.get("solver") == "static_metric" or
+    hybrid = (static_config.get("solver") in ("static_metric", "dynamic_metric") or
               static_config.get("particle_pusher") == "hybrid_boris_geodesic")
     if static_config.get("guard_cells") is None:
         static_config["guard_cells"] = 3 if hybrid else 2
@@ -216,6 +217,7 @@ def build_dynamic_parameters(dynamic_config, extra_dynamic_config=None):
         kb=jnp.asarray(dynamic_config.get("kb", extra_dynamic_config.get("kb", 1.0))),
         alpha=jnp.asarray(dynamic_config.get("alpha", extra_dynamic_config.get("alpha", 1.0))),
         grids=grids,
+        bssn_parameters=dynamic_config.get("bssn_parameters"),
     )
 
 
@@ -234,7 +236,7 @@ def _output_value(value):
 def static_parameters_for_output(static_parameters):
     skip = {"field_mesh"}
     static_items = static_parameters._asdict()
-    if static_parameters.solver == "static_metric":
+    if static_parameters.solver in ("static_metric", "dynamic_metric"):
         from PyPIC3D.relativity.interpolate_metric import RECONSTRUCTION
         static_items["particle_metric_reconstruction"] = RECONSTRUCTION
     return {
@@ -245,10 +247,19 @@ def static_parameters_for_output(static_parameters):
 
 
 def dynamic_parameters_for_output(dynamic_parameters):
-    skip = {"grids"}
+    skip = {"grids", "bssn_parameters"}
     dynamic_items = dynamic_parameters._asdict()
-    return {
+    result = {
         key: _output_value(value)
         for key, value in dynamic_items.items()
         if key not in skip
     }
+    if dynamic_parameters.bssn_parameters is not None:
+        bssn = dynamic_parameters.bssn_parameters
+        result["bssn_parameters"] = {
+            **{key: _output_value(value) for key, value in bssn.evolution_parameters._asdict().items()},
+            "gravity_G": _output_value(bssn.gravity_G),
+            "time": _output_value(bssn.time),
+            "units": "Gaussian, c=1",
+        }
+    return result
