@@ -26,6 +26,8 @@ relativity = [
 ]
 test = [
     "coverage",
+    "pytest",
+    "sympy",
 ]
 
 [tool.setuptools.packages.find]
