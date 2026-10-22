@@ -21,11 +21,11 @@ from PyPIC3D.relativity.dynamical_relativity import (
     initialize_dynamical_relativity,
     rephase_pic_state,
     synchronize_particles,
+    synchronized_magnetic_field,
     tiles_to_bssn,
 )
 from PyPIC3D.solvers.GR_yee.time_loop import time_loop_static_metric
 from PyPIC3D.solvers.GR_yee.time_loop_dynamical_relativity import (
-    advance_pic_half_step,
     time_loop_dynamical_relativity,
 )
 from tests.kernel_fixtures import empty_tiled_vector, kernel_parameters
@@ -97,26 +97,16 @@ class DynamicalRelativityTests(unittest.TestCase):
             self.assertTrue(bool(jnp.allclose(a, b, rtol=2e-12, atol=atol)),
                             f"unequal array with shape {a.shape}")
 
-    def test_half_step_agrees_with_prescribed_metric_pic(self):
+    def test_zero_gravity_matches_two_pic_half_steps(self):
         static, dynamic, particles, species, fields = coupled_state(particles=True)
         half = dynamic._replace(dt=fields[7][3])
         ordinary = fields[:7] + (fields[7][:2], fields[8])
-        expected_particles, expected_fields = jax.jit(
-            lambda p, f: time_loop_static_metric(p, species, f, static, half)
-        )(particles, ordinary)
-        actual_particles, actual_fields = jax.jit(
-            lambda p, f: advance_pic_half_step(p, species, f, static, dynamic)
-        )(particles, fields)
-        self.assert_tree_close(actual_particles, expected_particles)
-        self.assert_tree_close(actual_fields[:7], expected_fields[:7])
-        self.assert_tree_close(actual_fields[7][:2], expected_fields[7])
-        self.assertFalse(bool(actual_fields[8]))
-
-    def test_zero_gravity_matches_two_pic_half_steps(self):
-        static, dynamic, particles, species, fields = coupled_state(particles=True)
-        advance = jax.jit(lambda p, f, d: advance_pic_half_step(p, species, f, static, d))
-        expected_p, expected_f = advance(particles, fields, dynamic)
-        expected_p, expected_f = advance(expected_p, expected_f, dynamic)
+        advance = jax.jit(lambda p, f: time_loop_static_metric(p, species, f, static, half))
+        expected_p, midpoint = advance(particles, ordinary)
+        expected_p, expected_f = advance(expected_p, midpoint)
+        before_second = midpoint[:7] + ((*midpoint[7], fields[7][2], half.dt, None), midpoint[8])
+        common_B = synchronized_magnetic_field(before_second, expected_f, static, half)
+        expected_f = expected_f[:7] + ((*expected_f[7], common_B, half.dt, None), expected_f[8])
         actual_p, actual_f, actual_d = jax.jit(
             lambda p, f, d: time_loop_dynamical_relativity(p, species, f, static, d)
         )(particles, fields, dynamic)
@@ -166,9 +156,11 @@ class DynamicalRelativityTests(unittest.TestCase):
         active = jnp.ones(x.shape[:-1], bool)
         particles = TiledParticles(x, u, active)
         initial = gauss_residual(particles, species, fields, static, dynamic)
+        half = dynamic._replace(dt=fields[7][3])
+        ordinary = fields[:7] + (fields[7][:2], fields[8])
         half_p, half_f = jax.jit(
-            lambda p, f: advance_pic_half_step(p, species, f, static, dynamic)
-        )(particles, fields)
+            lambda p, f: time_loop_static_metric(p, species, f, static, half)
+        )(particles, ordinary)
         half_residual = gauss_residual(half_p, species, half_f, static, dynamic)
         self.assertTrue(bool(jnp.allclose(half_residual, initial, rtol=0., atol=2e-13)))
         final_p, final_f, final_d = jax.jit(

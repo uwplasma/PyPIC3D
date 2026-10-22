@@ -1,16 +1,11 @@
 """Split evolution of PIC, Maxwell fields, and the BSSN geometry."""
 
 import jax
-import jax.numpy as jnp
 
 from JAX_BSSN.evolution.time_evolve import (
     compute_bssn_rhs_with_matter,
     enforce_algebraic_constraints,
 )
-from PyPIC3D.deposition.Esirkepov import Esirkepov_current
-from PyPIC3D.deposition.GR_direct_deposition import GR_direct_deposition
-from PyPIC3D.particles.particle_tile_communication import refresh_tiled_particle_tiles
-from PyPIC3D.pusher.hybrid_boris_geodesic import hybrid_boris_geodesic_push
 from PyPIC3D.relativity.dynamical_relativity import (
     build_bssn_metric,
     rephase_pic_state,
@@ -22,96 +17,10 @@ from PyPIC3D.relativity.energy_momentum_tensor import (
     electromagnetic_moments,
 )
 
-from .curved_maxwell import compute_covariant_E, compute_covariant_H, update_B, update_D
+from .time_loop import time_loop_static_metric
 
 
-__all__ = ["advance_pic_half_step", "time_loop_dynamical_relativity"]
-
-
-def advance_pic_half_step(
-    particles, species_config, fields, static_parameters, dynamic_parameters,
-):
-    """Advance one retained PIC spacing h=dt/2 with the metric held fixed.
-
-    D is at integer h times, while B, covariant particle momentum, and J
-    lag by h/2. The five-entry history also carries a separate synchronized B
-    for the gravitational sources. D/B/J are native coordinate densities.
-    """
-    D_n, B_n_minushalf, J_n_minushalf, rho, phi, external, metric, history, overflow = fields
-    D_previous, B_previous, _, half_dt, absorber = history
-    dynamic = dynamic_parameters._replace(dt=half_dt)
-    d_absorber, b_absorber = (None, None) if absorber is None else absorber
-
-    # Predictor fields at the particle position time. Retain incoming history
-    # until the synchronized endpoint B has been reconstructed below.
-    D_n_minushalf = tuple(0.5 * (d + old) for d, old in zip(D_n, D_previous))
-    B_n_minusone = tuple(0.5 * (b + old) for b, old in zip(B_n_minushalf, B_previous))
-    E_n_minushalf = compute_covariant_E(D_n_minushalf, B_n_minushalf, metric)
-    B_n = update_B(
-        E_n_minushalf, B_n_minusone, metric, static_parameters, dynamic,
-        half_dt, absorber=b_absorber,
-    )
-
-    particles_n = particles
-    if particles.active.size:
-        particles, centered_particles = hybrid_boris_geodesic_push(
-            particles, species_config, D_n, B_n, metric, static_parameters, dynamic,
-        )
-        if static_parameters.current_deposition == "esirkepov":
-            # Deposit true endpoint displacements before wrapping or retile.
-            J_n_plushalf = Esirkepov_current(
-                particles_n, particles, species_config, J_n_minushalf,
-                static_parameters, dynamic,
-            )
-            centered_overflow = False
-        else:
-            centered_particles, centered_overflow = refresh_tiled_particle_tiles(
-                centered_particles, static_parameters, dynamic,
-            )
-            J_n_plushalf = GR_direct_deposition(
-                centered_particles, species_config, J_n_minushalf, metric,
-                static_parameters, dynamic,
-            )
-        particles, endpoint_overflow = refresh_tiled_particle_tiles(
-            particles, static_parameters, dynamic,
-        )
-        overflow = overflow | centered_overflow | endpoint_overflow
-    else:
-        # The storage shape is static under JIT. Vacuum calls skip all particle
-        # kernels and erase stale currents at both retained time levels.
-        J_n_plushalf = tuple(jnp.zeros_like(j) for j in J_n_minushalf)
-        J_n_minushalf = J_n_plushalf
-
-    E_n = compute_covariant_E(D_n, B_n, metric)
-    H_n = compute_covariant_H(D_n, B_n, metric)
-    B_n_plushalf = update_B(
-        E_n, B_n_minushalf, metric, static_parameters, dynamic,
-        half_dt, absorber=b_absorber,
-    )
-    J_n = tuple(0.5 * (new + old) for new, old in zip(J_n_plushalf, J_n_minushalf))
-    D_n_plushalf = update_D(
-        D_n_minushalf, H_n, J_n, metric, static_parameters, dynamic,
-        half_dt, absorber=d_absorber,
-    )
-    H_n_plushalf = compute_covariant_H(D_n_plushalf, B_n_plushalf, metric)
-    # Final Ampere uses the endpoint Esirkepov current, preserving the same
-    # discrete continuity/Gauss identity as the prescribed-metric solver.
-    D_n_plusone = update_D(
-        D_n, H_n_plushalf, J_n_plushalf, metric, static_parameters, dynamic,
-        half_dt, absorber=d_absorber,
-    )
-
-    updated_fields = (
-        D_n_plusone, B_n_plushalf, J_n_plushalf, rho, phi, external, metric,
-        (D_n, B_n_minushalf, history[2], half_dt, absorber), overflow,
-    )
-    B_synchronized = synchronized_magnetic_field(
-        fields, updated_fields, static_parameters, dynamic,
-    )
-    updated_fields = updated_fields[:7] + (
-        (D_n, B_n_minushalf, B_synchronized, half_dt, absorber), overflow,
-    )
-    return particles, updated_fields
+__all__ = ["time_loop_dynamical_relativity"]
 
 
 def time_loop_dynamical_relativity(
@@ -148,9 +57,20 @@ def time_loop_dynamical_relativity(
     particles, fields = rephase_pic_state(
         particles, species_config, fields, metric, static_parameters, dynamic_parameters,
     )
-    particles, fields = advance_pic_half_step(
-        particles, species_config, fields, static_parameters, dynamic_parameters,
+
+    # First PIC half-step with the initial metric. Retain the incoming
+    # history to reconstruct B at the new particle position time.
+    before = fields
+    previous_D, previous_B, _, half_dt, absorber = before[7]
+    pic_parameters = dynamic_parameters._replace(dt=half_dt)
+    pic_fields = before[:7] + ((previous_D, previous_B), before[8])
+    particles, fields = time_loop_static_metric(
+        particles, species_config, pic_fields, static_parameters, pic_parameters,
+        absorber=absorber,
     )
+    common_B = synchronized_magnetic_field(before, fields, static_parameters, pic_parameters)
+    history = (*fields[7], common_B, half_dt, absorber)
+    fields = fields[:7] + (history, fields[8])
 
     midpoint_particles = synchronize_particles(
         particles, species_config, fields, static_parameters, dynamic_parameters,
@@ -196,9 +116,19 @@ def time_loop_dynamical_relativity(
         particles, species_config, fields, metric, static_parameters, dynamic_parameters,
         synchronized_particles=midpoint_particles,
     )
-    particles, fields = advance_pic_half_step(
-        particles, species_config, fields, static_parameters, dynamic_parameters,
+
+    # Second PIC half-step with the updated metric and corrected histories.
+    before = fields
+    previous_D, previous_B, _, half_dt, absorber = before[7]
+    pic_parameters = dynamic_parameters._replace(dt=half_dt)
+    pic_fields = before[:7] + ((previous_D, previous_B), before[8])
+    particles, fields = time_loop_static_metric(
+        particles, species_config, pic_fields, static_parameters, pic_parameters,
+        absorber=absorber,
     )
+    common_B = synchronized_magnetic_field(before, fields, static_parameters, pic_parameters)
+    history = (*fields[7], common_B, half_dt, absorber)
+    fields = fields[:7] + (history, fields[8])
     dynamic_parameters = dynamic_parameters._replace(
         bssn_parameters=bssn._replace(state=final_state, time=time + dt),
     )

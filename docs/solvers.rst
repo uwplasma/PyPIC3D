@@ -235,8 +235,8 @@ The four coupling modules are:
   common-time views, and history corrections after a metric change.
 * ``relativity/energy_momentum_tensor.py``: Gaussian EM moments and PIC
   deposition of physical Eulerian ``rho``, ``S_i``, and ``S_ij``.
-* ``solvers/GR_yee/time_loop_dynamical_relativity.py``: the explicit PIC
-  half-step and complete coupled step.
+* ``solvers/GR_yee/time_loop_dynamical_relativity.py``: the complete coupled step,
+  calling the static-metric loop for each PIC half-step.
 
 The loop performs PIC+EM for ``h=dt/2``, projected BSSN RK4 for ``dt``, then
 PIC+EM for ``h``. Its overall order is two. Each gravity RK stage resamples
