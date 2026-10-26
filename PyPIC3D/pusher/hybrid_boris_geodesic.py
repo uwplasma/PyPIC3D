@@ -8,7 +8,12 @@ from PyPIC3D.particles.particle_class import TiledParticles
 from PyPIC3D.particles.particle_batching import (
     prepare_particle_batches, particle_batch_indices, number_of_particle_batches,
 )
-from PyPIC3D.pusher.boris import interpolate_field_to_particles
+
+from PyPIC3D.pusher.particle_interpolation import (
+    gather_shape_orders,
+    interpolate_field_to_particles,
+)
+
 from PyPIC3D.relativity.core import (
     B_FIELD_LOCATIONS,
     D_FIELD_LOCATIONS,
@@ -68,12 +73,14 @@ def magnetic_boris_rotation(u_minus, B_con, metric, q_over_m, dt):
 
 
 def gather_vector(field, locations, position, center_grid, vertex_grid,
-                  shape_factor, active_axes, inactive_axis_indices):
+                  static_parameters, active_axes, inactive_axis_indices):
     """
     Gather a staggered tile-local vector field to ``position[..., 3]``.
 
     ``field[i]`` lives on the Yee location ``locations[i]``; the grids are the
-    cell-centered and vertex axes of the same tile.
+    cell-centered and vertex axes of the same tile.  Each component's shape
+    orders follow its own location, so an Esirkepov run gathers with the
+    energy-conserving Galerkin ordering.
     """
 
     x, y, z = (position[..., axis].reshape(-1) for axis in range(3))
@@ -81,7 +88,7 @@ def gather_vector(field, locations, position, center_grid, vertex_grid,
         interpolate_field_to_particles(
             field[i], x, y, z,
             location_grid(center_grid, vertex_grid, locations[i]),
-            shape_factor,
+            gather_shape_orders(locations[i], static_parameters),
             ghost_cells=True,
             active_axes=active_axes,
             inactive_axis_indices=inactive_axis_indices,
@@ -158,7 +165,6 @@ def hybrid_boris_geodesic_push(
 
     g = int(static_parameters.guard_cells)
     dt = dynamic_parameters.dt
-    shape_factor = static_parameters.shape_factor
     metric_name = static_parameters.metric
     ntx, nty, ntz = particles.active.shape[:3]
     active_axes = particle_active_axes((ntx, nty, ntz), static_parameters.tile_shape)
@@ -177,7 +183,7 @@ def hybrid_boris_geodesic_push(
         """Gather one staggered tile-local vector field to a particle position."""
 
         return gather_vector(field, locations, position, tile.center_grid, tile.vertex_grid,
-                             shape_factor, active_axes, inactive_axis_indices)
+                             static_parameters, active_axes, inactive_axis_indices)
 
     def geodesic_step(x_n, u_old, active, update_x, q_over_m, tile):
         """

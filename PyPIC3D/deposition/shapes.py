@@ -1,5 +1,50 @@
+import jax
 from jax import jit
 import jax.numpy as jnp
+
+
+def _zeroth_order_axis_weights(delta, spacing):
+    """Zeroth-order (NGP) weights along one axis: all weight on the anchor node."""
+    del spacing  # the nearest-grid-point shape does not depend on the offset
+    zero = jnp.zeros_like(delta)
+    return [zero, jnp.ones_like(delta), zero]
+
+
+def _first_order_axis_weights(delta, spacing):
+    """First-order (CIC) weights along one axis."""
+    s = delta / spacing
+    return [jnp.zeros_like(s), 1 - s, s]
+
+
+def _second_order_axis_weights(delta, spacing):
+    """Second-order (TSC) weights along one axis."""
+    s = delta / spacing
+    return [(1 / 2) * ((1 / 2) - s) ** 2, (3 / 4) - s ** 2, (1 / 2) * ((1 / 2) + s) ** 2]
+
+
+@jit
+def get_axis_weights(delta, spacing, shape_order):
+    """Three-point shape weights along one axis, for shape orders 0, 1 and 2.
+
+    This is the per-axis entry point used by the field gather, where the
+    Galerkin ordering gives each axis its own shape order. ``shape_order`` may
+    be traced; ``lax.switch`` clamps its index, so an out-of-range order can
+    never read past the branch list.
+
+    Args:
+        delta: Particle offset from the anchor node along this axis.
+        spacing: Grid spacing along this axis.
+        shape_order: Particle shape order (0 = NGP, 1 = CIC, 2 = TSC).
+
+    Returns:
+        jnp.ndarray: Weights with shape ``(3, N_particles)``.
+    """
+    return jnp.asarray(jax.lax.switch(
+        shape_order,
+        [_zeroth_order_axis_weights, _first_order_axis_weights, _second_order_axis_weights],
+        delta,
+        spacing,
+    ))
 
 
 @jit
@@ -13,42 +58,28 @@ def get_second_order_weights(deltax, deltay, deltaz, dx, dy, dz):
     Returns:
         (x_weights, y_weights, z_weights): each a length-3 list of weights.
     """
-    Sx0 = (3 / 4) - (deltax / dx) ** 2
-    Sy0 = (3 / 4) - (deltay / dy) ** 2
-    Sz0 = (3 / 4) - (deltaz / dz) ** 2
-
-    Sx1 = (1 / 2) * ((1 / 2) + (deltax / dx)) ** 2
-    Sy1 = (1 / 2) * ((1 / 2) + (deltay / dy)) ** 2
-    Sz1 = (1 / 2) * ((1 / 2) + (deltaz / dz)) ** 2
-
-    Sx_minus1 = (1 / 2) * ((1 / 2) - (deltax / dx)) ** 2
-    Sy_minus1 = (1 / 2) * ((1 / 2) - (deltay / dy)) ** 2
-    Sz_minus1 = (1 / 2) * ((1 / 2) - (deltaz / dz)) ** 2
-
-    x_weights = [Sx_minus1, Sx0, Sx1]
-    y_weights = [Sy_minus1, Sy0, Sy1]
-    z_weights = [Sz_minus1, Sz0, Sz1]
-
-    return x_weights, y_weights, z_weights
+    return (
+        _second_order_axis_weights(deltax, dx),
+        _second_order_axis_weights(deltay, dy),
+        _second_order_axis_weights(deltaz, dz),
+    )
 
 
 @jit
 def get_first_order_weights(deltax, deltay, deltaz, dx, dy, dz):
     """Calculate the first-order (CIC) weights for particle deposition."""
-    Sx0 = jnp.asarray(1 - deltax / dx)
-    Sy0 = jnp.asarray(1 - deltay / dy)
-    Sz0 = jnp.asarray(1 - deltaz / dz)
+    return (
+        _first_order_axis_weights(deltax, dx),
+        _first_order_axis_weights(deltay, dy),
+        _first_order_axis_weights(deltaz, dz),
+    )
 
-    Sx1 = jnp.asarray(deltax / dx)
-    Sy1 = jnp.asarray(deltay / dy)
-    Sz1 = jnp.asarray(deltaz / dz)
 
-    Sx_minus1 = jnp.zeros_like(Sx0)
-    Sy_minus1 = jnp.zeros_like(Sy0)
-    Sz_minus1 = jnp.zeros_like(Sz0)
-
-    x_weights = [Sx_minus1, Sx0, Sx1]
-    y_weights = [Sy_minus1, Sy0, Sy1]
-    z_weights = [Sz_minus1, Sz0, Sz1]
-
-    return x_weights, y_weights, z_weights
+@jit
+def get_zeroth_order_weights(deltax, deltay, deltaz, dx, dy, dz):
+    """Calculate the zeroth-order (NGP) weights for particle deposition."""
+    return (
+        _zeroth_order_axis_weights(deltax, dx),
+        _zeroth_order_axis_weights(deltay, dy),
+        _zeroth_order_axis_weights(deltaz, dz),
+    )

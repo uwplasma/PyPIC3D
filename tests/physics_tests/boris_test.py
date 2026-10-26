@@ -2,7 +2,13 @@ import unittest
 import jax
 import jax.numpy as jnp
 
-from PyPIC3D.pusher.boris import boris_single_particle, interpolate_field_to_particles
+from PyPIC3D.pusher.boris import boris_single_particle
+from PyPIC3D.pusher.particle_interpolation import (
+    galerkin_ordering,
+    gather_shape_orders,
+    interpolate_field_to_particles,
+)
+from PyPIC3D.relativity.core import B_FIELD_LOCATIONS, D_FIELD_LOCATIONS
 from PyPIC3D.pusher.higuera_cary import higuera_cary_single_particle
 from tests.kernel_fixtures import kernel_parameters
 
@@ -182,6 +188,70 @@ class TestBorisMethods(unittest.TestCase):
                 )
 
 
+
+    def test_galerkin_ordering_reduces_the_order_on_staggered_axes(self):
+        # particle shapes are anchored on the cell-centered grid, so a component
+        # is staggered exactly on the axes its Yee location marks "V"
+        self.assertEqual(
+            [galerkin_ordering(location, 1) for location in D_FIELD_LOCATIONS],
+            [(0, 1, 1), (1, 0, 1), (1, 1, 0)],
+        )
+        self.assertEqual(
+            [galerkin_ordering(location, 2) for location in D_FIELD_LOCATIONS],
+            [(1, 2, 2), (2, 1, 2), (2, 2, 1)],
+        )
+        self.assertEqual(
+            [galerkin_ordering(location, 1) for location in B_FIELD_LOCATIONS],
+            [(1, 0, 0), (0, 1, 0), (0, 0, 1)],
+        )
+        self.assertEqual(
+            [galerkin_ordering(location, 2) for location in B_FIELD_LOCATIONS],
+            [(2, 1, 1), (1, 2, 1), (1, 1, 2)],
+        )
+
+    def test_gather_shape_orders_follows_the_deposition_scheme(self):
+        static_parameters, _ = kernel_parameters(shape_factor=2)
+        Ex_location = D_FIELD_LOCATIONS[0]
+
+        # only Esirkepov deposition has the reduced-order gather as its adjoint
+        for current_deposition in ("direct", "GR_direct"):
+            with self.subTest(current_deposition=current_deposition):
+                parameters = static_parameters._replace(current_deposition=current_deposition)
+                self.assertEqual(gather_shape_orders(Ex_location, parameters), 2)
+
+        esirkepov = static_parameters._replace(current_deposition="esirkepov")
+        self.assertEqual(gather_shape_orders(Ex_location, esirkepov), (1, 2, 2))
+
+    def test_interpolate_field_to_particles_accepts_per_axis_shape_orders(self):
+        grid_axis = jnp.linspace(-1.0, 1.0, 9)
+        X, Y, Z = jnp.meshgrid(grid_axis, grid_axis, grid_axis, indexing="ij")
+        field = 0.5 * X - 0.25 * Y + 0.75 * Z
+        grid = (grid_axis, grid_axis, grid_axis)
+
+        x = jnp.asarray((0.1, -0.4))
+        y = jnp.asarray((0.2, 0.3))
+        z = jnp.asarray((-0.1, 0.05))
+        exact = 0.5 * x - 0.25 * y + 0.75 * z
+
+        # a uniform order reproduces the linear field exactly, on either spelling
+        for shape_factor in (1, 2):
+            with self.subTest(shape_factor=shape_factor):
+                for spelling in (shape_factor, (shape_factor,) * 3):
+                    sampled = interpolate_field_to_particles(field, x, y, z, grid, spelling)
+                    self.assertTrue(jnp.allclose(sampled, exact, rtol=1.0e-12, atol=1.0e-13))
+
+        # order 0 on x snaps that axis to its nearest node and leaves y, z linear
+        nearest_x = jnp.round((x - grid_axis[0]) / (grid_axis[1] - grid_axis[0]))
+        snapped = grid_axis[0] + nearest_x * (grid_axis[1] - grid_axis[0])
+        sampled = interpolate_field_to_particles(field, x, y, z, grid, (0, 1, 1))
+        self.assertTrue(
+            jnp.allclose(
+                sampled,
+                0.5 * snapped - 0.25 * y + 0.75 * z,
+                rtol=1.0e-12,
+                atol=1.0e-13,
+            )
+        )
 
     def test_boris_single_particle(self):
         vx, vy, vz = 1.0, 0.0, 0.0
