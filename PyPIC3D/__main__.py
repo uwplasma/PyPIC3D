@@ -144,11 +144,15 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
             queue_size=int(plotting_parameters.get("openpmd_particle_queue_size", 2)),
         )
 
+    matched_gr = gr_metric and static_parameters.current_filter != "none"
     loop_error = None
     try:
-        for t in tqdm(range(Nt)):
-            if t % plotting_parameters["plotting_interval"] == 0:
-                plot_num = t // plotting_parameters["plotting_interval"]
+        # Filtered GR qualification needs both common-time endpoints, including
+        # runs shorter than the output interval. Step IDs prevent collisions
+        # between the final snapshot and the last cadence snapshot.
+        for t in tqdm(range(Nt + int(matched_gr))):
+            if t % plotting_parameters["plotting_interval"] == 0 or (matched_gr and t == Nt):
+                plot_num = t if matched_gr else t // plotting_parameters["plotting_interval"]
 
                 if dynamic_metric:
                     from PyPIC3D.diagnostics.static_metric import bssn_constraint_norms
@@ -157,7 +161,7 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
                     for name, value in norms.items():
                         write_data(f"{output_dir}/data/{name}.txt",
                                    dynamic_parameters.bssn_parameters.time, value)
-                    if work_energy_theorem and t > 0:
+                    if work_energy_theorem and 0 < t < Nt:
                         write_work_energy_tracker(dynamic_parameters.work_energy_tracker, output_dir)
 
                 if not gr_metric:
@@ -224,6 +228,9 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
                     )
                     plotting_parameters["field_map"] = field_map
                     enqueue_openpmd_field_output(field_writer, field_map, dynamic_parameters, plot_num, t)
+
+            if t == Nt:
+                break
 
             result = jit_loop(
                 particles,

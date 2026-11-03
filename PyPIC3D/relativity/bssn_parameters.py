@@ -174,6 +174,13 @@ def build_bssn_parameters(static_parameters, dynamic_parameters, *, state=None,
         raise ValueError("BSSN and PIC spatial spacings must agree")
     if float(evolution_parameters.dt) != float(dynamic_parameters.dt):
         raise ValueError("BSSN and PIC macro timesteps must agree")
+    if static_parameters.current_filter != "none":
+        from PyPIC3D.relativity.filtering import validate_gr_filter
+
+        validate_gr_filter(static_parameters)
+        if any(int(getattr(evolution_parameters, name)) != 0
+               for name in ("xl_bc", "xr_bc", "yl_bc", "yr_bc", "zl_bc", "zr_bc")):
+            raise ValueError("Matched GR filtering requires all six BSSN boundaries to be periodic")
 
     evolution_parameters = jax.tree.map(jnp.asarray, evolution_parameters)
     return BSSNParameters(state, evolution_parameters, jnp.asarray(gravity_G), jnp.asarray(time))

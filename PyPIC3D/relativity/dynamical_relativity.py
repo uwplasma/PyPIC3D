@@ -139,6 +139,13 @@ def initialize_dynamical_relativity(particles, species, fields, static_parameter
         raise ValueError("Dynamical relativity requires a Cartesian numerical metric")
 
     bssn = dynamic_parameters.bssn_parameters
+    if static_parameters.current_filter != "none":
+        from PyPIC3D.relativity.filtering import validate_gr_filter
+
+        validate_gr_filter(static_parameters)
+        if any(int(getattr(bssn.evolution_parameters, name)) != 0
+               for name in ("xl_bc", "xr_bc", "yl_bc", "yr_bc", "zl_bc", "zr_bc")):
+            raise ValueError("Matched GR filtering requires all six BSSN boundaries to be periodic")
     state = enforce_algebraic_constraints(bssn.state)
     dynamic_parameters = dynamic_parameters._replace(bssn_parameters=bssn._replace(state=state))
     metric = build_bssn_metric(state, static_parameters, dynamic_parameters)
@@ -183,8 +190,8 @@ def rephase_pic_state(particles, species, fields, new_metric, static_parameters,
     Corrections at offsets -h/2, -h and -3h/2 preserve second-order Strang
     centering. The current correction includes the instantaneous metric change
     in coordinate velocity; it is not a new charge-conserving deposit. Direct
-    currents retain their configured EM filter in both generators; gravity's
-    separate stress-energy deposition remains unfiltered.
+    currents retain the matched coupling filter in both generators. Particle
+    gathers use that same filter without smoothing stored fields or geometry.
     """
     D, B, current, rho, phi, external, old_metric, history, overflow = fields
     previous_D, previous_B, common_B, h, absorber = history

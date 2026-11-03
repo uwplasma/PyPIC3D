@@ -25,7 +25,7 @@ __all__ = ["time_loop_dynamical_relativity"]
 
 def time_loop_dynamical_relativity(
     particles, species_config, fields, static_parameters, dynamic_parameters,
-    *, prescribed_gauge=None, gravity_boundary=None,
+    *, prescribed_gauge=None, gravity_boundary=None, source_filter="none",
 ):
     """Advance PIC(h), BSSN(dt), PIC(h), with h=dt/2 and retained histories.
 
@@ -37,6 +37,8 @@ def time_loop_dynamical_relativity(
     At each RK stage, gravity sees the same midpoint positions, covariant
     momenta, and densitized EM moments through that stage's spatial metric.
     BSSN is RK4; the coupled split scheme is second order in time.
+    ``source_filter`` optionally smooths electrovacuum stress-energy at every
+    RK stage, leaving native fields, geometry and staggering unchanged.
     """
     bssn = dynamic_parameters.bssn_parameters
     dt, time = dynamic_parameters.dt, bssn.time
@@ -97,6 +99,7 @@ def time_loop_dynamical_relativity(
         rho, momentum, stress = compute_energy_momentum_tensor(
             midpoint_particles, species_config, moments, stage_state,
             static_parameters, dynamic_parameters,
+            source_filter=source_filter,
         )
         rhs = compute_bssn_rhs_with_matter(
             stage_state, evolution_parameters,

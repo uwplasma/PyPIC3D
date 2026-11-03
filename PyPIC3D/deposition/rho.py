@@ -204,6 +204,14 @@ def compute_rho(
     )
     # fold charge deposited into tile ghost cells back to the owner interiors
 
+    if (static_parameters.solver in ("static_metric", "dynamic_metric")
+            and static_parameters.current_filter != "none"):
+        from PyPIC3D.relativity.filtering import filter_gr_grid
+
+        # Coordinate charge and densitized current use the identical periodic
+        # convolution, preserving the Esirkepov continuity equation.
+        return filter_gr_grid(rho, static_parameters, dynamic_parameters, tiled=True)
+
     def filter(rho):
         return tiled_digital_filter(
             rho,

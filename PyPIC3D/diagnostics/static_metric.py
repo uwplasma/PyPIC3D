@@ -19,12 +19,12 @@ def electromagnetic_constraints(particles, species, fields, static, dynamic):
     """Densitized Gauss residuals, with charge on C and magnetic divergence on V."""
     from PyPIC3D.deposition.rho import compute_rho
 
-    charge = compute_rho(particles, species, fields[3], static._replace(current_filter="none"), dynamic)
+    charge = compute_rho(particles, species, fields[3], static, dynamic)
     magnetic = fields[7][2] if static.solver == "dynamic_metric" else fields[1]
     return divergence(fields[0], dynamic) - 4 * jnp.pi * charge, divergence(magnetic, dynamic, forward=True)
 
 
-def bssn_constraint_norms(particles, species, fields, static, dynamic):
+def bssn_constraint_norms(particles, species, fields, static, dynamic, *, source_filter="none"):
     """Einstein constraint norms using the common-time PIC and EM sources."""
     from JAX_BSSN.bssn.constraints import compute_all_constraints_with_matter
     from JAX_BSSN.diagnostics.constraints import compute_constraint_norms
@@ -37,7 +37,8 @@ def bssn_constraint_norms(particles, species, fields, static, dynamic):
     common_particles = synchronize_particles(particles, species, fields, static, dynamic)
     moments = electromagnetic_moments(fields[0], fields[7][2], static)
     rho, momentum, _ = compute_energy_momentum_tensor(
-        common_particles, species, moments, bssn.state, static, dynamic)
+        common_particles, species, moments, bssn.state, static, dynamic,
+        source_filter=source_filter)
     violations = compute_all_constraints_with_matter(
         bssn.state, bssn.evolution_parameters, bssn.gravity_G * rho, bssn.gravity_G * momentum)
     return compute_constraint_norms(violations)

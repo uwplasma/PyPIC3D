@@ -26,6 +26,7 @@ from PyPIC3D.relativity.interpolate_metric import (
     particle_active_axes,
     safe_inactive_positions,
 )
+from PyPIC3D.relativity.filtering import filter_gr_grid, particle_metric
 
 
 def coordinate_velocity(u_cov, metric):
@@ -110,21 +111,15 @@ class TileFields(NamedTuple):
 
 def tile_fields(tx, ty, tz, metric, D_tiles, B_tiles, dynamic_parameters):
     """
-    Slice the tiled grids, metric and native field densities down to one tile.
-
-    ``D_tiles``/``B_tiles`` are native densities ``sqrt(gamma) V^i``; each
-    component is divided by its own grid-node ``sqrt_gamma`` here, so the
-    returned tile carries the physical contravariant field the particles see.
+    Slice the prepared particle metric and physical fields down to one tile.
     """
 
     return TileFields(
         center_grid=tuple(axis[tx, ty, tz] for axis in dynamic_parameters.grids.tiled_center_grid),
         vertex_grid=tuple(axis[tx, ty, tz] for axis in dynamic_parameters.grids.tiled_vertex_grid),
-        metric=jax.tree.map(lambda array: array[tx, ty, tz], metric.center),
-        D=tuple(component[tx, ty, tz] / sample.sqrt_gamma[tx, ty, tz]
-                for component, sample in zip(D_tiles, metric.D)),
-        B=tuple(component[tx, ty, tz] / sample.sqrt_gamma[tx, ty, tz]
-                for component, sample in zip(B_tiles, metric.B)),
+        metric=jax.tree.map(lambda array: array[tx, ty, tz], metric),
+        D=tuple(component[tx, ty, tz] for component in D_tiles),
+        B=tuple(component[tx, ty, tz] for component in B_tiles),
     )
 
 
@@ -147,7 +142,9 @@ def hybrid_boris_geodesic_push(
     covariant spatial velocity components ``u_i``.  ``D_tiles``/``B_tiles``
     are native densities ``sqrt(gamma) V^i`` (including any external field);
     each component is divided by its own grid-node ``sqrt_gamma`` before the
-    gather, so particles see the physical contravariant field.
+    matched filter and gather, so particles see physical contravariant fields.
+    Filtered lapse, shift and covariant gamma supply one consistent metric
+    interpolant for all forces and coordinate velocities.
 
     This is a staggered leapfrog.  The incoming ``particles.u`` is
     ``u^{n-1/2}``; the velocity operator ``EM(dt/2) . geodesic(dt) . EM(dt/2)``
@@ -170,6 +167,16 @@ def hybrid_boris_geodesic_push(
     active_axes = particle_active_axes((ntx, nty, ntz), static_parameters.tile_shape)
     inactive_axis_indices = (g, g, g)
     species_q_over_m = species_config.charge / species_config.mass
+
+    # Convert with the raw node volume BEFORE smoothing. Filtering density
+    # first would give a different force in spatially varying geometry.
+    D_physical = tuple(filter_gr_grid(value / sample.sqrt_gamma,
+                       static_parameters, dynamic_parameters, tiled=True)
+                       for value, sample in zip(D_tiles, metric.D))
+    B_physical = tuple(filter_gr_grid(value / sample.sqrt_gamma,
+                       static_parameters, dynamic_parameters, tiled=True)
+                       for value, sample in zip(B_tiles, metric.B))
+    gather_metric = particle_metric(metric, static_parameters, dynamic_parameters)
 
     def sample_metric(tile, position, derivatives=True):
         """Hermite metric sample at one particle position in this tile."""
@@ -246,7 +253,7 @@ def hybrid_boris_geodesic_push(
         x_flat = x_tile.reshape(-1, 3)
         u_flat = u_tile.reshape(-1, 3)
 
-        tile = tile_fields(tx, ty, tz, metric, D_tiles, B_tiles, dynamic_parameters)
+        tile = tile_fields(tx, ty, tz, gather_metric, D_physical, B_physical, dynamic_parameters)
 
         n_batches = number_of_particle_batches(n_active, batch_size)
 

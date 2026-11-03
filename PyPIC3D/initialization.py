@@ -154,7 +154,14 @@ def _encode_current_calculation(current_calculation):
 
 def _validate_current_filter_contract(static_config):
     charge_conserving = static_config["current_calculation"] == "esirkepov"
-    if charge_conserving and static_config["filter_j"] != "none":
+    gr_metric = static_config["solver"] in ("static_metric", "dynamic_metric")
+    if gr_metric and static_config["filter_j"] != "none":
+        if static_config.get("metric", "flat_cartesian") not in ("flat_cartesian", "numerical"):
+            raise ValueError("Matched GR filtering requires a Cartesian metric")
+        if any(static_config.get(key, "periodic") != "periodic"
+               for key in ("x_bc", "y_bc", "z_bc", "particle_x_bc", "particle_y_bc", "particle_z_bc")):
+            raise ValueError("Matched GR filtering requires periodic field and particle boundaries")
+    if charge_conserving and static_config["filter_j"] != "none" and not gr_metric:
         raise ValueError(
             "Esirkepov current filtering is not supported; use filter_j='none'. "
             "Filtering the deposited current destroys the exact discrete "
@@ -493,6 +500,11 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
     dark_matter = solver == "dark_matter_yee"
     if "metric" in config and not dynamic_metric:
         raise ValueError("[metric] initialization requires solver='dynamic_metric'")
+    if static_metric and static_config["filter_j"] != "none":
+        for key, block in config.items():
+            if key.startswith("particle") and any(block.get(axis + "_bc", "periodic") != "periodic"
+                                                  for axis in "xyz"):
+                raise ValueError("Matched GR filtering requires periodic particle species boundaries")
     if dynamic_metric:
         # Common-time D/B and particle u seed one consistent PIC history.
         # Legacy history/current files would otherwise be silently discarded.
@@ -624,6 +636,10 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
     static_config["Ny"] = int(Ny)
     static_config["Nz"] = int(Nz)
     static_parameters = build_static_parameters(static_config)
+    if gr_metric:
+        from PyPIC3D.relativity.filtering import validate_gr_filter
+
+        validate_gr_filter(static_parameters)
     _validate_static_metric_conducting_widths(static_parameters, (int(Nx), int(Ny), int(Nz)))
     # PML and supergaussian layers may have made periodic axes conducting above
     tile_shape = static_parameters.tile_shape
@@ -757,6 +773,11 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
         E = refresh_fields(densitize_vector(E, metric.D), static_parameters, D_FIELD_LOCATIONS, 'D', metric=metric)
         B = refresh_fields(densitize_vector(B, metric.B), static_parameters, B_FIELD_LOCATIONS, 'B', metric=metric)
         J = densitize_vector(J, metric.D)
+        if static_parameters.current_filter != "none":
+            from PyPIC3D.relativity.filtering import filter_gr_grid
+
+            J = tuple(filter_gr_grid(value, static_parameters, dynamic_parameters, tiled=True)
+                      for value in J)
     elif solver in ("electrodynamic_yee", "dark_matter_yee"):
         E = apply_tiled_pec_boundary(E, static_parameters)
         E = update_tiled_ghost_cells(E, static_parameters, guard_cells, location=D_FIELD_LOCATIONS)

@@ -15,7 +15,7 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
 from PyPIC3D.deposition.shapes import get_first_order_weights, get_second_order_weights
 from PyPIC3D.relativity.core import contravariant_three_velocity
 from PyPIC3D.relativity.interpolate_metric import interpolate_metric, safe_inactive_positions
-from PyPIC3D.utilities.filters import tiled_bilinear_filter_vector, tiled_digital_filter_vector
+from PyPIC3D.relativity.filtering import filter_gr_grid, particle_metric
 
 
 @partial(jax.jit, static_argnames="static_parameters")
@@ -37,7 +37,7 @@ def GR_direct_deposition(
         sqrt(gamma) J^i = (q / d^3x) * S(x) * (alpha v^i - beta^i).
     """
 
-    current_filter = static_parameters.current_filter
+    center_metric = particle_metric(metric, static_parameters, dynamic_parameters)
     tile_shape = tuple(int(width) for width in static_parameters.tile_shape)
     g = int(static_parameters.guard_cells)
     tiled_grid = dynamic_parameters.grids.tiled_center_grid
@@ -86,7 +86,7 @@ def GR_direct_deposition(
             jnp.stack((x, y, z), axis=-1), active.astype(bool), center_grid, active_axes, g)
         u_cov = jnp.where(active[:, None].astype(bool), u_cov, 0.)
         metric_at_particles = interpolate_metric(
-            jax.tree.map(lambda array: array[tx, ty, tz], metric.center),
+            jax.tree.map(lambda array: array[tx, ty, tz], center_metric),
             evaluation_position,
             center_grid,
             static_parameters.metric,
@@ -262,34 +262,8 @@ def GR_direct_deposition(
         bc_type=BC_TYPE_PARTICLE,
     )
 
-    def bilinear_filtered_current(conformal_J):
-        return tiled_bilinear_filter_vector(
-            conformal_J,
-            static_parameters,
-            bc_type=BC_TYPE_PARTICLE,
-        )
-
-    def digital_filtered_current(conformal_J):
-        return tiled_digital_filter_vector(
-            conformal_J,
-            dynamic_parameters.alpha,
-            static_parameters,
-            bc_type=BC_TYPE_PARTICLE,
-        )
-
-    return jax.lax.cond(
-        current_filter == "bilinear",
-        bilinear_filtered_current,
-        lambda conformal_J: jax.lax.cond(
-            current_filter == "digital",
-            digital_filtered_current,
-            lambda conformal_J: update_tiled_ghost_cells(
-                conformal_J,
-                static_parameters,
-                g,
-                bc_type=BC_TYPE_PARTICLE,
-            ),
-            conformal_J,
-        ),
-        conformal_J,
-    )
+    if static_parameters.current_filter == "none":
+        return update_tiled_ghost_cells(
+            conformal_J, static_parameters, g, bc_type=BC_TYPE_PARTICLE)
+    return tuple(filter_gr_grid(value, static_parameters, dynamic_parameters, tiled=True)
+                 for value in conformal_J)

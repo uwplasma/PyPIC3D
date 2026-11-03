@@ -23,6 +23,7 @@ from PyPIC3D.particles.particle_batching import (
     prepare_particle_batches,
 )
 from PyPIC3D.relativity.core import B_FIELD_LOCATIONS, D_FIELD_LOCATIONS, covariant_lorentz_factor
+from PyPIC3D.relativity.filtering import binomial_source_filter, filter_gr_grid, particle_metric
 from PyPIC3D.relativity.interpolate_metric import (
     interpolate_metric,
     particle_active_axes,
@@ -104,7 +105,9 @@ def compute_particle_energy_momentum(
     ``m*w*(Gamma, u_i, u_i*u_j/Gamma)/d^3x`` with the configured CIC/TSC
     shape, fold tile ghosts, then divide by the destination proper volume.
     Neutral and position-frozen species still contribute their rest mass.
-    No current filter is applied to these gravitational sources.
+    Gamma uses the same filtered particle metric as the pusher. Spatial
+    source filtering is applied once, after adding PIC and EM contributions
+    in compute_energy_momentum_tensor; destination volumes remain unfiltered.
     """
     from PyPIC3D.relativity.dynamical_relativity import tiles_to_bssn
 
@@ -122,6 +125,7 @@ def compute_particle_energy_momentum(
     weighted_mass = species_config.mass * species_config.weight / cell_volume
     tiled_grid = dynamic_parameters.grids.tiled_center_grid
     stress_indices = ((0, 0), (0, 1), (0, 2), (1, 1), (1, 2), (2, 2))
+    particle_center = particle_metric(metric, static_parameters, dynamic_parameters)
 
     def deposit_one_tile(x_tile, u_tile, active_tile, tx, ty, tz):
         capacity, batch_size, active_indices, n_active = prepare_particle_batches(
@@ -135,7 +139,7 @@ def compute_particle_energy_momentum(
         u = u_tile.reshape(-1, 3)
         slots_per_species = active_tile.shape[-1]
         grid = tuple(axis[tx, ty, tz] for axis in tiled_grid)
-        tile_metric = jax.tree.map(lambda array: array[tx, ty, tz], metric.center)
+        tile_metric = jax.tree.map(lambda array: array[tx, ty, tz], particle_center)
         n_batches = number_of_particle_batches(n_active, batch_size)
 
         def deposit_batch(batch_index, moments):
@@ -210,19 +214,56 @@ def compute_particle_energy_momentum(
     return rho, momentum, stress
 
 
-@partial(jax.jit, static_argnames="static_parameters")
+@partial(jax.jit, static_argnames=("static_parameters", "source_filter"))
 def compute_energy_momentum_tensor(
     particles, species_config, moments, bssn_state, static_parameters, dynamic_parameters,
+    *, source_filter="none",
 ):
-    """Sum PIC and EM sources, recomputing particle Gamma at each RK stage."""
+    """Build stage sources and filter their total coordinate densities once.
+
+    The same synchronized particles and native EM products are re-evaluated
+    in each RK geometry. Filtering sqrt(gamma)*(rho,S_i,S_ij), then dividing
+    by the raw stage volume, preserves periodic integrated source components.
+    Native EM products precede filtering so grid-scale field energy remains.
+    ``source_filter='binomial'`` selects source-only electrovacuum smoothing,
+    with replicated isolated edges, independently of matched PIC filtering.
+    """
+    if source_filter not in ("none", "binomial"):
+        raise ValueError("source_filter must be 'none' or 'binomial'")
+    if source_filter != "none":
+        if static_parameters.current_filter != "none":
+            raise ValueError("Source-only and matched filtering cannot be combined")
+        if particles.active.size:
+            raise ValueError("Source-only filtering requires empty particle storage")
+        if static_parameters.metric not in ("flat_cartesian", "numerical"):
+            raise ValueError("Source-only filtering requires a Cartesian metric")
     em = compute_electromagnetic_energy_momentum(moments, bssn_state)
-    if not particles.active.size:
-        return em
+    total = em
+    if particles.active.size:
+        from PyPIC3D.relativity.dynamical_relativity import build_bssn_metric
 
-    from PyPIC3D.relativity.dynamical_relativity import build_bssn_metric
+        metric = build_bssn_metric(bssn_state, static_parameters, dynamic_parameters)
+        pic = compute_particle_energy_momentum(
+            particles, species_config, metric, static_parameters, dynamic_parameters,
+        )
+        total = tuple(particle + field for particle, field in zip(pic, em))
+    if static_parameters.current_filter == "none" and source_filter == "none":
+        return total
 
-    metric = build_bssn_metric(bssn_state, static_parameters, dynamic_parameters)
-    pic = compute_particle_energy_momentum(
-        particles, species_config, metric, static_parameters, dynamic_parameters,
-    )
-    return tuple(particle + field for particle, field in zip(pic, em))
+    from JAX_BSSN.bssn.geometry import W_FLOOR_VALUE
+
+    volume = jnp.maximum(bssn_state.conformal_factor, W_FLOOR_VALUE)**-3
+    rho, momentum, stress = total
+    components = jnp.stack((rho, *momentum,
+                            stress[0, 0], stress[0, 1], stress[0, 2],
+                            stress[1, 1], stress[1, 2], stress[2, 2]))
+    if source_filter == "binomial":
+        components = binomial_source_filter(volume * components, static_parameters.boundary_conditions) / volume
+    else:
+        components = filter_gr_grid(volume * components, static_parameters, dynamic_parameters) / volume
+    stress = jnp.stack((
+        jnp.stack((components[4], components[5], components[6])),
+        jnp.stack((components[5], components[7], components[8])),
+        jnp.stack((components[6], components[8], components[9])),
+    ))
+    return components[0], components[1:4], stress

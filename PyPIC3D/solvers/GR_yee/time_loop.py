@@ -6,6 +6,7 @@ from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.diagnostics.static_metric import step_diagnostics
 from PyPIC3D.particles.particle_tile_communication import refresh_tiled_particle_tiles
 from PyPIC3D.pusher.hybrid_boris_geodesic import hybrid_boris_geodesic_push
+from PyPIC3D.relativity.filtering import filter_gr_grid, validate_gr_filter
 from PyPIC3D.utilities.field_helpers import add_external_fields
 
 from .curved_maxwell import compute_covariant_E, compute_covariant_H, update_B, update_D
@@ -54,6 +55,9 @@ def time_loop_static_metric(
 
     if static_parameters.guard_cells < 2:
         raise ValueError("Upstream shift reconstruction requires guard_cells >= 2")
+    validate_gr_filter(static_parameters)
+    if current_transform is not None and static_parameters.current_filter != "none":
+        raise ValueError("Use either matched GR filter_j or current_transform, not both")
 
     if pair_injector is not None:
         if static_parameters.solver != "static_metric":
@@ -115,6 +119,8 @@ def time_loop_static_metric(
                 particles_n, particles, species_config, J_n_minushalf,
                 static_parameters, dynamic_parameters,
             )
+            J_n_plushalf = tuple(filter_gr_grid(
+                value, static_parameters, dynamic_parameters, tiled=True) for value in J_n_plushalf)
         else:
             centered_particles, centered_overflow = refresh_tiled_particle_tiles(
                 centered_particles, static_parameters, dynamic_parameters,

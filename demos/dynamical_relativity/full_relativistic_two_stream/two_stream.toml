@@ -4,7 +4,7 @@ solver = "dynamic_metric"
 gr_work_energy_theorem = true
 metric = "numerical"
 
-t_wind = 50.0
+t_wind = 15.707963267948966 # 25 electron plasma periods with omega_pe = 10.
 
 Nx = 128
 Ny = 1
@@ -25,7 +25,7 @@ particle_tile_nx = 128
 particle_tile_ny = 1
 particle_tile_nz = 1
 particle_tile_capacity_factor = 1.0
-particle_batch_size = 256
+particle_batch_size = 8192
 x_bc = "periodic"
 y_bc = "periodic"
 z_bc = "periodic"
@@ -42,11 +42,11 @@ particle_pusher = "hybrid_boris_geodesic"
 shape_factor = 2
 guard_cells = 3
 current_calculation = "esirkepov"
-filter_j = "none"
+filter_j = "bilinear"
 verbose = false
 
 [plotting]
-plotting_interval = 50
+plotting_interval = 10
 plot_openpmd_particles = true
 plot_openpmd_fields = true
 plotchargedensity = true
@@ -54,16 +54,13 @@ dump_particles = true
 dump_fields = true
 
 [metric]
-
 conformal_metric = "initial_data/conformal_metric.npy"
 conformal_factor = "initial_data/conformal_factor.npy"
 trace_K = "initial_data/trace_K.npy"
 lapse = "initial_data/lapse.npy"
-
 traceless_K = false
 conformal_connection = false
 shift = false
-
 gravity_G = 8.16e-8
 time = 0.0
 gauge = "harmonic"
@@ -82,14 +79,13 @@ zl_bc = "periodic"
 zr_bc = "periodic"
 
 
-
 [particle1]
 name = "electron_plus"
 N_particles = 8192
 charge = -1.0
 mass = 1.0
 temperature = 0.0025
-weight = 3.0517578125e-5
+weight = 0.0030517578125
 x_bc = "periodic"
 y_bc = "periodic"
 z_bc = "periodic"
@@ -109,7 +105,7 @@ N_particles = 8192
 charge = -1.0
 mass = 1.0
 temperature = 0.0025
-weight = 3.0517578125e-5
+weight = 0.0030517578125
 x_bc = "periodic"
 y_bc = "periodic"
 z_bc = "periodic"
@@ -127,9 +123,9 @@ initial_vz = "initial_data/electron_minus_initial_vz.npy"
 name = "ion"
 N_particles = 16384
 charge = 1.0
-mass = 1836.0
+mass = 1.0
 temperature = 0.0025
-weight = 3.0517578125e-5
+weight = 0.0030517578125
 x_bc = "periodic"
 y_bc = "periodic"
 z_bc = "periodic"

@@ -174,11 +174,15 @@ def sample_energy(particles, species, fields, static, dynamic):
     particle_energy = jnp.zeros_like(electromagnetic)
     if particles.active.size:
         common = synchronize_particles(particles, species, fields, static, dynamic)
-        Gamma = particle_lorentz_factor(common, metric, static, dynamic)
+        # Synchronization uses the actual filtered force. Measurements then
+        # use raw geometry/sources so filtering remains visible in the
+        # original continuum balance, rather than redefining physical energy.
+        raw_static = static._replace(current_filter="none")
+        Gamma = particle_lorentz_factor(common, metric, raw_static, dynamic)
         mass = (species.mass * species.weight)[None, None, None, :, None]
         particle_energy = jnp.sum(jnp.where(common.active, mass * Gamma, 0.0))
         rho_p, momentum_p, stress_p = compute_particle_energy_momentum(
-            common, species, metric, static, dynamic)
+            common, species, metric, raw_static, dynamic)
         rho, momentum, stress = rho + rho_p, momentum + momentum_p, stress + stress_p
 
     S_up = jnp.einsum("ij...,j...->i...", inverse, momentum)
