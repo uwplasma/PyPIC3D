@@ -106,12 +106,6 @@ are formed before smoothing, and stored Maxwell fields and BSSN variables
 are not smoothed. This option does not change the periodic matched-PIC filter
 contract and cannot be combined with that filter.
 
-The charged electrovacuum demo in
-``demos/dynamical_relativity/charged_vacuum_puncture`` implements analytic
-single-puncture data from arXiv:1311.6483v2 in the native Gaussian convention.
-It retains the analytic initial metric and reports constraints with both raw
-and filtered sources; filtering changes the gravitational source
-approximation rather than solving a new initial constraint problem.
 
 Matter and electromagnetic work-energy theorem
 ----------------------------------------------
@@ -264,10 +258,3 @@ its time integral ``*_work``. Names are:
 ``step_residual`` belongs to the most recent macro step, not the interval
 between output rows. Accumulators are fixed-size JAX state; output cadence
 does not require growing histories or per-step scalar host transfers.
-
-This diagnostic measures matter/EM energy-balance error on the numerical
-geometry. It neither bounds the complete solution error nor replaces
-Einstein/Maxwell constraints, ADM mass, or quasi-local mass diagnostics.
-For the geometric-source interpretation of matter continuity equations, see
-Katy Clough, `Continuity equations for general matter: applications in
-numerical relativity <https://arxiv.org/abs/2104.13420>`_.
