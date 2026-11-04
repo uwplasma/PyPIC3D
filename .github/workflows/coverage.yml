@@ -25,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install .
+          pip install '.[relativity]'
           pip install coverage filelock
 
       - name: Configure JAX devices and compilation cache
