@@ -500,6 +500,13 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
     dark_matter = solver == "dark_matter_yee"
     if "metric" in config and not dynamic_metric:
         raise ValueError("[metric] initialization requires solver='dynamic_metric'")
+    if static_metric:
+        # Matched GR filtering constrains the metric and every field and particle
+        # boundary, so it is opt-in rather than the inherited Yee default. The
+        # dynamic_metric block below already does this.
+        if ("filter_j" not in config.get("simulation_parameters", {})
+                and "filter_j" not in config.get("static_parameters", {})):
+            static_config["filter_j"] = "none"
     if static_metric and static_config["filter_j"] != "none":
         for key, block in config.items():
             if key.startswith("particle") and any(block.get(axis + "_bc", "periodic") != "periodic"

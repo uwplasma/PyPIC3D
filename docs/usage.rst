@@ -135,8 +135,15 @@ Numerical Choices
 - ``filter_j`` is ``none``, ``digital``, or ``bilinear`` for direct current.
   The selected filter is applied to deposited current and to an evolved electric
   copy used for particle interpolation, including the initial backward
-  half-kick. External fields and the magnetic gather are unfiltered. Esirkepov requires
-  ``filter_j = "none"``.
+  half-kick. External fields and the magnetic gather are unfiltered. On the Yee
+  solvers Esirkepov requires ``filter_j = "none"``. The ``static_metric`` and
+  ``dynamic_metric`` solvers instead support a matched filter that is applied to
+  the deposited current, the charge density, the gathered physical D/B and the
+  particle metric with one common periodic stencil, so Esirkepov continuity is
+  preserved; it requires a Cartesian metric and periodic field and particle
+  boundaries. Because of those constraints both GR solvers default ``filter_j``
+  to ``none`` rather than inheriting the Yee default, so matched filtering is
+  opt-in.
 - ``alpha`` is the digital filter coefficient and belongs in a
   recognized simulation or dynamic parameter section.
 - ``electrostatic_schwarz_tol`` is the maximum absolute Poisson residual in
