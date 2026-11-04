@@ -5,7 +5,7 @@ import jax.numpy as jnp
 
 from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.relativity.core import B_FIELD_LOCATIONS
-from PyPIC3D.relativity.field_interpolation import location_interpolate as _location_interpolate
+from PyPIC3D.relativity.field_interpolation import reconstruct_vector
 
 
 class Magnetization(NamedTuple):
@@ -25,13 +25,19 @@ def deposit_number_density(particles, species, template, metric, static, dynamic
     return jnp.stack(result)
 
 
-def collocate_magnetic_field(B):
-    """Collocate physical components at cell centers.
+CENTER = ("C",)*3
+
+
+def collocate(vector, locations):
+    """Stack vector components at cell centers for contraction with the metric.
 
     Never contract components sampled at different Yee positions.
     """
-    return jnp.stack([_location_interpolate(B[i], loc, ("C",)*3)
-                      for i, loc in enumerate(B_FIELD_LOCATIONS)], axis=-1)
+    return jnp.stack(reconstruct_vector(vector, locations, CENTER), axis=-1)
+
+
+def collocate_magnetic_field(B):
+    return collocate(B, B_FIELD_LOCATIONS)
 
 
 def magnetization_from_density(B, number_density, masses, metric):

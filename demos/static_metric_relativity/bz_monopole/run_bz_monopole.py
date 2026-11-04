@@ -14,40 +14,28 @@ import time
 import jax
 import jax.numpy as jnp
 import numpy as np
+from jax.sharding import NamedSharding, PartitionSpec
 from tqdm import tqdm
 
-from PyPIC3D.boundary_conditions.staggered import refresh_fields as refresh_vector
+from PyPIC3D.boundary_conditions.ghost_cells import MESH_AXES
+from PyPIC3D.boundary_conditions.absorbing_sponge import sponge_advance
+from PyPIC3D.boundary_conditions.staggered import refresh_fields
 from PyPIC3D.relativity.core import B_FIELD_LOCATIONS, D_FIELD_LOCATIONS
 from PyPIC3D.relativity.field_state import physical_vector
 from PyPIC3D.solvers.GR_yee.curved_maxwell import (
     compute_covariant_E, compute_covariant_H, update_B, update_D)
 from PyPIC3D.solvers.GR_yee.time_loop import time_loop_static_metric
-if __package__:
-    from .simulation_parameters import SimulationParameters, build_runtime, shard_array
-    from .current_filter import filter_current
-    from .magnetization import measure_magnetization
-    from .plasma_injector import empty_particles, inject_pairs
-    from .diagnostics import (
-        constraint_residuals, validate_constraint_settings,
-        check_constraints, diagnostics,
-    )
-    from .output import (
-        RadialBoundaryBudget, plot_diagnostics, output_metadata,
-        save_final_state, prepare_output_directory,
-    )
-else:
-    from simulation_parameters import SimulationParameters, build_runtime, shard_array
-    from current_filter import filter_current
-    from magnetization import measure_magnetization
-    from plasma_injector import empty_particles, inject_pairs
-    from diagnostics import (
-        constraint_residuals, validate_constraint_settings,
-        check_constraints, diagnostics,
-    )
-    from output import (
-        RadialBoundaryBudget, plot_diagnostics, output_metadata,
-        save_final_state, prepare_output_directory,
-    )
+
+from simulation_parameters import SimulationParameters, build_runtime, shard_array
+from current_filter import filter_current
+from magnetization import measure_magnetization
+from plasma_injector import empty_particles, inject_pairs
+from diagnostics import constraint_residuals, check_constraints, diagnostics
+from output import (
+    RadialBoundaryBudget, plot_diagnostics, output_metadata,
+    save_final_state, prepare_output_directory,
+)
+
 
 def monopole_field(p, metric, dynamic):
     """Continuum monopole density sqrt(gamma) B^r on the magnetic Yee locations."""
@@ -56,15 +44,10 @@ def monopole_field(p, metric, dynamic):
     return (Br, jnp.zeros_like(Br), jnp.zeros_like(Br))
 
 
-def refresh_fields(vector, locations, static, metric):
-    """Refresh D or B density halos, including the frozen horizon layers."""
-    return refresh_vector(vector, static, locations, 'B' if locations == B_FIELD_LOCATIONS else 'D', metric)
-
-
 def initialize_fields(p, static, dynamic, metric):
     """Densitized state at t=0 with Taylor-started D^{-1} and B^{-1/2}, B^{-3/2}."""
     B0 = tuple(shard_array(x, static) for x in monopole_field(p, metric, dynamic))
-    B0=refresh_fields(B0, B_FIELD_LOCATIONS, static, metric)
+    B0 = refresh_fields(B0, static, B_FIELD_LOCATIONS, 'B', metric)
     zero = jnp.zeros_like(B0[0])
     D0 = (zero,)*3
     def rhs(D, B):
@@ -72,8 +55,8 @@ def initialize_fields(p, static, dynamic, metric):
         H = compute_covariant_H(D, B, metric)
         db = update_B(E, (zero,)*3, metric, static, dynamic, 1.)
         dd = update_D((zero,)*3, H, (zero,)*3, metric, static, dynamic, 1.)
-        return (refresh_fields(dd, D_FIELD_LOCATIONS, static, metric),
-                refresh_fields(db, B_FIELD_LOCATIONS, static, metric))
+        return (refresh_fields(dd, static, D_FIELD_LOCATIONS, 'D', metric),
+                refresh_fields(db, static, B_FIELD_LOCATIONS, 'B', metric))
     dD, dB = rhs(D0, B0)
     ddD, ddB = rhs(dD, dB)
     def at(initial, first, second, t):
@@ -86,7 +69,18 @@ def initialize_fields(p, static, dynamic, metric):
     return (D0, Bhalf, D0, zero, zero, external, metric, previous, jnp.asarray(False)), B0
 
 
-def apply_sponge(fields, background, p, static, dynamic):
+def sponge_rates(p, dynamic):
+    """Radial damping rate at each Yee location; fixed for the whole run."""
+    rates = {}
+    for key, grid in (("C", dynamic.grids.tiled_center_grid),
+                      ("V", dynamic.grids.tiled_vertex_grid)):
+        r = grid[0][..., :, None, None]
+        ramp = jnp.clip((r-p.sponge_start)/(p.r_max-p.sponge_start), 0., 1.)**4
+        rates[key] = p.sponge_rate*ramp
+    return rates
+
+
+def apply_sponge(fields, background, rates, static, dynamic):
     """Damp deviations from the monopole; report constraint changes separately.
 
     This is an absorbing numerical layer, not a charge-conserving physical source.
@@ -94,23 +88,23 @@ def apply_sponge(fields, background, p, static, dynamic):
     The damping is pointwise and linear, so it acts on the densities directly.
     """
     D, B = fields[0], fields[1]
-    def damp(vector, baseline, locations):
-        result = []
-        for i, loc in enumerate(locations):
-            grid = dynamic.grids.tiled_center_grid if loc[0] == "C" else dynamic.grids.tiled_vertex_grid
-            r = grid[0][..., :, None, None]
-            ramp = jnp.clip((r-p.sponge_start)/(p.r_max-p.sponge_start), 0., 1.)**4
-            factor = jnp.exp(-p.sponge_rate*dynamic.dt*ramp)
-            result.append(baseline[i]+factor*(vector[i]-baseline[i]))
-        return refresh_fields(tuple(result), locations, static, fields[6])
+    def damp(vector, baseline, locations, kind):
+        result = tuple(sponge_advance(value, 0., dynamic.dt, rates[loc[0]], reference)
+                       for value, reference, loc in zip(vector, baseline, locations))
+        return refresh_fields(result, static, locations, kind, fields[6])
     zero = tuple(jnp.zeros_like(x) for x in D)
-    return (damp(D, zero, D_FIELD_LOCATIONS), damp(B, background, B_FIELD_LOCATIONS))+fields[2:]
+    return (damp(D, zero, D_FIELD_LOCATIONS, 'D'),
+            damp(B, background, B_FIELD_LOCATIONS, 'B'))+fields[2:]
 
 
 def make_step(p, species, static, dynamic, background, *,
               current_filter_passes=0):
     """Build one compiled step with conditional injection followed by evolution."""
     injection_steps = max(1, math.ceil(p.injection_interval/float(dynamic.dt)))
+    rates = sponge_rates(p, dynamic)
+    transform = None
+    if current_filter_passes:
+        transform = lambda current: filter_current(current, static, current_filter_passes)
     def inject(particles, species, fields, static, dynamic, key, index):
         metric = fields[6]
         # magnetization reads the physical field; the leapfrog seed reads densities
@@ -119,31 +113,36 @@ def make_step(p, species, static, dynamic, background, *,
         return inject_pairs(particles, species, mag, fields[0], fields[1], metric,
                             static, dynamic, p, key, index)
     def evolve(particles, fields, key, index):
-        transform = None
-        if current_filter_passes:
-            transform = lambda current: filter_current(current, static, current_filter_passes)
         particles, fields, boundary, key, counts = time_loop_static_metric(
             particles, species, fields, static, dynamic, return_diagnostics=True,
             current_transform=transform, pair_injector=inject, injection_key=key,
             step=index, injection_interval_steps=injection_steps)
-        fields = apply_sponge(fields, background, p, static, dynamic)
-        finite = finite_state(particles, fields)
-        return (particles, fields, boundary, key, counts), finite
+        fields = apply_sponge(fields, background, rates, static, dynamic)
+        # One packed array keeps the step loop to a single blocking host transfer.
+        requested, inserted = counts
+        failures = jnp.stack((~finite_state(particles, fields),
+                              boundary.invalid_push,
+                              fields[-1],
+                              jnp.any(requested != inserted)))
+        return (particles, fields, boundary, key, counts), failures
     checked = jax.jit(evolve)
     def execute(particles, fields, key, index):
-        (particles, fields, boundary, key, counts), finite = checked(particles, fields, key, index)
-        requested, inserted = jax.device_get(counts)
-        rejected = requested - inserted
-        if rejected.any():
-            raise RuntimeError(f"Injection capacity/species failure at step {index}: "
-                               f"requested={requested}, inserted={inserted}, rejected={rejected}")
-        if not bool(finite):
+        (particles, fields, boundary, key, counts), failures = checked(particles, fields, key, index)
+        nonfinite, invalid_push, overflow, rejected = (bool(flag) for flag in np.asarray(failures))
+        if nonfinite:
             raise FloatingPointError(f'Nonfinite particle or field state at step {index}')
-        if bool(boundary.invalid_push):
+        if invalid_push:
             raise RuntimeError(f'Unsupported particle displacement at step {index}')
-        if bool(fields[-1]):
+        if overflow:
             raise RuntimeError(f'Particle migration/capacity failure at step {index}')
-        check_sharding(particles, fields, static)
+        if rejected:
+            requested, inserted = jax.device_get(counts)
+            raise RuntimeError(f"Injection capacity/species failure at step {index}: "
+                               f"requested={requested}, inserted={inserted}, "
+                               f"rejected={requested-inserted}")
+        # Output shardings are a static property of the one compiled step.
+        if index == 0:
+            check_sharding(particles, fields, static)
         return particles, fields, key, boundary, counts
     return execute
 
@@ -158,8 +157,7 @@ def finite_state(particles, fields):
 
 
 def check_sharding(particles, fields, static):
-    from jax.sharding import NamedSharding, PartitionSpec
-    layout = NamedSharding(static.field_mesh, PartitionSpec('tile_x', 'tile_y', 'tile_z'))
+    layout = NamedSharding(static.field_mesh, PartitionSpec(*MESH_AXES))
     for value in (*jax.tree.leaves(particles), *fields[0], *fields[1], *fields[2],
                   *fields[7][0], *fields[7][1]):
         if not value.sharding.is_equivalent_to(layout, value.ndim):
@@ -168,14 +166,11 @@ def check_sharding(particles, fields, static):
 
 def evolve(particles, species, fields, key, p, static, dynamic, background, output):
     """Evolve a fresh initial state to p.end_time, saving checked snapshots."""
-    validate_constraint_settings(p.gauss_tolerance, p.magnetic_divergence_tolerance,
-                                 p.constraint_check_interval)
-    output = prepare_output_directory(output)
     dt = float(dynamic.dt)
     if not math.isfinite(dt) or dt <= 0:
         raise ValueError('dt must be finite and positive')
     target = math.ceil(p.end_time/dt)
-    metadata = output_metadata(p, static, dynamic)
+    metadata = output_metadata(p, dynamic)
     execute = make_step(p, species, static, dynamic, background,
                         current_filter_passes=p.current_filter_passes)
     measure = jax.jit(lambda pts, fs: constraint_residuals(
@@ -203,7 +198,7 @@ def evolve(particles, species, fields, key, p, static, dynamic, background, outp
     if not bool(finite_state(particles, fields)):
         raise FloatingPointError('Nonfinite initial state')
     check_state(particles, fields, 0)
-    snapshot(0)
+    data = snapshot(0)
     last_refresh = time.perf_counter()
     with tqdm(total=target, desc='BZ monopole', unit='step', mininterval=1.,
               dynamic_ncols=True) as progress:
@@ -231,31 +226,20 @@ def evolve(particles, species, fields, key, p, static, dynamic, background, outp
 
 
 def run(parameters=None):
+    """Run one BZ monopole with the settings in simulation_parameters.py."""
     p = parameters if parameters is not None else SimulationParameters()
-    validate_constraint_settings(p.gauss_tolerance, p.magnetic_divergence_tolerance,
-                                 p.constraint_check_interval)
     output = prepare_output_directory(p.output_directory)
-    jax.config.update('jax_enable_x64', True)
     jax.config.update('jax_platforms', 'cpu' if p.backend == 'cpu' else 'cuda')
     if jax.default_backend() not in (('cpu',) if p.backend == 'cpu' else ('gpu', 'cuda')):
         raise RuntimeError(f'The initialized JAX backend differs from backend={p.backend!r}')
     if len(jax.devices()) < p.devices:
         raise RuntimeError(f'Requested {p.devices} devices, but only {len(jax.devices())} are visible')
-    if p.current_filter_passes and p.r_min+(p.current_filter_passes+2)*p.dr >= p.horizon:
-        raise ValueError('Source filter and absorption stencil must fit inside the horizon; increase nr')
-    static, dynamic, metric, _ = build_runtime(p)
+    static, dynamic, metric = build_runtime(p)
     particles, species = empty_particles(p, static)
     fields, background = initialize_fields(p, static, dynamic, metric)
     return evolve(particles, species, fields, jax.random.PRNGKey(p.seed), p,
                   static, dynamic, background, output)
 
 
-def main():
-    import sys
-    if len(sys.argv) != 1:
-        raise SystemExit('This runner takes no arguments; edit simulation_parameters.py.')
-    run(SimulationParameters())
-
-
 if __name__ == '__main__':
-    main()
+    run()

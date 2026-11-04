@@ -10,6 +10,7 @@ import jax
 import jax.numpy as jnp
 from jax.sharding import NamedSharding, PartitionSpec as P
 
+from PyPIC3D.boundary_conditions.ghost_cells import MESH_AXES
 from PyPIC3D.relativity.metrics.kerr_schild import initialize_kerr_schild_spherical_metric
 from PyPIC3D.utilities.grids import build_yee_grid, build_tiled_yee_grids
 from PyPIC3D.utilities.parameters import build_static_parameters, build_dynamic_parameters
@@ -51,6 +52,25 @@ class SimulationParameters:
     boundary_conditions: tuple = (3, 1, 0)
     particle_boundary_conditions: tuple = (2, 1, 0)
 
+    def __post_init__(self):
+        """All run settings are validated here, so callers never re-check them."""
+        if not (math.isfinite(self.theta_start) and math.isfinite(self.theta_end)
+                and 0 < self.theta_start < self.theta_end < math.pi):
+            raise ValueError('theta_start and theta_end must be finite and satisfy 0 < start < end < pi')
+        if min(self.theta_start, math.pi-self.theta_end) <= self.guard_cells*self.dtheta:
+            raise ValueError('Angular grid guard nodes must stay strictly inside (0, pi)')
+        if not (math.isfinite(self.r_min) and math.isfinite(self.r_max) and 0 < self.r_min < self.r_max):
+            raise ValueError('Radial bounds must be finite and satisfy 0 < r_min < r_max')
+        if self.r_min <= self.guard_cells*self.dr:
+            raise ValueError('Radial metric guard nodes must stay strictly above r=0')
+        if self.current_filter_passes and self.r_min+(self.current_filter_passes+2)*self.dr >= self.horizon:
+            raise ValueError('Source filter and absorption stencil must fit inside the horizon; increase nr')
+        for name in ('gauss_tolerance', 'magnetic_divergence_tolerance'):
+            value = getattr(self, name)
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f'{name} must be finite and positive')
+        if self.constraint_check_interval <= 0:
+            raise ValueError('constraint_check_interval must be a positive integer')
 
     @property
     def dr(self):
@@ -94,24 +114,15 @@ class SimulationParameters:
 
 
 def shard_array(array, static):
-    return jax.device_put(array, NamedSharding(static.field_mesh, P("tile_x", "tile_y", "tile_z")))
+    return jax.device_put(array, NamedSharding(static.field_mesh, P(*MESH_AXES)))
 
 
-def build_runtime(parameters=SimulationParameters()):
+def build_runtime(p):
     """Build static/dynamic parameters and the sharded metric; dt is the capped CFL step.
 
-    Returns ``(static, dynamic, metric, cfl_dt)``.
+    Returns ``(static, dynamic, metric)``. Settings are validated by
+    ``SimulationParameters.__post_init__``.
     """
-    p = parameters
-    if not (math.isfinite(p.theta_start) and math.isfinite(p.theta_end)
-            and 0 < p.theta_start < p.theta_end < math.pi):
-        raise ValueError('theta_start and theta_end must be finite and satisfy 0 < start < end < pi')
-    if min(p.theta_start, math.pi-p.theta_end) <= p.guard_cells*p.dtheta:
-        raise ValueError('Angular grid guard nodes must stay strictly inside (0, pi)')
-    if not (math.isfinite(p.r_min) and math.isfinite(p.r_max) and 0 < p.r_min < p.r_max):
-        raise ValueError('Radial bounds must be finite and satisfy 0 < r_min < r_max')
-    if p.r_min <= p.guard_cells*p.dr:
-        raise ValueError('Radial metric guard nodes must stay strictly above r=0')
     jax.config.update("jax_enable_x64", True)
     config = dict(Nx=p.nr, Ny=p.ntheta, Nz=1, x_wind=p.r_max-p.r_min,
                   y_wind=p.theta_end-p.theta_start, z_wind=2*math.pi, x_min=p.r_min,
@@ -139,8 +150,8 @@ def build_runtime(parameters=SimulationParameters()):
     sr = jnp.abs(m.shift[..., 0]) + m.lapse*jnp.sqrt(m.gamma_inv[..., 0, 0])
     st = jnp.abs(m.shift[..., 1]) + m.lapse*jnp.sqrt(m.gamma_inv[..., 1, 1])
     speed = jnp.stack((sr, st, jnp.zeros_like(sr)), axis=-1)
-    cfl_dt = p.courant / float(jnp.max((speed[..., 0]/p.dr + speed[..., 1]/p.dtheta)[interior]))
-    limits=[cfl_dt]
-    if p.maximum_timestep is not None:limits.append(p.maximum_timestep)
+    limits = [p.courant / float(jnp.max((speed[..., 0]/p.dr + speed[..., 1]/p.dtheta)[interior]))]
+    if p.maximum_timestep is not None:
+        limits.append(p.maximum_timestep)
     dynamic = dynamic._replace(dt=jnp.asarray(min(limits)))
-    return static, dynamic, metric, cfl_dt
+    return static, dynamic, metric
