@@ -228,6 +228,8 @@ snapshots are retained in memory before being written to disk. If the queue
 sizes are too small, the simulation may stall while waiting for disk writes to
 complete. If the queue sizes are too large, the simulation may run out of memory.
 
+Each snapshot is identified by its simulation step number, so openPMD iteration
+IDs are spaced by ``plotting_interval`` rather than numbered consecutively.
 
 Field output contains ``E``, ``B``, and ``J``. ``plotchargedensity = true``
 deposits the scalar charge-density mesh ``rho`` from the current particle

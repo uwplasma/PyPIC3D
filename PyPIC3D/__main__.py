@@ -145,15 +145,13 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
         )
 
     matched_gr = gr_metric and static_parameters.current_filter != "none"
+    # A common-time final snapshot is needed when the work-energy budget writes its
+    # endpoint at t = Nt, and for filtered GR qualification.
+    final_endpoint = work_energy_theorem or matched_gr
     loop_error = None
     try:
-        # Filtered GR qualification needs both common-time endpoints, including
-        # runs shorter than the output interval. Step IDs prevent collisions
-        # between the final snapshot and the last cadence snapshot.
-        for t in tqdm(range(Nt + int(matched_gr))):
-            if t % plotting_parameters["plotting_interval"] == 0 or (matched_gr and t == Nt):
-                plot_num = t if matched_gr else t // plotting_parameters["plotting_interval"]
-
+        for t in tqdm(range(Nt + int(final_endpoint))):
+            if t % plotting_parameters["plotting_interval"] == 0 or (final_endpoint and t == Nt):
                 if dynamic_metric:
                     from PyPIC3D.diagnostics.static_metric import bssn_constraint_norms
                     norms = bssn_constraint_norms(particles, species_config, fields,
@@ -209,7 +207,7 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
                         particle_writer,
                         output_particles,
                         dynamic_parameters,
-                        plot_num,
+                        t,
                         t,
                         species_config=species_config,
                         species_names=particle_species_names,
@@ -227,7 +225,7 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
                         include_charge_density=bool(plotting_parameters["plotchargedensity"]),
                     )
                     plotting_parameters["field_map"] = field_map
-                    enqueue_openpmd_field_output(field_writer, field_map, dynamic_parameters, plot_num, t)
+                    enqueue_openpmd_field_output(field_writer, field_map, dynamic_parameters, t, t)
 
             if t == Nt:
                 break
