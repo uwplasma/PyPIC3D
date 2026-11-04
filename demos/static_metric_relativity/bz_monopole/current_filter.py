@@ -1,12 +1,14 @@
 """Conservative binomial filtering of conformal finite-difference sources."""
 import jax.numpy as jnp
-from PyPIC3D.boundary_conditions.ghost_cells import source_boundaries
+from PyPIC3D.boundary_conditions.ghost_cells import (
+    particle_vector_reflecting_parity, source_boundaries)
 from PyPIC3D.relativity.core import D_FIELD_LOCATIONS
 
 
 def smooth_conformal(value, static, passes, *, component=None):
     location = ('C',)*3 if component is None else D_FIELD_LOCATIONS[component]
-    parity = tuple(-1 if axis == component else 1 for axis in range(3))
+    # Scalar charge is even on every wall; a current component is odd on its own.
+    parity = (1, 1, 1) if component is None else particle_vector_reflecting_parity(component)
     # Radial fields have constant halos; particle absorption is a separate
     # source sink. The checked region lies beyond its filter support.
     for _ in range(passes):
