@@ -362,16 +362,22 @@ class TestGRESirkepovConfiguration(GRESirkepovConfigurationFixtures, unittest.Te
             _encode_current_calculation("GR_esirkepov")
 
 
-    def test_current_filtering_is_rejected(self):
-        """Filtering destroys the exact continuity the scheme exists to give."""
+    def test_current_only_filtering_is_rejected_outside_matched_gr(self):
+        """Ordinary Yee has no matched charge/current filtering contract."""
 
-        for solver in ("electrodynamic_yee", "dark_matter_yee", "static_metric"):
+        for solver in ("electrodynamic_yee", "dark_matter_yee"):
             for filter_name in ("digital", "bilinear"):
                 with self.subTest(solver=solver, filter=filter_name):
                     with self.assertRaisesRegex(ValueError, "use filter_j='none'"):
                         _validate_current_filter_contract(
                             self._static_config(solver=solver, filter_j=filter_name)
                         )
+
+    def test_periodic_cartesian_gr_accepts_matched_filtering(self):
+        for solver in ("static_metric", "dynamic_metric"):
+            for filter_name in ("digital", "bilinear"):
+                _validate_current_filter_contract(
+                    self._static_config(solver=solver, filter_j=filter_name))
 
 
     def test_unfiltered_configuration_is_accepted(self):

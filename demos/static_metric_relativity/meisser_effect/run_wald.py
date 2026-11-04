@@ -296,17 +296,19 @@ def run(config, overwrite=False):
     dump_interval = int(output["dump_interval"])
     B0 = float(config["physics"]["B0"])
     completed_steps = 0
-    dump_index = 0
+    snapshots = 0
     run_error = None
 
     try:
+        # Snapshots are identified by step number, matching the driver.
         enqueue_openpmd_field_output(
             writer,
             field_map(state, metric, B0),
             dynamic_parameters,
-            dump_index,
+            completed_steps,
             completed_steps,
         )
+        snapshots += 1
 
         progress = tqdm(total=total_steps, unit="step", desc="Wald evolution")
         while completed_steps < total_steps:
@@ -315,15 +317,15 @@ def run(config, overwrite=False):
             jax.block_until_ready(state)
 
             completed_steps += steps
-            dump_index += 1
             progress.update(steps)
             enqueue_openpmd_field_output(
                 writer,
                 field_map(state, metric, B0),
                 dynamic_parameters,
-                dump_index,
+                completed_steps,
                 completed_steps,
             )
+            snapshots += 1
         progress.close()
     except BaseException as exc:
         run_error = exc
@@ -331,7 +333,7 @@ def run(config, overwrite=False):
     finally:
         writer.close(raise_errors=run_error is None)
 
-    print(f"Wrote {dump_index + 1} snapshots to {output_paths(config)[0]}")
+    print(f"Wrote {snapshots} snapshots to {output_paths(config)[0]}")
     return state
 
 

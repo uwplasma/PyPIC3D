@@ -22,21 +22,28 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python 3.12
-      uses: actions/setup-python@v3
+      uses: actions/setup-python@v5
       with:
         python-version: "3.12"
     - name: Install dependencies
       id: install
       run: |
         python -m pip install --upgrade pip
-        pip install .
+        pip install '.[relativity]' filelock
+    - name: Configure JAX devices and compilation cache
+      id: jax_setup
+      run: python .github/scripts/configure_jax_ci.py
     - name: Code tests
       run: python -m unittest discover -s tests/code_tests -t . -p '*test*.py'
     - name: Physics tests
-      if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+      if: ${{ !cancelled() && steps.install.outcome == 'success' && steps.jax_setup.outcome == 'success' }}
       run: python -m unittest discover -s tests/physics_tests -t . -p '*test*.py'
     - name: Distributed tests
-      if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+      if: ${{ !cancelled() && steps.install.outcome == 'success' && steps.jax_setup.outcome == 'success' }}
       env:
+        JAX_PLATFORMS: ${{ steps.jax_setup.outputs.distributed_platform }}
         JAX_NUM_CPU_DEVICES: "8"
       run: python -m unittest discover -s tests/distributed_tests -t . -p '*test*.py'
+    - name: Report JAX compilation cache
+      if: ${{ always() && steps.jax_setup.outcome == 'success' }}
+      run: python .github/scripts/configure_jax_ci.py --report

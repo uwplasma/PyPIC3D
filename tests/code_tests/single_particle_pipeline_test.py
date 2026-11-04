@@ -24,7 +24,11 @@ from PyPIC3D.solvers.yee.time_loop import time_loop_electrodynamic
 from PyPIC3D.utilities.field_helpers import filter_electric_field_for_particles, yee_push_fields
 from PyPIC3D.initialization import initialize_fields
 from PyPIC3D.particles.particle_tile_communication import refresh_tiled_particle_tiles, update_tiled_particle_positions
-from PyPIC3D.pusher.boris import interpolate_field_to_particles
+from PyPIC3D.pusher.particle_interpolation import (
+    gather_shape_orders,
+    interpolate_field_to_particles,
+)
+from PyPIC3D.relativity.core import D_FIELD_LOCATIONS, location_grid
 from PyPIC3D.utilities.field_helpers import add_external_fields
 from PyPIC3D.utilities.filters import digital_filter, digital_filter_vector
 from tests.kernel_fixtures import build_tiled_particles, empty_tiled_scalar, empty_tiled_vector, kernel_parameters, particle_species
@@ -435,21 +439,21 @@ def _gather_electric_field(E, tile, position, static_parameters, dynamic_paramet
         int(ntz) * tile_nz > 1,
     )
 
-    component_grids = (
-        (vertex_x, center_y, center_z),
-        (center_x, vertex_y, center_z),
-        (center_x, center_y, vertex_z),
-    )
+    center_grid = (center_x, center_y, center_z)
+    vertex_grid = (vertex_x, vertex_y, vertex_z)
 
+    # mirror the production gather: grids and shape orders both follow the
+    # component's Yee location, so an Esirkepov run gathers with the Galerkin
+    # ordering and a direct run keeps the uniform shape order.
     gathered = []
-    for component, component_grid in zip(E, component_grids):
+    for component, location in zip(E, D_FIELD_LOCATIONS):
         value = interpolate_field_to_particles(
             component[tx, ty, tz],
             x,
             y,
             z,
-            component_grid,
-            static_parameters.shape_factor,
+            location_grid(center_grid, vertex_grid, location),
+            gather_shape_orders(location, static_parameters),
             ghost_cells=True,
             active_axes=active_axes,
             inactive_axis_indices=(g, g, g),
@@ -825,6 +829,116 @@ class TestSingleParticleStencils(unittest.TestCase):
                     relative_residual = abs(float(grid_work - particle_work)) / work_scale
 
                     self.assertLessEqual(relative_residual, 1.0e-12)
+
+    def test_esirkepov_scatter_is_adjoint_to_galerkin_yee_gather(self):
+        """The Galerkin gather is the transpose of the Esirkepov scatter.
+
+        Esirkepov builds ``J_x`` from a cumulative sum along ``x``, so its
+        effective shape is one order lower along that axis.  Gathering ``E_x``
+        with the matching reduced order therefore makes the grid work
+        ``sum(E . J) dV`` equal the particle work ``q w v . E`` exactly, which
+        is what keeps the field energy consistent.  The deposited current is
+        the time average over the step, so the comparison is made at the
+        midpoint of the move; the equality is exact for ``shape_factor=1``
+        because the reduced shape is then piecewise constant, and second-order
+        accurate in ``dt`` for the quadratic ``shape_factor=2`` shapes.
+        """
+
+        velocity = jnp.asarray((0.71, -0.43, 0.29))
+        charge = -1.3
+        weight = 0.6
+        dt = 0.01
+
+        configurations = {
+            "one_tile_3d": {
+                "grid_shape": (8, 8, 8),
+                "wind": (8.0, 8.0, 8.0),
+                "moving_axes": jnp.asarray((1.0, 1.0, 1.0)),
+                "positions": {
+                    "lower_cell_half": (-3.75, -0.79, 0.49),
+                    "upper_periodic_seam": (3.99, 3.91, 3.83),
+                },
+            },
+            "one_tile_reduced": {
+                "grid_shape": (8, 1, 1),
+                "wind": (8.0, 1.0, 1.0),
+                "moving_axes": jnp.asarray((1.0, 0.0, 0.0)),
+                "positions": {
+                    "lower_tile_interface": (-3.30, 0.0, 0.0),
+                    "upper_periodic_seam": (3.99, 0.0, 0.0),
+                },
+            },
+        }
+
+        for configuration, values in configurations.items():
+            Nx, Ny, Nz = values["grid_shape"]
+            x_wind, y_wind, z_wind = values["wind"]
+            # the Esirkepov gather is selected by the deposition scheme, so the
+            # full-order reference is the same run with direct deposition
+            galerkin_parameters, dynamic_parameters = kernel_parameters(
+                Nx=Nx, Ny=Ny, Nz=Nz,
+                x_wind=x_wind, y_wind=y_wind, z_wind=z_wind,
+                tile_shape=values["grid_shape"],
+                guard_cells=2,
+                shape_factor=1,
+                current_deposition="esirkepov",
+                current_filter="none",
+                relativistic=False,
+                dt=dt,
+            )
+            full_order_parameters = galerkin_parameters._replace(current_deposition="direct")
+            E = _periodic_test_electric_field(galerkin_parameters, dynamic_parameters)
+
+            for phase, position in values["positions"].items():
+                with self.subTest(configuration=configuration, phase=phase):
+                    particles, species_config = _one_particle(
+                        galerkin_parameters,
+                        dynamic_parameters,
+                        position,
+                        velocity,
+                        charge=charge,
+                        weight=weight,
+                    )
+                    displacement = dt * velocity * values["moving_axes"]
+                    moved = particles._replace(x=particles.x + displacement)
+                    J = Esirkepov_current(
+                        particles,
+                        moved,
+                        species_config,
+                        empty_tiled_vector(galerkin_parameters, dynamic_parameters),
+                        galerkin_parameters,
+                        dynamic_parameters,
+                        coordinate_velocity=jnp.broadcast_to(velocity, particles.x.shape),
+                    )
+
+                    grid_work = _grid_current_work(
+                        E,
+                        J,
+                        galerkin_parameters,
+                        dynamic_parameters,
+                    )
+
+                    tile, start, _ = _particle_state(particles)
+                    midpoint = start + 0.5 * displacement
+
+                    def residual(parameters):
+                        particle_field = _gather_electric_field(
+                            E,
+                            tile,
+                            midpoint,
+                            parameters,
+                            dynamic_parameters,
+                        )
+                        particle_work = charge * weight * jnp.dot(velocity, particle_field)
+                        work_scale = max(
+                            abs(float(grid_work)), abs(float(particle_work)), 1.0e-30
+                        )
+                        return abs(float(grid_work - particle_work)) / work_scale
+
+                    self.assertLessEqual(residual(galerkin_parameters), 1.0e-10)
+                    # the uniform-order gather is not the adjoint, so it must
+                    # miss by far more than the tolerance above
+                    self.assertGreater(residual(full_order_parameters), 1.0e-3)
 
     def test_single_particle_esirkepov_current_matches_exact_1d_shape_stencils(self):
         positions = {

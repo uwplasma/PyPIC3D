@@ -40,6 +40,14 @@ def _raise_if_tiled_particles_overflowed(fields):
         raise RuntimeError("tiled particle tile capacity overflowed during periodic retile")
 
 
+def write_work_energy_tracker(tracker, output_dir):
+    """Write one synchronized sample through the scalar time-series output."""
+    from PyPIC3D.diagnostics.gr_work_energy_theorem import tracker_values
+
+    for name, value in tracker_values(tracker).items():
+        write_data(f"{output_dir}/data/work_energy_{name}.txt", tracker.latest.time, value)
+
+
 def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
                 injection_interval_steps=1, bssn_state=None, bssn_evolution_parameters=None):
     """Run a simulation, optionally injecting neutral pairs in the static solver.
@@ -66,6 +74,7 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
     static_metric = static_parameters.solver == "static_metric"
     dynamic_metric = static_parameters.solver == "dynamic_metric"
     gr_metric = static_metric or dynamic_metric
+    work_energy_theorem = dynamic_metric and static_parameters.gr_work_energy_theorem
 
     if pair_injector is not None:
         if not static_metric:
@@ -135,12 +144,14 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
             queue_size=int(plotting_parameters.get("openpmd_particle_queue_size", 2)),
         )
 
+    matched_gr = gr_metric and static_parameters.current_filter != "none"
+    # A common-time final snapshot is needed when the work-energy budget writes its
+    # endpoint at t = Nt, and for filtered GR qualification.
+    final_endpoint = work_energy_theorem or matched_gr
     loop_error = None
     try:
-        for t in tqdm(range(Nt)):
-            if t % plotting_parameters["plotting_interval"] == 0:
-                plot_num = t // plotting_parameters["plotting_interval"]
-
+        for t in tqdm(range(Nt + int(final_endpoint))):
+            if t % plotting_parameters["plotting_interval"] == 0 or (final_endpoint and t == Nt):
                 if dynamic_metric:
                     from PyPIC3D.diagnostics.static_metric import bssn_constraint_norms
                     norms = bssn_constraint_norms(particles, species_config, fields,
@@ -148,6 +159,8 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
                     for name, value in norms.items():
                         write_data(f"{output_dir}/data/{name}.txt",
                                    dynamic_parameters.bssn_parameters.time, value)
+                    if work_energy_theorem and 0 < t < Nt:
+                        write_work_energy_tracker(dynamic_parameters.work_energy_tracker, output_dir)
 
                 if not gr_metric:
                     E, B, J, rho, phi, external_fields, *rest = fields
@@ -194,7 +207,7 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
                         particle_writer,
                         output_particles,
                         dynamic_parameters,
-                        plot_num,
+                        t,
                         t,
                         species_config=species_config,
                         species_names=particle_species_names,
@@ -212,7 +225,10 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
                         include_charge_density=bool(plotting_parameters["plotchargedensity"]),
                     )
                     plotting_parameters["field_map"] = field_map
-                    enqueue_openpmd_field_output(field_writer, field_map, dynamic_parameters, plot_num, t)
+                    enqueue_openpmd_field_output(field_writer, field_map, dynamic_parameters, t, t)
+
+            if t == Nt:
+                break
 
             result = jit_loop(
                 particles,
@@ -236,6 +252,17 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
                         f"requested={requested}, inserted={inserted}, "
                         f"rejected={rejected}")
             _raise_if_tiled_particles_overflowed(fields)
+            if work_energy_theorem and t == 0:
+                # The first step establishes its baseline after applying any
+                # prescribed geometry callbacks and aligning the PIC history.
+                from PyPIC3D.diagnostics.gr_work_energy_theorem import baseline_tracker
+                write_work_energy_tracker(
+                    baseline_tracker(dynamic_parameters.work_energy_tracker), output_dir)
+
+        if work_energy_theorem:
+            # The loop writes before advancing; its final endpoint has not
+            # appeared at any cadence. This also writes the sole Nt=0 sample.
+            write_work_energy_tracker(dynamic_parameters.work_energy_tracker, output_dir)
 
     except BaseException as exc:
         loop_error = exc

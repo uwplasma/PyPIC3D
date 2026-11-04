@@ -9,11 +9,24 @@ from PyPIC3D.particles.particle_batching import (
 )
 from PyPIC3D.pusher.boris import (
     boris_single_particle,
-    interpolate_field_to_particles,
     relativistic_boris_single_particle,
 )
 from PyPIC3D.pusher.higuera_cary import higuera_cary_single_particle
 from PyPIC3D.pusher.hybrid_boris_geodesic import hybrid_boris_geodesic_push
+# import particle pushers
+
+from PyPIC3D.pusher.particle_interpolation import (
+    gather_shape_orders,
+    interpolate_field_to_particles,
+)
+# import the field gather and its per-component shape ordering
+
+from PyPIC3D.relativity.core import (
+    B_FIELD_LOCATIONS,
+    D_FIELD_LOCATIONS,
+    location_grid,
+)
+# the C/V triplets that name where each Yee component lives
 
 
 def particle_push(particles, species_config, E_tiles, B_tiles, static_parameters, dynamic_parameters):
@@ -38,7 +51,10 @@ def particle_push(particles, species_config, E_tiles, B_tiles, static_parameters
     tile_nx, tile_ny, tile_nz = tile_shape
     g = int(static_parameters.guard_cells)
     dt = dynamic_parameters.dt
-    shape_factor = static_parameters.shape_factor
+
+    Ex_location, Ey_location, Ez_location = D_FIELD_LOCATIONS
+    Bx_location, By_location, Bz_location = B_FIELD_LOCATIONS
+    # each component's grid and its gather shape orders both follow its location
 
     tiled_center_grid = dynamic_parameters.grids.tiled_center_grid
     tiled_vertex_grid = dynamic_parameters.grids.tiled_vertex_grid
@@ -88,12 +104,15 @@ def particle_push(particles, species_config, E_tiles, B_tiles, static_parameters
         vertex_y = tiled_vertex_grid[1][tx, ty, tz]
         vertex_z = tiled_vertex_grid[2][tx, ty, tz]
 
-        Ex_grid = vertex_x, center_y, center_z
-        Ey_grid = center_x, vertex_y, center_z
-        Ez_grid = center_x, center_y, vertex_z
-        Bx_grid = center_x, vertex_y, vertex_z
-        By_grid = vertex_x, center_y, vertex_z
-        Bz_grid = vertex_x, vertex_y, center_z
+        center_grid = center_x, center_y, center_z
+        vertex_grid = vertex_x, vertex_y, vertex_z
+
+        Ex_grid = location_grid(center_grid, vertex_grid, Ex_location)
+        Ey_grid = location_grid(center_grid, vertex_grid, Ey_location)
+        Ez_grid = location_grid(center_grid, vertex_grid, Ez_location)
+        Bx_grid = location_grid(center_grid, vertex_grid, Bx_location)
+        By_grid = location_grid(center_grid, vertex_grid, By_location)
+        Bz_grid = location_grid(center_grid, vertex_grid, Bz_location)
 
         n_batches = number_of_particle_batches(n_active, batch_size)
 
@@ -117,28 +136,34 @@ def particle_push(particles, species_config, E_tiles, B_tiles, static_parameters
             update_x_batch = update_x_species[species_indices]
 
             efield_atx = interpolate_field_to_particles(
-                Ex_tile, x, y, z, Ex_grid, shape_factor, ghost_cells=True,
+                Ex_tile, x, y, z, Ex_grid,
+                gather_shape_orders(Ex_location, static_parameters), ghost_cells=True,
                 active_axes=active_axes, inactive_axis_indices=inactive_axis_indices
             )
             efield_aty = interpolate_field_to_particles(
-                Ey_tile, x, y, z, Ey_grid, shape_factor, ghost_cells=True,
+                Ey_tile, x, y, z, Ey_grid,
+                gather_shape_orders(Ey_location, static_parameters), ghost_cells=True,
                 active_axes=active_axes, inactive_axis_indices=inactive_axis_indices
             )
             efield_atz = interpolate_field_to_particles(
-                Ez_tile, x, y, z, Ez_grid, shape_factor, ghost_cells=True,
+                Ez_tile, x, y, z, Ez_grid,
+                gather_shape_orders(Ez_location, static_parameters), ghost_cells=True,
                 active_axes=active_axes, inactive_axis_indices=inactive_axis_indices
             )
 
             bfield_atx = interpolate_field_to_particles(
-                Bx_tile, x, y, z, Bx_grid, shape_factor, ghost_cells=True,
+                Bx_tile, x, y, z, Bx_grid,
+                gather_shape_orders(Bx_location, static_parameters), ghost_cells=True,
                 active_axes=active_axes, inactive_axis_indices=inactive_axis_indices
             )
             bfield_aty = interpolate_field_to_particles(
-                By_tile, x, y, z, By_grid, shape_factor, ghost_cells=True,
+                By_tile, x, y, z, By_grid,
+                gather_shape_orders(By_location, static_parameters), ghost_cells=True,
                 active_axes=active_axes, inactive_axis_indices=inactive_axis_indices
             )
             bfield_atz = interpolate_field_to_particles(
-                Bz_tile, x, y, z, Bz_grid, shape_factor, ghost_cells=True,
+                Bz_tile, x, y, z, Bz_grid,
+                gather_shape_orders(Bz_location, static_parameters), ghost_cells=True,
                 active_axes=active_axes, inactive_axis_indices=inactive_axis_indices
             )
 

@@ -1,0 +1,176 @@
+[simulation_parameters]
+name = "full_relativistic_two_stream"
+solver = "dynamic_metric"
+gr_work_energy_theorem = true
+metric = "numerical"
+
+t_wind = 15.707963267948966 # 25 electron plasma periods with omega_pe = 10.
+
+Nx = 128
+Ny = 1
+Nz = 1
+
+x_min = 0.0
+x_max = 6.283185307179586
+y_min = 0.0
+y_max = 1.0
+z_min = 0.0
+z_max = 1.0
+x_wind = 6.283185307179586
+y_wind = 1.0
+z_wind = 1.0
+
+
+particle_tile_nx = 128
+particle_tile_ny = 1
+particle_tile_nz = 1
+particle_tile_capacity_factor = 1.0
+particle_batch_size = 8192
+x_bc = "periodic"
+y_bc = "periodic"
+z_bc = "periodic"
+particle_x_bc = "periodic"
+particle_y_bc = "periodic"
+particle_z_bc = "periodic"
+cfl = 0.2
+C = 1.0
+eps = 1.0
+mu = 1.0
+kb = 1.0
+relativistic = true
+particle_pusher = "hybrid_boris_geodesic"
+shape_factor = 2
+guard_cells = 3
+current_calculation = "esirkepov"
+filter_j = "bilinear"
+verbose = false
+
+[plotting]
+plotting_interval = 10
+plot_openpmd_particles = true
+plot_openpmd_fields = true
+plotchargedensity = true
+dump_particles = true
+dump_fields = true
+
+[metric]
+conformal_metric = "initial_data/conformal_metric.npy"
+conformal_factor = "initial_data/conformal_factor.npy"
+trace_K = "initial_data/trace_K.npy"
+lapse = "initial_data/lapse.npy"
+traceless_K = false
+conformal_connection = false
+shift = false
+gravity_G = 8.16e-8
+time = 0.0
+gauge = "harmonic"
+zero_shift = true
+eta = 2.0
+kappa = 0.0
+nu = 0.002
+g = 0.75
+mad_q = 1.0
+
+xl_bc = "periodic"
+xr_bc = "periodic"
+yl_bc = "periodic"
+yr_bc = "periodic"
+zl_bc = "periodic"
+zr_bc = "periodic"
+
+
+[particle1]
+name = "electron_plus"
+N_particles = 8192
+charge = -1.0
+mass = 1.0
+temperature = 0.0025
+weight = 0.0030517578125
+x_bc = "periodic"
+y_bc = "periodic"
+z_bc = "periodic"
+update_x = true
+update_y = true
+update_z = true
+initial_x = "initial_data/electron_plus_initial_x.npy"
+initial_y = "initial_data/electron_plus_initial_y.npy"
+initial_z = "initial_data/electron_plus_initial_z.npy"
+initial_vx = "initial_data/electron_plus_initial_vx.npy"
+initial_vy = "initial_data/electron_plus_initial_vy.npy"
+initial_vz = "initial_data/electron_plus_initial_vz.npy"
+
+[particle2]
+name = "electron_minus"
+N_particles = 8192
+charge = -1.0
+mass = 1.0
+temperature = 0.0025
+weight = 0.0030517578125
+x_bc = "periodic"
+y_bc = "periodic"
+z_bc = "periodic"
+update_x = true
+update_y = true
+update_z = true
+initial_x = "initial_data/electron_minus_initial_x.npy"
+initial_y = "initial_data/electron_minus_initial_y.npy"
+initial_z = "initial_data/electron_minus_initial_z.npy"
+initial_vx = "initial_data/electron_minus_initial_vx.npy"
+initial_vy = "initial_data/electron_minus_initial_vy.npy"
+initial_vz = "initial_data/electron_minus_initial_vz.npy"
+
+[particle3]
+name = "ion"
+N_particles = 16384
+charge = 1.0
+mass = 1.0
+temperature = 0.0025
+weight = 0.0030517578125
+x_bc = "periodic"
+y_bc = "periodic"
+z_bc = "periodic"
+update_x = true
+update_y = true
+update_z = true
+initial_x = "initial_data/ion_initial_x.npy"
+initial_y = "initial_data/ion_initial_y.npy"
+initial_z = "initial_data/ion_initial_z.npy"
+initial_vx = "initial_data/ion_initial_vx.npy"
+initial_vy = "initial_data/ion_initial_vy.npy"
+initial_vz = "initial_data/ion_initial_vz.npy"
+
+[field1]
+name = "D_x"
+type = 0
+path = "initial_data/physical_D_x.npy"
+evolve = true
+
+[field2]
+name = "D_y"
+type = 1
+path = "initial_data/physical_D_y.npy"
+evolve = true
+
+[field3]
+name = "D_z"
+type = 2
+path = "initial_data/physical_D_z.npy"
+evolve = true
+
+[field4]
+name = "B_x"
+type = 3
+path = "initial_data/physical_B_x.npy"
+evolve = true
+
+[field5]
+name = "B_y"
+type = 4
+path = "initial_data/physical_B_y.npy"
+evolve = true
+
+[field6]
+name = "B_z"
+type = 5
+path = "initial_data/physical_B_z.npy"
+evolve = true

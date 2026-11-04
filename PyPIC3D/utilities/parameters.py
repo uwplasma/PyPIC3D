@@ -46,6 +46,8 @@ class StaticParameters(NamedTuple):
     horizon_field_cells: int = 0
     sin_chi: float = 0.0
     dark_mu: float = 0.0
+    gr_work_energy_theorem: bool = False
+    gr_work_energy_reference: object = None
 
 
 class DynamicParameters(NamedTuple):
@@ -66,6 +68,7 @@ class DynamicParameters(NamedTuple):
     alpha: jnp.ndarray
     grids: GridParameters
     bssn_parameters: object = None
+    work_energy_tracker: object = None
 
 
 def _axis_tuple(axis_values):
@@ -119,6 +122,13 @@ def build_static_parameters(static_config):
     """
 
     static_config = dict(static_config)
+    if static_config.get("gr_work_energy_theorem", False) and static_config.get("solver") != "dynamic_metric":
+        raise ValueError("GR work-energy theorem requires solver='dynamic_metric'")
+    energy_reference = static_config.get("gr_work_energy_reference")
+    if energy_reference is not None and (
+            isinstance(energy_reference, bool) or not math.isfinite(float(energy_reference))
+            or float(energy_reference) <= 0):
+        raise ValueError("gr_work_energy_reference must be finite and positive")
     validate_dark_parameters(static_config.get("sin_chi", 0.0), static_config.get("dark_mu", 0.0))
     if static_config.get("solver") == "dark_matter_yee":
         if any(bc not in (0, 1) for bc in _axis_tuple(static_config["boundary_conditions"])):
@@ -179,6 +189,8 @@ def build_static_parameters(static_config):
         horizon_field_cells=int(horizon_cells),
         sin_chi=float(static_config.get("sin_chi", 0.0)),
         dark_mu=float(static_config.get("dark_mu", 0.0)),
+        gr_work_energy_theorem=bool(static_config.get("gr_work_energy_theorem", False)),
+        gr_work_energy_reference=None if energy_reference is None else float(energy_reference),
     )
 
 
@@ -218,6 +230,7 @@ def build_dynamic_parameters(dynamic_config, extra_dynamic_config=None):
         alpha=jnp.asarray(dynamic_config.get("alpha", extra_dynamic_config.get("alpha", 1.0))),
         grids=grids,
         bssn_parameters=dynamic_config.get("bssn_parameters"),
+        work_energy_tracker=dynamic_config.get("work_energy_tracker"),
     )
 
 
@@ -247,7 +260,7 @@ def static_parameters_for_output(static_parameters):
 
 
 def dynamic_parameters_for_output(dynamic_parameters):
-    skip = {"grids", "bssn_parameters"}
+    skip = {"grids", "bssn_parameters", "work_energy_tracker"}
     dynamic_items = dynamic_parameters._asdict()
     result = {
         key: _output_value(value)

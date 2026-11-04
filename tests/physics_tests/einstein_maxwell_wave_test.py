@@ -18,7 +18,13 @@ import unittest
 import jax
 import jax.numpy as jnp
 
-from JAX_BSSN.bssn import BSSNParameters, BSSNVariables
+try:
+    from JAX_BSSN.bssn import BSSNParameters, BSSNVariables
+except ModuleNotFoundError as error:
+    if error.name == "JAX_BSSN":
+        raise unittest.SkipTest("Optional JAX_BSSN dependency is not installed")
+    raise
+
 from PyPIC3D.relativity.dynamical_relativity import tiles_to_bssn
 from PyPIC3D.solvers.GR_yee.time_loop_dynamical_relativity import time_loop_dynamical_relativity
 

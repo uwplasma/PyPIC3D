@@ -25,8 +25,12 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install .
-          pip install coverage
+          pip install '.[relativity]'
+          pip install coverage filelock
+
+      - name: Configure JAX devices and compilation cache
+        id: jax_setup
+        run: python .github/scripts/configure_jax_ci.py
 
       - name: Clear coverage data
         id: coverage_setup
@@ -42,6 +46,7 @@ jobs:
       - name: Distributed test coverage
         if: ${{ !cancelled() && steps.coverage_setup.outcome == 'success' }}
         env:
+          JAX_PLATFORMS: ${{ steps.jax_setup.outputs.distributed_platform }}
           JAX_NUM_CPU_DEVICES: "8"
         run: python -m coverage run --append --context distributed -m unittest discover -s tests/distributed_tests -t . -p '*test*.py'
 
@@ -60,3 +65,7 @@ jobs:
       - name: Display coverage summary
         if: ${{ !cancelled() && steps.coverage_report.outcome == 'success' }}
         run: python -m coverage report
+
+      - name: Report JAX compilation cache
+        if: ${{ always() && steps.jax_setup.outcome == 'success' }}
+        run: python .github/scripts/configure_jax_ci.py --report
