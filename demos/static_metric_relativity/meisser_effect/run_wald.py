@@ -337,26 +337,13 @@ def run(config, overwrite=False):
     return state
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=Path(__file__).with_name("wald_demo.toml"),
-        help="Wald demo TOML file",
-    )
-    parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="replace only the configured demo data and analysis artifacts",
-    )
-    return parser.parse_args()
-
-
 def main():
-    args = parse_args()
-    config = wald.load_configuration(args.config)
-    run(config, overwrite=args.overwrite)
+    config_file = Path(__file__).with_name("wald_demo.toml")
+    # use the wald_demo.toml in the same directory as this script
+    config = wald.load_configuration(config_file)
+    # load the config file
+    run(config)
+    # run the simulation with the loaded configuration
 
 
 if __name__ == "__main__":
