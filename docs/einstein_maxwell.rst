@@ -22,10 +22,11 @@ Sommerfeld face equations. These interfaces do not import PyPIC3D.
 
 The native coupling uses geometrized units with ``C=eps=mu=1`` and Gaussian
 Maxwell fields. Ampere's law uses ``-4*pi*J``; flat-space electromagnetic energy
-is ``(D**2+B**2)/(8*pi)``. ``gravity_G`` multiplies all three matter projections
-passed to BSSN. The rationalized field values used by the former prototype
-must be multiplied by ``sqrt(4*pi)`` before using this Gaussian convention.
-Existing saved campaigns are not rewritten or silently reinterpreted.
+is ``(D**2+B**2)/(8*pi)``.
+
+``[simulation_parameters] metric_backreaction`` (default ``true``) is the only
+control. When it is false ``compute_energy_momentum_tensor`` returns exact
+zeros, so BSSN evolves a test vacuum alongside the same PIC sources.
 
 Native PyPIC3D interface
 ------------------------
@@ -38,7 +39,7 @@ The implementation lives in four modules::
     PyPIC3D.solvers.GR_yee.time_loop_dynamical_relativity
 
 ``dynamic_parameters.bssn_parameters`` is a ``BSSNParameters`` tuple containing
-``state``, ``evolution_parameters``, ``gravity_G`` and ``time``. The nested NR
+``state``, ``evolution_parameters`` and ``time``. The nested NR
 parameters are the existing ``JAX_BSSN.bssn.variables.BSSNParameters`` type;
 gravitational boundary codes remain there and are independent of EM codes.
 In particular, code 1 means Sommerfeld to BSSN and conducting to PyPIC3D.
@@ -51,7 +52,7 @@ common-time covariant particle momenta::
     from PyPIC3D.solvers.GR_yee.time_loop_dynamical_relativity import time_loop_dynamical_relativity
 
     bssn = build_bssn_parameters(static_parameters, dynamic_parameters,
-                                state=initial_bssn, gravity_G=1.0)
+                                state=initial_bssn)
     dynamic_parameters = dynamic_parameters._replace(bssn_parameters=bssn)
     particles, fields, dynamic_parameters = initialize_dynamical_relativity(
         particles, species, fields, static_parameters, dynamic_parameters)
@@ -148,8 +149,9 @@ extrinsic-curvature convention is ``K_ij = -L_n(gamma_ij)/2``.
 The physical curvature is reconstructed as
 ``K_ij = (traceless_K_ij + conformal_metric_ij * trace_K / 3) / W**2``;
 stress indices are raised with the full physical inverse metric.
-The diagnostic measures physical matter energy without multiplying by the
-coupling parameter ``gravity_G``.
+The diagnostic measures physical matter energy regardless of
+``metric_backreaction``: it calls the leaf moment functions directly rather
+than the gated ``compute_energy_momentum_tensor``.
 
 Particles store covariant spatial four-velocity ``u_i``. Their Eulerian energy
 includes rest energy and macroparticle weight:

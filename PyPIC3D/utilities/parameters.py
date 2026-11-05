@@ -48,6 +48,7 @@ class StaticParameters(NamedTuple):
     dark_mu: float = 0.0
     gr_work_energy_theorem: bool = False
     gr_work_energy_reference: object = None
+    metric_backreaction: bool = True
 
 
 class DynamicParameters(NamedTuple):
@@ -191,6 +192,7 @@ def build_static_parameters(static_config):
         dark_mu=float(static_config.get("dark_mu", 0.0)),
         gr_work_energy_theorem=bool(static_config.get("gr_work_energy_theorem", False)),
         gr_work_energy_reference=None if energy_reference is None else float(energy_reference),
+        metric_backreaction=bool(static_config.get("metric_backreaction", True)),
     )
 
 
@@ -271,8 +273,7 @@ def dynamic_parameters_for_output(dynamic_parameters):
         bssn = dynamic_parameters.bssn_parameters
         result["bssn_parameters"] = {
             **{key: _output_value(value) for key, value in bssn.evolution_parameters._asdict().items()},
-            "gravity_G": _output_value(bssn.gravity_G),
             "time": _output_value(bssn.time),
-            "units": "Gaussian, c=1",
+            "units": "geometrized Gaussian, G=c=1",
         }
     return result

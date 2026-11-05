@@ -31,11 +31,10 @@ def solve_initial_metric(bssn, particle_energy, electromagnetic_energy, omega_pe
     using the metric actually gathered by particles.
     """
     flat = bssn.state
-    gravity_G = float(bssn.gravity_G)
-    source_scale = float(16.0 * jnp.pi * gravity_G * jnp.mean(particle_energy + electromagnetic_energy))
+    source_scale = float(16.0 * jnp.pi * jnp.mean(particle_energy + electromagnetic_energy))
     tolerance = (max(1.0e-11 * omega_pe**2, 1.0e-8 * source_scale)
                  if constraint_tolerance is None else float(constraint_tolerance))
-    if gravity_G == 0.0:
+    if source_scale == 0.0:
         return flat, [0.0], [0.0], tolerance
 
     nx = flat.conformal_factor.size
@@ -54,7 +53,7 @@ def solve_initial_metric(bssn, particle_energy, electromagnetic_energy, omega_pe
     def residual(unknown):
         state, rho = state_and_density(unknown)
         hamiltonian = compute_hamiltonian_constraint_with_matter(
-            state, bssn.evolution_parameters, gravity_G * rho,
+            state, bssn.evolution_parameters, rho,
         )
         volume = jnp.mean(state.conformal_factor**-3) - 1.0
         return jnp.concatenate((hamiltonian.ravel() / source_scale, jnp.asarray([volume])))

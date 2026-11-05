@@ -77,14 +77,13 @@ class BSSNParametersTest(unittest.TestCase):
         state = initial.state._replace(trace_K=jnp.full_like(initial.state.trace_K, .03))
         evolution = initial.evolution_parameters._replace(xl_bc=1, xr_bc=1, gauge=1, zero_shift=0, eta=.7)
         parameters = build_bssn_parameters(static, dynamic, state=state,
-                                           evolution_parameters=evolution, gravity_G=.2, time=3.)
+                                           evolution_parameters=evolution, time=3.)
         self.assertIs(parameters.state, state)
         self.assertEqual(static.boundary_conditions, (0, 0, 0))
         self.assertEqual(int(parameters.evolution_parameters.xl_bc), 1)
         self.assertEqual(int(parameters.evolution_parameters.xr_bc), 1)
         for actual, expected in zip(parameters.evolution_parameters, evolution):
             self.assertTrue(bool(jnp.array_equal(actual, expected)))
-        self.assertEqual(float(parameters.gravity_G), .2)
         self.assertEqual(float(parameters.time), 3.)
 
     def test_ordinary_pypic_imports_do_not_require_numerical_relativity(self):

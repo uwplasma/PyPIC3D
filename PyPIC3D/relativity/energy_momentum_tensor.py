@@ -2,7 +2,11 @@
 
 The returned tuple is ``(rho, S_i, S_ij)`` on the global BSSN grid, with
 component axes first. These are physical densities, including particle rest
-mass, in Gaussian electromagnetic units with c=1.
+mass, in geometrized Gaussian units with G=c=1. BSSN receives them unscaled:
+both codes share one Cartesian chart and one unit system, so no conversion
+factor exists. ``static_parameters.metric_backreaction`` is the only control;
+when it is off ``compute_energy_momentum_tensor`` returns zeros, leaving the
+geometry a test vacuum. The leaf functions stay physical either way.
 """
 
 from functools import partial
@@ -227,6 +231,10 @@ def compute_energy_momentum_tensor(
     Native EM products precede filtering so grid-scale field energy remains.
     ``source_filter='binomial'`` selects source-only electrovacuum smoothing,
     with replicated isolated edges, independently of matched PIC filtering.
+
+    These are the projections handed to BSSN, so a disabled
+    ``metric_backreaction`` returns exact zeros rather than physical densities.
+    Diagnostics that must stay physical use the leaf functions instead.
     """
     if source_filter not in ("none", "binomial"):
         raise ValueError("source_filter must be 'none' or 'binomial'")
@@ -237,6 +245,10 @@ def compute_energy_momentum_tensor(
             raise ValueError("Source-only filtering requires empty particle storage")
         if static_parameters.metric not in ("flat_cartesian", "numerical"):
             raise ValueError("Source-only filtering requires a Cartesian metric")
+    if not static_parameters.metric_backreaction:
+        rho = jnp.zeros_like(bssn_state.conformal_factor)
+        return rho, jnp.zeros((3,) + rho.shape, rho.dtype), jnp.zeros((3, 3) + rho.shape, rho.dtype)
+
     em = compute_electromagnetic_energy_momentum(moments, bssn_state)
     total = em
     if particles.active.size:

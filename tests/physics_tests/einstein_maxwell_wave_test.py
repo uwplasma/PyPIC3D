@@ -30,7 +30,7 @@ from PyPIC3D.solvers.GR_yee.time_loop_dynamical_relativity import time_loop_dyna
 
 def native_runtime(shape, params, *, boundaries=(0, 0, 0), bssn=None,
                    displacement=None, magnetic=None, densitized=False,
-                   gravity_G=1.0, absorber=None, initialize=True):
+                   absorber=None, initialize=True):
     """Single-tile native PyPIC fixture; shape counts physical BSSN C nodes."""
     from PyPIC3D.utilities.parameters import build_static_parameters, build_dynamic_parameters
     from PyPIC3D.particles.particle_class import TiledParticles, SpeciesConfig
@@ -59,7 +59,7 @@ def native_runtime(shape, params, *, boundaries=(0, 0, 0), bssn=None,
         grids=dict(center=center, vertex=vertex, tiled_center_grid=tc, tiled_vertex_grid=tv)))
     bssn = flat_bssn_variables(shape) if bssn is None else bssn
     dynamic = dynamic._replace(bssn_parameters=build_bssn_parameters(
-        static, dynamic, state=bssn, evolution_parameters=params, gravity_G=gravity_G))
+        static, dynamic, state=bssn, evolution_parameters=params))
     zero = jnp.zeros((3,) + shape)
     displacement = zero if displacement is None else displacement
     magnetic = zero if magnetic is None else magnetic
@@ -120,7 +120,7 @@ class TestEinsteinMaxwellWave(unittest.TestCase):
             params = BSSNParameters(dx=dx, dt=dt, z_min=-0.5)
             particles, species, fields, static, dynamic = native_runtime(
                 (1, 1, n), params, boundaries=(0, 0, 3), bssn=initial,
-                displacement=D, magnetic=B, densitized=True, gravity_G=1.0,
+                displacement=D, magnetic=B, densitized=True,
             )
 
             # Keep exact geometry only at the boundaries. The interior evolves

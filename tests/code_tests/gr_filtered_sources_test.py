@@ -39,7 +39,7 @@ def parameters():
         particle_pusher="hybrid_boris_geodesic", current_deposition="esirkepov",
         current_filter="bilinear", particle_batch_size=2,
     )
-    bssn = build_bssn_parameters(static, dynamic, gravity_G=0.)
+    bssn = build_bssn_parameters(static, dynamic)
     phase = 2*jnp.pi*jnp.arange(8)[:, None, None]/8
     state = bssn.state._replace(
         conformal_factor=.9 + .15*jnp.cos(phase),

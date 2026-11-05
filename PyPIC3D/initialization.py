@@ -412,6 +412,7 @@ def default_parameters():
         "supergaussian_layers": (),
         "gr_work_energy_theorem": False,
         "gr_work_energy_reference": None,
+        "metric_backreaction": True,
     }
 
     dynamic_parameters = {
