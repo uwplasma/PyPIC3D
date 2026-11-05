@@ -33,7 +33,7 @@ from tests.kernel_fixtures import empty_tiled_vector, kernel_parameters
 jax.config.update("jax_enable_x64", True)
 
 
-def coupled_state(*, dt=0.02, gravity_G=0.0, particles=False, boundaries=(0, 0, 0), varying_geometry=False):
+def coupled_state(*, dt=0.02, backreaction=False, particles=False, boundaries=(0, 0, 0), varying_geometry=False):
     """Small uniform 1D plasma; empty storage supplies the EM-only cases."""
     static, dynamic = kernel_parameters(
         Nx=8, Ny=1, Nz=1, x_wind=8., y_wind=1., z_wind=1.,
@@ -42,7 +42,8 @@ def coupled_state(*, dt=0.02, gravity_G=0.0, particles=False, boundaries=(0, 0, 
         particle_pusher="hybrid_boris_geodesic", current_deposition="esirkepov",
         current_filter="none", boundary_conditions=boundaries, particle_batch_size=8,
     )
-    bssn = build_bssn_parameters(static, dynamic, gravity_G=gravity_G)
+    static = static._replace(metric_backreaction=backreaction)
+    bssn = build_bssn_parameters(static, dynamic)
     bssn = bssn._replace(evolution_parameters=bssn.evolution_parameters._replace(nu=0.))
     if varying_geometry:
         phase = 2 * jnp.pi * jnp.arange(8)[:, None, None] / 8
@@ -116,7 +117,7 @@ class DynamicalRelativityTests(unittest.TestCase):
         self.assertAlmostEqual(float(actual_d.bssn_parameters.time), float(dynamic.dt))
 
     def test_vacuum_gravity_matches_standalone_projected_rk4(self):
-        static, dynamic, particles, species, fields = coupled_state(gravity_G=1.)
+        static, dynamic, particles, species, fields = coupled_state(backreaction=True)
         bssn = dynamic.bssn_parameters
         state = bssn.state._replace(trace_K=jnp.full_like(bssn.state.trace_K, .08))
         dynamic = dynamic._replace(bssn_parameters=bssn._replace(state=state))
@@ -143,7 +144,7 @@ class DynamicalRelativityTests(unittest.TestCase):
 
     def test_esirkepov_gauss_constraint_survives_gravity_and_tile_crossings(self):
         static, dynamic, particles, species, fields = coupled_state(
-            particles=True, gravity_G=.03, dt=.04,
+            particles=True, backreaction=True, dt=.04,
         )
         # The supported one-device mesh has one tile. Cross both periodic
         # faces, so deposition must use the unwrapped endpoint displacement.

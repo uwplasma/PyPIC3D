@@ -40,7 +40,7 @@ def bssn_constraint_norms(particles, species, fields, static, dynamic, *, source
         common_particles, species, moments, bssn.state, static, dynamic,
         source_filter=source_filter)
     violations = compute_all_constraints_with_matter(
-        bssn.state, bssn.evolution_parameters, bssn.gravity_G * rho, bssn.gravity_G * momentum)
+        bssn.state, bssn.evolution_parameters, rho, momentum)
     return compute_constraint_norms(violations)
 
 

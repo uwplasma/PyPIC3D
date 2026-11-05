@@ -75,6 +75,11 @@ Paper II (Section 4.5).
 
    cd demos/static_metric_relativity/bz_monopole
    python run_bz_monopole.py
+   python plot_bz.py
+
+Neither script takes arguments; every run setting lives in
+``simulation_parameters.py``. ``plot_bz.py`` replots the final saved
+diagnostics and needs only NumPy and Matplotlib.
 
 The demo uses the general static-metric finite-difference field updates and
 standard metric-weighted E/H interpolation. Set ``theta_start`` and

@@ -31,10 +31,9 @@ class GREnergyCoupledRefinementTests(unittest.TestCase):
         for n in (16, 32, 64):
             # All runs cover the same 4 x 1 x 1 coordinate volume. The two
             # collapsed axes retain unit widths while dx and dt both halve.
-            static, dynamic, particles, species, fields = maxwell_state(n=n)
+            static, dynamic, particles, species, fields = maxwell_state(
+                n=n, backreaction=True)
             bssn = dynamic.bssn_parameters
-            dynamic = dynamic._replace(
-                bssn_parameters=bssn._replace(gravity_G=jnp.asarray(1.)))
             particles, fields, final = evolve_scan(
                 static, species, (particles, fields, dynamic), n//2)
 

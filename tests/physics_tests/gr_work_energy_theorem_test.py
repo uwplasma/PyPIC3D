@@ -32,7 +32,7 @@ from tests.kernel_fixtures import empty_tiled_vector, kernel_parameters
 jax.config.update("jax_enable_x64", True)
 
 
-def maxwell_state(n=24, *, dt=None, shift=0., pulse=False, enabled=True):
+def maxwell_state(n=24, *, dt=None, shift=0., pulse=False, enabled=True, backreaction=False):
     """Smooth right-moving Maxwell data on a flat, frozen Cartesian geometry."""
     dx = 4. / n
     dt = .1 * dx if dt is None else dt
@@ -43,8 +43,9 @@ def maxwell_state(n=24, *, dt=None, shift=0., pulse=False, enabled=True):
         particle_pusher="hybrid_boris_geodesic", current_deposition="GR_direct",
         current_filter="none", boundary_conditions=(3 if pulse else 0, 0, 0),
     )
-    static = static._replace(gr_work_energy_theorem=enabled)
-    bssn = build_bssn_parameters(static, dynamic, gravity_G=0.)
+    static = static._replace(gr_work_energy_theorem=enabled,
+                             metric_backreaction=backreaction)
+    bssn = build_bssn_parameters(static, dynamic)
     state = bssn.state._replace(shift=bssn.state.shift.at[0].set(shift))
     bssn = bssn._replace(state=state,
                          evolution_parameters=bssn.evolution_parameters._replace(nu=0.))

@@ -12,11 +12,16 @@ from JAX_BSSN.bssn.variables import BSSNVariables
 
 
 class BSSNParameters(NamedTuple):
-    """Evolved geometry, NR controls, source strength, and coordinate time."""
+    """Evolved geometry, NR controls, and coordinate time.
+
+    There is no coupling constant. PyPIC3D and JAX_BSSN share one Cartesian
+    chart and one geometrized Gaussian unit system, so matter projections are
+    handed over unscaled; ``static_parameters.metric_backreaction`` turns them
+    off instead of scaling them.
+    """
 
     state: object
     evolution_parameters: object
-    gravity_G: object
     time: object
 
 
@@ -34,12 +39,11 @@ def load_bssn_parameters_from_toml(config, static_parameters, dynamic_parameters
     """
     if "metric" not in config:
         legacy = dict(config.get("bssn_parameters", {}))
-        gravity_G = legacy.pop("gravity_G", 1.0)
         time = legacy.pop("time", 0.0)
         return build_bssn_parameters(
             static_parameters, dynamic_parameters, state=state,
             evolution_parameters=(legacy if evolution_parameters is None else evolution_parameters),
-            gravity_G=gravity_G, time=time,
+            time=time,
         )
 
     if "bssn_parameters" in config or state is not None or evolution_parameters is not None:
@@ -51,7 +55,7 @@ def load_bssn_parameters_from_toml(config, static_parameters, dynamic_parameters
 
     state_names = BSSNVariables._fields
     boundary_names = ("xl_bc", "xr_bc", "yl_bc", "yr_bc", "zl_bc", "zr_bc")
-    numeric_names = ("gravity_G", "time", "eta", "kappa", "nu", "g", "mad_q")
+    numeric_names = ("time", "eta", "kappa", "nu", "g", "mad_q")
     derived_names = {"dx", "dt", "x_min", "y_min", "z_min"}
     forbidden = set(metric_config) & derived_names
     if forbidden:
@@ -91,12 +95,10 @@ def load_bssn_parameters_from_toml(config, static_parameters, dynamic_parameters
 
     # Reuse the native allocation and grid checks, including the x64 and
     # single-device requirements, before reading potentially large files.
-    gravity_G = controls.pop("gravity_G", 1.0)
     time = controls.pop("time", 0.0)
     parameters = build_bssn_parameters(
         static_parameters, dynamic_parameters,
-        evolution_parameters=controls,
-        gravity_G=gravity_G, time=time,
+        evolution_parameters=controls, time=time,
     )
     values = []
     for name, template in zip(state_names, parameters.state):
@@ -132,7 +134,7 @@ def load_bssn_parameters_from_toml(config, static_parameters, dynamic_parameters
 
 
 def build_bssn_parameters(static_parameters, dynamic_parameters, *, state=None,
-                          evolution_parameters=None, gravity_G=1.0, time=0.0):
+                          evolution_parameters=None, time=0.0):
     """Build flat initial geometry unless the caller supplies BSSN variables.
 
     The first coupling uses Cartesian geometrized units and one device. BSSN
@@ -183,4 +185,4 @@ def build_bssn_parameters(static_parameters, dynamic_parameters, *, state=None,
             raise ValueError("Matched GR filtering requires all six BSSN boundaries to be periodic")
 
     evolution_parameters = jax.tree.map(jnp.asarray, evolution_parameters)
-    return BSSNParameters(state, evolution_parameters, jnp.asarray(gravity_G), jnp.asarray(time))
+    return BSSNParameters(state, evolution_parameters, jnp.asarray(time))

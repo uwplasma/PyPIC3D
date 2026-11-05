@@ -103,7 +103,7 @@ def time_loop_dynamical_relativity(
         )
         rhs = compute_bssn_rhs_with_matter(
             stage_state, evolution_parameters,
-            bssn.gravity_G * rho, bssn.gravity_G * momentum, bssn.gravity_G * stress,
+            rho, momentum, stress,
         )
         if prescribed_gauge is not None:
             _, _, lapse_dot, shift_dot = prescribed_gauge(stage_state, stage_time)

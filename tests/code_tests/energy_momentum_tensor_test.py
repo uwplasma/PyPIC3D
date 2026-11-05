@@ -167,6 +167,36 @@ class TestEnergyMomentumTensor(unittest.TestCase):
                 self.assertClose(jnp.sum(momentum, axis=(1, 2, 3)) * W**-3, 0.8 * u_cov)
                 self.assertClose(jnp.sum(stress, axis=(2, 3, 4)) * W**-3, 0.8 * jnp.outer(u_cov, u_cov) / Gamma)
 
+    def test_disabled_backreaction_hands_bssn_exact_zeros(self):
+        """The flag gates what BSSN integrates, not what the leaves measure."""
+        static, dynamic = self.parameters()
+        u_cov = jnp.asarray([0.5, 0.3, -0.2])
+        particles, species = self.particles([[2.2, 0., 0.]], u_cov, mass=(2.,), weight=(0.4,))
+        state = self.bssn()
+        template = build_bssn_metric(state, static, dynamic).D[0].lapse
+        alternating = jnp.broadcast_to(
+            (-1.0) ** jnp.arange(template.shape[3])[None, None, None, :, None, None],
+            template.shape)
+        zero = jnp.zeros_like(template)
+        moments = electromagnetic_moments((alternating, zero, zero), (zero, zero, zero), static)
+
+        coupled = compute_energy_momentum_tensor(
+            particles, species, moments, state, static, dynamic)
+        self.assertGreater(float(jnp.max(jnp.abs(coupled[0]))), 0.)
+
+        vacuum = compute_energy_momentum_tensor(
+            particles, species, moments, state,
+            static._replace(metric_backreaction=False), dynamic)
+        for value, reference in zip(vacuum, coupled):
+            self.assertEqual(value.shape, reference.shape)
+            self.assertEqual(float(jnp.max(jnp.abs(value))), 0.)
+
+        # The leaf functions stay physical so diagnostics keep measuring energy.
+        self.assertClose(compute_electromagnetic_energy_momentum(moments, state)[0],
+                         coupled[0] - compute_particle_energy_momentum(
+                             particles, species, build_bssn_metric(state, static, dynamic),
+                             static, dynamic)[0])
+
     def test_no_active_particles_returns_finite_zero_sources(self):
         static, dynamic = self.parameters()
         state = self.bssn()

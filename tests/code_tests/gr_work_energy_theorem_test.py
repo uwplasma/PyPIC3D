@@ -52,7 +52,7 @@ def parameters(**kwargs):
 
 def native_runtime(static, dynamic, *, gamma=None, curvature=None):
     """Initialize genuine native histories from common-time uniform EM data."""
-    bssn = build_bssn_parameters(static, dynamic, gravity_G=0.)
+    bssn = build_bssn_parameters(static, dynamic)
     state = bssn.state
     if gamma is not None:
         W = jnp.linalg.det(gamma) ** (-1. / 6.)

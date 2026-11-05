@@ -1,18 +1,15 @@
 """Constraint-solved, periodic warm electron-ion two-stream initial data.
 
-Gaussian units have c = k_B = 1; the default electron mass and |charge| are 1.
+Geometrized Gaussian units have G = c = k_B = 1;
+
 Temperatures are k_B T, not T/m, and NUMBER_DENSITY is the total electron
-(and ion) number density
-per initial coordinate volume. The proper box volume is normalized to the
-coordinate volume by the metric solve. The conformally flat periodic matter
-constraints require nonzero mean curvature; we choose its expanding branch.
-No homogeneous source is subtracted.
+(and ion) number density per initial coordinate volume.
 
 Particles and physical fields returned here are at a common time. Native
 PyPIC3D initialization seeds the leapfrog histories once after this solve.
 Edit the globals below and run python initial_data.py to write the .npy inputs.
-Keep the grid, species masses/charges/counts/weights, gravity, and filtering
-settings in your existing two_stream.toml consistent with these globals.
+Keep the grid, species masses/charges/counts/weights, and filtering settings
+in your existing two_stream.toml consistent with these globals.
 """
 
 import math
@@ -72,7 +69,6 @@ MASS_RATIO = 1.0                         # m_i/m_e; ion mass = MASS_RATIO * MASS
 WAVE_NUMBER = 1.0
 MODE_NUMBER = 1
 PERTURBATION = 0.01                       # x_e = q - epsilon sin(k q)/k.
-GRAVITY_G = 8.16e-8
 SEED = 42
 CFL = 0.2
 END_TIME = 25.0                          # Electron plasma periods, T_pe = 2*pi/omega_pe.
@@ -84,7 +80,7 @@ CURRENT_FILTER_ALPHA = 1.0                 # Central weight for the digital sten
 OUTPUT_DIR = Path(__file__).with_name("initial_data")
 
 
-def build_parameters(nx, length, end_time, cfl, gravity_G, output_dir,
+def build_parameters(nx, length, end_time, cfl, output_dir,
                      *, current_filter=CURRENT_FILTER, filter_alpha=CURRENT_FILTER_ALPHA):
     """One periodic tile with one resolved spatial axis and 3D momenta."""
     dx = length / nx
@@ -111,7 +107,7 @@ def build_parameters(nx, length, end_time, cfl, gravity_G, output_dir,
                            tiled_vertex_grid=tiled_vertex)
     dynamic = build_dynamic_parameters(config)
     bssn = build_bssn_parameters(
-        static, dynamic, gravity_G=gravity_G,
+        static, dynamic,
         evolution_parameters=dict(gauge=0, zero_shift=1, nu=KO_DISSIPATION,
                                   xl_bc=0, xr_bc=0, yl_bc=0, yr_bc=0, zl_bc=0, zr_bc=0),
     )
@@ -197,7 +193,7 @@ def build_initial_data(*, nx=NX, particles_per_cell=PARTICLES_PER_CELL,
                        electron_temperature=ELECTRON_TEMPERATURE,
                        ion_temperature=ION_TEMPERATURE, mass_ratio=MASS_RATIO,
                        mass=MASS, charge_to_mass_ratio=CHARGE_TO_MASS_RATIO,
-                       gravity_G=GRAVITY_G, seed=SEED, output_dir=".",
+                       seed=SEED, output_dir=".",
                        current_filter=CURRENT_FILTER,
                        filter_alpha=CURRENT_FILTER_ALPHA,
                        constraint_tolerance=None,
@@ -212,18 +208,9 @@ def build_initial_data(*, nx=NX, particles_per_cell=PARTICLES_PER_CELL,
     initialize_dynamical_relativity routine has seeded its leapfrog histories.
     """
     jax.config.update("jax_enable_x64", True)
-    if nx < 8 or particles_per_cell < 1 or mode_number < 1 or int(mode_number) != mode_number:
-        raise ValueError("Use nx>=8, particles_per_cell>=1, and a positive integer mode_number")
+    
     if 2 * mode_number >= nx:
         raise ValueError("The seeded wave must be below the grid Nyquist mode")
-    if wave_number <= 0 or number_density <= 0 or gravity_G < 0 or cfl <= 0:
-        raise ValueError("The wave number, density, and CFL must be positive; gravity_G>=0")
-    if abs(perturbation) >= 1 or abs(beam_speed) >= 1 or mass_ratio <= 0:
-        raise ValueError("The displacement map must be monotone, |beam_speed|<1, and mass_ratio>0")
-    if mass <= 0 or charge_to_mass_ratio < 0:
-        raise ValueError("Particle mass must be positive and |charge|/mass nonnegative")
-    if electron_temperature < 0 or ion_temperature < 0:
-        raise ValueError("Physical electron and ion temperatures must be nonnegative")
 
     length = 2.0 * math.pi * mode_number / wave_number
     charge_magnitude = charge_to_mass_ratio * mass
@@ -235,7 +222,7 @@ def build_initial_data(*, nx=NX, particles_per_cell=PARTICLES_PER_CELL,
     if end_time <= 0:
         raise ValueError("The duration must be positive")
 
-    static, dynamic = build_parameters(nx, length, end_time, cfl, gravity_G, output_dir,
+    static, dynamic = build_parameters(nx, length, end_time, cfl, output_dir,
                                        current_filter=current_filter, filter_alpha=filter_alpha)
     particles, species = load_plasma(
         nx, particles_per_cell, length, wave_number, perturbation, number_density,
@@ -280,7 +267,7 @@ def build_initial_data(*, nx=NX, particles_per_cell=PARTICLES_PER_CELL,
     if not bool(jnp.all(jnp.isfinite(rho))) or source_error > 1.0e-12 * float(jnp.max(rho)):
         raise RuntimeError("Final production energy density disagrees with the initial metric source")
     violations = compute_all_constraints_with_matter(
-        state, dynamic.bssn_parameters.evolution_parameters, gravity_G * rho, gravity_G * momentum,
+        state, dynamic.bssn_parameters.evolution_parameters, rho, momentum,
     )
     constraints = {name: float(value) for name, value in compute_constraint_norms(violations).items()}
     constraints["gauss_linf"] = float(jnp.max(jnp.abs(tiles_to_bssn(
@@ -335,7 +322,7 @@ def main():
         number_density=NUMBER_DENSITY, beam_speed=BEAM_SPEED,
         electron_temperature=ELECTRON_TEMPERATURE, ion_temperature=ION_TEMPERATURE,
         mass_ratio=MASS_RATIO, mass=MASS, charge_to_mass_ratio=CHARGE_TO_MASS_RATIO,
-        gravity_G=GRAVITY_G, seed=SEED,
+        seed=SEED,
         current_filter=CURRENT_FILTER, filter_alpha=CURRENT_FILTER_ALPHA,
     )
     save_initial_data(OUTPUT_DIR, particles, fields, static, dynamic)

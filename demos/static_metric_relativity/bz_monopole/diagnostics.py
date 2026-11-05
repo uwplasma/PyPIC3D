@@ -10,15 +10,11 @@ from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.diagnostics.static_metric import divergence, node_weights
 from PyPIC3D.relativity.field_state import physical_vector
 from PyPIC3D.relativity.core import B_FIELD_LOCATIONS, D_FIELD_LOCATIONS
-from PyPIC3D.relativity.field_interpolation import location_interpolate as _location_interpolate
+from PyPIC3D.relativity.field_interpolation import reconstruct_vector
 from PyPIC3D.solvers.GR_yee.curved_maxwell import compute_covariant_E, compute_covariant_H, update_B
 
-if __package__:
-    from .current_filter import smooth_conformal
-    from .magnetization import measure_magnetization, collocate_magnetic_field
-else:
-    from current_filter import smooth_conformal
-    from magnetization import measure_magnetization, collocate_magnetic_field
+from current_filter import smooth_conformal
+from magnetization import CENTER, collocate, collocate_magnetic_field, measure_magnetization
 
 
 def conformal_charge(particles, species, template, static, dynamic, current_filter_passes):
@@ -80,22 +76,9 @@ def _constraint_residuals(divD, divB, charge, magnetic_field, metric, static, dy
                 gauss_cells=jnp.sum(dm), magnetic_divergence_cells=jnp.sum(bm))
 
 
-def validate_constraint_settings(gauss_tolerance, magnetic_divergence_tolerance,
-                                 constraint_check_interval=100):
-    for name, value in (('gauss_tolerance', gauss_tolerance),
-                        ('magnetic_divergence_tolerance', magnetic_divergence_tolerance)):
-        if not math.isfinite(value) or value <= 0:
-            raise ValueError(f'{name} must be finite and positive')
-    if (isinstance(constraint_check_interval, bool)
-            or not isinstance(constraint_check_interval, (int, np.integer))
-            or constraint_check_interval <= 0):
-        raise ValueError('constraint_check_interval must be a positive integer')
-
-
 def check_constraints(residuals, *,
                       gauss_tolerance=1e-10, magnetic_divergence_tolerance=1e-10):
     """Only exterior residuals participate in constraint acceptance."""
-    validate_constraint_settings(gauss_tolerance, magnetic_divergence_tolerance)
     exceeded = []
     for name, tolerance in (('gauss', gauss_tolerance),
                             ('magnetic_divergence', magnetic_divergence_tolerance)):
@@ -124,14 +107,13 @@ def diagnostics(particles, species, fields, p, static, dynamic, *, current_filte
     B = update_B(compute_covariant_E(Dhalf, B, metric), Bminus, metric, static, dynamic, dynamic.dt)
     E = compute_covariant_E(D, B, metric)
     H = compute_covariant_H(D, B, metric)
-    E = tuple(_location_interpolate(E[i], D_FIELD_LOCATIONS[i], ("C",)*3) for i in range(3))
-    H = tuple(_location_interpolate(H[i], B_FIELD_LOCATIONS[i], ("C",)*3) for i in range(3))
+    E = reconstruct_vector(E, D_FIELD_LOCATIONS, CENTER)
+    H = reconstruct_vector(H, B_FIELD_LOCATIONS, CENTER)
     # the D^2/B^2, D.B and magnetization panels read the physical field
     physical_D = physical_vector(D, metric.D)
     physical_B = physical_vector(B, metric.B)
     bc = collocate_magnetic_field(physical_B)
-    dc = jnp.stack([_location_interpolate(physical_D[i], D_FIELD_LOCATIONS[i], ("C",)*3)
-                    for i in range(3)], axis=-1)
+    dc = collocate(physical_D, D_FIELD_LOCATIONS)
     d2 = jnp.einsum('...i,...ij,...j->...', dc, metric.center.gamma, dc)
     db = jnp.einsum('...i,...ij,...j->...', dc, metric.center.gamma, bc)
     mag = measure_magnetization(particles, species, physical_B, metric, static, dynamic)

@@ -183,9 +183,9 @@ solvers does not import JAX BSSN.
 The first particle path uses one device, one periodic Cartesian tile, and
 equal spacing on resolved axes. Enable JAX float64 (the CLI does this), use
 Gaussian electromagnetic units with ``C = eps = mu = 1``, and keep ``dt``
-fixed. ``gravity_G`` scales both particle and EM gravitational sources;
-``gravity_G = 0`` gives the two-half-step fixed-background control when the
-initial geometry is stationary. It does not freeze arbitrary vacuum BSSN
+fixed. ``metric_backreaction = false`` instead
+hands BSSN exact zeros, giving the two-half-step fixed-background control when
+the initial geometry is stationary. It does not freeze arbitrary vacuum BSSN
 initial data.
 
 A minimal configuration is:
@@ -206,8 +206,10 @@ A minimal configuration is:
    z_wind = 0.25
    dt = 0.01
 
+   [simulation_parameters]
+   metric_backreaction = true
+
    [bssn_parameters]
-   gravity_G = 1.0
    gauge = 0
    zero_shift = 1
    nu = 0.002
@@ -247,7 +249,7 @@ would erase unresolved field energy. Particle sources include rest mass and
 neutral species, and are not smoothed by the current filter.
 
 ``dynamic_parameters.bssn_parameters`` holds ``state``,
-``evolution_parameters``, ``gravity_G``, and ``time``. The dynamic loop returns
+``evolution_parameters``, and ``time``. The dynamic loop returns
 ``particles, fields, dynamic_parameters``; other solver signatures are
 unchanged. Field slot 7 stores
 ``(D_previous, B_previous, B_synchronized, half_dt, absorber)``. Particle

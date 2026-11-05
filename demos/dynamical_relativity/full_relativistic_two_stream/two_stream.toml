@@ -61,7 +61,6 @@ lapse = "initial_data/lapse.npy"
 traceless_K = false
 conformal_connection = false
 shift = false
-gravity_G = 8.16e-8
 time = 0.0
 gauge = "harmonic"
 zero_shift = true

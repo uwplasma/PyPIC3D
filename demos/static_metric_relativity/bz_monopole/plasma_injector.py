@@ -1,11 +1,15 @@
 """Neutral thermal pair injection into fixed-capacity tiled particle storage."""
 import jax
 import jax.numpy as jnp
+from numpy.polynomial.legendre import leggauss
 
 from PyPIC3D.particles.particle_class import TiledParticles, SpeciesConfig
 from PyPIC3D.particles.particle_tile_communication import shard_tiled_particles
 from PyPIC3D.particles.velocity_distribution import maxwell_juttner_momentum
 from PyPIC3D.relativity.pair_injection import insert_pairs
+
+# Cell-volume quadrature, fixed for every run.
+QUADRATURE_NODES, QUADRATURE_WEIGHTS = leggauss(8)
 
 
 def empty_particles(p, static):
@@ -19,19 +23,26 @@ def empty_particles(p, static):
 
 
 def sample_position(key, rlo, rhi, tlo, thi, spin):
-    """Sample n(r)*proper-volume with n proportional to r^-2, inside a cell."""
-    bound=(1+spin**2/rlo**2)*jnp.sqrt(1+2/rlo)
+    """Sample n(r)*proper-volume with n proportional to r^-2, inside a cell.
+
+    Rejection sampling against a uniform-in-(r, cos theta, phi) proposal.
+    """
+    bound = (1+spin**2/rlo**2)*jnp.sqrt(1+2/rlo)
+
     def draw(state):
-        key,_,_=state;key,k=jax.random.split(key)
-        u=jax.random.uniform(k,(4,),dtype=jnp.float64)
-        r=rlo+(rhi-rlo)*u[0]
-        mu=jnp.cos(tlo)+(jnp.cos(thi)-jnp.cos(tlo))*u[1]
-        edge=jnp.nextafter(jnp.float64(1),jnp.float64(0))
-        theta=jnp.arccos(jnp.clip(mu,-edge,edge))
-        sig=r*r+spin*spin*mu*mu
-        accept=u[3]*bound <= sig*jnp.sqrt(1+2*r/sig)/(r*r)
-        return key,jnp.array([r,theta,2*jnp.pi*u[2]]),accept
-    _,position,_=jax.lax.while_loop(lambda s:~s[2],draw,(key,jnp.array([rlo,(tlo+thi)/2,0.]),jnp.array(False)))
+        key = state[0]
+        key, subkey = jax.random.split(key)
+        u = jax.random.uniform(subkey, (4,), dtype=jnp.float64)
+        r = rlo+(rhi-rlo)*u[0]
+        mu = jnp.cos(tlo)+(jnp.cos(thi)-jnp.cos(tlo))*u[1]
+        edge = jnp.nextafter(jnp.float64(1), jnp.float64(0))
+        theta = jnp.arccos(jnp.clip(mu, -edge, edge))
+        sigma = r*r+spin*spin*mu*mu
+        accept = u[3]*bound <= sigma*jnp.sqrt(1+2*r/sigma)/(r*r)
+        return key, jnp.array([r, theta, 2*jnp.pi*u[2]]), accept
+
+    initial = (key, jnp.array([rlo, (tlo+thi)/2, 0.]), jnp.array(False))
+    _, position, _ = jax.lax.while_loop(lambda state: ~state[2], draw, initial)
     return position
 
 
@@ -68,15 +79,14 @@ def inject_pairs(particles, species, magnetization, D, B, metric, static, dynami
         rlo=jnp.maximum(rr-p.dr/2,p.r_min); rhi=jnp.minimum(rr+p.dr/2,p.sponge_start)
         tlo=jnp.maximum(tt-p.dtheta/2,p.theta_start)
         thi=jnp.minimum(tt+p.dtheta/2,p.theta_end)
-        from numpy.polynomial.legendre import leggauss
-        nodes,weights=leggauss(8)
-        integral=jnp.zeros_like(rr)
-        for a,wa in zip(nodes,weights):
-            radii=(rlo+rhi)/2+(rhi-rlo)*a/2
-            for b,wb in zip(nodes,weights):
-                angles=(tlo+thi)/2+(thi-tlo)*b/2
-                geom_sig=radii**2+p.spin**2*jnp.cos(angles)**2
-                integral+=wa*wb*geom_sig*jnp.sqrt(1+2*radii/geom_sig)*jnp.sin(angles)/radii**2
+        angles = [(tlo+thi)/2+(thi-tlo)*b/2 for b in QUADRATURE_NODES]
+        trig = [(jnp.cos(angle)**2, jnp.sin(angle)) for angle in angles]
+        integral = jnp.zeros_like(rr)
+        for a, wa in zip(QUADRATURE_NODES, QUADRATURE_WEIGHTS):
+            radii = (rlo+rhi)/2+(rhi-rlo)*a/2
+            for (cos_squared, sin_angle), wb in zip(trig, QUADRATURE_WEIGHTS):
+                geom_sig = radii**2+p.spin**2*cos_squared
+                integral += wa*wb*geom_sig*jnp.sqrt(1+2*radii/geom_sig)*sin_angle/radii**2
         expected = p.n0*integral*jnp.maximum(rhi-rlo,0)*(thi-tlo)*2*jnp.pi/4/(2*species.weight[0])
         eligible = valid.reshape(-1) & (sig.reshape(-1)>p.sigma_threshold) & (rr<p.sponge_start)
         rounding = jax.vmap(lambda k: jax.random.uniform(k, dtype=jnp.float64))(cell_keys)
