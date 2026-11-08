@@ -79,3 +79,8 @@ if __name__ == "__main__":
     np.save(Path(config["particle3"]["initial_vy"]), ion1_v[:, 1])
     np.save(Path(config["particle3"]["initial_vz"]), ion1_v[:, 2])
     # save the initial data
+
+    electron_plasma_frequency = np.sqrt(
+        4 * np.pi * config["particle1"]["charge"] ** 2 * n / config["simulation_parameters"]["x_wind"] ** 3 / config["particle1"]["mass"])
+
+    print(f"Electron plasma frequency: {electron_plasma_frequency:.3e} rad/s")
