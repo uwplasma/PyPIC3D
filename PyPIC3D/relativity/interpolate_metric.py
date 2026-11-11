@@ -24,6 +24,7 @@ from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
+from jax.sharding import PartitionSpec as P
 
 from PyPIC3D.relativity.core import covariant_lorentz_factor
 
@@ -213,14 +214,15 @@ def particle_lorentz_factor(particles, metric, static_parameters, dynamic_parame
     ntx, nty, ntz = particles.active.shape[:3]
     active_axes = particle_active_axes((ntx, nty, ntz), static_parameters.tile_shape)
 
-    def one_tile(x_tile, u_tile, active_tile, tx, ty, tz):
+    def one_tile(x_tile, u_tile, active_tile, center, center_grid):
+        x_tile, u_tile, active_tile, center, center_grid = jax.tree.map(
+            lambda value: value[0, 0, 0], (x_tile, u_tile, active_tile, center, center_grid))
         x = x_tile.reshape(-1, 3)
         u = u_tile.reshape(-1, 3)
         active = active_tile.reshape(-1)
-        center_grid = tuple(axis[tx, ty, tz] for axis in dynamic_parameters.grids.tiled_center_grid)
         x = safe_inactive_positions(x, active, center_grid, active_axes, g)
         sampled = interpolate_metric(
-            jax.tree.map(lambda array: array[tx, ty, tz], metric.center),
+            center,
             x,
             center_grid,
             static_parameters.metric,
@@ -229,9 +231,13 @@ def particle_lorentz_factor(particles, metric, static_parameters, dynamic_parame
             derivatives=False,
         )
         Gamma = covariant_lorentz_factor(jnp.where(active[:, None], u, 0.0), sampled.gamma_inv)
-        return jnp.where(active, Gamma, 1.0).reshape(active_tile.shape)
+        return jnp.where(active, Gamma, 1.0).reshape((1, 1, 1) + active_tile.shape)
 
-    for _ in range(3):
-        one_tile = jax.vmap(one_tile)
-    tx, ty, tz = jnp.meshgrid(jnp.arange(ntx), jnp.arange(nty), jnp.arange(ntz), indexing="ij")
-    return one_tile(particles.x, particles.u, particles.active, tx, ty, tz)
+    # Explicit local arguments prevent vmapped dynamic tile indexing from
+    # turning the metric sampler into a global all-gather under SPMD.
+    tile_spec = P("tile_x", "tile_y", "tile_z")
+    values = (particles.x, particles.u, particles.active, metric.center,
+              dynamic_parameters.grids.tiled_center_grid)
+    specs = jax.tree.map(lambda value: tile_spec, values)
+    return jax.shard_map(one_tile, mesh=static_parameters.field_mesh,
+                         in_specs=specs, out_specs=tile_spec, check_vma=False)(*values)

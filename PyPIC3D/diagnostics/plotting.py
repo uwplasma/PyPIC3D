@@ -213,6 +213,93 @@ def plot_initial_histograms(particle_record, dynamic_parameters, name, path):
     plt.close()
 
 
+def initial_tiled_histogram_data(particles):
+    """Reduce active, addressable particle shards to the six initial histograms."""
+    n_species = particles.active.shape[3]
+    lower = np.full((n_species, 6), np.inf)
+    upper = np.full((n_species, 6), -np.inf)
+    counts = np.zeros((n_species, 6, 50), dtype=np.int64)
+    edges = np.empty((n_species, 6, 51))
+
+    # Find common bin ranges before counting each shard. Inactive capacity does
+    # not contribute, including uninitialized values in inactive particle slots.
+    for x_shard, u_shard, active_shard in zip(
+            particles.x.addressable_shards, particles.u.addressable_shards,
+            particles.active.addressable_shards):
+        x, u, active = (np.asarray(jax.device_get(shard.data))
+                        for shard in (x_shard, u_shard, active_shard))
+        first_species = active_shard.index[3].start or 0
+        for local_species in range(active.shape[3]):
+            species = first_species + local_species
+            mask = active[..., local_species, :]
+            if not np.any(mask):
+                continue
+            for offset, values in ((0, x), (3, u)):
+                selected = values[..., local_species, :, :][mask]
+                lower[species, offset:offset+3] = np.minimum(
+                    lower[species, offset:offset+3], selected.min(axis=0))
+                upper[species, offset:offset+3] = np.maximum(
+                    upper[species, offset:offset+3], selected.max(axis=0))
+
+    # NumPy's ordinary 50-bin convention uses [0, 1] for empty input and
+    # expands constant data by half a unit on either side.
+    for species in range(n_species):
+        for component in range(6):
+            if lower[species, component] == np.inf:
+                lower[species, component], upper[species, component] = 0.0, 1.0
+            dtype = particles.x.dtype if component < 3 else particles.u.dtype
+            limits = np.asarray([lower[species, component], upper[species, component]], dtype=dtype)
+            edges[species, component] = np.histogram_bin_edges(limits, bins=50)
+
+    for x_shard, u_shard, active_shard in zip(
+            particles.x.addressable_shards, particles.u.addressable_shards,
+            particles.active.addressable_shards):
+        x, u, active = (np.asarray(jax.device_get(shard.data))
+                        for shard in (x_shard, u_shard, active_shard))
+        first_species = active_shard.index[3].start or 0
+        for local_species in range(active.shape[3]):
+            species = first_species + local_species
+            mask = active[..., local_species, :]
+            for offset, values in ((0, x), (3, u)):
+                selected = values[..., local_species, :, :][mask]
+                for axis in range(3):
+                    component = offset + axis
+                    limits = (lower[species, component], upper[species, component])
+                    counts[species, component] += np.histogram(selected[:, axis], bins=50, range=limits)[0]
+
+    return counts, edges
+
+
+def plot_initial_tiled_histograms(particles, species_names, dynamic_parameters, path):
+    """Save initial histograms without gathering the tiled particle arrays.
+
+    Call before the leapfrog seed, while the stored positions and velocities
+    are both at the configured initial time. This is a single-process output;
+    its addressable shards can span any number of local devices.
+    """
+    counts, edges = initial_tiled_histogram_data(particles)
+    center_grid = dynamic_parameters.grids.center
+    for species in range(particles.active.shape[3]):
+        name = f"species_{species}" if species_names is None else species_names[species].replace(" ", "_")
+        for component in range(6):
+            axis = component % 3
+            label = "XYZ"[axis]
+            velocity = component >= 3
+            # Weighted bin edges reproduce plt.hist's bar style without
+            # retaining any particle data after the shard reductions.
+            plt.hist(edges[species, component, :-1], bins=edges[species, component],
+                     weights=counts[species, component])
+            plt.xlabel(label + (" Velocity" if velocity else ""))
+            plt.ylabel("Number of Particles")
+            if not velocity:
+                plt.xlim(*_expanded_axis_range(center_grid[axis]))
+            quantity = "Velocity" if velocity else "Position"
+            plt.title(f"{name} Initial {label} {quantity} Histogram")
+            suffix = "xyz"[axis] + ("_velocity" if velocity else "")
+            plt.savefig(f"{path}/{name}_initial_{suffix}_histogram.png", dpi=150)
+            plt.close()
+
+
 def write_data(filename, time, data):
     """
     Write one scalar diagnostic sample.

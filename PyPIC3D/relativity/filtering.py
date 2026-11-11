@@ -17,13 +17,25 @@ from PyPIC3D.utilities.filters import (
 )
 
 
-@partial(jax.jit, static_argnames="boundary_conditions")
-def binomial_source_filter(values, boundary_conditions):
+@partial(jax.jit, static_argnames=("boundary_conditions", "static_parameters"))
+def binomial_source_filter(values, boundary_conditions, *, static_parameters=None, dynamic_parameters=None):
     """Filter global coordinate densities, replicating isolated edge samples.
 
     This source-only operation does not filter native Maxwell fields or their
     charge constraint. Component axes precede the three physical spatial axes.
     """
+    if static_parameters is not None:
+        from PyPIC3D.relativity.dynamical_relativity import resize_bssn_halos
+
+        values = resize_bssn_halos(values, static_parameters, dynamic_parameters, exterior="constant",
+                                   boundary_conditions=boundary_conditions)
+        # Separable binomial stencil, including owned upper C endpoints.
+        for axis in range(values.ndim - 3, values.ndim):
+            values = (jnp.roll(values, 1, axis=axis) + 2 * values
+                      + jnp.roll(values, -1, axis=axis)) / 4
+        return resize_bssn_halos(values, static_parameters, dynamic_parameters, exterior="constant",
+                                   boundary_conditions=boundary_conditions)
+
     padded = values
     for axis, bc in enumerate(boundary_conditions):
         widths = [(0, 0)] * values.ndim

@@ -156,7 +156,7 @@ def _tile_grid_axis(global_axis_grid, dynamic_parameters, tile_shape, tile_count
     return jnp.broadcast_to(axis_lines.reshape(axis_shape), tiled_shape)
 
 
-def _tile_grid_axes(grid, dynamic_parameters, tile_shape, num_guard_cells=2):
+def _tile_grid_axes(grid, dynamic_parameters, tile_shape, num_guard_cells=2, mesh=None):
     """
     Build tile-local coordinate lines for a center or vertex grid.
     """
@@ -170,6 +170,23 @@ def _tile_grid_axes(grid, dynamic_parameters, tile_shape, num_guard_cells=2):
         _tile_axis_count(Ny, tile_ny),
         _tile_axis_count(Nz, tile_nz),
     )
+
+    if mesh is not None:
+        import numpy as np
+        from jax.sharding import NamedSharding, PartitionSpec as P
+        sharding = NamedSharding(mesh, P("tile_x", "tile_y", "tile_z", None))
+        coordinates = []
+        for axis in range(3):
+            width = int(tile_shape[axis])
+            g = int(num_guard_cells)
+            origin = float(grid[axis][1])
+            spacing = float(getattr(dynamic_parameters, "d" + "xyz"[axis]))
+            def local_line(index, axis=axis, width=width, origin=origin, spacing=spacing):
+                tile = index[axis].start or 0
+                return (origin + (tile*width + np.arange(-g, width+g))*spacing)[None, None, None, :]
+            coordinates.append(jax.make_array_from_callback(
+                tile_counts + (width+2*g,), sharding, local_line, dtype=np.float64))
+        return tuple(coordinates)
 
     return tuple(
         _tile_grid_axis(grid[axis], dynamic_parameters, tile_shape, tile_counts, axis, num_guard_cells)
@@ -198,12 +215,14 @@ def build_tiled_yee_grids(static_parameters, dynamic_parameters):
         dynamic_parameters,
         tile_shape,
         num_guard_cells=num_guard_cells,
+        mesh=static_parameters.field_mesh,
     )
     tiled_vertex_grid = _tile_grid_axes(
         vertex_grid,
         dynamic_parameters,
         tile_shape,
         num_guard_cells=num_guard_cells,
+        mesh=static_parameters.field_mesh,
     )
     # build the tiled center and vertex grids
 

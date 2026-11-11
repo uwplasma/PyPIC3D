@@ -35,10 +35,16 @@ def bssn_constraint_norms(particles, species, fields, static, dynamic, *, source
 
     bssn = dynamic.bssn_parameters
     common_particles = synchronize_particles(particles, species, fields, static, dynamic)
-    moments = electromagnetic_moments(fields[0], fields[7][2], static)
+    tiled = bssn.state.conformal_factor.ndim == 6
+    moments = electromagnetic_moments(fields[0], fields[7][2], static, tiled=tiled)
     rho, momentum, _ = compute_energy_momentum_tensor(
         common_particles, species, moments, bssn.state, static, dynamic,
         source_filter=source_filter)
+    if tiled:
+        from JAX_BSSN.parallel import tiled_constraint_norms
+        from PyPIC3D.relativity.dynamical_relativity import bssn_tile_layout
+        return tiled_constraint_norms(bssn.state, bssn.evolution_parameters, rho=rho,
+                                      momentum=momentum, **bssn_tile_layout(static))
     violations = compute_all_constraints_with_matter(
         bssn.state, bssn.evolution_parameters, rho, momentum)
     return compute_constraint_norms(violations)

@@ -82,7 +82,7 @@ class BSSNParametersTest(unittest.TestCase):
         self.assertEqual(static.boundary_conditions, (0, 0, 0))
         self.assertEqual(int(parameters.evolution_parameters.xl_bc), 1)
         self.assertEqual(int(parameters.evolution_parameters.xr_bc), 1)
-        for actual, expected in zip(parameters.evolution_parameters, evolution):
+        for actual, expected in zip(jax.tree.leaves(parameters.evolution_parameters), jax.tree.leaves(evolution)):
             self.assertTrue(bool(jnp.array_equal(actual, expected)))
         self.assertEqual(float(parameters.time), 3.)
 

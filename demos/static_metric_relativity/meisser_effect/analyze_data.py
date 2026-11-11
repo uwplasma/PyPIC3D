@@ -50,7 +50,7 @@ def read_field_series(path):
     if not path.exists():
         raise FileNotFoundError(f"Run {path} does not exist. Run run_wald.py first.")
 
-    series = io.Series(str(path), io.Access.read_only)
+    series = io.Series(str(path), io.Access.read_only, '{"verify_homogeneous_extents":false}')
     times = []
     parallel_fields = []
     magnetic_fields = []

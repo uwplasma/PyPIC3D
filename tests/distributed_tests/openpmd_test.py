@@ -24,7 +24,7 @@ from tests.support.openpmd_fixtures import (
 
 
 class OpenPMDDiagnosticsTests(OpenPMDDiagnosticsTestsFixtures, unittest.TestCase):
-    def test_initial_fields_assemble_tiled_fields_before_output(self):
+    def test_initial_fields_write_tile_chunks_into_the_same_global_mesh(self):
         shape_with_ghosts = (6, 4, 4)
         E = _zero_field(shape_with_ghosts)
         B = _zero_field(shape_with_ghosts)

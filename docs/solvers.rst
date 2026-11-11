@@ -180,8 +180,10 @@ Maxwell, particles, and stress-energy in PyPIC3D. Install JAX BSSN separately
 or use the ``relativity`` optional dependency. Importing ordinary PyPIC3D
 solvers does not import JAX BSSN.
 
-The first particle path uses one device, one periodic Cartesian tile, and
-equal spacing on resolved axes. Enable JAX float64 (the CLI does this), use
+The particle path supports periodic Cartesian tiles on a shared device mesh,
+with one tile per device and equal spacing on resolved axes. BSSN and EM use
+identical tile ownership; BSSN retains wider local guards for its stencils and
+C-to-Yee geometry transfer. Enable JAX float64 (the CLI does this), use
 Gaussian electromagnetic units with ``C = eps = mu = 1``, and keep ``dt``
 fixed. ``metric_backreaction = false`` instead
 hands BSSN exact zeros, giving the two-half-step fixed-background control when

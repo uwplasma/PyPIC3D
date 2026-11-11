@@ -3,17 +3,25 @@
 
 import os
 import time
+import traceback
 
 import jax
 from jax import block_until_ready
 from tqdm import tqdm
 
-from PyPIC3D.diagnostics.plotting import write_data
+from PyPIC3D.diagnostics.plotting import write_data as _write_data
 from PyPIC3D.diagnostics.async_writer import (
     create_async_tiled_openpmd_field_writer,
     create_async_tiled_openpmd_particle_writer,
     enqueue_openpmd_field_output,
     enqueue_openpmd_particle_output,
+    make_tiled_field_snapshot,
+    make_tiled_particle_snapshot,
+)
+from PyPIC3D.diagnostics.openPMD import (
+    TiledMeshLayout,
+    write_tiled_field_snapshot_openpmd,
+    write_tiled_particle_snapshot_openpmd,
 )
 from PyPIC3D.diagnostics.output_adapters import build_field_output_map
 from PyPIC3D.diagnostics.diagnostic_quantities import (
@@ -29,6 +37,12 @@ from PyPIC3D.utilities.toml_helpers import (
 )
 from PyPIC3D.initialization import initialize_simulation
 from PyPIC3D.relativity.interpolate_metric import particle_lorentz_factor
+
+
+def write_data(*args, **kwargs):
+    """Collective diagnostics are evaluated everywhere; rank zero writes scalars."""
+    if jax.process_index() == 0:
+        _write_data(*args, **kwargs)
 
 
 def _raise_if_tiled_particles_overflowed(fields):
@@ -49,23 +63,33 @@ def write_work_energy_tracker(tracker, output_dir):
 
 
 def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
-                injection_interval_steps=1, bssn_state=None, bssn_evolution_parameters=None):
+                injection_interval_steps=1, bssn_state=None, bssn_evolution_parameters=None,
+                field_initializers=None):
     """Run a simulation, optionally injecting neutral pairs in the static solver.
 
     The injector follows time_loop_static_metric's callable contract. Supply an
     explicit RNG key and reserve enough particle slots in the initial configuration.
     """
-    (
-        loop,
-        particles,
-        fields,
-        static_parameters,
-        dynamic_parameters,
-        plotting_parameters,
-        plasma_parameters,
-        species_config,
-    ) = initialize_simulation(config_file, bssn_state=bssn_state,
-                              bssn_evolution_parameters=bssn_evolution_parameters)
+    from PyPIC3D.distributed import mpi_communicator
+    comm = mpi_communicator()
+    try:
+        (
+            loop,
+            particles,
+            fields,
+            static_parameters,
+            dynamic_parameters,
+            plotting_parameters,
+            plasma_parameters,
+            species_config,
+        ) = initialize_simulation(config_file, bssn_state=bssn_state,
+                                  bssn_evolution_parameters=bssn_evolution_parameters,
+                                  field_initializers=field_initializers)
+    except BaseException:
+        if comm is not None:
+            traceback.print_exc()
+            comm.Abort(1)
+        raise
 
     dt = dynamic_parameters.dt
     Nt = static_parameters.Nt
@@ -123,7 +147,13 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
 
     field_writer = None
     particle_writer = None
-    if plotting_parameters["plot_openpmd_fields"]:
+    if comm is not None:
+        layout = TiledMeshLayout(
+            global_shape=(int(dynamic_parameters.Nx), int(dynamic_parameters.Ny), int(dynamic_parameters.Nz)),
+            tile_shape=tuple(int(width) for width in static_parameters.tile_shape),
+            guard_cells=int(static_parameters.guard_cells),
+        )
+    if comm is None and plotting_parameters["plot_openpmd_fields"]:
         setup_pmd_files(os.path.join(output_dir, "data"), "fields", ".h5")
         field_writer = create_async_tiled_openpmd_field_writer(
             static_parameters,
@@ -133,7 +163,7 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
             file_extension=".h5",
             queue_size=int(plotting_parameters.get("openpmd_field_queue_size", 2)),
         )
-    if plotting_parameters["plot_openpmd_particles"]:
+    if comm is None and plotting_parameters["plot_openpmd_particles"]:
         setup_pmd_files(os.path.join(output_dir, "data"), "particles", ".h5")
         particle_writer = create_async_tiled_openpmd_particle_writer(
             static_parameters,
@@ -150,7 +180,14 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
     final_endpoint = work_energy_theorem or matched_gr
     loop_error = None
     try:
-        for t in tqdm(range(Nt + int(final_endpoint))):
+        if comm is not None:
+            if comm.rank == 0:
+                for name in ("fields", "particles"):
+                    if plotting_parameters["plot_openpmd_" + name]:
+                        setup_pmd_files(os.path.join(output_dir, "data"), name, ".h5")
+            comm.Barrier()
+        iterations = Nt + int(final_endpoint)
+        for t in tqdm(range(iterations), disable=jax.process_index() != 0):
             if t % plotting_parameters["plotting_interval"] == 0 or (final_endpoint and t == Nt):
                 if dynamic_metric:
                     from PyPIC3D.diagnostics.static_metric import bssn_constraint_norms
@@ -192,7 +229,7 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
                     total_momentum = compute_total_momentum(particles, species_config=species_config)
                     write_data(f"{output_dir}/data/total_momentum.txt", t * dt, total_momentum)
 
-                if particle_writer is not None:
+                if plotting_parameters["plot_openpmd_particles"]:
                     gamma = None
                     output_particles = particles
                     if dynamic_metric:
@@ -203,18 +240,24 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
                         metric = fields[6]
                         gamma = particle_lorentz_factor(output_particles, metric, static_parameters, dynamic_parameters)
                         # particle u holds covariant u_i, so Gamma needs the metric at each particle
-                    enqueue_openpmd_particle_output(
-                        particle_writer,
-                        output_particles,
-                        dynamic_parameters,
-                        t,
-                        t,
-                        species_config=species_config,
-                        species_names=particle_species_names,
-                        gamma=gamma,
-                    )
+                    if comm is None:
+                        enqueue_openpmd_particle_output(
+                            particle_writer, output_particles, dynamic_parameters, t, t,
+                            species_config=species_config, species_names=particle_species_names,
+                            gamma=gamma,
+                        )
+                    else:
+                        snapshot = make_tiled_particle_snapshot(
+                            output_particles, step=t, time=float(dynamic_parameters.bssn_parameters.time),
+                            species_names=particle_species_names, species_config=species_config, gamma=gamma,
+                        )
+                        write_tiled_particle_snapshot_openpmd(
+                            snapshot, output_dir=os.path.join(output_dir, "data"), filename="particles",
+                            static_parameters=static_parameters, dynamic_parameters=dynamic_parameters,
+                            file_extension=".h5", comm=comm,
+                        )
 
-                if field_writer is not None:
+                if plotting_parameters["plot_openpmd_fields"]:
                     field_map = build_field_output_map(
                         fields,
                         particles,
@@ -225,11 +268,37 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
                         include_charge_density=bool(plotting_parameters["plotchargedensity"]),
                     )
                     plotting_parameters["field_map"] = field_map
-                    enqueue_openpmd_field_output(field_writer, field_map, dynamic_parameters, t, t)
+                    if comm is None:
+                        enqueue_openpmd_field_output(field_writer, field_map, dynamic_parameters, t, t)
+                    else:
+                        snapshot = make_tiled_field_snapshot(
+                            field_map, step=t, time=float(dynamic_parameters.bssn_parameters.time),
+                            current_time_offset=0.0 if t == 0 else -float(dt)/4,
+                        )
+                        write_tiled_field_snapshot_openpmd(
+                            snapshot, output_dir=os.path.join(output_dir, "data"), filename="fields",
+                            dynamic_parameters=dynamic_parameters, layout=layout, file_extension=".h5", comm=comm,
+                        )
 
             if t == Nt:
                 break
 
+            if static_parameters.benchmark and t == 0:
+                start_compile = time.perf_counter()
+                jit_loop = jit_loop.lower(particles, species_config, fields,
+                                          dynamic_parameters, injection_key, t).compile()
+                compile_elapsed = time.perf_counter()-start_compile
+                if comm is not None:
+                    from mpi4py import MPI
+                    compile_elapsed = comm.allreduce(compile_elapsed, op=MPI.MAX)
+                if jax.process_index() == 0:
+                    print(f"Step compilation (slowest process): {compile_elapsed:.3f} s")
+                    print(f"Compiled step memory per device: {jit_loop.memory_analysis()}")
+            if static_parameters.benchmark and comm is not None:
+                # Exclude another rank's compilation or diagnostics from the
+                # timed step; all ranks start after the same completed work.
+                comm.Barrier()
+            start_step = time.perf_counter() if static_parameters.benchmark else None
             result = jit_loop(
                 particles,
                 species_config,
@@ -238,6 +307,14 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
                 injection_key,
                 t,
             )
+            if static_parameters.benchmark:
+                block_until_ready(result)
+                elapsed = time.perf_counter()-start_step
+                if comm is not None:
+                    from mpi4py import MPI
+                    elapsed = comm.allreduce(elapsed, op=MPI.MAX)
+                if jax.process_index() == 0:
+                    print(f"Step {t} elapsed (slowest process): {elapsed:.6f} s")
             if dynamic_metric:
                 particles, fields, dynamic_parameters = result
             elif pair_injector is None:
@@ -266,6 +343,9 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
 
     except BaseException as exc:
         loop_error = exc
+        if comm is not None:
+            traceback.print_exc()
+            comm.Abort(1)
         raise
     finally:
         writer_error = None
@@ -347,21 +427,16 @@ def main():
     simulation_stats = {
         "total_time": duration,
         "total_iterations": Nt,
-        "time_per_iteration": duration / Nt,
+        "time_per_iteration": duration / Nt if Nt else 0.0,
     }
 
     dump_parameters_to_toml(
-        simulation_stats,
-        static_parameters,
-        dynamic_parameters,
-        plasma_parameters,
-        plotting_parameters,
-        particles,
-    )
+        simulation_stats, static_parameters, dynamic_parameters, plasma_parameters,
+        plotting_parameters, particles)
 
     print("\nSimulation Complete")
     print(f"Total Simulation Time: {duration} s")
-    print(f"Time Per Iteration: {duration / Nt} s")
+    print(f"Time Per Iteration: {duration / Nt if Nt else 0.0} s")
 
 
 if __name__ == "__main__":

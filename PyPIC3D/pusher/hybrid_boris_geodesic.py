@@ -3,6 +3,7 @@ from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
+from jax.sharding import PartitionSpec as P
 
 from PyPIC3D.particles.particle_class import TiledParticles
 from PyPIC3D.particles.particle_batching import (
@@ -192,7 +193,7 @@ def hybrid_boris_geodesic_push(
         return gather_vector(field, locations, position, tile.center_grid, tile.vertex_grid,
                              static_parameters, active_axes, inactive_axis_indices)
 
-    def geodesic_step(x_n, u_old, active, update_x, q_over_m, tile):
+    def geodesic_step(x_n, u_old, active, update_x, q_over_m, tile, dt):
         """
         Advance one particle from ``(x^n, u^{n-1/2})`` to ``(x^{n+1}, u^{n+1/2})``.
 
@@ -238,9 +239,10 @@ def hybrid_boris_geodesic_push(
 
         return x_new, u_new, x_half
 
-    push_particles = jax.vmap(geodesic_step, in_axes=(0, 0, 0, 0, 0, None))
+    push_particles = jax.vmap(geodesic_step, in_axes=(0, 0, 0, 0, 0, None, None))
 
-    def push_one_tile(tx, ty, tz, x_tile, u_tile, active_tile):
+    def push_one_tile(x_tile, u_tile, active_tile, tile, parameters):
+        species_q_over_m, update_x, dt = parameters
         particle_capacity, batch_size, active_indices, n_active = prepare_particle_batches(
             active_tile,
             static_parameters.particle_batch_size,
@@ -252,8 +254,6 @@ def hybrid_boris_geodesic_push(
 
         x_flat = x_tile.reshape(-1, 3)
         u_flat = u_tile.reshape(-1, 3)
-
-        tile = tile_fields(tx, ty, tz, gather_metric, D_physical, B_physical, dynamic_parameters)
 
         n_batches = number_of_particle_batches(n_active, batch_size)
 
@@ -274,9 +274,10 @@ def hybrid_boris_geodesic_push(
                 x_flat[particle_indices],
                 u_flat[particle_indices],
                 valid,
-                species_config.update_x[species_indices],
+                update_x[species_indices],
                 species_q_over_m[species_indices],
                 tile,
+                dt,
             )
 
             # Padded lanes repeat a live source index, so their writes are dropped.
@@ -301,21 +302,21 @@ def hybrid_boris_geodesic_push(
                 new_u.reshape(u_tile.shape),
                 new_half.reshape(x_tile.shape))
 
-    push_tiles = push_one_tile
-    tx = jnp.arange(ntx)
-    ty = jnp.arange(nty)
-    tz = jnp.arange(ntz)
-
-    push_tiles = jax.vmap(push_tiles, in_axes=(None, None, 0, 0, 0, 0), out_axes=0)
-    push_tiles = jax.vmap(push_tiles, in_axes=(None, 0, None, 0, 0, 0), out_axes=0)
-    push_tiles = jax.vmap(push_tiles, in_axes=(0, None, None, 0, 0, 0), out_axes=0)
-
-    x_new, u_new, x_half = push_tiles(
-        tx, ty, tz,
-        particles.x,
-        particles.u,
-        particles.active,
-    )
+    local_push = push_one_tile
+    for _ in range(3):
+        local_push = jax.vmap(local_push, in_axes=(0, 0, 0, 0, None))
+    prepared_fields = TileFields(dynamic_parameters.grids.tiled_center_grid,
+                                  dynamic_parameters.grids.tiled_vertex_grid,
+                                  gather_metric, D_physical, B_physical)
+    layout = P("tile_x", "tile_y", "tile_z")
+    # Particle gathers use the fields already resident on this device. Dynamic
+    # global tile indexing would require collecting the full metric and EM grid.
+    x_new, u_new, x_half = jax.shard_map(
+        local_push, mesh=static_parameters.field_mesh,
+        in_specs=(layout, layout, layout, layout, P()), out_specs=(layout, layout, layout),
+        check_vma=False)(
+        particles.x, particles.u, particles.active, prepared_fields,
+        (species_q_over_m, species_config.update_x, dt))
 
     full_step = TiledParticles(x=x_new, u=u_new, active=particles.active)
     half_step = TiledParticles(x=x_half, u=u_new, active=particles.active)

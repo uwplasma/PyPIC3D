@@ -435,7 +435,7 @@ class TestHybridPusher(HybridPusherFixtures, unittest.TestCase):
             x_n[None, :],
             tuple(axis[0, 0, 0] for axis in dynamic_parameters.grids.tiled_center_grid),
             tuple(axis[0, 0, 0] for axis in dynamic_parameters.grids.tiled_vertex_grid),
-            static_parameters.shape_factor,
+            static_parameters,
             (True, True, True),
             (static_parameters.guard_cells,) * 3,
         )[0, 0]
@@ -861,7 +861,7 @@ class TestGRDirectDeposition(GRDirectDepositionFixtures, unittest.TestCase):
                         particles.x[tx, 0, 0],
                         tuple(axis[tx, 0, 0] for axis in center_grid),
                         tuple(axis[tx, 0, 0] for axis in vertex_grid),
-                        shape_factor,
+                        static_parameters,
                         (True, True, True),
                         (g, g, g),
                     )

@@ -1,5 +1,6 @@
 """BSSN geometry exchange and time levels for the dynamical PIC solver."""
 
+import jax
 import jax.numpy as jnp
 
 from JAX_BSSN.bssn.geometry import W_FLOOR_VALUE
@@ -16,12 +17,57 @@ from PyPIC3D.solvers.GR_yee.curved_maxwell import (
 from PyPIC3D.utilities.field_helpers import add_external_fields
 
 
-def bssn_to_tiles(values, static_parameters, *, boundary_conditions=None, extra_guard=0):
-    """Sample global C-node arrays on tiles, with periodic or linear exteriors.
+def bssn_tile_layout(static_parameters):
+    """Share PIC ownership and devices, with enough halo for C-to-Yee transfer."""
+    endpoints = tuple(bc == 1 for bc in static_parameters.boundary_conditions)
+    # An owned upper endpoint occupies one of the nominal upper ghost slots.
+    guard = max(4 + int(any(endpoints)), static_parameters.guard_cells + 1)
+    return dict(mesh=static_parameters.field_mesh,
+                tile_shape=static_parameters.tile_shape,
+                guard_cells=guard, upper_endpoints=endpoints)
 
+
+def resize_bssn_halos(values, static_parameters, dynamic_parameters, *, exterior="linear",
+                      boundary_conditions=None):
+    """Retain owned C samples and exchange their BSSN-depth halos locally."""
+    from JAX_BSSN.parallel import refresh_tiled_field
+
+    layout = bssn_tile_layout(static_parameters)
+    old_guard = (values.shape[-3] - static_parameters.tile_shape[0]) // 2
+    difference = layout["guard_cells"] - old_guard
+    if difference > 0:
+        values = jnp.pad(values, ((0, 0),) * (values.ndim - 3) + ((difference, difference),) * 3)
+    elif difference < 0:
+        trim = -difference
+        values = values[..., trim:-trim, trim:-trim, trim:-trim]
+    parameters = dynamic_parameters.bssn_parameters.evolution_parameters
+    if boundary_conditions is not None:
+        boundary = tuple(int(bc != 0) for bc in boundary_conditions)
+        parameters = parameters._replace(xl_bc=boundary[0], xr_bc=boundary[0],
+                                          yl_bc=boundary[1], yr_bc=boundary[1],
+                                          zl_bc=boundary[2], zr_bc=boundary[2])
+    return refresh_tiled_field(values, parameters, **layout, exterior=exterior)
+
+
+def crop_bssn_halos(values, static_parameters, *, extra_guard=0):
+    """Select the Yee guard depth from existing local BSSN C-node tiles."""
+    old_guard = (values.shape[-3] - static_parameters.tile_shape[0]) // 2
+    trim = old_guard - static_parameters.guard_cells - extra_guard
+    if trim < 0:
+        raise ValueError("BSSN geometry needs one more guard than the Yee fields")
+    return values if trim == 0 else values[..., trim:-trim, trim:-trim, trim:-trim]
+
+
+def bssn_to_tiles(values, static_parameters, *, boundary_conditions=None, extra_guard=0):
+    """Return C-node tiles, cropping local halos when geometry is already tiled.
+
+    Global input keeps its periodic or linear exterior sampling contract.
     Leading tensor indices are retained. Conducting axes include their final
     C endpoint; the tile width still counts cells, not both endpoints.
     """
+    if values.ndim >= 6:
+        return crop_bssn_halos(values, static_parameters, extra_guard=extra_guard)
+
     boundaries = (static_parameters.boundary_conditions if boundary_conditions is None
                   else boundary_conditions)
     shape = values.shape[-3:]
@@ -66,10 +112,24 @@ def tiles_to_bssn(values, static_parameters):
 
 def build_bssn_metric(state, static_parameters, dynamic_parameters):
     """Average conformal geometry to Yee sites before deriving physical tensors."""
-    W = bssn_to_tiles(state.conformal_factor, static_parameters, extra_guard=1)
-    lapse = bssn_to_tiles(state.lapse, static_parameters, extra_guard=1)
-    shift = bssn_to_tiles(state.shift, static_parameters, extra_guard=1)
-    conformal = bssn_to_tiles(state.conformal_metric, static_parameters, extra_guard=1)
+    def geometry_tiles(value):
+        if state.conformal_factor.ndim == 6:
+            from JAX_BSSN.parallel import refresh_tiled_field
+            # The established C-to-Yee exterior follows the EM domain, which
+            # can differ from the BSSN evolution boundary codes.
+            boundaries = tuple(int(bc != 0) for bc in static_parameters.boundary_conditions)
+            parameters = dynamic_parameters.bssn_parameters.evolution_parameters._replace(
+                xl_bc=boundaries[0], xr_bc=boundaries[0],
+                yl_bc=boundaries[1], yr_bc=boundaries[1],
+                zl_bc=boundaries[2], zr_bc=boundaries[2])
+            value = refresh_tiled_field(value, parameters, **bssn_tile_layout(static_parameters))
+            return crop_bssn_halos(value, static_parameters, extra_guard=1)
+        return bssn_to_tiles(value, static_parameters, extra_guard=1)
+
+    W = geometry_tiles(state.conformal_factor)
+    lapse = geometry_tiles(state.lapse)
+    shift = geometry_tiles(state.shift)
+    conformal = geometry_tiles(state.conformal_metric)
 
     def sample(location):
         # The extra halo supplies the upper neighbour of the outer metric guard.
@@ -77,12 +137,13 @@ def build_bssn_metric(state, static_parameters, dynamic_parameters):
             return location_interpolate(value, ("C", "C", "C"), location)[..., 1:-1, 1:-1, 1:-1]
 
         w = jnp.maximum(transfer(W), W_FLOOR_VALUE)
-        gamma = jnp.stack(tuple(jnp.stack(tuple(transfer(value) for value in row)) for row in conformal))
+        gamma = jnp.stack(tuple(jnp.stack(tuple(transfer(conformal[i, j]) for j in range(3)))
+                                for i in range(3)))
         gamma = jnp.moveaxis(gamma, (0, 1), (-2, -1))
         gamma = gamma * jnp.linalg.det(gamma)[..., None, None] ** (-1.0 / 3.0)
         physical = gamma / w[..., None, None] ** 2
         inverse = jnp.linalg.inv(gamma) * w[..., None, None] ** 2
-        beta = jnp.stack(tuple(transfer(value) for value in shift), axis=-1)
+        beta = jnp.stack(tuple(transfer(shift[i]) for i in range(3)), axis=-1)
         return Metric(transfer(lapse), beta, physical, inverse, w**-3)
 
     return YeeMetric(tuple(sample(location) for location in D_FIELD_LOCATIONS),
@@ -146,7 +207,12 @@ def initialize_dynamical_relativity(particles, species, fields, static_parameter
         if any(int(getattr(bssn.evolution_parameters, name)) != 0
                for name in ("xl_bc", "xr_bc", "yl_bc", "yr_bc", "zl_bc", "zr_bc")):
             raise ValueError("Matched GR filtering requires all six BSSN boundaries to be periodic")
-    state = enforce_algebraic_constraints(bssn.state)
+    if bssn.state.conformal_factor.ndim == 6:
+        from JAX_BSSN.parallel import prepare_tiled_state
+        state = prepare_tiled_state(bssn.state, bssn.evolution_parameters,
+                                    **bssn_tile_layout(static_parameters))
+    else:
+        state = enforce_algebraic_constraints(bssn.state)
     dynamic_parameters = dynamic_parameters._replace(bssn_parameters=bssn._replace(state=state))
     metric = build_bssn_metric(state, static_parameters, dynamic_parameters)
     D, B, _, rho, phi, external, _, _, overflow = fields

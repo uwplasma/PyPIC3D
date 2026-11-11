@@ -129,6 +129,26 @@ def load_external_fields_from_toml(fields, external_fields, config, static_param
         evolve = config[toml_key].get('evolve', True)
         print(f"Loading field: {field_name} from {field_path}")
 
+        if static_parameters.field_mesh.size > 1:
+            from PyPIC3D.distributed import tiled_field_from_initializer
+            from PyPIC3D.relativity.core import D_FIELD_LOCATIONS, B_FIELD_LOCATIONS
+            locations = D_FIELD_LOCATIONS + B_FIELD_LOCATIONS + D_FIELD_LOCATIONS
+            if not 0 <= field_type < len(locations):
+                raise ValueError("Distributed native field type must be 0 through 8")
+            tile = tiled_field_from_initializer(field_path, static_parameters, dynamic_parameters,
+                                                location=locations[field_type])
+            if evolve:
+                fields[field_type] = fields[field_type] + tile
+            elif field_type < 6:
+                target = list(external_E if field_type < 3 else external_B)
+                target[field_type % 3] = target[field_type % 3] + tile
+                if field_type < 3:
+                    external_E = tuple(target)
+                else:
+                    external_B = tuple(target)
+            else:
+                raise ValueError("External-only fields must be electric or magnetic components")
+            continue
         external_field = jnp.load(field_path)
 
         if not evolve and (field_type < 0 or field_type > 5):
@@ -292,5 +312,7 @@ def dump_parameters_to_toml(simulation_stats, static_parameters, dynamic_paramet
 
     config["package_versions"] = package_versions
 
-    with open(output_file, 'w') as f:
-        toml.dump(config, f)
+    # All ranks computed the scalar particle counts above; one writes metadata.
+    if jax.process_index() == 0:
+        with open(output_file, 'w') as f:
+            toml.dump(config, f)

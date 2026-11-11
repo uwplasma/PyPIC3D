@@ -45,9 +45,9 @@ def assemble_tiled_scalar_field(field_tiles, static_parameters, tile_shape, num_
     """
     Assemble compact field tiles back into one global ghost-celled field.
 
-    This is a diagnostic/output boundary.  Distributed runtime fields may be
-    sharded across devices, so gather them here before constructing the
-    ordinary global array expected by tests and file writers.
+    This compatibility helper is for serial output and test references.
+    The shared MPI writer consumes addressable tile chunks directly and
+    does not call this global assembly path.
     """
 
     field_tiles = jnp.asarray(jax.device_get(field_tiles))
@@ -91,8 +91,8 @@ def scalar_field_for_output(field, static_parameters):
     """
     Return an ordinary ghost-celled scalar field for file formats.
 
-    Runtime diagnostics can operate on tile-major arrays, but openPMD
-    mesh writers still expect one global ghost-celled array.
+    This preserves the legacy serial writer contract. The shared MPI
+    writer consumes tile-major arrays without this conversion.
     """
 
     if not _is_tiled_scalar(field):
@@ -114,6 +114,36 @@ def vector_field_for_output(field, static_parameters):
     tile_shape = _tile_shape_from_static_parameters(static_parameters)
     g = _guard_depth_from_static_parameters(static_parameters)
     return assemble_tiled_vector_field(field, static_parameters, tile_shape, num_guard_cells=g)
+
+
+def particle_three_velocity(particles, center_metric, static_parameters, dynamic_parameters):
+    """Sample the metric and convert covariant momenta on their owning tiles."""
+    from jax.sharding import PartitionSpec as P
+    from PyPIC3D.relativity.interpolate_metric import (
+        interpolate_metric, particle_active_axes, safe_inactive_positions,
+    )
+    from PyPIC3D.relativity.core import contravariant_three_velocity
+
+    g = static_parameters.guard_cells
+    active_axes = particle_active_axes(particles.active.shape[:3], static_parameters.tile_shape)
+    layout = P("tile_x", "tile_y", "tile_z")
+
+    def one_tile(x, u, active, metric, grid):
+        x, u, active = x[0, 0, 0], u[0, 0, 0], active[0, 0, 0]
+        metric = jax.tree.map(lambda a: a[0, 0, 0], metric)
+        grid = tuple(a[0, 0, 0] for a in grid)
+        x = safe_inactive_positions(x, active, grid, active_axes, g)
+        sampled = interpolate_metric(
+            metric, x, grid, static_parameters.metric, active_axes, (g, g, g), derivatives=False)
+        velocity = contravariant_three_velocity(jnp.where(active[..., None], u, 0.0), sampled.gamma_inv)
+        return jnp.where(active[..., None], velocity, 0.0)[None, None, None]
+
+    # Metric gathers stay inside a device's local tile. Indexing a global
+    # metric by vmapped tile IDs would replicate the full metric during output.
+    return jax.shard_map(one_tile, mesh=static_parameters.field_mesh,
+                         in_specs=(layout, layout, layout, layout, layout), out_specs=layout)(
+        particles.x, particles.u, particles.active, center_metric,
+        dynamic_parameters.grids.tiled_center_grid)
 
 
 def build_field_output_map(
@@ -146,17 +176,19 @@ def build_field_output_map(
         "J": J,
     }
     if dynamic_metric:
-        from PyPIC3D.relativity.dynamical_relativity import bssn_to_tiles
+        from PyPIC3D.relativity.dynamical_relativity import bssn_to_tiles, crop_bssn_halos
 
         state = dynamic_parameters.bssn_parameters.state
+        transfer = crop_bssn_halos if state.conformal_factor.ndim == 6 else bssn_to_tiles
         for name in ("conformal_factor", "trace_K", "lapse"):
-            field_map[name] = bssn_to_tiles(getattr(state, name), static_parameters)
+            field_map[name] = transfer(getattr(state, name), static_parameters)
         for name in ("conformal_connection", "shift"):
-            field_map[name] = tuple(bssn_to_tiles(v, static_parameters) for v in getattr(state, name))
+            field_map[name] = tuple(transfer(getattr(state, name)[i], static_parameters)
+                                    for i in range(3))
         for name in ("conformal_metric", "traceless_K"):
             for i in range(3):
                 for j in range(i, 3):
-                    field_map[f"{name}_{'xyz'[i]}{'xyz'[j]}"] = bssn_to_tiles(
+                    field_map[f"{name}_{'xyz'[i]}{'xyz'[j]}"] = transfer(
                         getattr(state, name)[i, j], static_parameters)
     if getattr(static_parameters, "solver", None) == "dark_matter_yee":
         from PyPIC3D.solvers.dark_matter_yee.dark_photon_fields import synchronized_dark_fields
@@ -179,31 +211,11 @@ def build_field_output_map(
     if include_fluid_velocity:
         if dynamic_metric:
             from PyPIC3D.relativity.dynamical_relativity import synchronize_particles
-            from PyPIC3D.relativity.interpolate_metric import (
-                interpolate_metric, particle_active_axes, safe_inactive_positions,
-            )
-            from PyPIC3D.relativity.core import contravariant_three_velocity
 
             particles = synchronize_particles(particles, species_config, fields,
                                                static_parameters, dynamic_parameters)
-            counts = particles.active.shape[:3]
-            g = static_parameters.guard_cells
-            active_axes = particle_active_axes(counts, static_parameters.tile_shape)
-
-            def velocity_at_particles(x, u, active, tx, ty, tz):
-                grid = tuple(a[tx, ty, tz] for a in dynamic_parameters.grids.tiled_center_grid)
-                x = safe_inactive_positions(x, active, grid, active_axes, g)
-                sampled = interpolate_metric(
-                    jax.tree.map(lambda a: a[tx, ty, tz], fields[6].center),
-                    x, grid, static_parameters.metric, active_axes, (g, g, g), derivatives=False)
-                velocity = contravariant_three_velocity(jnp.where(active[..., None], u, 0.0), sampled.gamma_inv)
-                return jnp.where(active[..., None], velocity, 0.0)
-
-            for _ in range(3):
-                velocity_at_particles = jax.vmap(velocity_at_particles)
-            indices = jnp.meshgrid(*(jnp.arange(n) for n in counts), indexing="ij")
-            particles = particles._replace(u=velocity_at_particles(
-                particles.x, particles.u, particles.active, *indices))
+            particles = particles._replace(u=particle_three_velocity(
+                particles, fields[6].center, static_parameters, dynamic_parameters))
         velocity_template = J[0]
         field_map["fluid_velocity"] = tuple(
             compute_velocity_field(

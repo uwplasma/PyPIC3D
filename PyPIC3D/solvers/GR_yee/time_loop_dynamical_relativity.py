@@ -8,6 +8,7 @@ from JAX_BSSN.evolution.time_evolve import (
 )
 from PyPIC3D.relativity.dynamical_relativity import (
     build_bssn_metric,
+    bssn_tile_layout,
     rephase_pic_state,
     synchronize_particles,
     synchronized_magnetic_field,
@@ -32,7 +33,11 @@ def time_loop_dynamical_relativity(
     The caller JITs this loop with static parameters and optional pure
     callbacks closed over. ``prescribed_gauge(state,time)`` returns lapse,
     shift, dt_lapse, dt_shift; ``gravity_boundary(state,time)`` changes only
-    BSSN boundary data. Keep dt fixed after initializing the staggered state.
+    BSSN boundary data. In tiled runs callbacks receive one padded tile and
+    ``params=local_parameters`` with its padded coordinate origin, owned_shape,
+    and owned_faces flags. Boundary callbacks must restrict physical closures
+    to those owned faces and preserve the tile array shapes. Keep dt fixed
+    after initializing the staggered state.
 
     At each RK stage, gravity sees the same midpoint positions, covariant
     momenta, and densitized EM moments through that stage's spatial metric.
@@ -43,8 +48,25 @@ def time_loop_dynamical_relativity(
     bssn = dynamic_parameters.bssn_parameters
     dt, time = dynamic_parameters.dt, bssn.time
     evolution_parameters = bssn.evolution_parameters
+    tiled = bssn.state.conformal_factor.ndim == 6
+    if tiled:
+        from JAX_BSSN.parallel import (
+            prepare_tiled_state, map_tiled, compute_tiled_bssn_rhs_with_matter,
+        )
+        layout = bssn_tile_layout(static_parameters)
 
     def prepare_geometry(state, stage_time):
+        if tiled:
+            if gravity_boundary is not None or prescribed_gauge is not None:
+                def apply_callbacks(local_state, local_parameters):
+                    if gravity_boundary is not None:
+                        local_state = gravity_boundary(local_state, stage_time, params=local_parameters)
+                    if prescribed_gauge is not None:
+                        lapse, shift, _, _ = prescribed_gauge(local_state, stage_time, params=local_parameters)
+                        local_state = local_state._replace(lapse=lapse, shift=shift)
+                    return local_state
+                state = map_tiled(apply_callbacks, state, evolution_parameters, **layout)
+            return prepare_tiled_state(state, evolution_parameters, **layout)
         if gravity_boundary is not None:
             state = gravity_boundary(state, stage_time)
         if prescribed_gauge is not None:
@@ -93,7 +115,7 @@ def time_loop_dynamical_relativity(
     midpoint_particles = synchronize_particles(
         particles, species_config, fields, static_parameters, dynamic_parameters,
     )
-    moments = electromagnetic_moments(fields[0], fields[7][2], static_parameters)
+    moments = electromagnetic_moments(fields[0], fields[7][2], static_parameters, tiled=tiled)
 
     def gravity_rhs(stage_state, stage_time):
         rho, momentum, stress = compute_energy_momentum_tensor(
@@ -101,13 +123,24 @@ def time_loop_dynamical_relativity(
             static_parameters, dynamic_parameters,
             source_filter=source_filter,
         )
-        rhs = compute_bssn_rhs_with_matter(
-            stage_state, evolution_parameters,
-            rho, momentum, stress,
-        )
+        if tiled:
+            rhs = compute_tiled_bssn_rhs_with_matter(
+                stage_state, evolution_parameters, rho, momentum, stress, **layout)
+        else:
+            rhs = compute_bssn_rhs_with_matter(
+                stage_state, evolution_parameters, rho, momentum, stress)
         if prescribed_gauge is not None:
-            _, _, lapse_dot, shift_dot = prescribed_gauge(stage_state, stage_time)
-            rhs = rhs._replace(lapse=lapse_dot, shift=shift_dot)
+            if tiled:
+                def gauge_rhs(local_values, local_parameters):
+                    local_state, local_rhs = local_values
+                    _, _, lapse_dot, shift_dot = prescribed_gauge(
+                        local_state, stage_time, params=local_parameters)
+                    return local_rhs._replace(lapse=lapse_dot, shift=shift_dot)
+                rhs = map_tiled(gauge_rhs, (stage_state, rhs), evolution_parameters,
+                                **layout, output_template=rhs)
+            else:
+                _, _, lapse_dot, shift_dot = prescribed_gauge(stage_state, stage_time)
+                rhs = rhs._replace(lapse=lapse_dot, shift=shift_dot)
         return rhs
 
     # Each intermediate geometry is projected before evaluating its sources.
