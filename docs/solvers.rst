@@ -153,6 +153,15 @@ endpoints and does not need a separate particle-metric sample.
 The sampler reconstructs lapse, shift, and the covariant spatial metric from
 ``YeeMetric.center`` using Hermite interpolation.
 
+The optional ``lapse_deleting`` particle boundary samples the native center
+lapse and deactivates particles below ``lapse_threshold``; see :doc:`particles`
+for configuration and the resulting particle-source sinks. Each static-GR
+step applies it after optional injection, before storing the old particle
+endpoint, and again after current deposition and normal boundary refresh.
+The endpoint check therefore uses the destination tile's metric. Both current
+methods retain the crossing step's final current, and deletion leaves previous
+currents and field histories intact.
+
 
 Current Deposition
 ------------------
@@ -260,6 +269,15 @@ Metric changes correct these lagged samples without redensitizing the
 common-time fields or resetting the leapfrog. This assumes smooth metric
 changes; abrupt replacement or changing ``dt`` requires a new initialization.
 
+With ``lapse_deleting = true``, both PIC half-steps use the static-GR checks.
+Dynamic initialization deletes particles before initial current deposition and
+momentum seeding, including when called directly. After a committed metric
+change, ``rephase_pic_state`` applies deletion against the new native lapse
+before momentum synchronization or generator evaluation. Any supplied
+synchronized-particle active mask is intersected with the surviving mask.
+Midpoint positions, momenta, and active masks remain fixed throughout the BSSN
+RK4 stages; intermediate stage lapses do not delete particles.
+
 Output includes the BSSN fields and physical common-time D/B. The existing
 ``E`` mesh name denotes the physical contravariant displacement as in the
 static GR solver. Particle output synchronizes momentum to the position time.
@@ -275,5 +293,6 @@ Generic EM-only runs retain conducting and constant exterior boundaries and
 reference sponges. ``make_reference_sponge`` in
 ``boundary_conditions/reference_sponge.py`` accepts fixed native D/B reference
 arrays, the static and dynamic parameters, and a coordinate ``width``. All
-particle boundary conditions remain periodic in this first coupling.
+particle box boundaries remain periodic in this first coupling; the optional
+``lapse_deleting`` interior boundary can be used alongside them.
 Charged-black-hole setup, old checkpoints, and their migration are deferred.

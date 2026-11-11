@@ -1,6 +1,7 @@
 import jax
 import jax.numpy as jnp
 
+from PyPIC3D.boundary_conditions.lapse_deleting import lapse_deleting
 from PyPIC3D.deposition.GR_direct_deposition import GR_direct_deposition
 from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.diagnostics.static_metric import step_diagnostics
@@ -80,6 +81,10 @@ def time_loop_static_metric(
     D_n, B_n_minushalf, J_n_minushalf, rho, phi, external_fields, metric, previous_fields, overflow_previous = fields
     # unpack the fixed-metric field state
 
+    particles = lapse_deleting(particles, metric, static_parameters, dynamic_parameters)
+    # Remove particles already below the lapse threshold before gathering
+    # forces, while retaining the current from the previous physical step.
+
     d_absorber, b_absorber = (None, None) if absorber is None else absorber
 
     D_n_minusone, B_n_minusthreehalves = previous_fields
@@ -149,6 +154,9 @@ def time_loop_static_metric(
             static_parameters,
             dynamic_parameters,
         )
+        particles = lapse_deleting(particles, metric, static_parameters, dynamic_parameters)
+        # The completed trajectory has deposited its current. Test the final
+        # position in its owning tile before the next particle push.
     overflow = overflow_previous | centered_overflow | fullstep_overflow
     # apply boundaries and restore full-step tile ownership for the next push while preserving all overflow events
 

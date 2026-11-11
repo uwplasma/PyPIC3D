@@ -141,6 +141,28 @@ Supported values are:
 Inactive particles retain allocated slots for static JAX shapes but no longer
 move, push, deposit, or contribute to particle diagnostics.
 
+Lapse Deletion
+~~~~~~~~~~~~~~
+
+The ``static_metric`` and ``dynamic_metric`` solvers support an additional
+interior boundary that removes particles in regions of small lapse:
+
+.. code-block:: toml
+
+   [simulation_parameters]
+   lapse_deleting = true
+   lapse_threshold = 0.1
+
+``lapse_deleting`` defaults to ``false`` and ``lapse_threshold`` defaults to
+``0.1``. The threshold must be finite and positive. Enabling this boundary for
+other solvers is an error. It applies to every species, including stationary
+and neutral particles, independently of the three box-boundary settings.
+Dynamic-metric PIC still requires periodic box boundaries.
+
+A particle becomes inactive when the cubic Hermite interpolant of the native
+``metric.center.lapse`` at its position satisfies
+:math:`\alpha < \mathtt{lapse\_threshold}`. Equality survives.
+
 Tiled Particle State
 --------------------
 

@@ -5,6 +5,7 @@ import jax.numpy as jnp
 
 from JAX_BSSN.bssn.geometry import W_FLOOR_VALUE
 from JAX_BSSN.evolution.time_evolve import enforce_algebraic_constraints
+from PyPIC3D.boundary_conditions.lapse_deleting import lapse_deleting
 from PyPIC3D.boundary_conditions.staggered import refresh_fields
 from PyPIC3D.deposition.GR_direct_deposition import GR_direct_deposition
 from PyPIC3D.pusher.hybrid_boris_geodesic import hybrid_boris_geodesic_push
@@ -215,6 +216,8 @@ def initialize_dynamical_relativity(particles, species, fields, static_parameter
         state = enforce_algebraic_constraints(bssn.state)
     dynamic_parameters = dynamic_parameters._replace(bssn_parameters=bssn._replace(state=state))
     metric = build_bssn_metric(state, static_parameters, dynamic_parameters)
+    particles = lapse_deleting(particles, metric, static_parameters, dynamic_parameters)
+    # Initial sources and the backward momentum seed use only retained matter.
     D, B, _, rho, phi, external, _, _, overflow = fields
     D = densitize_vector(D, metric.D)
     B = densitize_vector(B, metric.B)
@@ -263,8 +266,15 @@ def rephase_pic_state(particles, species, fields, new_metric, static_parameters,
     previous_D, previous_B, common_B, h, absorber = history
     da, ba = (None, None) if absorber is None else absorber
     native_parameters = dynamic_parameters._replace(dt=h)
+    particles = lapse_deleting(particles, new_metric, static_parameters, dynamic_parameters)
+    # A committed geometry change can cross the lapse threshold without a
+    # position update. Mask before synchronizing with the old generator.
     common_particles = (synchronize_particles(particles, species, fields, static_parameters, dynamic_parameters)
                         if synchronized_particles is None else synchronized_particles)
+    if static_parameters.lapse_deleting:
+        common_particles = common_particles._replace(active=common_particles.active & particles.active)
+        # Supplied midpoint momenta predate the metric switch and may contain
+        # particles removed by its new lapse or by an earlier boundary event.
     zero = tuple(jnp.zeros_like(value) for value in D)
     generators = []
     for metric in (old_metric, new_metric):

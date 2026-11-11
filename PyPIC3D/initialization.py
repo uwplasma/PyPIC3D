@@ -41,6 +41,7 @@ from PyPIC3D.boundary_conditions.ghost_cells import (
     update_tiled_ghost_cells,
 )
 from PyPIC3D.boundary_conditions.staggered import refresh_fields
+from PyPIC3D.boundary_conditions.lapse_deleting import lapse_deleting
 from PyPIC3D.solvers.electrostatic.time_loop import time_loop_electrostatic
 from PyPIC3D.solvers.GR_yee.time_loop import time_loop_static_metric
 from PyPIC3D.solvers.yee.time_loop import time_loop_electrodynamic
@@ -385,6 +386,8 @@ def default_parameters():
         "particle_x_bc": "periodic",
         "particle_y_bc": "periodic",
         "particle_z_bc": "periodic",
+        "lapse_deleting": False,
+        "lapse_threshold": 0.1,
         "x_bc": "periodic",
         "y_bc": "periodic",
         "z_bc": "periodic",
@@ -719,6 +722,9 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
         )
     static_parameters = static_parameters._replace(particle_batch_size=effective_batch_size)
     particles = shard_tiled_particles(particles, static_parameters)
+    if static_parameters.lapse_deleting:
+        # Initial output and leapfrog histories must use the surviving ensemble.
+        particles = lapse_deleting(particles, metric, static_parameters, dynamic_parameters)
     plotting_parameters = {
         **plotting_parameters,
         "particle_species_names": particle_species_names,
