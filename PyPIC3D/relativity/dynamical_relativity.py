@@ -5,6 +5,7 @@ import jax.numpy as jnp
 
 from JAX_BSSN.bssn.geometry import W_FLOOR_VALUE
 from JAX_BSSN.evolution.time_evolve import enforce_algebraic_constraints
+from PyPIC3D.boundary_conditions.grid_and_stencil import BC_ABSORBING, BC_CONSTANT, BC_PERIODIC
 from PyPIC3D.boundary_conditions.lapse_deleting import lapse_deleting
 from PyPIC3D.boundary_conditions.staggered import refresh_fields
 from PyPIC3D.deposition.GR_direct_deposition import GR_direct_deposition
@@ -192,9 +193,15 @@ def initialize_dynamical_relativity(particles, species, fields, static_parameter
     """
     if any(bool(jnp.any(value != 0)) for vector in fields[5] for value in vector):
         raise ValueError("Dynamical relativity does not support prescribed external fields")
-    if particles.active.size and any(bc != 0 for bc in (
+    if particles.active.size and any(bc != BC_PERIODIC for bc in (
             static_parameters.boundary_conditions + static_parameters.particle_boundary_conditions)):
-        raise ValueError("Dynamical PIC currently requires periodic field and particle boundaries")
+        if not bool(jnp.all(species.charge == 0)):
+            raise ValueError("Nonperiodic dynamical PIC requires exactly neutral particle species")
+        if (any(bc not in (BC_PERIODIC, BC_CONSTANT) for bc in static_parameters.boundary_conditions)
+                or any(bc not in (BC_PERIODIC, BC_ABSORBING)
+                       for bc in static_parameters.particle_boundary_conditions)):
+            raise ValueError("Neutral dynamical PIC requires periodic/constant field boundaries "
+                             "and periodic/absorbing particle boundaries")
     if static_parameters.pml_active:
         raise ValueError("Dynamical relativity does not support PML")
     if static_parameters.metric not in ("numerical", "flat_cartesian"):
