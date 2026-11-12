@@ -27,10 +27,24 @@ def main():
     parser.add_argument("--directory", required=True)
     parser.add_argument("--fail-rank", type=int, default=-1)
     parser.add_argument("--local-devices", type=int, default=int(os.environ.get("JAX_NUM_CPU_DEVICES", "1")))
+    parser.add_argument("--require-gpu", action="store_true",
+                        help="Fail if JAX uses a CPU backend instead of the assigned GPUs.")
     args = parser.parse_args()
     comm = MPI.COMM_WORLD
     assert comm.size == jax.process_count() == 2
     assert jax.local_device_count() == args.local_devices
+    local_devices = jax.local_devices()
+    if args.require_gpu:
+        assert all(device.platform == "gpu" for device in local_devices), \
+            f"--require-gpu requires GPU devices; JAX selected {local_devices}"
+    device_info = [(device.id, device.local_hardware_id, device.platform, device.device_kind)
+                   for device in local_devices]
+    print(f"MPI_SHARD_START rank={comm.rank} host={MPI.Get_processor_name()} "
+          f"jax_process={jax.process_index()}/{jax.process_count()} "
+          f"devices(id,local_hardware_id,platform,kind)={device_info} "
+          f"CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES', 'unset')} "
+          f"jax={jax.__version__} openpmd={io.__version__} openpmd_mpi={io.variants.get('mpi', False)}",
+          flush=True)
     ntiles = jax.device_count()
     static, dynamic = kernel_parameters(
         Nx=4*ntiles, Ny=1, Nz=4, x_wind=2*ntiles, y_wind=1., z_wind=2.,
@@ -69,6 +83,10 @@ def main():
     )
     assert not particles.x.is_fully_addressable
     assert len(particles.x.addressable_shards) == args.local_devices
+    print(f"MPI_SHARD_ARRAYS rank={comm.rank} global_tiles={ntiles} "
+          f"field_devices={[str(shard.device) for shard in field.addressable_shards]} "
+          f"particle_devices={[str(shard.device) for shard in particles.x.addressable_shards]}",
+          flush=True)
     # Reject full simulation-array transfers; tiny replicated species metadata is allowed.
     device_get = jax.device_get
     def local_device_get(value):
@@ -76,6 +94,7 @@ def main():
             raise AssertionError("output transferred a global distributed array")
         return device_get(value)
 
+    field_reads = [(os.path.join(args.directory, "data", "initial_fields", "initial_fields.h5"), 0, field)]
     with patch("jax.device_get", side_effect=local_device_get):
         initial = make_tiled_particle_snapshot(particles, step=0, time=0., species_names=names,
                                                species_config=species, initial=True)
@@ -110,14 +129,36 @@ def main():
             folder = os.path.join(args.directory, mode)
             for step in range(2):
                 if mode != "particles":
-                    snapshot = make_tiled_field_snapshot({"rho": field+step}, step=step, time=step*dynamic.dt)
+                    output_field = field+step
+                    snapshot = make_tiled_field_snapshot({"rho": output_field}, step=step, time=step*dynamic.dt)
                     write_tiled_field_snapshot_openpmd(snapshot, output_dir=folder, filename="fields",
                         dynamic_parameters=dynamic, layout=layout, file_extension=".h5", comm=comm)
+                    field_reads.append((os.path.join(folder, "fields.h5"), step, output_field))
                 if mode != "fields":
                     snapshot = replace(initial, step=step, time=step*float(dynamic.dt), initial=False)
                     write_tiled_particle_snapshot_openpmd(snapshot, output_dir=folder, filename="particles",
                         static_parameters=static, dynamic_parameters=dynamic, file_extension=".h5", comm=comm)
 
+    comm.Barrier()
+    # Exact I/O fidelity is checked against the arrays actually submitted to
+    # the writer. Each rank reads only its own tile interiors, without a gather.
+    for path, step, source in field_reads:
+        series = io.Series(path, io.Access.read_only)
+        record = series.iterations[step].meshes["rho"][io.Mesh_Record_Component.SCALAR]
+        pending = []
+        for shard in source.addressable_shards:
+            offset = [(part.start or 0)*width for part, width in zip(shard.index[:3], static.tile_shape)]
+            data = record.load_chunk(offset, list(static.tile_shape))
+            g = static.guard_cells
+            expected = shard.data[(0, 0, 0) + tuple(slice(g, g+width) for width in static.tile_shape)]
+            pending.append((data, expected))
+        series.flush()
+        for data, expected in pending:
+            assert bool(jnp.array_equal(jnp.asarray(data), expected)), \
+                f"Field readback changed source values: rank={comm.rank}, step={step}, path={path}"
+        series.close()
+    print(f"MPI_SHARD_EXACT rank={comm.rank} field_snapshots={len(field_reads)} "
+          f"local_tiles={args.local_devices} bitwise_readback=passed", flush=True)
     comm.Barrier()
     if comm.rank == 0:
         x = -ntiles + .5*jnp.arange(4*ntiles)
@@ -136,7 +177,9 @@ def main():
         assert tuple(record.shape) == layout.global_shape
         data = record.load_chunk()
         series.flush()
-        assert bool(jnp.array_equal(jnp.asarray(data), field_reference))
+        # GPU coordinate construction can differ from the independent analytic
+        # grid by float64 roundoff; source-to-file equality is checked above.
+        assert bool(jnp.allclose(jnp.asarray(data), field_reference, rtol=0, atol=1.e-14))
         series.close()
         for mode in ("fields", "particles", "both"):
             folder = os.path.join(args.directory, mode)
@@ -156,7 +199,7 @@ def main():
                         assert tuple(record.shape) == layout.global_shape
                         data = record.load_chunk()
                         series.flush()
-                        assert bool(jnp.array_equal(jnp.asarray(data), field_reference+step))
+                        assert bool(jnp.allclose(jnp.asarray(data), field_reference+step, rtol=0, atol=1.e-14))
                     else:
                         for name, expected in zip(names, particle_reference):
                             group = iteration.particles[name.replace(" ", "_")]
