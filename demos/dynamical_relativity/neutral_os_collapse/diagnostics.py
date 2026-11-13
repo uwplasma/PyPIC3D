@@ -79,6 +79,17 @@ def radial_derivative(field, dr):
     return derivative
 
 
+def outward_branch(R):
+    """First index of the outermost monotonically increasing run of R.
+
+    The ray includes r=0, where R = r*sqrt(gamma_T) vanishes identically, so
+    ``argmin(R)`` is always zero and cannot locate a trumpet throat. Start
+    instead at the last radius that failed to increase: inside it R is not an
+    invertible areal coordinate and the exterior branch does not apply.
+    """
+    return jnp.max(jnp.where(R[1:] <= R[:-1], jnp.arange(1, R.size), 0))
+
+
 def reconstruct_metric(fields):
     """Return R, stationary g_RR, g_tt and their numerical exterior mask.
 
@@ -96,7 +107,7 @@ def reconstruct_metric(fields):
     beta_r = gamma_rr * beta
     D = alpha**2 - beta_r * beta
     g_RR = (gamma_rr + beta_r**2 / D) / dR_dr**2
-    outward = jnp.arange(r.size) >= jnp.maximum(2, jnp.argmin(R))
+    outward = jnp.arange(r.size) >= jnp.maximum(2, outward_branch(R))
     # A horizon can leave a tiny positive D through cancellation. Do not turn
     # roundoff at its pole into an enormous apparently valid metric sample.
     resolved_D = 32*jnp.finfo(D.dtype).eps * (alpha**2 + jnp.abs(beta_r * beta))

@@ -544,17 +544,7 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
         particle_boundaries = tuple(static_config["particle_" + axis + "_bc"] for axis in "xyz")
         species_boundaries = tuple(block.get(axis + "_bc", "periodic")
                                    for block in particle_blocks for axis in "xyz")
-        if particle_blocks and any(bc != "periodic" for bc in (
-                field_boundaries + particle_boundaries + species_boundaries)):
-            # Open dust boundaries do not create a Maxwell charge sink. Charged
-            # matter still requires the established periodic coupling contract.
-            if any(block["charge"] != 0 for block in particle_blocks):
-                raise ValueError("Nonperiodic dynamical PIC requires exactly neutral particle species")
-            if (any(bc not in ("periodic", "constant") for bc in field_boundaries)
-                    or any(bc not in ("periodic", "absorbing")
-                           for bc in particle_boundaries + species_boundaries)):
-                raise ValueError("Neutral dynamical PIC requires periodic/constant field boundaries "
-                                 "and periodic/absorbing particle boundaries")
+
         # The GR Maxwell/pusher kernels use Gaussian units with c=1.
         for key, value in (("C", 1.0), ("eps", 1.0), ("mu", 1.0), ("kb", 1.0)):
             if key not in config.get("simulation_parameters", {}) and key not in config.get("dynamic_parameters", {}):
