@@ -1,0 +1,142 @@
+# Run initial_metric.py, initial_data.py, then PyPIC3D --config charged_star.toml.
+# Lapse deletion removes charge without correcting fields.
+# Geometrized Gaussian units: G=c=1, total Q=sum(q*weight).
+# Star: prescribed ADM M=1, initial areal surface R=10.
+# Keep the mesh and calibrated species values synchronized with both initializers.
+# A 150M run saves 150 snapshots (roughly 14 GB); this is a demo resolution.
+# Constant Maxwell halos are not an isolated-radiation boundary condition.
+
+
+
+[simulation_parameters]
+name = "charged_stellar_collapse"
+solver = "dynamic_metric"
+metric = "numerical"
+output_dir = "outputs"
+
+Nx = 64
+Ny = 64
+Nz = 64
+
+x_min = -16.0
+x_max = 16.0
+y_min = -16.0
+y_max = 16.0
+z_min = -16.0
+z_max = 16.0
+x_wind = 32.0
+y_wind = 32.0
+z_wind = 32.0
+
+
+dt = 0.05
+t_wind = 150.0
+
+
+
+particle_tile_nx = 64
+particle_tile_ny = 64
+particle_tile_nz = 64
+particle_tile_capacity_factor = 1.0
+particle_batch_size = 8192
+
+
+x_bc = "constant"
+y_bc = "constant"
+z_bc = "constant"
+particle_x_bc = "absorbing"
+particle_y_bc = "absorbing"
+particle_z_bc = "absorbing"
+
+
+C = 1.0
+eps = 1.0
+mu = 1.0
+kb = 1.0
+
+relativistic = true
+particle_pusher = "hybrid_boris_geodesic"
+current_calculation = "GR_direct_deposition"
+filter_j = "none"
+shape_factor = 2
+guard_cells = 3
+metric_backreaction = true
+lapse_deleting = true
+lapse_threshold = 0.1
+verbose = false
+
+[plotting]
+
+
+plotting_interval = 20
+plot_openpmd_fields = true
+plot_openpmd_particles = true
+plotchargedensity = true
+dump_fields = true
+dump_particles = true
+
+[metric]
+
+
+conformal_metric = "initial_data/conformal_metric.npy"
+conformal_factor = "initial_data/conformal_factor.npy"
+lapse = "initial_data/lapse.npy"
+
+traceless_K = false
+trace_K = false
+conformal_connection = false
+shift = false
+time = 0.0
+
+
+gauge = "1+log"
+zero_shift = false
+eta = 2.0
+g = 0.75
+kappa = 0.0
+nu = 0.002
+
+xl_bc = "sommerfeld"
+xr_bc = "sommerfeld"
+yl_bc = "sommerfeld"
+yr_bc = "sommerfeld"
+zl_bc = "sommerfeld"
+zr_bc = "sommerfeld"
+
+[particle1]
+name = "charged_dust"
+N_particles = 262144
+charge = 0.2
+mass = 0.99711270936837326
+
+weight = 4.0718187428556398e-06
+x_bc = "absorbing"
+y_bc = "absorbing"
+z_bc = "absorbing"
+update_x = true
+update_y = true
+update_z = true
+initial_x = "initial_data/charged_dust_initial_x.npy"
+initial_y = "initial_data/charged_dust_initial_y.npy"
+initial_z = "initial_data/charged_dust_initial_z.npy"
+initial_vx = "initial_data/charged_dust_initial_vx.npy"
+initial_vy = "initial_data/charged_dust_initial_vy.npy"
+initial_vz = "initial_data/charged_dust_initial_vz.npy"
+
+[field1]
+name = "D_x"
+type = 0
+path = "initial_data/physical_D_x.npy"
+evolve = true
+
+[field2]
+name = "D_y"
+type = 1
+path = "initial_data/physical_D_y.npy"
+evolve = true
+
+[field3]
+name = "D_z"
+type = 2
+path = "initial_data/physical_D_z.npy"
+evolve = true
