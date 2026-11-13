@@ -13,13 +13,13 @@ def initial_positions(n, length):
     return x
 
 def initial_velocities(n, beam_speed, vth, seed=42):
-    """Mirrored thermal velocities with a common current seed."""
+    """Counterstreaming beams with mirrored thermal velocities."""
     rng = np.random.default_rng(seed)
     thermal = rng.normal(0.0, vth, (n, 3))
     thermal -= thermal.mean(axis=0)
     forward, backward = thermal.copy(), -thermal.copy()
     forward[:, 0] += beam_speed
-    backward[:, 0] += beam_speed
+    backward[:, 0] -= beam_speed
     return forward, backward
 
 def initial_data(n, length, beam_speed, electron_vth, ion_vth):
@@ -66,19 +66,18 @@ if __name__ == "__main__":
         n, x_wind, beam_speed, electron_vth, ion_vth)
     # define the initial positions and velocities for the two electron beams and the ions
 
-    np.save(Path(config["particle1"]["initial_x"]), electron1_x)
-    np.save(Path(config["particle1"]["initial_vx"]), electron1_v[:, 0])
-    np.save(Path(config["particle1"]["initial_vy"]), electron1_v[:, 1])
-    np.save(Path(config["particle1"]["initial_vz"]), electron1_v[:, 2])
-    np.save(Path(config["particle2"]["initial_x"]), electron2_x)
-    np.save(Path(config["particle2"]["initial_vx"]), electron2_v[:, 0])
-    np.save(Path(config["particle2"]["initial_vy"]), electron2_v[:, 1])
-    np.save(Path(config["particle2"]["initial_vz"]), electron2_v[:, 2])
-    np.save(Path(config["particle3"]["initial_x"]), ion1_x)
-    np.save(Path(config["particle3"]["initial_vx"]), ion1_v[:, 0])
-    np.save(Path(config["particle3"]["initial_vy"]), ion1_v[:, 1])
-    np.save(Path(config["particle3"]["initial_vz"]), ion1_v[:, 2])
-    # save the initial data
+    for species, positions, velocities in (
+        ("particle1", electron1_x, electron1_v),
+        ("particle2", electron2_x, electron2_v),
+        ("particle3", ion1_x, ion1_v),
+    ):
+        for axis, component in enumerate("xyz"):
+            for name, values in ((f"initial_{component}", positions[:, axis]),
+                                 (f"initial_v{component}", velocities[:, axis])):
+                path = Path(config[species][name])
+                path.parent.mkdir(parents=True, exist_ok=True)
+                np.save(path, values)
+    # The native loader reads one one-dimensional array per component.
 
     electron_plasma_frequency = np.sqrt(
         4 * np.pi * config["particle1"]["charge"] ** 2 * n / config["simulation_parameters"]["x_wind"] ** 3 / config["particle1"]["mass"])
