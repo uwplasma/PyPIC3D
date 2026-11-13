@@ -227,23 +227,45 @@ At ``plotting_interval`` cadence, the driver appends:
 - ``kinetic_energy.txt``
 - ``total_momentum.txt``
 
-Set ``plot_openpmd_fields = true`` or
-``plot_openpmd_particles = true`` for asynchronous runtime output. The 
-number of openPMD files is limited by ``openpmd_field_queue_size`` and
-``openpmd_particle_queue_size``. The queue sizes determine how many 
-snapshots are retained in memory before being written to disk. If the queue
-sizes are too small, the simulation may stall while waiting for disk writes to
-complete. If the queue sizes are too large, the simulation may run out of memory.
+Set ``plot_openpmd_fields = true`` to write ``data/fields.h5`` and
+``plot_openpmd_particles = true`` to write ``data/particles.h5``. Writers copy
+only addressable device shards and store their chunks at global offsets,
+without assembling full field or particle arrays. A single-process run uses
+bounded asynchronous queues, including when it spans several devices.
+``openpmd_field_queue_size`` and ``openpmd_particle_queue_size`` limit pending
+host snapshots, not the number of output files. A full queue waits for disk
+writes; larger queues retain more host memory.
+
+Multiprocess output uses those same chunk writers synchronously on the main
+thread with an MPI-enabled openPMD/parallel-HDF5 installation. Queue-size
+settings do not apply to that path. Only particle-count metadata is exchanged
+to assign global particle offsets, and ranks with empty particle chunks still
+participate in collective writes. Missing MPI output support fails early;
+rank-local output failures abort the communicator rather than leaving peers
+waiting. Multiprocess simulation initialization currently supports
+``dynamic_metric`` only; see the distributed Cartesian guide for launch and
+validation commands.
 
 Each snapshot is identified by its simulation step number, so openPMD iteration
 IDs are spaced by ``plotting_interval`` rather than numbered consecutively.
+Record time offsets retain the solver's existing time-centering conventions.
+Every mesh component has shape ``(Nx, Ny, Nz)`` with singleton axes preserved,
+including at mixed periodic/conducting boundaries. Staggering is recorded in
+component positions. Ordinary openPMD readers need no extent-verification
+override.
 
 Field output contains ``E``, ``B``, and ``J``. ``plotchargedensity = true``
 deposits the scalar charge-density mesh ``rho`` from the current particle
 positions, and ``plotvelocities = true`` adds the particle-weighted vector mesh
-``fluid_velocity``. ``dump_fields`` and ``dump_particles`` write initial-state
-openPMD files during initialization. Final run parameters, species metadata,
-and timing statistics are written to ``data/output.toml``.
+``fluid_velocity``. ``dump_fields`` writes
+``data/initial_fields/initial_fields.h5``, and ``dump_particles`` writes
+``data/initial_particles/<species>_initial_particles.h5`` during initialization,
+including runs with ``Nt = 0``. Initial particle dumps retain the configured
+positions and velocities before leapfrog seeding, with no diagnostic half-step
+position shift. Initial histogram plots in single-process runs accumulate
+50-bin counts from local shards and retain the existing image names and limits.
+Final run parameters, species metadata, and timing statistics are written to
+``data/output.toml``. These diagnostics are not complete restart checkpoints.
 
 Dark Photon Initial Data
 ------------------------

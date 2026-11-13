@@ -30,17 +30,18 @@ from PyPIC3D.utilities.grids import (
     build_tiled_yee_grids,
     build_yee_grid,
 )
-from PyPIC3D.diagnostics.output_adapters import build_field_output_map, particles_for_output
+from PyPIC3D.diagnostics.output_adapters import build_field_output_map
 from PyPIC3D.diagnostics.openPMD import (
     write_openpmd_initial_fields,
     write_openpmd_initial_particles,
 )
-from PyPIC3D.diagnostics.plotting import plot_initial_histograms
+from PyPIC3D.diagnostics.plotting import plot_initial_tiled_histograms
 from PyPIC3D.boundary_conditions.ghost_cells import (
     apply_tiled_pec_boundary,
     update_tiled_ghost_cells,
 )
 from PyPIC3D.boundary_conditions.staggered import refresh_fields
+from PyPIC3D.boundary_conditions.lapse_deleting import lapse_deleting
 from PyPIC3D.solvers.electrostatic.time_loop import time_loop_electrostatic
 from PyPIC3D.solvers.GR_yee.time_loop import time_loop_static_metric
 from PyPIC3D.solvers.yee.time_loop import time_loop_electrodynamic
@@ -267,8 +268,8 @@ def _resolve_particle_batch_size(
         resolved = min(int(requested_batch_size), tile_capacity)
         return resolved, f"explicit request {int(requested_batch_size)}, tile capacity {tile_capacity}"
 
-    active = jnp.asarray(jax.device_get(particles.active), dtype=bool)
-    active_per_tile = jnp.count_nonzero(active, axis=(-2, -1))
+    # Only the maximum occupancy crosses processes; never fetch the global mask.
+    active_per_tile = jnp.count_nonzero(particles.active, axis=(-2, -1))
     max_active_per_tile = int(jnp.max(active_per_tile)) if active_per_tile.size else 0
     tile_count = int(active_per_tile.size)
 
@@ -303,6 +304,10 @@ def _resolve_particle_batch_size(
         )
 
     resolved = max(1, min(max_active_per_tile, compute_target, tile_capacity))
+    if jax.process_count() > 1:
+        from mpi4py import MPI
+        # One static batch shape is required even on differently sized hosts.
+        resolved = MPI.COMM_WORLD.allreduce(resolved, op=MPI.MIN)
     return resolved, reason
 
 
@@ -381,6 +386,8 @@ def default_parameters():
         "particle_x_bc": "periodic",
         "particle_y_bc": "periodic",
         "particle_z_bc": "periodic",
+        "lapse_deleting": False,
+        "lapse_threshold": 0.1,
         "x_bc": "periodic",
         "y_bc": "periodic",
         "z_bc": "periodic",
@@ -470,10 +477,11 @@ def build_static_metric_state(static_parameters, dynamic_parameters):
 
 def setup_write_dir(static_config, plotting_parameters):
     output_dir = static_config["output_dir"]
-    make_dir(f"{output_dir}/data")
+    os.makedirs(f"{output_dir}/data", exist_ok=True)
 
 
-def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_parameters=None):
+def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_parameters=None,
+                          field_initializers=None):
     """
     Initialize particles, fields, grids, and the timestep loop from split parameters.
     """
@@ -499,6 +507,16 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
     dynamic_metric = solver == "dynamic_metric"
     gr_metric = static_metric or dynamic_metric
     dark_matter = solver == "dark_matter_yee"
+    distributed = jax.process_count() > 1
+    from PyPIC3D.distributed import mpi_communicator
+    comm = mpi_communicator()
+    if distributed and not dynamic_metric:
+        raise ValueError("Multiprocess initialization currently supports solver='dynamic_metric'")
+    if distributed and any(bool(plotting_parameters[name]) for name in
+                           ("plot_openpmd_fields", "plot_openpmd_particles", "dump_fields", "dump_particles")):
+        import openpmd_api as io
+        if not io.variants.get("mpi", False):
+            raise RuntimeError("Shared distributed output requires MPI-enabled openpmd-api and parallel HDF5")
     if "metric" in config and not dynamic_metric:
         raise ValueError("[metric] initialization requires solver='dynamic_metric'")
     if static_metric:
@@ -521,8 +539,12 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
                 raise ValueError("dynamic_metric requires common-time D/B; previous_field history is seeded internally")
             if key.startswith("field") and block.get("type") in (6, 7, 8):
                 raise ValueError("dynamic_metric seeds current from common-time particles; initial J field files are unsupported")
-            if key.startswith("particle") and any(block.get(axis + "_bc", "periodic") != "periodic" for axis in "xyz"):
-                raise ValueError("dynamic_metric particle species require periodic boundaries")
+        particle_blocks = tuple(block for key, block in config.items() if key.startswith("particle"))
+        field_boundaries = tuple(static_config[axis + "_bc"] for axis in "xyz")
+        particle_boundaries = tuple(static_config["particle_" + axis + "_bc"] for axis in "xyz")
+        species_boundaries = tuple(block.get(axis + "_bc", "periodic")
+                                   for block in particle_blocks for axis in "xyz")
+
         # The GR Maxwell/pusher kernels use Gaussian units with c=1.
         for key, value in (("C", 1.0), ("eps", 1.0), ("mu", 1.0), ("kb", 1.0)):
             if key not in config.get("simulation_parameters", {}) and key not in config.get("dynamic_parameters", {}):
@@ -704,26 +726,21 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
         )
     static_parameters = static_parameters._replace(particle_batch_size=effective_batch_size)
     particles = shard_tiled_particles(particles, static_parameters)
+    if static_parameters.lapse_deleting:
+        # Initial output and leapfrog histories must use the surviving ensemble.
+        particles = lapse_deleting(particles, metric, static_parameters, dynamic_parameters)
     plotting_parameters = {
         **plotting_parameters,
         "particle_species_names": particle_species_names,
         "particle_species_metadata": particle_metadata,
     }
 
-    initial_particle_records = particles_for_output(
-        particles,
-        species_config=species_config,
-        species_names=particle_species_names,
-    )
     # positions and velocities are both at t=0 here (before the leapfrog seed),
     # so the histograms use the stored positions without a half-step shift
-    for particle_record in initial_particle_records:
-        name = particle_record.name.replace(" ", "_")
-        plot_initial_histograms(
-            particle_record,
-            dynamic_parameters,
+    if not distributed:
+        plot_initial_tiled_histograms(
+            particles, particle_species_names, dynamic_parameters,
             path=f"{static_parameters.output_dir}/data",
-            name=name,
         )
 
     print_stats(static_parameters, dynamic_parameters)
@@ -733,7 +750,8 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
     else:
         plasma_parameters = {}
 
-    particle_sanity_check(particles)
+    if not distributed:
+        particle_sanity_check(particles)
 
     if plotting_parameters["dump_particles"]:
         write_openpmd_initial_particles(
@@ -744,6 +762,7 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
             species_config=species_config,
             species_names=particle_species_names,
             metric=metric,
+            comm=comm,
         )
 
     E, B, J, phi, rho = initialize_fields(static_parameters, dynamic_parameters)
@@ -761,6 +780,15 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
         dynamic_parameters,
     )
     E, B, J = field_components[:3], field_components[3:6], field_components[6:9]
+    if field_initializers:
+        from PyPIC3D.distributed import tiled_field_from_initializer
+        components = list(E) + list(B)
+        names = ("Ex", "Ey", "Ez", "Bx", "By", "Bz")
+        for index, (name, location) in enumerate(zip(names, D_FIELD_LOCATIONS + B_FIELD_LOCATIONS)):
+            if name in field_initializers:
+                components[index] = tiled_field_from_initializer(
+                    field_initializers[name], static_parameters, dynamic_parameters, location=location)
+        E, B = components[:3], components[3:]
 
     static_metric_state = None
     if static_metric:
@@ -928,6 +956,7 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
             dynamic_parameters,
             static_parameters.output_dir,
             filename="initial_fields.h5",
+            comm=comm,
         )
 
     return (
@@ -956,7 +985,15 @@ def build_tiled_array(static_parameters, dynamic_parameters, dtype=jnp.float64):
     nty = Ny // tile_ny
     ntz = Nz // tile_nz
     tiled_shape = (ntx, nty, ntz, tile_nx + 2 * g, tile_ny + 2 * g, tile_nz + 2 * g)
-    return jnp.zeros(shape=tiled_shape, dtype=dtype)
+    import numpy as np
+    from jax.sharding import NamedSharding
+    from PyPIC3D.boundary_conditions.ghost_cells import SCALAR_TILE_SPEC
+    sharding = NamedSharding(static_parameters.field_mesh, SCALAR_TILE_SPEC)
+    return jax.make_array_from_callback(
+        tiled_shape, sharding,
+        lambda index: np.zeros(tuple((part.stop if part.stop is not None else n)
+                                    - (part.start or 0) for part, n in zip(index, tiled_shape)), dtype=dtype),
+        dtype=dtype)
 
 
 def initialize_fields(static_parameters, dynamic_parameters):

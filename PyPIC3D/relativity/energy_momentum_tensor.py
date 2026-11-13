@@ -1,6 +1,6 @@
 """Eulerian PIC and electromagnetic sources for the BSSN equations.
 
-The returned tuple is ``(rho, S_i, S_ij)`` on the global BSSN grid, with
+The returned tuple is ``(rho, S_i, S_ij)`` on the BSSN C nodes, with
 component axes first. These are physical densities, including particle rest
 mass, in geometrized Gaussian units with G=c=1. BSSN receives them unscaled:
 both codes share one Cartesian chart and one unit system, so no conversion
@@ -14,6 +14,7 @@ from itertools import product
 
 import jax
 import jax.numpy as jnp
+from jax.sharding import PartitionSpec as P
 
 from PyPIC3D.boundary_conditions.ghost_cells import BC_TYPE_PARTICLE, fold_tiled_ghost_cells
 from PyPIC3D.boundary_conditions.grid_and_stencil import (
@@ -35,36 +36,39 @@ from PyPIC3D.relativity.interpolate_metric import (
 )
 
 
-@partial(jax.jit, static_argnames="static_parameters")
-def electromagnetic_moments(displacement, magnetic, static_parameters):
+@partial(jax.jit, static_argnames=("static_parameters", "tiled"))
+def electromagnetic_moments(displacement, magnetic, static_parameters, *, tiled=False):
     """Average native density products onto BSSN C nodes.
 
     D and B must be synchronized in time and have refreshed halos. Products
     are formed before averaging the eight shared Yee corners, retaining the
-    energy of fields whose cell-centered mean vanishes.
+    energy of fields whose cell-centered mean vanishes. ``tiled=True`` keeps
+    the PIC tile layout and guards; the coupled source path extends those
+    guards to the BSSN depth before contracting with stage geometry.
     """
     from PyPIC3D.relativity.dynamical_relativity import tiles_to_bssn
 
-    shape = tiles_to_bssn(displacement[0], static_parameters).shape
+    transfer = (lambda value: value) if tiled else (lambda value: tiles_to_bssn(value, static_parameters))
+    shape = displacement[0].shape if tiled else tiles_to_bssn(displacement[0], static_parameters).shape
     dd = jnp.zeros((3, 3) + shape, dtype=displacement[0].dtype)
     bb = jnp.zeros_like(dd)
     db = jnp.zeros_like(dd)
 
     for corner in product((0, 1), repeat=3):
         d = jnp.stack(tuple(
-            tiles_to_bssn(jnp.roll(
+            transfer(jnp.roll(
                 value,
                 tuple(c if loc == "V" else 0 for c, loc in zip(corner, location)),
                 axis=(3, 4, 5),
-            ), static_parameters)
+            ))
             for value, location in zip(displacement, D_FIELD_LOCATIONS)
         ))
         b = jnp.stack(tuple(
-            tiles_to_bssn(jnp.roll(
+            transfer(jnp.roll(
                 value,
                 tuple(c if loc == "V" else 0 for c, loc in zip(corner, location)),
                 axis=(3, 4, 5),
-            ), static_parameters)
+            ))
             for value, location in zip(magnetic, B_FIELD_LOCATIONS)
         ))
         dd = dd + jnp.einsum("i...,j...->ij...", d, d) / 8.0
@@ -113,10 +117,14 @@ def compute_particle_energy_momentum(
     source filtering is applied once, after adding PIC and EM contributions
     in compute_energy_momentum_tensor; destination volumes remain unfiltered.
     """
-    from PyPIC3D.relativity.dynamical_relativity import tiles_to_bssn
+    from PyPIC3D.relativity.dynamical_relativity import tiles_to_bssn, resize_bssn_halos
 
+    bssn = dynamic_parameters.bssn_parameters
+    tiled = bssn is not None and bssn.state.conformal_factor.ndim == 6
     if not particles.active.size:
-        rho = jnp.zeros_like(tiles_to_bssn(metric.center.sqrt_gamma, static_parameters))
+        template = (bssn.state.conformal_factor if tiled
+                    else tiles_to_bssn(metric.center.sqrt_gamma, static_parameters))
+        rho = jnp.zeros_like(template)
         return rho, jnp.zeros((3,) + rho.shape, rho.dtype), jnp.zeros((3, 3) + rho.shape, rho.dtype)
 
     g = int(static_parameters.guard_cells)
@@ -131,7 +139,7 @@ def compute_particle_energy_momentum(
     stress_indices = ((0, 0), (0, 1), (0, 2), (1, 1), (1, 2), (2, 2))
     particle_center = particle_metric(metric, static_parameters, dynamic_parameters)
 
-    def deposit_one_tile(x_tile, u_tile, active_tile, tx, ty, tz):
+    def deposit_one_tile(x_tile, u_tile, active_tile, grid, tile_metric, weighted_mass, spacing):
         capacity, batch_size, active_indices, n_active = prepare_particle_batches(
             active_tile, static_parameters.particle_batch_size,
         )
@@ -142,8 +150,6 @@ def compute_particle_energy_momentum(
         x = x_tile.reshape(-1, 3)
         u = u_tile.reshape(-1, 3)
         slots_per_species = active_tile.shape[-1]
-        grid = tuple(axis[tx, ty, tz] for axis in tiled_grid)
-        tile_metric = jax.tree.map(lambda array: array[tx, ty, tz], particle_center)
         n_batches = number_of_particle_batches(n_active, batch_size)
 
         def deposit_batch(batch_index, moments):
@@ -191,11 +197,21 @@ def compute_particle_energy_momentum(
 
         return jax.lax.fori_loop(0, n_batches, deposit_batch, moments)
 
-    tile_indices = jnp.meshgrid(*(jnp.arange(count) for count in tile_counts), indexing="ij")
-    deposit_tiles = deposit_one_tile
-    for _ in range(3):
-        deposit_tiles = jax.vmap(deposit_tiles)
-    moments = deposit_tiles(particles.x, particles.u, particles.active, *tile_indices)
+    def deposit_owned_tile(x, u, active, grid, metric, weighted_mass, spacing):
+        grid = tuple(axis[0, 0, 0] for axis in grid)
+        metric = jax.tree.map(lambda value: value[0, 0, 0], metric)
+        moments = deposit_one_tile(x[0, 0, 0], u[0, 0, 0], active[0, 0, 0],
+                                   grid, metric, weighted_mass, spacing)
+        return moments[None, None, None]
+
+    # Sampling must see only this device's metric and coordinate tile. A
+    # global vmap of indexed tile gathers can replicate the full geometry.
+    layout = P("tile_x", "tile_y", "tile_z")
+    # Replicated constants also enter the manual mesh before particle indexing.
+    moments = jax.shard_map(
+        deposit_owned_tile, mesh=static_parameters.field_mesh, check_vma=False,
+        in_specs=(layout, layout, layout, layout, layout, P(), P()), out_specs=layout)(
+            particles.x, particles.u, particles.active, tiled_grid, particle_center, weighted_mass, spacing)
     moments = jnp.moveaxis(moments, 3, 0)
 
     # All ten moments live on C nodes. A tensor component is odd at a wall
@@ -207,7 +223,9 @@ def compute_particle_energy_momentum(
         moments, static_parameters, g, bc_type=BC_TYPE_PARTICLE,
         location=(("C", "C", "C"),) * 10, reflecting_parity=parity,
     )
-    moments = tiles_to_bssn(moments / metric.center.sqrt_gamma[None, ...], static_parameters)
+    moments = moments / metric.center.sqrt_gamma[None, ...]
+    moments = (resize_bssn_halos(moments, static_parameters, dynamic_parameters) if tiled
+               else tiles_to_bssn(moments, static_parameters))
     rho = moments[0]
     momentum = moments[1:4]
     stress = jnp.stack((
@@ -249,6 +267,11 @@ def compute_energy_momentum_tensor(
         rho = jnp.zeros_like(bssn_state.conformal_factor)
         return rho, jnp.zeros((3,) + rho.shape, rho.dtype), jnp.zeros((3, 3) + rho.shape, rho.dtype)
 
+    tiled = bssn_state.conformal_factor.ndim == 6
+    if tiled:
+        from PyPIC3D.relativity.dynamical_relativity import resize_bssn_halos
+        moments = tuple(resize_bssn_halos(value, static_parameters, dynamic_parameters)
+                        for value in moments)
     em = compute_electromagnetic_energy_momentum(moments, bssn_state)
     total = em
     if particles.active.size:
@@ -270,9 +293,18 @@ def compute_energy_momentum_tensor(
                             stress[0, 0], stress[0, 1], stress[0, 2],
                             stress[1, 1], stress[1, 2], stress[2, 2]))
     if source_filter == "binomial":
-        components = binomial_source_filter(volume * components, static_parameters.boundary_conditions) / volume
+        components = binomial_source_filter(
+            volume * components, static_parameters.boundary_conditions,
+            static_parameters=static_parameters if tiled else None,
+            dynamic_parameters=dynamic_parameters if tiled else None) / volume
     else:
-        components = filter_gr_grid(volume * components, static_parameters, dynamic_parameters) / volume
+        filter_parameters = static_parameters
+        if tiled:
+            from PyPIC3D.relativity.dynamical_relativity import bssn_tile_layout
+            filter_parameters = static_parameters._replace(
+                guard_cells=bssn_tile_layout(static_parameters)["guard_cells"])
+        components = filter_gr_grid(volume * components, filter_parameters, dynamic_parameters,
+                                    tiled=tiled) / volume
     stress = jnp.stack((
         jnp.stack((components[4], components[5], components[6])),
         jnp.stack((components[5], components[7], components[8])),

@@ -54,6 +54,7 @@ class OpenPMDDiagnosticsTests(OpenPMDDiagnosticsTestsFixtures, unittest.TestCase
     def test_host_particle_snapshot_preserves_chunks_and_empty_species_without_jax_arrays(self):
         static, dynamic = particle_parameters_from_values(
             _parameter_values(), dynamic_values={'C': 10.})
+        static = static._replace(tile_shape=(2, 2, 1))
         x = np.zeros((2, 1, 1, 2, 2, 3), dtype=np.float64)
         x[0, 0, 0, 0, 0, 0] = -1.5
         x[1, 0, 0, 0, 1, 0] = .5 + 2.**-40
@@ -457,7 +458,7 @@ class OpenPMDDiagnosticsTests(OpenPMDDiagnosticsTestsFixtures, unittest.TestCase
         self.assertEqual(overlaps, [])
 
 
-    def test_write_openpmd_initial_particles_flattens_tiled_particles_and_preserves_names(self):
+    def test_write_openpmd_initial_particles_preserves_species_records_from_tile_chunks(self):
         static_parameters, dynamic_parameters = particle_parameters_from_values(
             _parameter_values(),
             dynamic_values={"C": 10.0},

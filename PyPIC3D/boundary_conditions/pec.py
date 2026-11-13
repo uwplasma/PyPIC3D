@@ -1,5 +1,11 @@
 """Local metric projections for coordinate-aligned, stationary FIDO walls.
 
+Every wall is a coordinate surface, so its geometry is one unit normal:
+``normal_vector(gamma_inv, axis)``. The wall projector is ``nhat (x) nhat``,
+and ``parallel_op`` and ``tangential_op`` are its two complementary parts.
+A PEC wall keeps the normal part of D and the tangential part of B, and each
+reflection keeps one part and flips the other.
+
 All vectors are native densities ``sqrt(gamma) V^i``. Each native wall row is
 projected from a co-located density reconstruction; the projector rows are
 homogeneous, so projecting the density projects the physical vector. Where
@@ -17,20 +23,19 @@ from .grid_and_stencil import BC_CONDUCTING, BC_CONSTANT
 from .ghost_cells import (
     boundary_plane, face_mask, staggered_mirror, update_tiled_ghost_cells,
 )
-from PyPIC3D.relativity.core import B_FIELD_LOCATIONS, D_FIELD_LOCATIONS
+from PyPIC3D.relativity.core import (
+    B_FIELD_LOCATIONS, D_FIELD_LOCATIONS,
+    normal_projector, parallel_op, tangential_op,
+)
 from PyPIC3D.relativity.field_interpolation import copy_densities, metric_at_location, reconstruct_vector
-
-
-def _normal_component(inverse, vector, axis, component):
-    """One row of the coordinate-face projector G applied to a vector."""
-    return inverse[..., component, axis] / inverse[..., axis, axis] * vector[axis]
 
 
 def _reflect_vector(vector, metric, location, axis, static, field_kind):
     """Reflect a co-located density about one pair of physical faces.
 
-    The reflection acts on the physical vector, so each ghost is the
-    reflected owner density times ``sqrt_gamma(ghost)/sqrt_gamma(owner)``.
+    D keeps its normal part and flips its tangential part; B does the
+    opposite. The reflection acts on the physical vector, so each ghost is
+    the reflected owner density times ``sqrt_gamma(ghost)/sqrt_gamma(owner)``.
     """
     shape = vector[0].shape
     g, n = static.guard_cells, static.tile_shape[axis]
@@ -48,15 +53,15 @@ def _reflect_vector(vector, metric, location, axis, static, field_kind):
         plane = partial(boundary_plane, axis, tile)
         for node in outside:
             owner, walls = staggered_mirror(node-g+offset, total, location[axis])
-            components = [v[plane(g+owner-offset)] for v in vector]
+            components = jnp.stack([v[plane(g+owner-offset)] for v in vector], axis=-1)
             for wall in reversed(walls):
                 wall_inverse = inverse[plane(g+wall-offset)]
-                normal = [_normal_component(wall_inverse, components, axis, j) for j in range(3)]
-                components = [2*normal[j]-components[j] if field_kind == 'D'
-                              else components[j]-2*normal[j] for j in range(3)]
+                normal = parallel_op(wall_inverse, axis, components)
+                tangential = tangential_op(wall_inverse, axis, components)
+                components = normal-tangential if field_kind == 'D' else tangential-normal
             scale = volume[plane(node)] / volume[plane(g+owner-offset)]
             for j in range(3):
-                result[j] = result[j].at[plane(node)].set(scale*components[j])
+                result[j] = result[j].at[plane(node)].set(scale*components[..., j])
     return tuple(result)
 
 
@@ -102,24 +107,25 @@ def _prepare_normal_D(snapshot, static, axes):
 def _project_native_nodes(snapshot, static, locations, field_kind, metric, axes):
     """Project faces first, then zero D at intersections of two walls.
 
-    Each B component has exactly one C axis, so only D components (two C
-    axes) reach an intersection.
+    A D wall row keeps only its normal part, a B wall row only its
+    tangential part. Each B component has exactly one C axis, so only D
+    components (two C axes) reach an intersection.
     """
     shape = snapshot[0].shape
     projected = []
     for component, location in enumerate(locations):
         value = snapshot[component]
-        at_target = reconstruct_vector(snapshot, locations, location)
+        at_target = jnp.stack(reconstruct_vector(snapshot, locations, location), axis=-1)
         inverse = metric_at_location(metric, location).gamma_inv
         incident = tuple(axis for axis in axes if location[axis] == 'C')
+        keep = parallel_op if field_kind == 'D' else tangential_op
         for count in range(1, len(incident) + 1):
             for faces in combinations(incident, count):
                 mask = True
                 for axis in faces:
                     mask = mask & face_mask(shape, axis, static.tile_shape[axis], static.guard_cells)
                 if count == 1:
-                    normal = _normal_component(inverse, at_target, faces[0], component)
-                    constrained = normal if field_kind == 'D' else at_target[component] - normal
+                    constrained = keep(inverse, faces[0], at_target)[..., component]
                 else:
                     constrained = 0.
                 value = jnp.where(mask, constrained, value)
@@ -179,13 +185,14 @@ def solve_D_edges(projected, snapshot, static, metric, axes):
 
         a, a_mirror = at(p_wall, q_half), at(p_wall, q_ghost)
         b, b_mirror = at(p_half, q_wall), at(p_ghost, q_wall)
-        inverse_a = metric_a.gamma_inv[a]
-        inverse_b = metric_b.gamma_inv[b]
-        # normal-row coefficient times the 2x2 density transfer weight of the pair
-        alpha = (inverse_a[..., q, p] / inverse_a[..., p, p]
+        # row q, column p of nhat (x) nhat on the p wall, and its mirror on the q
+        # wall, each times the 2x2 density transfer weight of the pair
+        projector_a = normal_projector(metric_a.gamma_inv[a], p)
+        projector_b = normal_projector(metric_b.gamma_inv[b], q)
+        alpha = (projector_a[..., q, p]
                  * (metric_b.sqrt_gamma[b] + metric_b.sqrt_gamma[b_mirror])
                  / (4.0 * metric_b.sqrt_gamma[b]))
-        beta = (inverse_b[..., p, q] / inverse_b[..., q, q]
+        beta = (projector_b[..., p, q]
                 * (metric_a.sqrt_gamma[a] + metric_a.sqrt_gamma[a_mirror])
                 / (4.0 * metric_a.sqrt_gamma[a]))
 
@@ -203,9 +210,10 @@ def solve_B_edges(first, second, static, metric, axes):
 
     c = B^p on the p-wall in the first q-ghost and d = B^q on the q-wall in
     the first p-ghost reflect owners that are wall normals (zero), so each is
-    only the tangential part of a metric reflection, -2 gamma^pq/gamma^qq,
-    of a reconstruction that contains the other. d is reflected in the p pass
-    and c in the later q pass, so the second sweep gives
+    only the tangential part of a metric reflection, the off-diagonal row
+    -2 (nhat (x) nhat)^p_q, of a reconstruction that contains the other. d
+    is reflected in the p pass and c in the later q pass, so the second
+    sweep gives
 
         d2 = beta c1 + d_rest,    c2 = alpha d2 + c_rest
 
@@ -226,8 +234,11 @@ def solve_B_edges(first, second, static, metric, axes):
         inverse = metric_at_location(metric, tuple(surface)).gamma_inv[at(p_wall, q_wall)]
         sqrt_p = metric_at_location(metric, locations[p]).sqrt_gamma
         sqrt_q = metric_at_location(metric, locations[q]).sqrt_gamma
-        alpha = -2.0 * inverse[..., p, q] / inverse[..., q, q] * sqrt_p[c] / (4.0 * sqrt_p[c_owner])
-        beta = -2.0 * inverse[..., q, p] / inverse[..., p, p] * sqrt_q[d] / (4.0 * sqrt_q[d_owner])
+        # off-diagonal row of the B reflection I - 2 nhat (x) nhat on each wall
+        projector_q = normal_projector(inverse, q)
+        projector_p = normal_projector(inverse, p)
+        alpha = -2.0 * projector_q[..., p, q] * sqrt_p[c] / (4.0 * sqrt_p[c_owner])
+        beta = -2.0 * projector_p[..., q, p] * sqrt_q[d] / (4.0 * sqrt_q[d_owner])
 
         c1, c2, d2 = first[p][c], second[p][c], second[q][d]
         delta = (c2 - c1) / (1.0 - alpha * beta)

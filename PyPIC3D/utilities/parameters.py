@@ -49,6 +49,8 @@ class StaticParameters(NamedTuple):
     gr_work_energy_theorem: bool = False
     gr_work_energy_reference: object = None
     metric_backreaction: bool = True
+    lapse_deleting: bool = False
+    lapse_threshold: float = 0.1
 
 
 class DynamicParameters(NamedTuple):
@@ -123,6 +125,12 @@ def build_static_parameters(static_config):
     """
 
     static_config = dict(static_config)
+    if static_config.get("lapse_deleting", False) and static_config.get("solver") not in ("static_metric", "dynamic_metric"):
+        raise ValueError("lapse_deleting requires solver='static_metric' or 'dynamic_metric'")
+    lapse_threshold = static_config.get("lapse_threshold", 0.1)
+    if (isinstance(lapse_threshold, bool) or not math.isfinite(float(lapse_threshold))
+            or float(lapse_threshold) <= 0):
+        raise ValueError("lapse_threshold must be finite and positive")
     if static_config.get("gr_work_energy_theorem", False) and static_config.get("solver") != "dynamic_metric":
         raise ValueError("GR work-energy theorem requires solver='dynamic_metric'")
     energy_reference = static_config.get("gr_work_energy_reference")
@@ -193,6 +201,8 @@ def build_static_parameters(static_config):
         gr_work_energy_theorem=bool(static_config.get("gr_work_energy_theorem", False)),
         gr_work_energy_reference=None if energy_reference is None else float(energy_reference),
         metric_backreaction=bool(static_config.get("metric_backreaction", True)),
+        lapse_deleting=bool(static_config.get("lapse_deleting", False)),
+        lapse_threshold=float(lapse_threshold),
     )
 
 

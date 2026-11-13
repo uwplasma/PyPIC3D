@@ -31,18 +31,25 @@ class FakeRecord:
         self.shape = None
         self.dataset_shape = None
         self.unit_SI = None
-        self.data = None
         self.chunks = []
 
     def reset_dataset(self, dataset):
         extent = getattr(dataset, "extent", None)
         if extent is not None:
             self.dataset_shape = tuple(extent)
+            self.shape = self.dataset_shape
+            self.chunks = []
 
     def store_chunk(self, array, offset, extent):
-        self.shape = tuple(extent)
-        self.data = np.array(array, copy=True)
-        self.chunks.append((tuple(offset), tuple(extent), np.array(array, copy=True)))
+        self.chunks.append((tuple(offset), tuple(extent), array.copy()))
+
+    @property
+    def data(self):
+        values = jnp.zeros(self.dataset_shape)
+        for offset, extent, chunk in self.chunks:
+            region = tuple(slice(start, start+length) for start, length in zip(offset, extent))
+            values = values.at[region].set(jnp.asarray(chunk))
+        return values
 
 
 class FakeMesh:

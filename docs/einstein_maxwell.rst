@@ -62,16 +62,28 @@ common-time covariant particle momenta::
 The caller JITs the step with static parameters and optional pure
 ``prescribed_gauge(state,time)`` and ``gravity_boundary(state,time)`` callbacks
 closed over. Gauge callbacks return lapse, shift, their time derivatives;
-boundary callbacks return BSSN state. Other PIC solvers keep their existing
-return signatures.
+boundary callbacks return BSSN state. For tiled evolution the callbacks receive
+one padded tile and a keyword ``params`` containing its padded coordinate
+origin, ``owned_shape``, and ``owned_faces``. Physical boundary callbacks must
+restrict their changes to the indicated owned faces. Other PIC solvers keep
+their existing return signatures.
 
 Default initial geometry is exactly flat, with harmonic slicing and frozen
 zero shift. It is not a constraint solution for nonzero plasma. Supply BSSN
-variables explicitly when different NR initial data are required. The first
-particle coupling is periodic Cartesian evolution on one device, with equal
-spacing on resolved axes. Empty-particle EM runs retain periodic, conducting,
+variables explicitly when different NR initial data are required. Particle
+coupling supports periodic Cartesian evolution across the shared PIC device
+mesh, with equal spacing on resolved axes. Empty-particle EM runs retain periodic, conducting,
 constant and absorbing native field boundaries. Prescribed external fields,
 PML and non-Cartesian coordinate charts are not part of this coupling.
+
+BSSN uses the same ``field_mesh`` object and ``tile_shape`` as the EM fields,
+with component indices before the three tile and three local spatial axes.
+It keeps at least four guards, or five when an upper C endpoint is owned, and
+at least one more guard than Maxwell needs. Geometry, stage sources, and all
+four RK stages remain distributed; work and constraint diagnostics reduce
+owned-node scalar statistics. The existing native global-C-node ``.npy``
+initial-data format is retained, with distributed loading reading only each
+process's owned tiles. The single-device global-state path remains supported.
 
 Time levels and sources
 -----------------------

@@ -93,9 +93,36 @@ def load_bssn_parameters_from_toml(config, static_parameters, dynamic_parameters
         else:
             raise ValueError(f"[metric] {name} must be 'periodic', 'sommerfeld', 0, or 1")
 
-    # Reuse the native allocation and grid checks, including the x64 and
-    # single-device requirements, before reading potentially large files.
     time = controls.pop("time", 0.0)
+    if static_parameters.field_mesh.size > 1:
+        # Each process reads only its addressable tiles from native files.
+        sources = {name: metric_config.get(name, False) for name in state_names}
+        for name, value in sources.items():
+            if value is not False and not isinstance(value, str):
+                raise ValueError(f"[metric] {name} must be an initialization filename or literal false")
+        parameters = build_bssn_parameters(
+            static_parameters, dynamic_parameters, state=sources,
+            evolution_parameters=controls, time=time)
+        state = parameters.state
+        from JAX_BSSN.parallel import map_tiled, owned_mask
+        from PyPIC3D.relativity.dynamical_relativity import bssn_tile_layout
+        mask = map_tiled(lambda value, params: owned_mask(value.shape, params),
+                         state.conformal_factor, parameters.evolution_parameters,
+                         **bssn_tile_layout(static_parameters))
+        if not all(bool(jnp.all(jnp.where(mask, jnp.isfinite(v), True))) for v in state):
+            raise ValueError("[metric] initial geometry must contain finite values")
+        if not bool(jnp.all(jnp.where(mask, state.conformal_factor > 0, True))):
+            raise ValueError("[metric] conformal_factor must contain positive W")
+        gamma = jnp.moveaxis(state.conformal_metric, (0, 1), (-2, -1))
+        symmetric = jnp.isclose(gamma, jnp.swapaxes(gamma, -2, -1), rtol=1.e-12, atol=1.e-12)
+        if not bool(jnp.all(jnp.where(mask[..., None, None], symmetric, True))):
+            raise ValueError("[metric] conformal_metric must be symmetric")
+        if not bool(jnp.all(jnp.where(mask[..., None], jnp.linalg.eigvalsh(gamma) > 0, True))):
+            raise ValueError("[metric] conformal_metric must be positive definite")
+        return parameters
+
+    # Keep the established serial global-array input contract.
+
     parameters = build_bssn_parameters(
         static_parameters, dynamic_parameters,
         evolution_parameters=controls, time=time,
@@ -134,11 +161,11 @@ def load_bssn_parameters_from_toml(config, static_parameters, dynamic_parameters
 
 
 def build_bssn_parameters(static_parameters, dynamic_parameters, *, state=None,
-                          evolution_parameters=None, time=0.0):
+                          evolution_parameters=None, time=0.0, tiled=None):
     """Build flat initial geometry unless the caller supplies BSSN variables.
 
-    The first coupling uses Cartesian geometrized units and one device. BSSN
-    has one spatial spacing; unresolved periodic axes need not share it.
+    Tiled geometry shares the PIC device mesh and owned C nodes. BSSN has
+    one spatial spacing; unresolved periodic axes need not share it.
     The default flat state is not a matter constraint solve.
     """
     tile_counts = dynamic_parameters.grids.tiled_center_grid[0].shape[:3]
@@ -151,19 +178,9 @@ def build_bssn_parameters(static_parameters, dynamic_parameters, *, state=None,
         raise ValueError("BSSN requires equal spacing on all resolved Cartesian axes")
     if any(float(value) != 1.0 for value in (dynamic_parameters.C, dynamic_parameters.eps, dynamic_parameters.mu)):
         raise ValueError("Dynamical relativity requires normalized C=1, eps=1, mu=1")
-    if static_parameters.field_mesh is not None and static_parameters.field_mesh.size != 1:
-        raise ValueError("Dynamical relativity currently requires one device")
+    tiled = static_parameters.field_mesh.size > 1 if tiled is None else tiled
     if not jax.config.x64_enabled:
         raise ValueError("Dynamical relativity requires jax_enable_x64=True")
-
-    if state is None:
-        zero = jnp.zeros(shape, dtype=jnp.float64)
-        identity = jnp.broadcast_to(jnp.eye(3)[:, :, None, None, None], (3, 3) + shape)
-        state = BSSNVariables(identity, jnp.ones_like(zero), jnp.zeros_like(identity),
-                              zero, jnp.zeros((3,) + shape), jnp.ones_like(zero),
-                              jnp.zeros((3,) + shape))
-    elif state.conformal_factor.shape != shape:
-        raise ValueError("BSSN state must match the physical PIC center-node allocation")
 
     if evolution_parameters is None or isinstance(evolution_parameters, dict):
         overrides = {} if evolution_parameters is None else evolution_parameters
@@ -185,4 +202,26 @@ def build_bssn_parameters(static_parameters, dynamic_parameters, *, state=None,
             raise ValueError("Matched GR filtering requires all six BSSN boundaries to be periodic")
 
     evolution_parameters = jax.tree.map(jnp.asarray, evolution_parameters)
+    if tiled:
+        from JAX_BSSN.parallel import initialize_tiled_bssn
+        from PyPIC3D.relativity.dynamical_relativity import bssn_tile_layout
+
+        layout = bssn_tile_layout(static_parameters)
+        if not hasattr(state, "conformal_factor") or state.conformal_factor.ndim != 6:
+            state = initialize_tiled_bssn(state, evolution_parameters, **layout)
+        else:
+            expected = tuple(tile_counts) + tuple(width + 2 * layout["guard_cells"]
+                                                  for width in static_parameters.tile_shape)
+            if state.conformal_factor.shape != expected:
+                raise ValueError("Tiled BSSN state must match the shared PIC tiles and geometry guard depth")
+    else:
+        if state is None:
+            zero = jnp.zeros(shape, dtype=jnp.float64)
+            identity = jnp.broadcast_to(jnp.eye(3)[:, :, None, None, None], (3, 3) + shape)
+            state = BSSNVariables(identity, jnp.ones_like(zero), jnp.zeros_like(identity),
+                                  zero, jnp.zeros((3,) + shape), jnp.ones_like(zero),
+                                  jnp.zeros((3,) + shape))
+        elif state.conformal_factor.shape != shape:
+            raise ValueError("BSSN state must match the physical PIC center-node allocation")
+
     return BSSNParameters(state, evolution_parameters, jnp.asarray(time))

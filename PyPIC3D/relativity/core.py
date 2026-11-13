@@ -61,6 +61,43 @@ def lower_vector(vector_con, gamma):
     return jnp.einsum("...ij,...j->...i", gamma, vector_con)
 
 
+def normal_vector(gamma_inv, axis):
+    """
+    Unit normal of the coordinate surface x^axis = const.
+
+    The surface gradient is the coordinate basis one-form, n_i = delta_i^a /
+    sqrt(gamma^aa); raising it with gamma^ij gives n^i = gamma^ia / sqrt(gamma^aa).
+    """
+
+    return gamma_inv[..., :, axis] / jnp.sqrt(gamma_inv[..., axis, axis])[..., jnp.newaxis]
+
+
+def normal_projector(gamma_inv, axis):
+    """
+    Build the wall projector nhat (x) nhat, n^i n_j = gamma^ia delta_j^a / gamma^aa.
+    """
+
+    basis = jnp.eye(3, dtype=gamma_inv.dtype)[axis]
+    outer = jnp.einsum("...i,...j->...ij", normal_vector(gamma_inv, axis), basis)
+    return outer / jnp.sqrt(gamma_inv[..., axis, axis])[..., jnp.newaxis, jnp.newaxis]
+
+
+def parallel_op(gamma_inv, axis, vector):
+    """
+    Take the part of a contravariant vector parallel to the normal: n^i n_j V^j.
+    """
+
+    return jnp.einsum("...ij,...j->...i", normal_projector(gamma_inv, axis), vector)
+
+
+def tangential_op(gamma_inv, axis, vector):
+    """
+    Take the part tangential to the surface: (delta^i_j - n^i n_j) V^j.
+    """
+
+    return vector - parallel_op(gamma_inv, axis, vector)
+
+
 def location_grid(center_grid, vertex_grid, location):
     """
     Select the tuple of grid axes associated with a C/V location triplet.

@@ -1,8 +1,3 @@
-# Run from this directory:
-#   python initial_data.py
-#   PyPIC3D --config dark_two_stream.toml
-# All quantities are SI. Particle paths are relative to the working directory.
-
 [simulation_parameters]
 name = "Warm Maxwell-Proca two-stream instability"
 solver = "dark_matter_yee"
@@ -26,7 +21,7 @@ C = 2.99792458e8
 eps = 8.85418782e-12
 mu = 1.2566370610981894e-06 # 1 / (eps * C^2)
 sin_chi = 0.3
-dark_mu = 4.20734328240245 # m^-1; C * dark_mu / omega_pe = 0.5 for BOTH beams
+dark_mu = 4
 relativistic = true
 particle_pusher = "boris"
 shape_factor = 2
@@ -45,15 +40,6 @@ plotchargedensity = true
 dump_particles = true
 dump_fields = true
 
-# Used only by initial_data.py. Rerun it after changing loading parameters.
-[initial_data]
-seed = 42
-beam_speed = 5.0e7
-seed_mode = 4
-seed_fraction = 0.01
-
-# weight = n_beam * volume / N_particles. Each shared position has two
-# electrons and two ions of the same weight, so initial charge cancels locally.
 
 [particle1]
 name = "electron1"
@@ -62,12 +48,12 @@ charge = -1.602e-19
 mass = 9.1093837e-31
 vth = 14989622.9
 weight = 666666666666.6666
-initial_x = "initial_data/electron1_initial_x.npy"
-initial_y = "initial_data/electron1_initial_y.npy"
-initial_z = "initial_data/electron1_initial_z.npy"
-initial_vx = "initial_data/electron1_initial_vx.npy"
-initial_vy = "initial_data/electron1_initial_vy.npy"
-initial_vz = "initial_data/electron1_initial_vz.npy"
+initial_x = "electron1_initial_x.npy"
+initial_y = "electron1_initial_y.npy"
+initial_z = "electron1_initial_z.npy"
+initial_vx = "electron1_initial_vx.npy"
+initial_vy = "electron1_initial_vy.npy"
+initial_vz = "electron1_initial_vz.npy"
 
 [particle2]
 name = "electron2"
@@ -76,12 +62,12 @@ charge = -1.602e-19
 mass = 9.1093837e-31
 vth = 14989622.9
 weight = 666666666666.6666
-initial_x = "initial_data/electron2_initial_x.npy"
-initial_y = "initial_data/electron2_initial_y.npy"
-initial_z = "initial_data/electron2_initial_z.npy"
-initial_vx = "initial_data/electron2_initial_vx.npy"
-initial_vy = "initial_data/electron2_initial_vy.npy"
-initial_vz = "initial_data/electron2_initial_vz.npy"
+initial_x = "electron2_initial_x.npy"
+initial_y = "electron2_initial_y.npy"
+initial_z = "electron2_initial_z.npy"
+initial_vx = "electron2_initial_vx.npy"
+initial_vy = "electron2_initial_vy.npy"
+initial_vz = "electron2_initial_vz.npy"
 
 [particle3]
 name = "ion1"
@@ -90,9 +76,9 @@ charge = 1.602e-19
 mass = 1.67e-27
 vth = 34982.78402326697
 weight = 666666666666.6666
-initial_x = "initial_data/ion1_initial_x.npy"
-initial_y = "initial_data/ion1_initial_y.npy"
-initial_z = "initial_data/ion1_initial_z.npy"
-initial_vx = "initial_data/ion1_initial_vx.npy"
-initial_vy = "initial_data/ion1_initial_vy.npy"
-initial_vz = "initial_data/ion1_initial_vz.npy"
+initial_x = "ion1_initial_x.npy"
+initial_y = "ion1_initial_y.npy"
+initial_z = "ion1_initial_z.npy"
+initial_vx = "ion1_initial_vx.npy"
+initial_vy = "ion1_initial_vy.npy"
+initial_vz = "ion1_initial_vz.npy"

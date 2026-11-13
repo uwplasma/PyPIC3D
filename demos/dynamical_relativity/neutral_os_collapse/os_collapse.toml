@@ -1,0 +1,124 @@
+# Neutral Oppenheimer-Snyder dust collapse on the native dynamical PIC-BSSN
+# solver. Run from this directory so the relative initial_data/ paths resolve:
+#
+#   python initial_metric.py
+#   python initial_data.py
+#   PyPIC3D --config os_collapse.toml
+#
+# Keep Nx/x_min/x_max consistent with initial_metric.py and N_particles/weight
+# consistent with initial_data.py; nothing synchronizes them automatically.
+
+[simulation_parameters]
+name = "neutral_os_collapse"
+solver = "dynamic_metric"
+metric = "numerical"
+output_dir = "outputs"
+
+Nx = 64
+Ny = 64
+Nz = 64
+
+x_min = -8.0
+x_max = 8.0
+y_min = -8.0
+y_max = 8.0
+z_min = -8.0
+z_max = 8.0
+x_wind = 16.0
+y_wind = 16.0
+z_wind = 16.0
+
+# dx = 0.25; native C nodes run from -8 through 7.75.
+dt = 0.025
+t_wind = 60.0            # Nt = 2400 macro steps to t = 60 M.
+
+# One tile: a single-process run. Reduce these to the per-tile width and launch
+# under MPI to engage the sharded openPMD writer; see README.md.
+particle_tile_nx = 64
+particle_tile_ny = 64
+particle_tile_nz = 64
+particle_tile_capacity_factor = 1.0
+particle_batch_size = 8192
+
+# Neutral dust may use open edges: constant field halos, absorbing particles.
+x_bc = "constant"
+y_bc = "constant"
+z_bc = "constant"
+particle_x_bc = "absorbing"
+particle_y_bc = "absorbing"
+particle_z_bc = "absorbing"
+
+# Geometrized Gaussian units, G = c = k_B = 1.
+C = 1.0
+eps = 1.0
+mu = 1.0
+kb = 1.0
+
+relativistic = true
+particle_pusher = "hybrid_boris_geodesic"
+current_calculation = "GR_direct_deposition"
+filter_j = "none"
+shape_factor = 2
+guard_cells = 3
+metric_backreaction = true
+lapse_deleting = true
+lapse_threshold = 0.1
+verbose = false
+
+[plotting]
+# Every macro step. Each output is ~90 MB, so the full t_wind = 60 run is
+# ~216 GB; raise this (10 -> ~22 GB, 40 -> ~5.5 GB) or shorten t_wind.
+plotting_interval = 1
+plot_openpmd_fields = true
+plot_openpmd_particles = true
+plotchargedensity = true
+dump_fields = true
+dump_particles = true
+
+[metric]
+# Written by initial_metric.py on global C nodes without guards. The stored
+# conformal factor is W = psi**-2, so gamma_ij = conformal_metric_ij / W**2.
+conformal_metric = "initial_data/conformal_metric.npy"
+conformal_factor = "initial_data/conformal_factor.npy"
+lapse = "initial_data/lapse.npy"
+# The momentarily static slice: these four are identically zero.
+traceless_K = false
+trace_K = false
+conformal_connection = false
+shift = false
+time = 0.0
+
+# Advective 1+log slicing with the native Gamma driver.
+gauge = "1+log"
+zero_shift = false
+eta = 2.0
+g = 0.75
+kappa = 0.0
+nu = 0.002
+
+xl_bc = "sommerfeld"
+xr_bc = "sommerfeld"
+yl_bc = "sommerfeld"
+yr_bc = "sommerfeld"
+zl_bc = "sommerfeld"
+zr_bc = "sommerfeld"
+
+[particle1]
+name = "dust"
+N_particles = 262144
+charge = 0.0
+mass = 1.0
+# Equal weights summing to the proper rest mass 1.1551479387364685.
+weight = 4.4065396832903613e-06
+x_bc = "absorbing"
+y_bc = "absorbing"
+z_bc = "absorbing"
+update_x = true
+update_y = true
+update_z = true
+initial_x = "initial_data/dust_initial_x.npy"
+initial_y = "initial_data/dust_initial_y.npy"
+initial_z = "initial_data/dust_initial_z.npy"
+initial_vx = "initial_data/dust_initial_vx.npy"
+initial_vy = "initial_data/dust_initial_vy.npy"
+initial_vz = "initial_data/dust_initial_vz.npy"

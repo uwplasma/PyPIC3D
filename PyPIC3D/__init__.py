@@ -1,3 +1,7 @@
+from .distributed import initialize_distributed
+
+initialize_distributed()
+
 import time
 import jax
 from jax import random

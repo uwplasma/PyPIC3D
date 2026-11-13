@@ -67,8 +67,36 @@ def _axis_weights(size, boundary, spacing, dtype):
     return spacing * weight
 
 
+def _tiled_axis_weights(shape, static, spacing, dtype, axis):
+    """Owned-node quadrature in one direction, with global endpoint weights."""
+    width = static.tile_shape[axis]
+    guard = (shape[axis + 3] - width) // 2
+    tile = jnp.arange(shape[axis])[:, None]
+    local = jnp.arange(shape[axis + 3])[None, :] - guard
+    index = tile * width + local
+    boundary = static.boundary_conditions[axis]
+    size = shape[axis] * width + (boundary == 1)
+    owned = (local >= 0) & (local < width)
+    if boundary == 1:
+        owned = owned | ((tile == shape[axis] - 1) & (local == width))
+    weight = jnp.ones(index.shape, dtype=dtype)
+    if boundary == 1:
+        weight = jnp.where((index == 0) | (index == size - 1), .5, weight)
+    elif boundary != 0:
+        weight = (weight - (index == 0) + (index == 1) - .5 * (index == 2)
+                  + (index == size - 1) - .5 * (index == size - 2))
+    dimensions = [1] * 6
+    dimensions[axis], dimensions[axis + 3] = index.shape
+    return (spacing * jnp.where(owned, weight, 0)).reshape(dimensions)
+
+
 def volume_integral(integrand, static, dynamic):
-    """Coordinate integral of a global C-node density, excluding all halos."""
+    """Coordinate integral of C-node density, counting every owned node once."""
+    if integrand.ndim == 6:
+        for axis, spacing in enumerate((dynamic.dx, dynamic.dy, dynamic.dz)):
+            weights = _tiled_axis_weights(integrand.shape, static, spacing, integrand.dtype, axis)
+            integrand = jnp.where(weights != 0, integrand * weights, 0)
+        return jnp.sum(integrand)
     weights = tuple(_axis_weights(n, bc, dx, integrand.dtype)
                     for n, bc, dx in zip(integrand.shape, static.boundary_conditions,
                                          (dynamic.dx, dynamic.dy, dynamic.dz)))
@@ -83,6 +111,34 @@ def surface_integral(flux, static, dynamic):
     """
     spacing = (dynamic.dx, dynamic.dy, dynamic.dz)
     result = jnp.zeros((), dtype=flux.dtype)
+    if flux.ndim == 7:
+        shape = flux.shape[1:]
+        for axis, bc in enumerate(static.boundary_conditions):
+            if bc == 0:
+                continue
+            width = static.tile_shape[axis]
+            guard = (shape[axis + 3] - width) // 2
+            tile = jnp.arange(shape[axis])[:, None]
+            local = jnp.arange(shape[axis + 3])[None, :] - guard
+            index = tile * width + local
+            size = shape[axis] * width + (bc == 1)
+            owned = (local >= 0) & (local < width)
+            if bc == 1:
+                owned = owned | ((tile == shape[axis] - 1) & (local == width))
+                face_weight = (index == size - 1).astype(flux.dtype) - (index == 0)
+            else:
+                face_weight = (2. * (index == size - 1) - (index == size - 2)
+                               - 2. * (index == 1) + (index == 2))
+            dimensions = [1] * 6
+            dimensions[axis], dimensions[axis + 3] = index.shape
+            weights = jnp.where(owned, face_weight, 0).reshape(dimensions)
+            integrand = jnp.where(weights != 0, flux[axis] * weights, 0)
+            for transverse in range(3):
+                if transverse != axis:
+                    weights = _tiled_axis_weights(shape, static, spacing[transverse], flux.dtype, transverse)
+                    integrand = jnp.where(weights != 0, integrand * weights, 0)
+            result = result + jnp.sum(integrand)
+        return result
     for axis, bc in enumerate(static.boundary_conditions):
         if bc == 0:
             continue
@@ -105,6 +161,13 @@ def _physical_geometry(state, metric, static):
     from JAX_BSSN.bssn.geometry import W_FLOOR_VALUE
     from PyPIC3D.relativity.dynamical_relativity import tiles_to_bssn
 
+    if state.conformal_factor.ndim == 6:
+        W = jnp.maximum(state.conformal_factor, W_FLOOR_VALUE)
+        conformal = jnp.moveaxis(state.conformal_metric, (0, 1), (-2, -1))
+        conformal = conformal * jnp.linalg.det(conformal)[..., None, None] ** (-1. / 3.)
+        gamma = jnp.moveaxis(conformal, (-2, -1), (0, 1)) / W**2
+        inverse = jnp.moveaxis(jnp.linalg.inv(conformal), (-2, -1), (0, 1)) * W**2
+        return inverse, W**-3, state.traceless_K / W**2 + gamma * state.trace_K / 3
     gamma = tiles_to_bssn(jnp.moveaxis(metric.center.gamma, (-2, -1), (0, 1)), static)
     inverse = tiles_to_bssn(jnp.moveaxis(metric.center.gamma_inv, (-2, -1), (0, 1)), static)
     volume = tiles_to_bssn(metric.center.sqrt_gamma, static)
@@ -145,8 +208,12 @@ def _absorbing_boundary_power(D, B, state, metric, volume, absorber, template, s
     _, tangent = jax.jvp(damp, (jnp.zeros_like(dynamic.dt),), (jnp.ones_like(dynamic.dt),))
 
     def field_energy(displacement, magnetic):
-        density = compute_electromagnetic_energy_momentum(
-            electromagnetic_moments(displacement, magnetic, static), state)[0]
+        tiled = state.conformal_factor.ndim == 6
+        moments = electromagnetic_moments(displacement, magnetic, static, tiled=tiled)
+        if tiled:
+            from PyPIC3D.relativity.dynamical_relativity import resize_bssn_halos
+            moments = tuple(resize_bssn_halos(value, static, dynamic) for value in moments)
+        density = compute_electromagnetic_energy_momentum(moments, state)[0]
         return volume_integral(volume * density, static, dynamic)
 
     return jax.jvp(field_energy, (D, B), tangent)[1]
@@ -168,7 +235,11 @@ def sample_energy(particles, species, fields, static, dynamic):
     metric, D, B, absorber = fields[6], fields[0], fields[7][2], fields[7][4]
     inverse, volume, K = _physical_geometry(state, metric, static)
 
-    moments = electromagnetic_moments(D, B, static)
+    tiled = state.conformal_factor.ndim == 6
+    moments = electromagnetic_moments(D, B, static, tiled=tiled)
+    if tiled:
+        from PyPIC3D.relativity.dynamical_relativity import resize_bssn_halos
+        moments = tuple(resize_bssn_halos(value, static, dynamic) for value in moments)
     rho, momentum, stress = compute_electromagnetic_energy_momentum(moments, state)
     electromagnetic = volume_integral(volume * rho, static, dynamic)
     particle_energy = jnp.zeros_like(electromagnetic)
@@ -187,8 +258,16 @@ def sample_energy(particles, species, fields, static, dynamic):
 
     S_up = jnp.einsum("ij...,j...->i...", inverse, momentum)
     stress_up = jnp.einsum("ik...,jl...,kl...->ij...", inverse, inverse, stress)
-    lapse_gradient = jnp.stack(tuple(diff1_physical(state.lapse, axis, bssn.evolution_parameters)
-                                    for axis in range(3)))
+    if tiled:
+        from JAX_BSSN.parallel import map_tiled
+        from PyPIC3D.relativity.dynamical_relativity import bssn_tile_layout
+        lapse_gradient = map_tiled(
+            lambda lapse, params: jnp.stack(tuple(diff1_physical(lapse, axis, params) for axis in range(3))),
+            state.lapse, bssn.evolution_parameters, **bssn_tile_layout(static),
+            output_template=jnp.zeros((3,) + state.lapse.shape, dtype=state.lapse.dtype))
+    else:
+        lapse_gradient = jnp.stack(tuple(diff1_physical(state.lapse, axis, bssn.evolution_parameters)
+                                        for axis in range(3)))
     curvature_power = volume_integral(
         volume * state.lapse * jnp.einsum("ij...,ij...->...", K, stress_up), static, dynamic)
     lapse_power = volume_integral(
@@ -249,6 +328,9 @@ def initialize_tracker(particles, species, fields, static, dynamic):
         if bool(jnp.any(active_species[:, None] & ~species.update_x)):
             raise ValueError("GR work-energy theorem does not support frozen particle components (constraint work)")
     shape = dynamic.bssn_parameters.state.lapse.shape
+    if len(shape) == 6:
+        shape = tuple(count * width + (bc == 1) for count, width, bc in zip(
+            shape[:3], static.tile_shape, static.boundary_conditions))
     if any(bc not in (0, 1, 2, 3) for bc in static.boundary_conditions):
         raise ValueError("Unsupported GR work-energy theorem field boundary")
     if any(n < 3 for n, bc in zip(shape, static.boundary_conditions) if bc not in (0, 1)):

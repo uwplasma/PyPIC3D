@@ -225,8 +225,11 @@ def main():
     plot_constraints(data_dir, output_dir)
     fields = particles = None
     try:
-        fields = io.Series(str(data_dir / "fields.h5"), io.Access.read_only)
-        particles = io.Series(str(data_dir / "particles.h5"), io.Access.read_only)
+        shared = data_dir / "simulation.h5"
+        fields = io.Series(str(shared if shared.exists() else data_dir / "fields.h5"), io.Access.read_only,
+                           '{"verify_homogeneous_extents":false}')
+        particles = io.Series(str(shared if shared.exists() else data_dir / "particles.h5"), io.Access.read_only,
+                              '{"verify_homogeneous_extents":false}')
         indices = matching_iterations(fields, particles, args.stride)
         ion_limit = 0.
         for index in tqdm(indices, desc="Ion velocity range", unit="frame"):

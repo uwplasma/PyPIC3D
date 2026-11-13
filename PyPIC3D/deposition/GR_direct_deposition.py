@@ -2,6 +2,7 @@ from functools import partial
 
 import jax
 import jax.numpy as jnp
+from jax.sharding import PartitionSpec as P
 
 from PyPIC3D.boundary_conditions.ghost_cells import (
     BC_TYPE_PARTICLE,
@@ -58,35 +59,29 @@ def GR_direct_deposition(
     reduced_y = int(tile_ny) == 1 and int(nty) == 1
     reduced_z = int(tile_nz) == 1 and int(ntz) == 1
 
-    Jx_template = jnp.zeros_like(Jx_tiles[0, 0, 0])
-    Jy_template = jnp.zeros_like(Jy_tiles[0, 0, 0])
-    Jz_template = jnp.zeros_like(Jz_tiles[0, 0, 0])
     local_bc = 2
     species_weighted_charge = species_config.charge * species_config.weight
 
-    def deposit_one_tile(x_tile, u_tile, active_tile, tx, ty, tz):
+    def deposit_one_tile(x_tile, u_tile, active_tile, tx, ty, tz, center_grid, tile_metric,
+                         parameters):
+        grid, (dx, dy, dz), species_weighted_charge, update_x = parameters
         x = x_tile[..., 0].reshape(-1)
         y = x_tile[..., 1].reshape(-1)
         z = x_tile[..., 2].reshape(-1)
         u_cov = u_tile.reshape(-1, 3)
         active = active_tile.reshape(-1).astype(x.dtype)
         q = jnp.broadcast_to(species_weighted_charge[:, jnp.newaxis], active_tile.shape).reshape(-1)
-        update_x1 = jnp.broadcast_to(species_config.update_x[:, 0, jnp.newaxis], active_tile.shape).reshape(-1)
-        update_x2 = jnp.broadcast_to(species_config.update_x[:, 1, jnp.newaxis], active_tile.shape).reshape(-1)
-        update_x3 = jnp.broadcast_to(species_config.update_x[:, 2, jnp.newaxis], active_tile.shape).reshape(-1)
+        update_x1 = jnp.broadcast_to(update_x[:, 0, jnp.newaxis], active_tile.shape).reshape(-1)
+        update_x2 = jnp.broadcast_to(update_x[:, 1, jnp.newaxis], active_tile.shape).reshape(-1)
+        update_x3 = jnp.broadcast_to(update_x[:, 2, jnp.newaxis], active_tile.shape).reshape(-1)
         dq = q / (dx * dy * dz)
-
-        tiled_x_grid = tiled_grid[0][tx, ty, tz]
-        tiled_y_grid = tiled_grid[1][tx, ty, tz]
-        tiled_z_grid = tiled_grid[2][tx, ty, tz]
-        center_grid = (tiled_x_grid, tiled_y_grid, tiled_z_grid)
 
         active_axes = (not reduced_x, not reduced_y, not reduced_z)
         evaluation_position = safe_inactive_positions(
             jnp.stack((x, y, z), axis=-1), active.astype(bool), center_grid, active_axes, g)
         u_cov = jnp.where(active[:, None].astype(bool), u_cov, 0.)
         metric_at_particles = interpolate_metric(
-            jax.tree.map(lambda array: array[tx, ty, tz], center_metric),
+            tile_metric,
             evaluation_position,
             center_grid,
             static_parameters.metric,
@@ -212,9 +207,9 @@ def GR_direct_deposition(
             zpts_face, z_weights_face, local_Nz, reduced_z, g
         )
 
-        tile_Jx = Jx_template
-        tile_Jy = Jy_template
-        tile_Jz = Jz_template
+        tile_Jx = jnp.zeros(Jx_tiles.shape[3:], dtype=Jx_tiles.dtype)
+        tile_Jy = jnp.zeros(Jy_tiles.shape[3:], dtype=Jy_tiles.dtype)
+        tile_Jz = jnp.zeros(Jz_tiles.shape[3:], dtype=Jz_tiles.dtype)
 
         for i in range(xpts_node.shape[0]):
             for j in range(ypts_node.shape[0]):
@@ -234,26 +229,22 @@ def GR_direct_deposition(
 
         return tile_Jx, tile_Jy, tile_Jz
 
-    tx, ty, tz = jnp.meshgrid(
-        jnp.arange(ntx),
-        jnp.arange(nty),
-        jnp.arange(ntz),
-        indexing="ij",
-    )
+    def deposit_owned_tile(x, u, active, coordinates, geometry, parameters):
+        center_grid = tuple(axis[0, 0, 0] for axis in coordinates)
+        tile_metric = jax.tree.map(lambda value: value[0, 0, 0], geometry)
+        tile_index = tuple(jax.lax.axis_index(axis) for axis in ("tile_x", "tile_y", "tile_z"))
+        current = deposit_one_tile(x[0, 0, 0], u[0, 0, 0], active[0, 0, 0],
+                                   *tile_index, center_grid, tile_metric, parameters)
+        return tuple(value[None, None, None] for value in current)
 
-    deposit_tiles = deposit_one_tile
-    deposit_tiles = jax.vmap(deposit_tiles, in_axes=(0, 0, 0, 0, 0, 0), out_axes=0)
-    deposit_tiles = jax.vmap(deposit_tiles, in_axes=(0, 0, 0, 0, 0, 0), out_axes=0)
-    deposit_tiles = jax.vmap(deposit_tiles, in_axes=(0, 0, 0, 0, 0, 0), out_axes=0)
-
-    Jx, Jy, Jz = deposit_tiles(
-        particles.x,
-        particles.u,
-        particles.active,
-        tx,
-        ty,
-        tz,
-    )
+    # Interpolation reads only the metric and coordinates on this device.
+    # The global tile index still anchors the unchanged deposition stencil.
+    layout = P("tile_x", "tile_y", "tile_z")
+    parameters = (grid, (dx, dy, dz), species_weighted_charge, species_config.update_x)
+    Jx, Jy, Jz = jax.shard_map(
+        deposit_owned_tile, mesh=static_parameters.field_mesh, check_vma=False,
+        in_specs=(layout, layout, layout, layout, layout, P()), out_specs=layout)(
+            particles.x, particles.u, particles.active, tiled_grid, center_metric, parameters)
 
     conformal_J = fold_tiled_ghost_cells(
         (Jx, Jy, Jz),

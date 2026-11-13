@@ -6,12 +6,12 @@ from typing import Any, Tuple, Union
 
 import importlib.metadata
 import os
+import traceback
 
 import jax
 import numpy as np
 import openpmd_api as io
 
-from PyPIC3D.diagnostics.output_adapters import field_map_for_output, particles_for_output
 from PyPIC3D.relativity.core import B_FIELD_LOCATIONS, D_FIELD_LOCATIONS
 from PyPIC3D.relativity.interpolate_metric import particle_lorentz_factor
 from PyPIC3D.utilities.grids import grid_domain_bounds
@@ -64,15 +64,50 @@ def _ensure_openpmd_array(data, dtype=np.float64, squeeze=False):
     return arr
 
 
-def _open_openpmd_series(output_path, filename, file_extension=".bp"):
-    filename = "_".join(filename.split()) + file_extension
-    # add file extension
+def _abort_parallel_write(comm):
+    """Stop peers before a rank-local failure leaves them in collective I/O."""
+    if comm is not None:
+        traceback.print_exc()
+        comm.Abort(1)
+
+
+def _open_openpmd_series(output_path, filename, file_extension=".bp", comm=None, access_mode=None):
+    if file_extension is not None:
+        filename = "_".join(filename.split()) + file_extension
     series_path = os.path.join(output_path, filename)
-    access_mode = io.Access.append if os.path.exists(series_path) else io.Access.create
-    series = io.Series(series_path, access_mode)
-    series.set_attribute("software", "PyPIC3D")
-    series.set_attribute("softwareVersion", importlib.metadata.version("PyPIC3D"))
-    return series
+    try:
+        if comm is None:
+            os.makedirs(output_path, exist_ok=True)
+            if access_mode is None:
+                access_mode = io.Access.append if os.path.exists(series_path) else io.Access.create
+            series = io.Series(series_path, access_mode)
+        else:
+            if not io.variants.get("mpi", False):
+                raise RuntimeError("Shared distributed output requires MPI-enabled openpmd-api and parallel HDF5")
+            if comm.rank == 0:
+                os.makedirs(output_path, exist_ok=True)
+            comm.Barrier()
+            if access_mode is None:
+                exists = comm.bcast(os.path.exists(series_path) if comm.rank == 0 else None, root=0)
+                access_mode = io.Access.append if exists else io.Access.create
+            # Ranks may own different numbers of chunks, including no particles.
+            # Metadata, flushes and close still execute collectively.
+            series = io.Series(series_path, access_mode, comm,
+                               '{"hdf5":{"independent_stores":true}}')
+        series.set_attribute("software", "PyPIC3D")
+        series.set_attribute("softwareVersion", importlib.metadata.version("PyPIC3D"))
+        return series
+    except BaseException:
+        _abort_parallel_write(comm)
+        raise
+
+
+def _close_openpmd_series(series, comm=None):
+    try:
+        series.close()
+    except BaseException:
+        _abort_parallel_write(comm)
+        raise
 
 def _configure_openpmd_mesh(
     mesh,
@@ -148,6 +183,7 @@ def _write_openpmd_scalar_mesh(iteration, name, data, dynamic_parameters, active
     record.store_chunk(array, [0] * array.ndim, array.shape)
     record.unit_SI = 1.0
     _set_mesh_position(record, name, 0, active_dims, dynamic_parameters)
+    return [array]
 
 
 def _write_openpmd_vector_mesh(iteration, name, components, dynamic_parameters, active_dims=(1,1,1)):
@@ -158,13 +194,16 @@ def _write_openpmd_vector_mesh(iteration, name, components, dynamic_parameters, 
         active_dims,
         quantity_name=name,
     )
+    buffers = []
     for component_index, (component_name, component_data) in enumerate(zip(("x", "y", "z"), components)):
         array = _ensure_openpmd_array(component_data)
+        buffers.append(array)
         record = mesh[component_name]
         record.reset_dataset(io.Dataset(array.dtype, array.shape))
         record.store_chunk(array, [0] * array.ndim, array.shape)
         record.unit_SI = 1.0
         _set_mesh_position(record, name, component_index, active_dims, dynamic_parameters)
+    return buffers
 
 
 def _field_map_to_interior(field_map):
@@ -278,6 +317,7 @@ def _reset_vector_mesh_record(iteration, name, component_name, *, dynamic_parame
 
 def write_tiled_scalar_field_chunks_to_iteration(iteration, name, host_shards, *, dynamic_parameters, layout):
     record = _reset_scalar_mesh_record(iteration, name, dynamic_parameters=dynamic_parameters, layout=layout)
+    buffers = []
 
     for shard_index, shard_data in host_shards:
         for offset, tile in _iter_tile_chunks_from_host_shard(
@@ -286,7 +326,9 @@ def write_tiled_scalar_field_chunks_to_iteration(iteration, name, host_shards, *
             layout=layout,
         ):
             tile = _ensure_openpmd_array(tile, dtype=layout.dtype)
+            buffers.append(tile)
             record.store_chunk(tile, offset, list(tile.shape))
+    return buffers
 
 
 def write_tiled_vector_field_chunks_to_iteration(
@@ -298,6 +340,7 @@ def write_tiled_vector_field_chunks_to_iteration(
     layout,
     component_names=("x", "y", "z"),
 ):
+    buffers = []
     for component_name, host_shards in zip(component_names, component_host_shards):
         record = _reset_vector_mesh_record(
             iteration,
@@ -314,7 +357,30 @@ def write_tiled_vector_field_chunks_to_iteration(
                 layout=layout,
             ):
                 tile = _ensure_openpmd_array(tile, dtype=layout.dtype)
+                buffers.append(tile)
                 record.store_chunk(tile, offset, list(tile.shape))
+    return buffers
+
+
+def write_tiled_field_snapshot_to_iteration(iteration, snapshot, *, dynamic_parameters, layout):
+    """Store owned tile interiors in the existing common-size mesh records."""
+    buffers = []
+    # All ranks create record metadata in the same order, even with no chunks.
+    for name in sorted(snapshot.fields):
+        value = snapshot.fields[name]
+        is_vector = isinstance(value, tuple) and len(value) == 3
+        if is_vector:
+            chunks = write_tiled_vector_field_chunks_to_iteration(
+                iteration, name, value, dynamic_parameters=dynamic_parameters, layout=layout)
+        else:
+            chunks = write_tiled_scalar_field_chunks_to_iteration(
+                iteration, name, value, dynamic_parameters=dynamic_parameters, layout=layout)
+        buffers.extend(chunks)
+
+    current_offset = getattr(snapshot, "current_time_offset", None)
+    if current_offset is not None and "J" in snapshot.fields:
+        iteration.meshes["J"].time_offset = current_offset
+    return buffers
 
 
 def write_tiled_field_snapshot_openpmd(
@@ -325,8 +391,9 @@ def write_tiled_field_snapshot_openpmd(
     dynamic_parameters,
     layout,
     file_extension=".bp",
+    comm=None,
 ):
-    series = _open_openpmd_series(output_dir, filename, file_extension=file_extension)
+    series = _open_openpmd_series(output_dir, filename, file_extension=file_extension, comm=comm)
 
     try:
         iteration = series.iterations[int(snapshot.step)]
@@ -334,40 +401,25 @@ def write_tiled_field_snapshot_openpmd(
         iteration.dt = float(dynamic_parameters.dt)
         iteration.time_unit_SI = 1.0
 
-        for name, value in snapshot.fields.items():
-            is_vector = isinstance(value, tuple) and len(value) == 3
-            if is_vector:
-                write_tiled_vector_field_chunks_to_iteration(
-                    iteration,
-                    name,
-                    value,
-                    dynamic_parameters=dynamic_parameters,
-                    layout=layout,
-                )
-            else:
-                write_tiled_scalar_field_chunks_to_iteration(
-                    iteration,
-                    name,
-                    value,
-                    dynamic_parameters=dynamic_parameters,
-                    layout=layout,
-                )
-
-        current_offset = getattr(snapshot, "current_time_offset", None)
-        if current_offset is not None and "J" in snapshot.fields:
-            iteration.meshes["J"].time_offset = current_offset
+        buffers = write_tiled_field_snapshot_to_iteration(
+            iteration, snapshot, dynamic_parameters=dynamic_parameters, layout=layout)
         series.flush()
+    except BaseException:
+        _abort_parallel_write(comm)
+        raise
     finally:
-        series.close()
+        _close_openpmd_series(series, comm)
 
 
 def write_openpmd_fields_to_iteration(iteration, field_map, dynamic_parameters, active_dims=(1,1,1)):
+    buffers = []
     for name, data in field_map.items():
         is_vector = isinstance(data, (list, tuple)) and len(data) == 3
         if is_vector:
-            _write_openpmd_vector_mesh(iteration, name, data, dynamic_parameters, active_dims)
+            buffers.extend(_write_openpmd_vector_mesh(iteration, name, data, dynamic_parameters, active_dims))
         else:
-            _write_openpmd_scalar_mesh(iteration, name, data, dynamic_parameters, active_dims)
+            buffers.extend(_write_openpmd_scalar_mesh(iteration, name, data, dynamic_parameters, active_dims))
+    return buffers
 
 
 def _axis_diagnostic_position_array(x, u, dt, axis_min, axis_max, bc):
@@ -416,31 +468,53 @@ def _count_snapshot_particles_by_species(snapshot):
     return counts
 
 
-def _iter_snapshot_particle_chunks(snapshot, static_parameters, dynamic_parameters):
-    if len(snapshot.x_shards) != len(snapshot.u_shards) or len(snapshot.x_shards) != len(snapshot.active_shards):
-        raise ValueError("Particle snapshot x, u, and active shard lists must have the same length.")
+def _particle_shards_by_index(shards):
+    """Match owned tile views even when arrays group local tiles differently."""
+    indexed = {}
+    for index, data in shards:
+        origin = tuple(_slice_start(part) for part in index[:3])
+        for local in np.ndindex(data.shape[:3]):
+            # Views retain tile axes and never assemble a whole particle array.
+            tile_index = tuple(slice(start + offset, start + offset + 1)
+                               for start, offset in zip(origin, local)) + tuple(index[3:])
+            tile = data[tuple(slice(offset, offset + 1) for offset in local)]
+            key = tuple(
+                (part.start or 0,
+                 part.stop if part.stop is not None else (part.start or 0) + tile.shape[axis],
+                 part.step or 1) if isinstance(part, slice)
+                else (int(part), int(part) + 1, 1)
+                for axis, part in enumerate(tile_index[:5])
+            )
+            if key in indexed:
+                raise ValueError("Particle snapshots must contain each owned tile exactly once.")
+            indexed[key] = (tile_index, tile)
+    return indexed
+
+
+def _iter_snapshot_particle_chunks(
+    snapshot, static_parameters, dynamic_parameters, *, include_tile_index=False, species_index=None,
+):
+    x_shards = _particle_shards_by_index(snapshot.x_shards)
+    u_shards = _particle_shards_by_index(snapshot.u_shards)
+    active_shards = _particle_shards_by_index(snapshot.active_shards)
+    if x_shards.keys() != u_shards.keys() or x_shards.keys() != active_shards.keys():
+        raise ValueError("Particle snapshot x, u, and active shards must own the same indices.")
 
     C = float(dynamic_parameters.C)
     species_charge = np.asarray(snapshot.species_charge, dtype=np.float64)
     species_mass = np.asarray(snapshot.species_mass, dtype=np.float64)
     species_weight = np.asarray(snapshot.species_weight, dtype=np.float64)
 
-    static_metric = getattr(snapshot, "gamma_shards", None) is not None
-    # static-metric snapshots carry Gamma computed from covariant u_i and the metric
-    gamma_shards = snapshot.gamma_shards if static_metric else [(None, None)] * len(snapshot.x_shards)
-    if static_metric:
-        if len(gamma_shards) != len(snapshot.x_shards):
-            raise ValueError("Particle snapshot gamma and x shard lists must have the same length.")
-        for (x_index, _), (gamma_index, _) in zip(snapshot.x_shards, gamma_shards):
-            if tuple(gamma_index) != tuple(x_index[:5]):
-                raise ValueError("Particle snapshot gamma shards must follow the x shard layout.")
+    metric_momentum = getattr(snapshot, "gamma_shards", None) is not None
+    # GR snapshots carry Gamma computed from covariant u_i and the metric.
+    gamma_shards = _particle_shards_by_index(snapshot.gamma_shards) if metric_momentum else {}
+    if metric_momentum and x_shards.keys() != gamma_shards.keys():
+        raise ValueError("Particle snapshot gamma shards must own the same indices as x.")
 
-    for (x_index, x_chunk), (_u_index, u_chunk), (_active_index, active_chunk), (_gamma_index, gamma_chunk) in zip(
-        snapshot.x_shards,
-        snapshot.u_shards,
-        snapshot.active_shards,
-        gamma_shards,
-    ):
+    for key, (x_index, x_chunk) in x_shards.items():
+        u_chunk = u_shards[key][1]
+        active_chunk = active_shards[key][1]
+        gamma_chunk = gamma_shards[key][1] if metric_momentum else None
         if x_chunk.ndim != 6:
             raise ValueError(
                 "Expected particle x shard with shape "
@@ -452,14 +526,16 @@ def _iter_snapshot_particle_chunks(snapshot, static_parameters, dynamic_paramete
         if active_chunk.shape != x_chunk.shape[:-1]:
             raise ValueError(f"Particle active shard shape {active_chunk.shape} must match x.shape[:-1] {x_chunk.shape[:-1]}.")
 
-        s0 = _slice_start(x_index[3])
+        tx0, ty0, tz0, s0 = tuple(_slice_start(part) for part in x_index[:4])
         ntx, nty, ntz, ns_local, _slots, _coords = x_chunk.shape
 
         for tx in range(ntx):
             for ty in range(nty):
                 for tz in range(ntz):
                     for local_s in range(ns_local):
-                        species_index = s0 + local_s
+                        species = s0 + local_s
+                        if species_index is not None and species != species_index:
+                            continue
                         active = np.asarray(active_chunk[tx, ty, tz, local_s], dtype=bool)
                         n_active = int(np.count_nonzero(active))
                         if n_active == 0:
@@ -468,20 +544,26 @@ def _iter_snapshot_particle_chunks(snapshot, static_parameters, dynamic_paramete
                         x_live = np.asarray(x_chunk[tx, ty, tz, local_s], dtype=np.float64)[active]
                         u_live = np.asarray(u_chunk[tx, ty, tz, local_s], dtype=np.float64)[active]
 
-                        charge = np.full(n_active, float(species_charge[species_index]), dtype=np.float64)
-                        mass = np.full(n_active, float(species_mass[species_index]), dtype=np.float64)
-                        weight = np.full(n_active, float(species_weight[species_index]), dtype=np.float64)
+                        charge = np.full(n_active, float(species_charge[species]), dtype=np.float64)
+                        mass = np.full(n_active, float(species_mass[species]), dtype=np.float64)
+                        weight = np.full(n_active, float(species_weight[species]), dtype=np.float64)
 
-                        if static_metric:
+                        if metric_momentum:
                             gamma = np.asarray(gamma_chunk[tx, ty, tz, local_s], dtype=np.float64)[active]
                             momentum = u_live * mass[:, None]
-                            # covariant u_i already includes Gamma; positions are written as stored
-                            yield species_index, x_live, momentum, charge, mass, weight, gamma
+                            x_diagnostic = x_live
+                            # Covariant u_i already includes Gamma; use stored positions.
                         else:
-                            x_diagnostic = _diagnostic_position_array(x_live, u_live, static_parameters, dynamic_parameters)
+                            x_diagnostic = (x_live if getattr(snapshot, "initial", False) else
+                                            _diagnostic_position_array(x_live, u_live, static_parameters, dynamic_parameters))
                             gamma = 1.0 / np.sqrt(1.0 - np.sum(u_live * u_live, axis=1) / C**2)
                             momentum = u_live * (mass * gamma)[:, None]
-                            yield species_index, x_diagnostic, momentum, charge, mass, weight, gamma
+
+                        chunk = species, x_diagnostic, momentum, charge, mass, weight, gamma
+                        if include_tile_index:
+                            yield (tx0 + tx, ty0 + ty, tz0 + tz, species), chunk
+                        else:
+                            yield chunk
 
 
 def _reset_particle_species_records(species_group, dtype, num_particles):
@@ -501,7 +583,9 @@ def _reset_particle_species_records(species_group, dtype, num_particles):
         record_component.unit_SI = 1.0
 
 
-def _store_particle_record_chunk(species_group, offset, x, momentum, charge, mass, weight, gamma, dtype=np.float64):
+def _store_particle_record_chunk(
+    species_group, offset, x, momentum, charge, mass, weight, gamma, dtype=np.float64, buffers=None,
+):
     num_particles = int(x.shape[0])
     if num_particles == 0:
         return int(offset)
@@ -515,16 +599,24 @@ def _store_particle_record_chunk(species_group, offset, x, momentum, charge, mas
     mass = _ensure_openpmd_array(mass, dtype=dtype)
     weight = _ensure_openpmd_array(weight, dtype=dtype)
     gamma = _ensure_openpmd_array(gamma, dtype=dtype)
+    if buffers is None:
+        buffers = []
+    buffers.extend((x, momentum, charge, mass, weight, gamma))
 
     for component, data in zip(("x", "y", "z"), (x[:, 0], x[:, 1], x[:, 2])):
-        species_group["position"][component].store_chunk(_ensure_openpmd_array(data, dtype=dtype), start, extent)
+        data = _ensure_openpmd_array(data, dtype=dtype)
+        buffers.append(data)
+        species_group["position"][component].store_chunk(data, start, extent)
 
     zeros = _ensure_openpmd_array(np.zeros(num_particles, dtype=np.dtype(dtype)), dtype=dtype)
+    buffers.append(zeros)
     for component in ("x", "y", "z"):
         species_group["positionOffset"][component].store_chunk(zeros, start, extent)
 
     for component, data in zip(("x", "y", "z"), (momentum[:, 0], momentum[:, 1], momentum[:, 2])):
-        species_group["momentum"][component].store_chunk(_ensure_openpmd_array(data, dtype=dtype), start, extent)
+        data = _ensure_openpmd_array(data, dtype=dtype)
+        buffers.append(data)
+        species_group["momentum"][component].store_chunk(data, start, extent)
 
     species_group["weighting"].store_chunk(weight, start, extent)
     species_group["charge"].store_chunk(charge, start, extent)
@@ -534,24 +626,44 @@ def _store_particle_record_chunk(species_group, offset, x, momentum, charge, mas
     return int(offset) + num_particles
 
 
-def write_tiled_particle_snapshot_to_iteration(iteration, snapshot, static_parameters, dynamic_parameters, dtype=np.float64):
-    counts = _count_snapshot_particles_by_species(snapshot)
+def write_tiled_particle_snapshot_to_iteration(
+    iteration, snapshot, static_parameters, dynamic_parameters, dtype=np.float64, comm=None, species_index=None,
+):
+    """Compact local slots and place records in global tile order on every rank."""
+    n_species = len(snapshot.species_names)
+    tile_counts = tuple(int(getattr(dynamic_parameters, "N" + axis)) // int(width)
+                        for axis, width in zip("xyz", static_parameters.tile_shape))
+    counts = np.zeros(tile_counts + (n_species,), dtype=np.int64)
+    for index, active in snapshot.active_shards:
+        counts[index[:4]] += np.count_nonzero(active, axis=-1)
+    local_counts = counts
+    if comm is not None:
+        from mpi4py import MPI
+        counts = np.empty_like(local_counts)
+        comm.Allreduce(local_counts, counts, op=MPI.SUM)
 
-    for species_index, species_name in enumerate(snapshot.species_names):
-        species_group = iteration.particles[species_name.replace(" ", "_")]
+    flat_counts = counts.reshape((int(np.prod(tile_counts)), n_species))
+    offsets = (np.cumsum(flat_counts, axis=0) - flat_counts).reshape(counts.shape)
+    totals = np.sum(flat_counts, axis=0)
+    selected_species = range(n_species) if species_index is None else (species_index,)
+    for species in selected_species:
+        species_group = iteration.particles[snapshot.species_names[species].replace(" ", "_")]
         _reset_particle_species_records(
             species_group,
             dtype=dtype,
-            num_particles=int(counts[species_index]),
+            num_particles=int(totals[species]),
         )
 
-    offsets = [0] * len(snapshot.species_names)
-
-    for species_index, x, momentum, charge, mass, weight, gamma in _iter_snapshot_particle_chunks(snapshot, static_parameters, dynamic_parameters):
-        species_group = iteration.particles[snapshot.species_names[species_index].replace(" ", "_")]
-        offsets[species_index] = _store_particle_record_chunk(
+    buffers = []
+    stored = [0] * n_species
+    for tile_species, chunk in _iter_snapshot_particle_chunks(
+        snapshot, static_parameters, dynamic_parameters, include_tile_index=True, species_index=species_index,
+    ):
+        species, x, momentum, charge, mass, weight, gamma = chunk
+        species_group = iteration.particles[snapshot.species_names[species].replace(" ", "_")]
+        _store_particle_record_chunk(
             species_group,
-            int(offsets[species_index]),
+            int(offsets[tile_species]),
             x,
             momentum,
             charge,
@@ -559,11 +671,16 @@ def write_tiled_particle_snapshot_to_iteration(iteration, snapshot, static_param
             weight,
             gamma,
             dtype=dtype,
+            buffers=buffers,
         )
+        stored[species] += int(x.shape[0])
 
-    for species_name, stored, expected in zip(snapshot.species_names, offsets, counts):
-        if int(stored) != int(expected):
-            raise RuntimeError(f"Stored {stored} particles for {species_name}, expected {expected}.")
+    expected = local_counts.sum(axis=(0, 1, 2))
+    for species in selected_species:
+        if stored[species] != int(expected[species]):
+            raise RuntimeError(f"Stored {stored[species]} local particles for {snapshot.species_names[species]}, "
+                               f"expected {expected[species]}.")
+    return buffers
 
 
 def write_tiled_particle_snapshot_openpmd(
@@ -575,8 +692,9 @@ def write_tiled_particle_snapshot_openpmd(
     dynamic_parameters,
     file_extension=".bp",
     dtype=np.float64,
+    comm=None,
 ):
-    series = _open_openpmd_series(output_dir, filename, file_extension=file_extension)
+    series = _open_openpmd_series(output_dir, filename, file_extension=file_extension, comm=comm)
 
     try:
         iteration = series.iterations[int(snapshot.step)]
@@ -584,17 +702,21 @@ def write_tiled_particle_snapshot_openpmd(
         iteration.dt = float(dynamic_parameters.dt)
         iteration.time_unit_SI = 1.0
 
-        write_tiled_particle_snapshot_to_iteration(
+        buffers = write_tiled_particle_snapshot_to_iteration(
             iteration,
             snapshot,
             static_parameters,
             dynamic_parameters,
             dtype=dtype,
+            comm=comm,
         )
 
         series.flush()
+    except BaseException:
+        _abort_parallel_write(comm)
+        raise
     finally:
-        series.close()
+        _close_openpmd_series(series, comm)
 
 
 def write_openpmd_initial_particles(
@@ -606,183 +728,96 @@ def write_openpmd_initial_particles(
     species_config=None,
     species_names=None,
     metric=None,
+    comm=None,
 ):
-    """
-    Write the initial particle states to separate openPMD files, one per species.
+    """Write initial owned particle chunks to the existing per-species files."""
+    from PyPIC3D.diagnostics.async_writer import make_tiled_particle_snapshot
 
-    Args:
-        particles (list): List of particle species.
-        static_parameters (dict): Compile-time/run parameters.
-        dynamic_parameters (dict): Scalar/grid parameters.
-        output_dir (str): Base output directory for the simulation.
-        filename (str): Base name of the openPMD output file (species name is prepended).
-        metric (YeeMetric): Static-metric runs pass the grid metric; particle u is then covariant u_i.
-    """
-
-    static_metric_gamma = None
-    if metric is not None:
-        static_metric_gamma = particle_lorentz_factor(particles, metric, static_parameters, dynamic_parameters)
-        # flattened per species below with the same active mask as particles_for_output
-        active_tiles = particles.active
-
-    particles = particles_for_output(
-        particles,
-        species_config=species_config,
-        species_names=species_names,
-        static_parameters=static_parameters,
-        dynamic_parameters=dynamic_parameters,
-    )
-    # Initial particle dumps may receive tile-major runtime storage.  The
-    # openPMD file still contains ordinary per-species particle records.
-
-    if not particles:
-        return
-    
-    C = float(dynamic_parameters.C)
-    # speed of light
-
-    output_path = os.path.join(output_dir, "data", "initial_particles")
-    os.makedirs(output_path, exist_ok=True)
-
-    for species in particles:
-        species_name = species.name.replace(" ", "_")
-        series_filename = f"{species_name}_{filename}"
-        series_path = os.path.join(output_path, series_filename)
-
-        series = io.Series(series_path, io.Access.create)
-        series.set_attribute("software", "PyPIC3D")
-        series.set_attribute("softwareVersion", importlib.metadata.version("PyPIC3D"))
-
-        iteration = series.iterations[0]
+    try:
+        gamma = None if metric is None else particle_lorentz_factor(
+            particles, metric, static_parameters, dynamic_parameters)
         bssn = getattr(dynamic_parameters, "bssn_parameters", None)
-        iteration.time = float(bssn.time) if bssn is not None else 0.0
-        iteration.dt = float(dynamic_parameters.dt)
-        iteration.time_unit_SI = 1.0
-
-        species_group = iteration.particles[species_name]
-
-        positions = _ensure_openpmd_array(species.x)
-        velocities = _ensure_openpmd_array(species.u)
-        x, y, z = positions.T
-        if static_metric_gamma is None:
-            gamma = 1 / np.sqrt(1.0 - np.sum(velocities**2, axis=1) / C**2)
-            # compute the Lorentz factor
-            momentum_per_mass = velocities * gamma[:, None]
-        else:
-            s = species.species_index
-            active = np.asarray(active_tiles[:, :, :, s, :]).reshape(-1)
-            gamma = np.asarray(static_metric_gamma[:, :, :, s, :]).reshape(-1)[active]
-            momentum_per_mass = velocities
-            # covariant u_i already includes the Lorentz factor
-
-        x = _ensure_openpmd_array(x)
-        y = _ensure_openpmd_array(y)
-        z = _ensure_openpmd_array(z)
-        gamma = _ensure_openpmd_array(gamma)
-
-        num_particles = x.shape[0]
-        particle_mass = species.mass
-        particle_charge = species.charge
-        particle_weight = species.weight
-
-        if np.ndim(particle_weight) == 0:
-            weights = _ensure_openpmd_array(np.full(num_particles, float(particle_weight), dtype=np.float64))
-        else:
-            weights = _ensure_openpmd_array(particle_weight).reshape(-1)
-
-        if np.ndim(particle_mass) == 0:
-            masses = _ensure_openpmd_array(np.full(num_particles, float(particle_mass), dtype=np.float64))
-        else:
-            masses = _ensure_openpmd_array(particle_mass).reshape(-1)
-
-        if np.ndim(particle_charge) == 0:
-            charges = _ensure_openpmd_array(np.full(num_particles, float(particle_charge), dtype=np.float64))
-        else:
-            charges = _ensure_openpmd_array(particle_charge).reshape(-1)
-
-        position = species_group["position"]
-        for component, data in zip(("x", "y", "z"), (x, y, z)):
-            record_component = position[component]
-            record_component.reset_dataset(io.Dataset(data.dtype, [num_particles]))
-            record_component.store_chunk(data, [0], [num_particles])
-            record_component.unit_SI = 1.0
-
-        # positionOffset: required by openPMD consumers (WarpX expects it)
-        pos_off = species_group["positionOffset"]
-        zeros = _ensure_openpmd_array(np.zeros(num_particles, dtype=np.float64))
-        for comp in ("x", "y", "z"):
-            rc = pos_off[comp]
-            rc.reset_dataset(io.Dataset(zeros.dtype, [num_particles]))
-            rc.store_chunk(zeros, [0], [num_particles])
-            rc.unit_SI = 1.0
-
-        momentum = species_group["momentum"]
-        for component, data in zip(("x", "y", "z"), momentum_per_mass.T):
-            data = _ensure_openpmd_array(data * masses)
-            record_component = momentum[component]
-            record_component.reset_dataset(io.Dataset(data.dtype, [num_particles]))
-            record_component.store_chunk(data, [0], [num_particles])
-            record_component.unit_SI = 1.0
-
-        gamma_record = species_group["gamma"]
-        gamma_record.reset_dataset(io.Dataset(gamma.dtype, [num_particles]))
-        gamma_record.store_chunk(gamma, [0], [num_particles])
-        gamma_record.unit_SI = 1.0
-
-        weighting = species_group["weighting"]
-        weighting.reset_dataset(io.Dataset(weights.dtype, [num_particles]))
-        weighting.store_chunk(weights, [0], [num_particles])
-        weighting.unit_SI = 1.0
-
-        charge = species_group["charge"]
-        charge.reset_dataset(io.Dataset(charges.dtype, [num_particles]))
-        charge.store_chunk(charges, [0], [num_particles])
-        charge.unit_SI = 1.0
-
-        mass = species_group["mass"]
-        mass.reset_dataset(io.Dataset(masses.dtype, [num_particles]))
-        mass.store_chunk(masses, [0], [num_particles])
-        mass.unit_SI = 1.0
-
-        series.flush()
-        series.close()
-
-def write_openpmd_initial_fields(field_map, static_parameters, dynamic_parameters, output_dir, filename="initial_fields.h5"):
-    """
-    Write the initial field states to an openPMD file.
-
-    Args:
-        field_map (dict): Selected scalar and vector mesh quantities.
-        static_parameters (dict): Compile-time/run parameters.
-        dynamic_parameters (dict): Scalar/grid parameters.
-        output_dir (str): Base output directory for the simulation.
-        filename (str): openPMD file name.
-    """
-
-    field_map = field_map_for_output(field_map, static_parameters)
-    field_map = _field_map_to_interior(field_map)
-    # extract physical interior (strip ghost cells)
-
-    active_dims = (1, 1, 1)
-    # keep singleton mesh axes so thin 2D runs stay in physical x-y-z coordinates
+        time = float(bssn.time) if bssn is not None else 0.0
+        snapshot = make_tiled_particle_snapshot(
+            particles, step=0, time=time, species_names=species_names,
+            species_config=species_config, gamma=gamma, initial=True)
+        # Initial positions and velocities precede the leapfrog seed. The
+        # snapshot's initial flag keeps x unchanged even for non-GR particles.
+        output_path = os.path.join(output_dir, "data", "initial_particles")
+        for species, name in enumerate(snapshot.species_names):
+            series_filename = f"{name.replace(' ', '_')}_{filename}"
+            series = _open_openpmd_series(
+                output_path, series_filename, file_extension=None, comm=comm, access_mode=io.Access.create)
+            try:
+                iteration = series.iterations[0]
+                iteration.time = time
+                iteration.dt = float(dynamic_parameters.dt)
+                iteration.time_unit_SI = 1.0
+                buffers = write_tiled_particle_snapshot_to_iteration(
+                    iteration, snapshot, static_parameters, dynamic_parameters,
+                    comm=comm, species_index=species)
+                series.flush()
+            except BaseException:
+                _abort_parallel_write(comm)
+                raise
+            finally:
+                _close_openpmd_series(series, comm)
+    except BaseException:
+        _abort_parallel_write(comm)
+        raise
 
 
-    output_path = os.path.join(output_dir, "data", "initial_fields")
-    os.makedirs(output_path, exist_ok=True)
-    series_path = os.path.join(output_path, filename)
-    series = io.Series(series_path, io.Access.create)
-    series.set_attribute("software", "PyPIC3D")
-    series.set_attribute("softwareVersion", importlib.metadata.version("PyPIC3D"))
-    # create the openPMD series
+def write_openpmd_initial_fields(
+    field_map, static_parameters, dynamic_parameters, output_dir, filename="initial_fields.h5", comm=None,
+):
+    """Write initial tile interiors without globally assembling tiled fields."""
+    from PyPIC3D.diagnostics.async_writer import make_tiled_field_snapshot
 
-    iteration = series.iterations[0]
-    bssn = getattr(dynamic_parameters, "bssn_parameters", None)
-    iteration.time = float(bssn.time) if bssn is not None else 0.0
-    iteration.dt = float(dynamic_parameters.dt)
-    iteration.time_unit_SI = 1.0
-    write_openpmd_fields_to_iteration(iteration, field_map, dynamic_parameters, active_dims)
-    if bssn is not None and "J" in field_map:
-        # Initial current comes directly from the common-time particle state.
-        iteration.meshes["J"].time_offset = 0.0
-    series.flush()
-    series.close()
+    try:
+        tiled_fields = {}
+        ordinary_fields = {}
+        for name, value in field_map.items():
+            vector = isinstance(value, (list, tuple)) and len(value) == 3
+            component = value[0] if vector else value
+            if component.ndim == 6:
+                tiled_fields[name] = value
+            else:
+                ordinary_fields[name] = value
+        if comm is not None and ordinary_fields:
+            raise ValueError("MPI initial field output requires tile-major fields.")
+
+        bssn = getattr(dynamic_parameters, "bssn_parameters", None)
+        time = float(bssn.time) if bssn is not None else 0.0
+        if tiled_fields:
+            snapshot = make_tiled_field_snapshot(
+                tiled_fields, step=0, time=time, current_time_offset=0.0 if bssn is not None else None)
+            layout = TiledMeshLayout(
+                global_shape=tuple(int(getattr(dynamic_parameters, "N" + axis)) for axis in "xyz"),
+                tile_shape=tuple(int(width) for width in static_parameters.tile_shape),
+                guard_cells=int(static_parameters.guard_cells),
+            )
+        output_path = os.path.join(output_dir, "data", "initial_fields")
+        series = _open_openpmd_series(
+            output_path, filename, file_extension=None, comm=comm, access_mode=io.Access.create)
+        try:
+            iteration = series.iterations[0]
+            iteration.time = time
+            iteration.dt = float(dynamic_parameters.dt)
+            iteration.time_unit_SI = 1.0
+            buffers = []
+            if tiled_fields:
+                buffers.extend(write_tiled_field_snapshot_to_iteration(
+                    iteration, snapshot, dynamic_parameters=dynamic_parameters, layout=layout))
+            buffers.extend(write_openpmd_fields_to_iteration(
+                iteration, _field_map_to_interior(ordinary_fields), dynamic_parameters))
+            if bssn is not None and "J" in field_map:
+                iteration.meshes["J"].time_offset = 0.0
+            series.flush()
+        except BaseException:
+            _abort_parallel_write(comm)
+            raise
+        finally:
+            _close_openpmd_series(series, comm)
+    except BaseException:
+        _abort_parallel_write(comm)
+        raise

@@ -218,6 +218,11 @@ def _debye_length(N_per_cell, charge, temperature, weight, dynamic_parameters):
 
 
 def load_particles_from_toml(config, static_parameters, dynamic_parameters):
+    if jax.process_count() > 1:
+        from PyPIC3D.distributed import mpi_communicator
+        from .distributed_initialization import load_distributed_particles
+        return load_distributed_particles(config, static_parameters, dynamic_parameters,
+                                          comm=mpi_communicator())
     if config is None:
         config = {}
 

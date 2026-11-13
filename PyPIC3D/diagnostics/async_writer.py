@@ -63,15 +63,15 @@ class TiledParticleSnapshot:
     species_weight: np.ndarray
     gamma_shards: Optional[HostShardList] = None
     # Static-metric runs supply the Lorentz factor computed from covariant u_i.
+    initial: bool = False
+    # Initial dumps precede leapfrog seeding and keep the stored positions.
 
 
 def _copy_array_to_host_shards(arr):
     """
     Copy a possibly-sharded JAX array to host-owned NumPy chunks.
 
-    Only addressable shards are copied. In ordinary single-process runs this is
-    the complete tiled field. Multi-process distributed output can build on this
-    same shard contract later.
+    Only addressable shards are copied, for both serial and MPI output.
     """
     if hasattr(arr, "addressable_shards"):
         out = []
@@ -152,6 +152,7 @@ def make_tiled_particle_snapshot(
     species_names,
     species_config,
     gamma=None,
+    initial=False,
 ):
     names = _species_names_for_output(species_names, int(particles.active.shape[3]))
 
@@ -166,6 +167,7 @@ def make_tiled_particle_snapshot(
         species_mass=_species_array_to_host(species_config.mass),
         species_weight=_species_array_to_host(species_config.weight),
         gamma_shards=None if gamma is None else _copy_array_to_host_shards(gamma),
+        initial=bool(initial),
     )
 
 
