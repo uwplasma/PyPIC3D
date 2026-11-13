@@ -108,7 +108,6 @@ name = "charged_dust"
 N_particles = 262144
 charge = 0.2
 mass = 0.99711270936837326
-
 weight = 4.0718187428556398e-06
 x_bc = "absorbing"
 y_bc = "absorbing"
