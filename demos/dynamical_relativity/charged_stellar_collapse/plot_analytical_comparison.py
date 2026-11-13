@@ -11,13 +11,10 @@ coordinate transformation of a still-evolving spacetime.
 Run with no arguments. Paths and plot limits are set below. Only the final
 iteration is read, and M and Q are the initial stellar values, without fits
 or boundary rescaling. PyPIC3D uses Gaussian G = c = 1 units, with RN charge term Q**2/R**2.
-The reader passes epsilon_0=1/(4*pi) to the reference plotting formulas.
 """
 
-import sys
 from pathlib import Path
 
-import jax
 import matplotlib
 import numpy as np
 import openpmd_api as io
@@ -26,24 +23,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 DEMO_DIRECTORY = Path(__file__).resolve().parent
-PACKAGE_ROOT = DEMO_DIRECTORY.parents[1]
-if str(PACKAGE_ROOT) not in sys.path:
-    sys.path.insert(0, str(PACKAGE_ROOT))
-
-import jax.numpy as jnp
-from initial_metric import OUTPUT_DIR
-
 STAR_DIRECTORY = DEMO_DIRECTORY / "outputs/data"
 OUTPUT_DIRECTORY = DEMO_DIRECTORY / "outputs/analytical_comparison"
+PROFILE_PATH = DEMO_DIRECTORY / "initial_data/radial_profile.npz"
 INNER_RADIUS_LIMIT = 10.0
-
-
-def first_derivative(value, dr, parity=-1):
-    value = jnp.asarray(value)
-    derivative = (jnp.roll(value,2)-8*jnp.roll(value,1)+8*jnp.roll(value,-1)-jnp.roll(value,-2))/(12*dr)
-    derivative = derivative.at[:2].set(jnp.nan)
-    derivative = derivative.at[-2:].set(jnp.nan)
-    return derivative
 
 
 def read_final_state():
@@ -68,22 +51,24 @@ def read_final_state():
                   alpha=values['lapse'],beta=values['beta'],chi=values['conformal_factor']**2,
                   conformal_grr=values['conformal_metric_xx'],
                   conformal_gt=.5*(values['conformal_metric_yy']+values['conformal_metric_zz']))
-    time = float(iteration.time*iteration.time_unit_SI)
     series.close()
-    data = np.load(OUTPUT_DIR/'radial_profile.npz')
-    # epsilon=1/(4 pi) expresses Gaussian charge in the RN plotting formula.
-    return fields,float(spacing[0]),step,time,float(data['total_mass']),float(data['total_charge']),1/(4*np.pi)
+    with np.load(PROFILE_PATH) as data:
+        mass = float(data['total_mass'])
+        charge = float(data['total_charge'])
+    return fields, float(spacing[0]), mass, charge
 
 
-def reconstruct_grr(fields, dr):
-    """Return R and the stationary g_RR on the outward, exterior branch."""
+def main():
+    fields, dr, mass, charge = read_final_state()
     alpha = fields["alpha"]
     beta = fields["beta"]  # Saved beta is contravariant beta^r.
     gamma_rr = fields["conformal_grr"] / fields["chi"]
     beta_r = gamma_rr * beta
 
     R = fields["r"] * np.sqrt(fields["conformal_gt"] / fields["chi"])
-    dR_dr = np.asarray(first_derivative(R, dr, parity=-1))
+    # Fourth-order centered derivative; leave unsupported edge cells as gaps.
+    dR_dr = np.full_like(R, np.nan)
+    dR_dr[2:-2] = (R[:-4] - 8*R[1:-3] + 8*R[3:-1] - R[4:]) / (12*dr)
     denominator = alpha**2 - beta_r * beta
     with np.errstate(divide="ignore", invalid="ignore"):
         g_rr = gamma_rr + beta_r**2 / denominator
@@ -94,16 +79,10 @@ def reconstruct_grr(fields, dr):
     exterior = ((np.arange(R.size) >= max(2, int(np.argmin(R))))
                 & (dR_dr > 0.0) & (denominator > 0.0)
                 & np.isfinite(g_RR) & (g_RR > 0.0))
-    return R, np.where(exterior, g_RR, np.nan), denominator
-
-
-def main():
-    jax.config.update("jax_enable_x64", True)
-    fields, dr, step, time, mass, charge, epsilon_0 = read_final_state()
-    R, g_RR, denominator = reconstruct_grr(fields, dr)
+    g_RR = np.where(exterior, g_RR, np.nan)
     # The stationary time shift leaves g_tt unchanged; reuse the g_RR mask.
     g_tt = np.where(np.isfinite(g_RR), -denominator, np.nan)
-    q_squared = charge**2 / (4.0 * np.pi * epsilon_0)
+    q_squared = charge**2
     horizon = mass + np.sqrt(mass**2 - q_squared)
     f_RN = 1.0 - 2.0 * mass / R + q_squared / R**2
 
@@ -146,29 +125,7 @@ def main():
             plt.close(figure)
             print(f"Saved {path}")
 
-    print(f"Source: {STAR_DIRECTORY / 'fields.h5'}, step={step}, t/M={time / mass:g}")
-    print(f"M={mass:.12g}, Q={charge:.12g}, q/M={np.sqrt(q_squared) / mass:.12g}")
-    print(f"RN outer horizon R+/M={horizon / mass:.12g}")
-    print("Reconstruction assumes the final snapshot is stationary.")
-    crossings = np.flatnonzero(denominator[:-1] * denominator[1:] < 0.0)
-    for index in crossings:
-        print(f"Numerical denominator changes sign at R/M in "
-              f"[{radius[index]:.9f}, {radius[index + 1]:.9f}]")
-    for component, numerical, analytical in (
-        ("g_RR", g_RR, g_RR_RN),
-        ("g_tt", g_tt, g_tt_RN),
-    ):
-        difference = numerical - analytical
-        relative_difference = difference / analytical
-        print(f"Outer boundary R/M={radius[-1]:.9f}: "
-              f"{component}={numerical[-1]:.9f}, RN={analytical[-1]:.9f}")
-        print(f"Outer boundary {component} mismatch: {difference[-1]:+.8e} "
-              f"(relative {relative_difference[-1]:+.8e})")
-        for target in (3.0, 5.0, 10.0):
-            index = int(np.argmin(abs(radius - target)))
-            print(f"R/M={radius[index]:.6f}: {component}={numerical[index]:.9f}, "
-                  f"RN={analytical[index]:.9f}, "
-                  f"relative mismatch={relative_difference[index]:+.8e}")
+    print("Reconstruction assumes spherical symmetry and a stationary final snapshot.")
 
 
 if __name__ == "__main__":
