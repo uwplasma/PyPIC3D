@@ -67,7 +67,7 @@ class LapseDeletingTests(unittest.TestCase):
     def test_disabled_and_empty_storage_do_not_need_a_metric(self):
         static, dynamic, _, particles = manufactured_lapse()
         result = lapse_deleting(particles, None, static._replace(lapse_deleting=False), dynamic)
-        for actual, expected in zip(result, particles):
+        for actual, expected in zip(jax.tree.leaves(result), jax.tree.leaves(particles)):
             self.assertTrue(bool(jnp.array_equal(actual, expected, equal_nan=True)))
         empty_x = jnp.zeros((1, 1, 1, 0, 0, 3))
         empty = TiledParticles(empty_x, empty_x, jnp.zeros(empty_x.shape[:-1], bool))

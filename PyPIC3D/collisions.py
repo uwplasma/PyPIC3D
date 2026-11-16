@@ -68,7 +68,7 @@ def _rotate(g, cos_t, key):
 
 
 def _nanbu_cos(s, r):
-    """Sample cos(theta) from Nanbu's distribution with <cos theta> = exp(-s) (Perez 2012 fits)."""
+    """Sample cos(theta) from Nanbu's distribution with <cos theta> = exp(-s) (See Perez 2012)."""
     inv_a = 0.0056958 + s * (0.9560202 + s * (-0.508139 + s * (0.47913906 + s * (-0.12788975 + s * 0.02389567))))
     a = jnp.where(s < 3, 1 / jnp.maximum(inv_a, 1e-12), 3 * jnp.exp(-s))
     cos_t = 1 + jnp.log(r + (1 - r) * jnp.exp(-2 * a)) / a
@@ -77,7 +77,7 @@ def _nanbu_cos(s, r):
 
 
 def _binary(key, x, u, active, spec, species_config, dyn):
-    """Takizuka-Abe collisions for one tile and one species pair (Smilei-style pairing)."""
+    """Takizuka-Abe collisions for one tile and one species pair."""
     _, sa, sb, coulomb_log = spec
     intra = sa == sb
     pick = (lambda v: v[sa]) if intra else (lambda v: jnp.concatenate((v[sa], v[sb])))
