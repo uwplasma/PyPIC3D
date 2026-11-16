@@ -21,7 +21,19 @@ MCC_PROCESSES = ("elastic", "back", "charge_exchange", "excitation", "ionization
 
 
 def load_collisions_from_toml(config, species_names):
-    """Translate ``[collisions.<name>]`` tables into hashable static specs."""
+    """Translate ``[collisions.<name>]`` tables into hashable static specs.
+
+    Args:
+        config (dict): Parsed TOML configuration; only its ``collisions`` tables are read.
+        species_names (list[str]): Particle species names in species-index order, used to
+            turn the ``species`` and ``product_species`` names into indices.
+
+    Returns:
+        tuple: One spec per table, ``("binary", a, b, coulomb_log)`` or
+        ``("mcc", species, background_density, background_temperature, background_mass, processes)``
+        with ``processes`` a tuple of ``(name, threshold_eV, energies_eV, sigmas_m2, product_a, product_b)``.
+        Empty when the configuration has no collisions.
+    """
     index = {name: i for i, name in enumerate(species_names)}
     specs = []
     for name, c in config.get("collisions", {}).items():
@@ -42,7 +54,17 @@ def load_collisions_from_toml(config, species_names):
 
 
 def _cross_section(value):
-    """Constant cross section [m^2], a two-column (eV, m^2) file, or an inline [[eV, m^2], ...] table."""
+    """Read a cross section sigma(E) as an (energy, sigma) lookup table.
+
+    Args:
+        value (float | str | list): A constant cross section [m^2], the path of a
+            two-column (energy [eV], sigma [m^2]) text file with ``#`` comments, or an
+            inline ``[[eV, m^2], ...]`` table.
+
+    Returns:
+        tuple[tuple, tuple]: Energies [eV] and cross sections [m^2], linearly interpolated
+        during the run and held at the end values outside the table.
+    """
     if isinstance(value, (int, float)):
         return (0.0, 1.0e30), (float(value), float(value))
     table = np.loadtxt(value, comments="#", ndmin=2) if isinstance(value, str) else np.asarray(value, float)
@@ -50,12 +72,30 @@ def _cross_section(value):
 
 
 def _isotropic(key, n):
+    """Draw random unit vectors uniformly distributed over the sphere.
+
+    Args:
+        key (jax.Array): JAX PRNG key.
+        n (int): Number of vectors.
+
+    Returns:
+        jnp.ndarray: Unit vectors, shape ``(n, 3)``.
+    """
     d = jax.random.normal(key, (n, 3))
     return d / jnp.linalg.norm(d, axis=-1, keepdims=True)
 
 
 def _rotate(g, cos_t, key):
-    """Rotate vectors g by polar angle acos(cos_t) about g, with uniform azimuth."""
+    """Rotate vectors g by polar angle acos(cos_t) about g, with uniform azimuth.
+
+    Args:
+        g (jnp.ndarray): Relative velocities, shape ``(n, 3)`` (m/s).
+        cos_t (jnp.ndarray): Cosine of the scattering angle for each vector, shape ``(n,)``.
+        key (jax.Array): JAX PRNG key for the azimuthal angle.
+
+    Returns:
+        jnp.ndarray: Rotated vectors with the same magnitudes as g, shape ``(n, 3)``.
+    """
     gn = jnp.linalg.norm(g, axis=-1, keepdims=True)
     n = g / jnp.maximum(gn, 1e-300)
     a = jnp.where(jnp.abs(n[:, :1]) < 0.9, jnp.array([1.0, 0.0, 0.0]), jnp.array([0.0, 1.0, 0.0]))
@@ -68,7 +108,16 @@ def _rotate(g, cos_t, key):
 
 
 def _nanbu_cos(s, r):
-    """Sample cos(theta) from Nanbu's distribution with <cos theta> = exp(-s) (See Perez 2012)."""
+    """Sample cos(theta) from Nanbu's distribution with <cos theta> = exp(-s) (See Perez 2012).
+
+    Args:
+        s (jnp.ndarray): Accumulated scattering parameter of each pair over one step;
+            s < 0.1 uses the small-angle limit and s >= 6 is isotropic.
+        r (jnp.ndarray): Uniform random numbers in (0, 1], same shape as s.
+
+    Returns:
+        jnp.ndarray: Cosine of the scattering angle in [-1, 1], same shape as s.
+    """
     inv_a = 0.0056958 + s * (0.9560202 + s * (-0.508139 + s * (0.47913906 + s * (-0.12788975 + s * 0.02389567))))
     a = jnp.where(s < 3, 1 / jnp.maximum(inv_a, 1e-12), 3 * jnp.exp(-s))
     cos_t = 1 + jnp.log(r + (1 - r) * jnp.exp(-2 * a)) / a
@@ -77,7 +126,20 @@ def _nanbu_cos(s, r):
 
 
 def _binary(key, x, u, active, spec, species_config, dyn):
-    """Takizuka-Abe collisions for one tile and one species pair."""
+    """Takizuka-Abe collisions for one tile and one species pair.
+
+    Args:
+        key (jax.Array): JAX PRNG key for this tile and spec.
+        x (jnp.ndarray): Tile positions, shape ``(species, slots, 3)`` (m).
+        u (jnp.ndarray): Tile velocities, shape ``(species, slots, 3)`` (m/s).
+        active (jnp.ndarray): Tile occupancy flags, shape ``(species, slots)``.
+        spec (tuple): ``("binary", a, b, coulomb_log)``; a == b collides a species with itself.
+        species_config (SpeciesConfig): Per-species charge, mass and macro-particle weight.
+        dyn: Dynamic parameters; uses ``dx``, ``dy``, ``dz``, ``dt`` and ``eps``.
+
+    Returns:
+        jnp.ndarray: Updated tile velocities, shape ``(species, slots, 3)``.
+    """
     _, sa, sb, coulomb_log = spec
     intra = sa == sb
     pick = (lambda v: v[sa]) if intra else (lambda v: jnp.concatenate((v[sa], v[sb])))
@@ -142,7 +204,21 @@ def _binary(key, x, u, active, spec, species_config, dyn):
 
 
 def _insert(x, u, active, s, mask, xn, un):
-    """Place masked new particles into free slots of species s; report overflow."""
+    """Place masked new particles into free slots of species s; report overflow.
+
+    Args:
+        x (jnp.ndarray): Tile positions, shape ``(species, slots, 3)`` (m).
+        u (jnp.ndarray): Tile velocities, shape ``(species, slots, 3)`` (m/s).
+        active (jnp.ndarray): Tile occupancy flags, shape ``(species, slots)``.
+        s (int): Index of the species that receives the new particles.
+        mask (jnp.ndarray): Which candidate particles to create, shape ``(slots,)``.
+        xn (jnp.ndarray): Candidate positions, shape ``(slots, 3)`` (m).
+        un (jnp.ndarray): Candidate velocities, shape ``(slots, 3)`` (m/s).
+
+    Returns:
+        tuple: Updated ``(x, u, active)`` and a flag that is True when some new
+        particles found no free slot and were dropped.
+    """
     free_first = jnp.argsort(active[s], stable=True)
     rank = jnp.cumsum(mask) - 1
     ok = mask & (rank < jnp.sum(~active[s]))
@@ -153,7 +229,22 @@ def _insert(x, u, active, s, mask, xn, un):
 
 
 def _mcc(key, x, u, active, spec, species_config, dyn):
-    """Background-gas Monte Carlo collisions for one tile and one projectile species."""
+    """Background-gas Monte Carlo collisions for one tile and one projectile species.
+
+    Args:
+        key (jax.Array): JAX PRNG key for this tile and spec.
+        x (jnp.ndarray): Tile positions, shape ``(species, slots, 3)`` (m).
+        u (jnp.ndarray): Tile velocities, shape ``(species, slots, 3)`` (m/s).
+        active (jnp.ndarray): Tile occupancy flags, shape ``(species, slots)``.
+        spec (tuple): ``("mcc", species, background_density, background_temperature,
+            background_mass, processes)`` from :func:`load_collisions_from_toml`.
+        species_config (SpeciesConfig): Per-species charge, mass and macro-particle weight.
+        dyn: Dynamic parameters; uses ``dt`` and ``kb``.
+
+    Returns:
+        tuple: Updated ``(x, u, active)`` and a flag that is True when ionization
+        products did not fit in the free slots.
+    """
     _, s, n_gas, t_gas, M, processes = spec
     S, m = u.shape[1], species_config.mass[s]
     keys = jax.random.split(key, 5 + 2 * len(processes))
@@ -193,7 +284,21 @@ def _mcc(key, x, u, active, spec, species_config, dyn):
 
 
 def apply_collisions(particles, species_config, static_parameters, dynamic_parameters):
-    """Apply every configured collision operator to all tiles; returns (particles, overflow)."""
+    """Apply every configured collision operator to all tiles.
+
+    Called right after the velocity push, so collisions act on ``u^{n+1/2}`` at ``x^n``.
+
+    Args:
+        particles (TiledParticles): Tile-major particles; ``particles.key`` must be a PRNG key.
+        species_config (SpeciesConfig): Per-species charge, mass and macro-particle weight.
+        static_parameters (StaticParameters): Uses ``collisions``, the specs from
+            :func:`load_collisions_from_toml`.
+        dynamic_parameters (DynamicParameters): Uses ``dx``, ``dy``, ``dz``, ``dt``, ``eps`` and ``kb``.
+
+    Returns:
+        tuple: Updated particles with an advanced ``key``, and a flag that is True when
+        ionization products overflowed a tile.
+    """
     specs = static_parameters.collisions
     if not specs:
         return particles, jnp.asarray(False)

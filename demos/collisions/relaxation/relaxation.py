@@ -32,12 +32,35 @@ E, ME, KB, EPS, M_AR = 1.602176634e-19, 9.1093837e-31, 1.380649e-23, 8.854187812
 
 
 def spitzer(qa, qb, ma, mb, ta, tb, nb):
-    """Energy exchange rate nu_ab in dT_a/dt = nu_ab (T_b - T_a); temperatures in J."""
+    """Energy exchange rate nu_ab in dT_a/dt = nu_ab (T_b - T_a).
+
+    Args:
+        qa (float): Charge of species a (C).
+        qb (float): Charge of species b (C).
+        ma (float): Mass of species a (kg).
+        mb (float): Mass of species b (kg).
+        ta (float): Temperature of species a (J).
+        tb (float): Temperature of species b (J).
+        nb (float): Number density of species b (m^-3).
+
+    Returns:
+        float: Energy-exchange rate (1/s).
+    """
     return 2 * qa**2 * qb**2 * nb * COULOMB_LOG / (3 * (2 * np.pi) ** 1.5 * EPS**2 * ma * mb * (ta / ma + tb / mb) ** 1.5)
 
 
 def two_temperature_theory(q, m, t0, time_axis):
-    """Integrate the coupled Spitzer equations for two species."""
+    """Integrate the coupled Spitzer equations for two species.
+
+    Args:
+        q (tuple[float, float]): Charges (C).
+        m (tuple[float, float]): Masses (kg).
+        t0 (tuple[float, float]): Initial temperatures (J).
+        time_axis (np.ndarray): Output times (s); each interval uses 20 Euler substeps.
+
+    Returns:
+        np.ndarray: Temperatures (J), shape ``(len(time_axis), 2)``.
+    """
     t, out = np.array(t0, float), []
     dt = np.diff(time_axis, prepend=0.0)
     for h in dt:
@@ -49,7 +72,16 @@ def two_temperature_theory(q, m, t0, time_axis):
 
 
 def collision_dt(q, m, t):
-    """Largest dt keeping every species pair's scattering parameter at thermal speed below SCATTER."""
+    """Largest dt keeping every species pair's scattering parameter at thermal speed below SCATTER.
+
+    Args:
+        q (tuple[float, ...]): Charges (C).
+        m (tuple[float, ...]): Masses (kg).
+        t (tuple[float, ...]): Temperatures (J).
+
+    Returns:
+        float: Time step (s).
+    """
     pairs = [(a, b) for a in range(len(m)) for b in range(a, len(m))]
     mu = lambda a, b: m[a] * m[b] / (m[a] + m[b])
     g3 = lambda a, b: (3 * (t[a] / m[a] + t[b] / m[b])) ** 1.5
@@ -57,7 +89,22 @@ def collision_dt(q, m, t):
 
 
 def run(name, mass, charge, temperature, specs, t_end, dt, cube=False):
-    """Advance a 0-D plasma with the given collision operators and record moments."""
+    """Advance a 0-D plasma with the given collision operators and record moments.
+
+    Args:
+        name (str): Name used in the progress printout.
+        mass (tuple[float, ...]): Mass of each species (kg).
+        charge (tuple[float, ...]): Charge of each species (C).
+        temperature (tuple[float, ...]): Initial temperature of each species (J).
+        specs (tuple): Collision specs in the :func:`PyPIC3D.collisions.load_collisions_from_toml` format.
+        t_end (float): Simulated time (s).
+        dt (float): Time step (s).
+        cube (bool): Start from a uniform (cube) velocity distribution instead of a Maxwellian.
+
+    Returns:
+        tuple: Times (s), temperatures (J) of shape ``(steps + 1, species)``, excess
+        kurtosis of v_x with the same shape, and the final particles.
+    """
     n_s, steps = len(mass), int(np.ceil(t_end / dt))
     keys = jax.random.split(jax.random.PRNGKey(SEED), 2 * n_s + 1)
     if cube:

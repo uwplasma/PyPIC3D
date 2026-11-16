@@ -31,7 +31,15 @@ VTH = np.sqrt(KB * T_GAS / M_AR)
 
 
 def run(seed):
-    """One relaxation run; returns temperature, excess kurtosis and v_x histograms at SNAPSHOTS."""
+    """One relaxation run of argon ions in a neutral argon gas.
+
+    Args:
+        seed (int): Random seed for the initial velocities, positions and collisions.
+
+    Returns:
+        tuple: Ion temperature (K) and excess kurtosis of v_x, each of shape
+        ``(STEPS + 1,)``, and v_x histograms at SNAPSHOTS of shape ``(len(SNAPSHOTS), len(BINS) - 1)``.
+    """
     energy = np.logspace(-6, 3, 400)
     sigma = NU / (N_GAS * np.sqrt(2 * energy * E / (M_AR / 2)))  # sigma ~ 1/g: constant collision rate
     specs = (("mcc", 0, N_GAS, T_GAS, M_AR, (("elastic", 0.0, tuple(energy), tuple(sigma), -1, -1),)),)

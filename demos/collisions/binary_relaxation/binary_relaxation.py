@@ -33,19 +33,49 @@ E, ME, KB, EPS = 1.602176634e-19, 9.1093837e-31, 1.380649e-23, 8.8541878128e-12
 
 
 def spitzer(ta, tb, n):
-    """Equal-mass energy-exchange rate nu_ab (dT_a/dt = nu_ab (T_b - T_a)); temperatures in K."""
+    """Equal-mass energy-exchange rate nu_ab (dT_a/dt = nu_ab (T_b - T_a)).
+
+    Args:
+        ta (float): Temperature of species a (K).
+        tb (float): Temperature of species b (K).
+        n (float): Number density of the partner species (m^-3).
+
+    Returns:
+        float: Energy-exchange rate (1/s).
+    """
     return 2 * E**4 * n * COULOMB_LOG / (3 * (2 * np.pi) ** 1.5 * EPS**2 * ME**2 * (KB * (ta + tb) / ME) ** 1.5)
 
 
 def band(ax, x, runs, color, label, **kw):
-    """Mean line with a shaded +/- 1 standard deviation band over seeds (runs has seeds on axis 0)."""
+    """Mean line with a shaded +/- 1 standard deviation band over seeds.
+
+    Args:
+        ax (matplotlib.axes.Axes): Axes to draw on.
+        x (np.ndarray): Horizontal coordinates.
+        runs (np.ndarray): Values with seeds on axis 0, shape ``(seeds, len(x))``.
+        color: Matplotlib color for the line and band.
+        label (str): Legend label.
+        **kw: Extra keyword arguments for the mean line.
+    """
     mean, std = runs.mean(0), runs.std(0)
     ax.fill_between(x, mean - std, mean + std, color=color, alpha=0.25, lw=0)
     ax.plot(x, mean, color=color, label=label, **kw)
 
 
 def run(temps, density, dt, steps, label, seed):
-    """Collide an electron and a positron population in one cell; return T_a(t), T_b(t) [K]."""
+    """Collide an electron and a positron population in 8^3 cells with PyPIC3D.
+
+    Args:
+        temps (tuple[float, float]): Initial electron and positron temperatures (K).
+        density (float): Number density of each species (m^-3).
+        dt (float): Time step (s).
+        steps (int): Number of collision steps.
+        label (str): Name used in the progress printout.
+        seed (int): Random seed for the initial velocities, positions and collisions.
+
+    Returns:
+        np.ndarray: Electron and positron temperatures (K), shape ``(steps + 1, 2)``.
+    """
     keys = jax.random.split(jax.random.PRNGKey(seed), 4)
     u = jnp.stack([jnp.sqrt(KB * t / ME) * jax.random.normal(k, (N, 3)) for k, t in zip(keys, temps)])
     particles = TiledParticles(x=jax.random.uniform(keys[2], (1, 1, 1, 2, N, 3), maxval=CELLS), u=u[None, None, None],
@@ -67,7 +97,18 @@ def run(temps, density, dt, steps, label, seed):
 
 
 def run_warpx(temps, density, dt, steps, seed):
-    """Same electron-positron box in WarpX (Perez binary collisions); return T_a(t), T_b(t) [K]."""
+    """Same electron-positron box in WarpX (Perez binary collisions).
+
+    Args:
+        temps (tuple[float, float]): Initial electron and positron temperatures (K).
+        density (float): Number density of each species (m^-3).
+        dt (float): Time step (s).
+        steps (int): Number of steps.
+        seed (int): Random seed; WarpX gets ``seed + 1``.
+
+    Returns:
+        np.ndarray: Electron and positron temperatures (K), shape ``(steps + 1, 2)``.
+    """
     out = os.path.abspath(os.path.join(OUTPUT_DIR, "warpx_equilibration"))
     shutil.rmtree(out, ignore_errors=True)
     os.makedirs(out)
@@ -119,7 +160,17 @@ PE.intervals = 1
 
 
 def spitzer_curve(temps, density, dt, steps):
-    """Integrate dT_a/dt = nu (T_b - T_a), dT_b/dt = nu (T_a - T_b) with the temperature-dependent Spitzer rate."""
+    """Integrate dT_a/dt = nu (T_b - T_a), dT_b/dt = nu (T_a - T_b) with the temperature-dependent Spitzer rate.
+
+    Args:
+        temps (tuple[float, float]): Initial temperatures (K).
+        density (float): Number density of each species (m^-3).
+        dt (float): Output interval (s); each interval uses 50 Euler substeps.
+        steps (int): Number of output intervals.
+
+    Returns:
+        np.ndarray: Temperatures (K), shape ``(steps + 1, 2)``.
+    """
     t, out = np.array(temps, float), [np.array(temps, float)]
     for _ in range(steps):
         for _ in range(50):
