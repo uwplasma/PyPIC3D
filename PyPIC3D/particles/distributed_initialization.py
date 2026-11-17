@@ -11,14 +11,18 @@ from PyPIC3D.particles.particle_tile_communication import PARTICLE_STATE_TILE_SP
 from PyPIC3D.utilities.grids import grid_domain_bounds
 
 
-def load_distributed_particles(config, static, dynamic, *, comm=None, chunk_size=262144):
+def load_distributed_particles(config, static, dynamic, *, chunk_size=262144):
     """Load original particle IDs in bounded blocks, preserving tile ordering.
 
     All six initial_x/y/z/vx/vy/vz entries must be native .npy files. Built-in
     random generation is deliberately unsupported here: changing random keys
     per process would silently change the physical initial condition.
+
+    Every process reads every block and keeps only the particles in tiles it
+    owns. Occupancy and temperature therefore come out identical everywhere
+    without any exchange, at the cost of each process reading the whole file.
     """
-    rank, size = (0, 1) if comm is None else (comm.rank, comm.size)
+    rank = jax.process_index()
     mesh = static.field_mesh
     counts = tuple(int(n) for n in mesh.devices.shape)
     widths = np.asarray(static.tile_shape, dtype=np.int64)
@@ -46,13 +50,10 @@ def load_distributed_particles(config, static, dynamic, *, comm=None, chunk_size
         if any(value.shape != (n,) for value in arrays):
             raise ValueError("Native particle arrays must each have shape (N_particles,)")
         received, velocity_square = [], 0.0
-        # Every rank enters the same number of exchanges, including ranks
-        # without particles in the final block or in an entire species.
-        rounds = math.ceil(n / (size*chunk_size))
-        for turn in range(rounds):
-            start = (turn*size + rank)*chunk_size
+        # Blocks are walked in file order and the kept rows keep their order
+        # within a block, so the concatenation below is already in file order.
+        for start in range(0, n, chunk_size):
             end = min(start + chunk_size, n)
-            ids = np.arange(start, max(start, end), dtype=np.int64)
             values = [np.asarray(a[start:end], dtype=np.float64) for a in arrays]
             x = np.stack(values[:3], axis=-1)
             u = np.stack(values[3:], axis=-1)
@@ -60,22 +61,16 @@ def load_distributed_particles(config, static, dynamic, *, comm=None, chunk_size
             cells = np.clip(np.floor((x-minimum)/spacing).astype(np.int64), 0, shape-1)
             tiles = cells // widths
             tile_ids = np.ravel_multi_index(tiles.T, counts)
-            destinations = owners[tile_ids]
-            packets = [(ids[destinations == dest], tile_ids[destinations == dest],
-                        x[destinations == dest], u[destinations == dest]) for dest in range(size)]
-            incoming = packets if comm is None else comm.alltoall(packets)
-            received.extend(packet for packet in incoming if len(packet[0]))
+            occupancy[:, species] += np.bincount(tile_ids, minlength=math.prod(counts))
+            kept = owners[tile_ids] == rank
+            if np.any(kept):
+                received.append((tile_ids[kept], x[kept], u[kept]))
 
         if received:
-            ids, tiles, x, u = (np.concatenate([packet[k] for packet in received]) for k in range(4))
-            order = np.argsort(ids, kind="stable")
-            tiles, x, u = tiles[order], x[order], u[order]
-            occupancy[:, species] = np.bincount(tiles, minlength=math.prod(counts))
+            tiles, x, u = (np.concatenate([packet[k] for packet in received]) for k in range(3))
         else:
             tiles, x, u = np.empty(0, dtype=np.int64), np.empty((0, 3)), np.empty((0, 3))
         local_particles.append((tiles, x, u))
-        if comm is not None:
-            velocity_square = comm.allreduce(velocity_square)
         mass, charge, kb = float(block["mass"]), float(block["charge"]), float(dynamic.kb)
         temperature = float(block.get("temperature", mass*velocity_square/(3*kb*n) if n else 0.0))
         # Preserve the serial metadata convention: vth describes the requested
@@ -93,11 +88,6 @@ def load_distributed_particles(config, static, dynamic, *, comm=None, chunk_size
                              z_bc=block.get("z_bc", "periodic"),
                              update_x=tuple(bool(block.get("update_" + axis, True)) for axis in "xyz")))
 
-    if comm is not None:
-        from mpi4py import MPI
-        global_occupancy = np.empty_like(occupancy)
-        comm.Allreduce(occupancy, global_occupancy, op=MPI.SUM)
-        occupancy = global_occupancy
     capacity = int(math.ceil(int(occupancy.max(initial=0))*float(static.particle_tile_capacity_factor)))
     local = {}
     for tile_id in np.flatnonzero(owners == rank):

@@ -2,7 +2,6 @@
 # 3D PIC code in Python using the JAX library
 
 import time
-import traceback
 
 import jax
 from jax import block_until_ready
@@ -40,26 +39,18 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
     The injector follows time_loop_static_metric's callable contract. Supply an
     explicit RNG key and reserve enough particle slots in the initial configuration.
     """
-    from PyPIC3D.utilities.distributed import mpi_communicator
-    comm = mpi_communicator()
-    try:
-        (
-            loop,
-            particles,
-            fields,
-            static_parameters,
-            dynamic_parameters,
-            plotting_parameters,
-            plasma_parameters,
-            species_config,
-        ) = initialize_simulation(config_file, bssn_state=bssn_state,
-                                  bssn_evolution_parameters=bssn_evolution_parameters,
-                                  field_initializers=field_initializers)
-    except BaseException:
-        if comm is not None:
-            traceback.print_exc()
-            comm.Abort(1)
-        raise
+    (
+        loop,
+        particles,
+        fields,
+        static_parameters,
+        dynamic_parameters,
+        plotting_parameters,
+        plasma_parameters,
+        species_config,
+    ) = initialize_simulation(config_file, bssn_state=bssn_state,
+                              bssn_evolution_parameters=bssn_evolution_parameters,
+                              field_initializers=field_initializers)
 
     Nt = static_parameters.Nt
     output_dir = static_parameters.output_dir
@@ -105,14 +96,14 @@ def run_PyPIC3D(config_file, *, pair_injector=None, injection_key=None,
     # A common-time final snapshot is needed when the work-energy budget writes its
     # endpoint at t = Nt, and for filtered GR qualification.
     final_endpoint = work_energy_theorem or matched_gr
-    with open_simulation_output(static_parameters, dynamic_parameters, plotting_parameters, comm) as writers:
+    with open_simulation_output(static_parameters, dynamic_parameters, plotting_parameters) as writers:
         iterations = Nt + int(final_endpoint)
         for t in tqdm(range(iterations), disable=jax.process_index() != 0):
             if t % plotting_parameters["plotting_interval"] == 0 or (final_endpoint and t == Nt):
                 write_scalar_diagnostics(particles, species_config, fields, static_parameters,
                                          dynamic_parameters, t, initial_energy)
                 write_simulation_output(particles, species_config, fields, static_parameters,
-                                        dynamic_parameters, plotting_parameters, t, writers, comm)
+                                        dynamic_parameters, plotting_parameters, t, writers)
 
             if t == Nt:
                 break

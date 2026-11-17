@@ -16,8 +16,8 @@ from PyPIC3D.utilities.toml_helpers import load_external_fields_from_toml
 from PyPIC3D.particles.distributed_initialization import load_distributed_particles
 from PyPIC3D.particles.particle_initialization import load_particles_from_toml
 from PyPIC3D.diagnostics.async_writer import make_tiled_field_snapshot
-from PyPIC3D.diagnostics.parallel_openpmd import write_parallel_snapshot
-from PyPIC3D.diagnostics.openPMD import TiledMeshLayout, _iter_tile_chunks_from_host_shard
+from PyPIC3D.diagnostics.openPMD import (
+    TiledMeshLayout, _iter_tile_chunks_from_host_shard, write_tiled_field_snapshot_openpmd)
 
 
 class TestDistributedInputOutput(unittest.TestCase):
@@ -106,15 +106,20 @@ class TestDistributedInputOutput(unittest.TestCase):
             coverage = coverage.at[region].add(1)
         self.assertTrue(bool(jnp.all(coverage == 1)))
 
-    def test_parallel_writer_preserves_uniform_record_shapes_for_default_readers(self):
+    def test_tiled_writer_preserves_uniform_record_shapes_for_default_readers(self):
         static = self.static._replace(boundary_conditions=(1, 1, 1))
         field = tiled_field_from_initializer(lambda x, y, z: x+2*y+3*z, static, self.dynamic)
         snapshot = make_tiled_field_snapshot({"lapse": field, "E": (field, field, field)}, step=4, time=0.2)
+        layout = TiledMeshLayout(
+            global_shape=tuple(int(getattr(self.dynamic, "N" + axis)) for axis in "xyz"),
+            tile_shape=tuple(int(width) for width in static.tile_shape),
+            guard_cells=int(static.guard_cells),
+        )
         with tempfile.TemporaryDirectory() as folder:
             path = os.path.join(folder, "shared.h5")
-            series = io.Series(path, io.Access.create)
-            write_parallel_snapshot(series, None, static, self.dynamic, fields=snapshot)
-            series.close()
+            write_tiled_field_snapshot_openpmd(
+                snapshot, output_dir=folder, filename="shared",
+                dynamic_parameters=self.dynamic, layout=layout, file_extension=".h5")
             series = io.Series(path, io.Access.read_only)
             scalar = series.iterations[4].meshes["lapse"][io.Mesh_Record_Component.SCALAR]
             electric = series.iterations[4].meshes["E"]["x"]

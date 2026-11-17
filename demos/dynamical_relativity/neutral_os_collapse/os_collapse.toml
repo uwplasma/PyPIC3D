@@ -32,8 +32,8 @@ z_wind = 16.0
 dt = 0.025
 t_wind = 60.0            # Nt = 2400 macro steps to t = 60 M.
 
-# One tile: a single-process run. Reduce these to the per-tile width and launch
-# under MPI to engage the sharded openPMD writer; see README.md.
+# One tile: a single-process run. Reduce these to the per-tile width to engage
+# the sharded openPMD writer; see docs/distributed_cartesian.md.
 particle_tile_nx = 64
 particle_tile_ny = 64
 particle_tile_nz = 64

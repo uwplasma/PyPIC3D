@@ -282,9 +282,9 @@ def _resolve_particle_batch_size(
 
     resolved = max(1, min(max_active_per_tile, compute_target, tile_capacity))
     if jax.process_count() > 1:
-        from mpi4py import MPI
+        from jax.experimental import multihost_utils
         # One static batch shape is required even on differently sized hosts.
-        resolved = MPI.COMM_WORLD.allreduce(resolved, op=MPI.MIN)
+        resolved = int(min(multihost_utils.process_allgather(resolved)))
     return resolved, reason
 
 
@@ -484,15 +484,8 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
     gr_metric = static_metric or dynamic_metric
     dark_matter = solver == "dark_matter_yee"
     distributed = jax.process_count() > 1
-    from PyPIC3D.utilities.distributed import mpi_communicator
-    comm = mpi_communicator()
     if distributed and not dynamic_metric:
         raise ValueError("Multiprocess initialization currently supports solver='dynamic_metric'")
-    if distributed and any(bool(plotting_parameters[name]) for name in
-                           ("plot_openpmd_fields", "plot_openpmd_particles", "dump_fields", "dump_particles")):
-        import openpmd_api as io
-        if not io.variants.get("mpi", False):
-            raise RuntimeError("Shared distributed output requires MPI-enabled openpmd-api and parallel HDF5")
     if "metric" in config and not dynamic_metric:
         raise ValueError("[metric] initialization requires solver='dynamic_metric'")
     if static_metric:
@@ -732,7 +725,6 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
             species_config=species_config,
             species_names=particle_species_names,
             metric=metric,
-            comm=comm,
         )
 
     E, B, J, phi, rho = initialize_fields(static_parameters, dynamic_parameters)
@@ -911,7 +903,6 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
             dynamic_parameters,
             static_parameters.output_dir,
             filename="initial_fields.h5",
-            comm=comm,
         )
 
     return (

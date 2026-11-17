@@ -230,21 +230,19 @@ At ``plotting_interval`` cadence, the driver appends:
 Set ``plot_openpmd_fields = true`` to write ``data/fields.h5`` and
 ``plot_openpmd_particles = true`` to write ``data/particles.h5``. Writers copy
 only addressable device shards and store their chunks at global offsets,
-without assembling full field or particle arrays. A single-process run uses
-bounded asynchronous queues, including when it spans several devices.
+without assembling full field or particle arrays. Every run uses bounded
+asynchronous queues, including when it spans several devices or processes.
 ``openpmd_field_queue_size`` and ``openpmd_particle_queue_size`` limit pending
 host snapshots, not the number of output files. A full queue waits for disk
 writes; larger queues retain more host memory.
 
-Multiprocess output uses those same chunk writers synchronously on the main
-thread with an MPI-enabled openPMD/parallel-HDF5 installation. Queue-size
-settings do not apply to that path. Only particle-count metadata is exchanged
-to assign global particle offsets, and ranks with empty particle chunks still
-participate in collective writes. Missing MPI output support fails early;
-rank-local output failures abort the communicator rather than leaving peers
-waiting. Multiprocess simulation initialization currently supports
-``dynamic_metric`` only; see the distributed Cartesian guide for launch and
-validation commands.
+Multiprocess output needs no MPI and exchanges nothing: each process writes its
+own ``data/fields_pNNN.h5`` and ``data/particles_pNNN.h5`` through the same
+queues, and ``python -m PyPIC3D.diagnostics.merge_openpmd outputs/data`` joins a
+group afterwards into the unsuffixed file these analysis paths already read. A
+single-process run keeps the unsuffixed names and needs no merge. Multiprocess
+simulation initialization currently supports ``dynamic_metric`` only; see the
+distributed Cartesian guide for launch and validation commands.
 
 Each snapshot is identified by its simulation step number, so openPMD iteration
 IDs are spaced by ``plotting_interval`` rather than numbered consecutively.

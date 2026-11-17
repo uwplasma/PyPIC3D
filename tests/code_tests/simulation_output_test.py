@@ -40,16 +40,6 @@ class SimulationOutputTests(unittest.TestCase):
                 if failure != "setup":
                     particle_writer.close.assert_called_once_with(raise_errors=failure == "close")
 
-    def test_mpi_output_failure_aborts_the_communicator(self):
-        static = SimpleNamespace(output_dir="unused", tile_shape=(4, 4, 4), guard_cells=2)
-        dynamic = SimpleNamespace(Nx=8, Ny=4, Nz=4)
-        plotting = dict(plot_openpmd_fields=False, plot_openpmd_particles=False)
-        comm = Mock(rank=1)
-        with redirect_stderr(StringIO()), self.assertRaisesRegex(RuntimeError, "step failed"):
-            with simulation_output.open_simulation_output(static, dynamic, plotting, comm):
-                raise RuntimeError("step failed")
-        comm.Abort.assert_called_once_with(1)
-
     def test_constraint_reduction_runs_on_nonprinting_ranks(self):
         with patch("PyPIC3D.diagnostics.static_metric.bssn_constraint_norms",
                    return_value={"hamiltonian_l2": 2., "momentum_l2": 3.}) as compute, \

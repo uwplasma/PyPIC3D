@@ -2,7 +2,6 @@
 
 from contextlib import contextmanager
 import os
-import traceback
 
 import jax
 
@@ -11,13 +10,6 @@ from PyPIC3D.diagnostics.async_writer import (
     create_async_tiled_openpmd_particle_writer,
     enqueue_openpmd_field_output,
     enqueue_openpmd_particle_output,
-    make_tiled_field_snapshot,
-    make_tiled_particle_snapshot,
-)
-from PyPIC3D.diagnostics.openPMD import (
-    TiledMeshLayout,
-    write_tiled_field_snapshot_openpmd,
-    write_tiled_particle_snapshot_openpmd,
 )
 from PyPIC3D.diagnostics.output_adapters import build_field_output_map
 from PyPIC3D.diagnostics.plotting import write_data as _write_data
@@ -93,20 +85,21 @@ def write_scalar_diagnostics(particles, species, fields, static, dynamic, step, 
 
 
 @contextmanager
-def open_simulation_output(static_parameters, dynamic_parameters, plotting_parameters, comm=None):
-    """Close both writers on failure; MPI writes stay collective on the main thread."""
+def open_simulation_output(static_parameters, dynamic_parameters, plotting_parameters):
+    """Close both writers on failure.
+
+    Every process queues snapshots into its own series, so nothing here is
+    collective. A .pmd pointer holds a single name, so a multiprocess run leaves
+    it to the merge tool rather than writing one that dangles until then.
+    """
     output_dir = static_parameters.output_dir
-    field_writer = particle_writer = layout = None
+    field_writer = particle_writer = None
     loop_error = None
+    shared = jax.process_count() == 1
     try:
-        if comm is not None:
-            layout = TiledMeshLayout(
-                global_shape=(int(dynamic_parameters.Nx), int(dynamic_parameters.Ny), int(dynamic_parameters.Nz)),
-                tile_shape=tuple(int(width) for width in static_parameters.tile_shape),
-                guard_cells=int(static_parameters.guard_cells),
-            )
-        if comm is None and plotting_parameters["plot_openpmd_fields"]:
-            setup_pmd_files(os.path.join(output_dir, "data"), "fields", ".h5")
+        if plotting_parameters["plot_openpmd_fields"]:
+            if shared:
+                setup_pmd_files(os.path.join(output_dir, "data"), "fields", ".h5")
             field_writer = create_async_tiled_openpmd_field_writer(
                 static_parameters,
                 dynamic_parameters,
@@ -115,8 +108,9 @@ def open_simulation_output(static_parameters, dynamic_parameters, plotting_param
                 file_extension=".h5",
                 queue_size=int(plotting_parameters.get("openpmd_field_queue_size", 2)),
             )
-        if comm is None and plotting_parameters["plot_openpmd_particles"]:
-            setup_pmd_files(os.path.join(output_dir, "data"), "particles", ".h5")
+        if plotting_parameters["plot_openpmd_particles"]:
+            if shared:
+                setup_pmd_files(os.path.join(output_dir, "data"), "particles", ".h5")
             particle_writer = create_async_tiled_openpmd_particle_writer(
                 static_parameters,
                 dynamic_parameters,
@@ -125,18 +119,9 @@ def open_simulation_output(static_parameters, dynamic_parameters, plotting_param
                 file_extension=".h5",
                 queue_size=int(plotting_parameters.get("openpmd_particle_queue_size", 2)),
             )
-        if comm is not None:
-            if comm.rank == 0:
-                for name in ("fields", "particles"):
-                    if plotting_parameters["plot_openpmd_" + name]:
-                        setup_pmd_files(os.path.join(output_dir, "data"), name, ".h5")
-            comm.Barrier()
-        yield field_writer, particle_writer, layout
+        yield field_writer, particle_writer
     except BaseException as exc:
         loop_error = exc
-        if comm is not None:
-            traceback.print_exc()
-            comm.Abort(1)
         raise
     finally:
         writer_error = None
@@ -153,11 +138,9 @@ def open_simulation_output(static_parameters, dynamic_parameters, plotting_param
 
 
 def write_simulation_output(particles, species_config, fields, static_parameters,
-                            dynamic_parameters, plotting_parameters, t, writers, comm=None):
+                            dynamic_parameters, plotting_parameters, t, writers):
     """Submit particle and field snapshots without gathering global arrays."""
-    field_writer, particle_writer, layout = writers
-    output_dir = static_parameters.output_dir
-    dt = dynamic_parameters.dt
+    field_writer, particle_writer = writers
     particle_species_names = plotting_parameters.get("particle_species_names")
     dynamic_metric = static_parameters.solver == "dynamic_metric"
     gr_metric = dynamic_metric or static_parameters.solver == "static_metric"
@@ -173,22 +156,11 @@ def write_simulation_output(particles, species_config, fields, static_parameters
             metric = fields[6]
             gamma = particle_lorentz_factor(output_particles, metric, static_parameters, dynamic_parameters)
             # particle u holds covariant u_i, so Gamma needs the metric at each particle
-        if comm is None:
-            enqueue_openpmd_particle_output(
-                particle_writer, output_particles, dynamic_parameters, t, t,
-                species_config=species_config, species_names=particle_species_names,
-                gamma=gamma,
-            )
-        else:
-            snapshot = make_tiled_particle_snapshot(
-                output_particles, step=t, time=float(dynamic_parameters.bssn_parameters.time),
-                species_names=particle_species_names, species_config=species_config, gamma=gamma,
-            )
-            write_tiled_particle_snapshot_openpmd(
-                snapshot, output_dir=os.path.join(output_dir, "data"), filename="particles",
-                static_parameters=static_parameters, dynamic_parameters=dynamic_parameters,
-                file_extension=".h5", comm=comm,
-            )
+        enqueue_openpmd_particle_output(
+            particle_writer, output_particles, dynamic_parameters, t, t,
+            species_config=species_config, species_names=particle_species_names,
+            gamma=gamma,
+        )
 
     if plotting_parameters["plot_openpmd_fields"]:
         field_map = build_field_output_map(
@@ -201,14 +173,4 @@ def write_simulation_output(particles, species_config, fields, static_parameters
             include_charge_density=bool(plotting_parameters["plotchargedensity"]),
         )
         plotting_parameters["field_map"] = field_map
-        if comm is None:
-            enqueue_openpmd_field_output(field_writer, field_map, dynamic_parameters, t, t)
-        else:
-            snapshot = make_tiled_field_snapshot(
-                field_map, step=t, time=float(dynamic_parameters.bssn_parameters.time),
-                current_time_offset=0.0 if t == 0 else -float(dt)/4,
-            )
-            write_tiled_field_snapshot_openpmd(
-                snapshot, output_dir=os.path.join(output_dir, "data"), filename="fields",
-                dynamic_parameters=dynamic_parameters, layout=layout, file_extension=".h5", comm=comm,
-            )
+        enqueue_openpmd_field_output(field_writer, field_map, dynamic_parameters, t, t)
