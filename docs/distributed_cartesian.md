@@ -141,9 +141,17 @@ python -m PyPIC3D.diagnostics.merge_openpmd outputs/data
 ```
 
 The installed console script `PyPIC3D-merge-openpmd` does the same. Point it at
-a data directory, one group member, or a `.pmd` pointer; `--output` names the
-merged series, `--iterations` restricts it to listed steps, and `--overwrite`
-replaces an existing merged file.
+a data directory, one `.h5` or `.bp` group member, or a `.pmd` pointer to a
+member. BP series directories are recognized directly, including through a
+pointer. `--output` names the merged series, `--iterations` restricts it to
+listed steps, and `--overwrite` replaces an existing merged file.
+
+The `.pmd` pointer is written beside the merged series with the same basename:
+`--output /results/custom.h5` creates `/results/custom.pmd` containing
+`custom.h5`. Existing source-directory pointers are left untouched when the
+destination has a different pointer path. Without `--output`, the usual
+`data/fields.pmd` still points to `fields.h5`. Use `--no-pmd` to leave all
+pointers untouched.
 
 The merge rejects a group whose process indices are not exactly
 `0 .. pypic3dProcessCount - 1`, which catches stale files left by an earlier run
@@ -177,4 +185,3 @@ A real two-process check needs two shells sharing a coordinator address and a
 directory visible to both, with `PYPIC_PROCESS_ID` 0 and 1. Confirm the run
 wrote `fields_p000.h5` and `fields_p001.h5` and no bare `fields.h5`, then merge
 and read the result with an unmodified analysis script.
-

@@ -103,12 +103,9 @@ def discover_series_groups(inputs):
         entry = str(entry)
         if entry.endswith(".pmd") and os.path.isfile(entry):
             entry = _resolve_pmd(entry)
-        if os.path.isdir(entry):
-            for name in sorted(os.listdir(entry)):
-                add(os.path.join(entry, name))
-            continue
         if not os.path.exists(entry):
             raise FileNotFoundError(entry)
+        # BP series are directories too; recognize members before scanning folders.
         if add(entry):
             # One member names its whole group; pick up its siblings.
             directory, name = os.path.split(os.path.abspath(entry))
@@ -117,6 +114,9 @@ def discover_series_groups(inputs):
             for sibling in sorted(os.listdir(directory)):
                 if sibling.startswith(prefix):
                     add(os.path.join(directory, sibling))
+        elif os.path.isdir(entry):
+            for name in sorted(os.listdir(entry)):
+                add(os.path.join(entry, name))
 
     ordered = []
     for (directory, stem, extension), members in sorted(groups.items()):
@@ -366,7 +366,9 @@ def merge_paths(inputs, output=None, *, overwrite=False, write_pmd=True, iterati
             for series in sources:
                 series.close()
         if write_pmd:
-            setup_pmd_files(directory, stem, extension)
+            target_directory, target_name = os.path.split(os.path.abspath(target))
+            target_stem, target_extension = os.path.splitext(target_name)
+            setup_pmd_files(target_directory, target_stem, target_extension)
         reports.append(MergeReport(target, paths, tuple(steps)))
     return reports
 

@@ -2,13 +2,13 @@
 
 from dataclasses import replace
 from pathlib import Path
+import os
 import tempfile
 import unittest
 from unittest.mock import patch
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 import openpmd_api as io
 
 from PyPIC3D.diagnostics import async_writer, merge_openpmd, openPMD
@@ -47,6 +47,39 @@ def _split_particle_snapshot(snapshot, process):
     return replace(snapshot, **changed)
 
 
+class SeriesDiscoveryTests(unittest.TestCase):
+    def test_directory_member_and_pointer_discover_the_same_group(self):
+        for extension in (".h5", ".bp"):
+            with self.subTest(extension=extension), tempfile.TemporaryDirectory() as directory:
+                folder = Path(directory)
+                data = folder / "data"
+                data.mkdir()
+                members = [data / f"fields_p{process:03d}{extension}" for process in range(2)]
+                for member in members:
+                    if extension == ".bp":
+                        member.mkdir()
+                        (member / "md.idx").touch()
+                    else:
+                        member.touch()
+                pointer = folder / "fields.pmd"
+                pointer.write_text(f"data/{members[0].name}\n")
+                expected = [(str(data), "fields", extension, tuple(str(path) for path in members))]
+                for entry in (data, members[0], pointer):
+                    self.assertEqual(merge_openpmd.discover_series_groups([entry]), expected)
+
+    def test_missing_member_and_pointer_target_raise(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            for extension in (".h5", ".bp"):
+                missing = folder / f"fields_p000{extension}"
+                pointer = folder / "fields.pmd"
+                pointer.write_text(missing.name + "\n")
+                for entry in (missing, pointer):
+                    with self.subTest(entry=entry, extension=extension):
+                        with self.assertRaises(FileNotFoundError):
+                            merge_openpmd.discover_series_groups([entry])
+
+
 class MergeOpenPMDTests(unittest.TestCase):
     def setUp(self):
         if jax.device_count() < 2:
@@ -65,7 +98,7 @@ class MergeOpenPMDTests(unittest.TestCase):
             openPMD.process_series_filename("ion_initial_particles.h5", 2, 16),
             "ion_initial_particles_p002.h5")
 
-    def _write_per_process(self, folder, snapshot, kind):
+    def _write_per_process(self, folder, snapshot, kind, extension=".h5"):
         """Write one series per process the way a real multiprocess run does."""
         for process in range(2):
             with patch("jax.process_index", return_value=process), \
@@ -75,13 +108,102 @@ class MergeOpenPMDTests(unittest.TestCase):
                         _split_field_snapshot(snapshot, process),
                         output_dir=str(folder), filename="fields",
                         dynamic_parameters=self.dynamic, layout=self.layout,
-                        file_extension=".h5")
+                        file_extension=extension)
                 else:
                     openPMD.write_tiled_particle_snapshot_openpmd(
                         _split_particle_snapshot(snapshot, process),
                         output_dir=str(folder), filename="particles",
                         static_parameters=self.static, dynamic_parameters=self.dynamic,
-                        file_extension=".h5")
+                        file_extension=extension)
+
+    def test_custom_output_pointer_lives_beside_the_merged_series(self):
+        field, reference = field_with_guard_sentinels(self.static, (8, 2, 1))
+        snapshot = async_writer.make_tiled_field_snapshot({"lapse": field}, step=4, time=0.2)
+        for location in ("same", "other", "relative"):
+            with self.subTest(location=location), tempfile.TemporaryDirectory() as directory:
+                folder = Path(directory)
+                source = folder / "data"
+                self._write_per_process(source, snapshot, "fields")
+                source_pointer = source / "fields.pmd"
+                source_pointer.write_text("previous.h5\n")
+                destination = {"same": source, "other": folder / "results", "relative": folder}[location]
+                destination.mkdir(exist_ok=True)
+                target = destination / "custom.h5"
+                previous_directory = os.getcwd()
+                try:
+                    os.chdir(folder)
+                    merge_openpmd.merge_paths([source], output="custom.h5" if location == "relative" else str(target))
+                finally:
+                    os.chdir(previous_directory)
+
+                pointer = target.with_suffix(".pmd")
+                self.assertEqual(pointer.read_text(), "custom.h5\n")
+                self.assertEqual(source_pointer.read_text(), "previous.h5\n")
+                series = io.Series(merge_openpmd._resolve_pmd(pointer), io.Access.read_only)
+                try:
+                    iteration = series.iterations[4]
+                    self.assertAlmostEqual(iteration.time, 0.2)
+                    record = iteration.meshes["lapse"][io.Mesh_Record_Component.SCALAR]
+                    values = record.load_chunk()
+                    series.flush()
+                    self.assertTrue(bool(jnp.array_equal(jnp.asarray(values), reference)))
+                finally:
+                    series.close()
+
+    def test_no_pmd_preserves_existing_pointers(self):
+        field, _ = field_with_guard_sentinels(self.static, (8, 2, 1))
+        snapshot = async_writer.make_tiled_field_snapshot({"lapse": field}, step=0, time=0.)
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            self._write_per_process(folder, snapshot, "fields")
+            pointer = folder / "fields.pmd"
+            pointer.write_text("previous.h5\n")
+            for output in (None, str(folder / "custom.h5")):
+                merge_openpmd.merge_paths([folder], output=output, write_pmd=False)
+                self.assertTrue(Path(output or folder / "fields.h5").exists())
+                self.assertEqual(pointer.read_text(), "previous.h5\n")
+                self.assertFalse((folder / "custom.pmd").exists())
+
+    @unittest.skipUnless(io.variants.get("adios2", False), "ADIOS2 backend is unavailable")
+    def test_bp_member_and_pointer_merge_preserve_values_and_metadata(self):
+        field, reference = field_with_guard_sentinels(self.static, (8, 2, 1))
+        snapshot = async_writer.make_tiled_field_snapshot(
+            {"J": (field, field, field)}, step=4, time=0.2, current_time_offset=-0.05)
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            self._write_per_process(folder, snapshot, "fields", extension=".bp")
+            member = folder / "fields_p000.bp"
+            pointer = folder / "input.pmd"
+            pointer.write_text(member.name + "\n")
+            source = io.Series(str(member), io.Access.read_only)
+            try:
+                mesh = source.iterations[4].meshes["J"]
+                position = tuple(mesh["x"].position)
+                dimensions = tuple(mesh.unit_dimension)
+            finally:
+                source.close()
+            for entry, name in ((member, "direct"), (pointer, "via_pointer")):
+                with self.subTest(entry=entry):
+                    target = folder / f"{name}.bp"
+                    merge_openpmd.merge_paths([entry], output=str(target))
+                    merged_pointer = target.with_suffix(".pmd")
+                    self.assertEqual(merged_pointer.read_text(), target.name + "\n")
+                    series = io.Series(merge_openpmd._resolve_pmd(merged_pointer), io.Access.read_only)
+                    try:
+                        iteration = series.iterations[4]
+                        self.assertAlmostEqual(iteration.time, 0.2)
+                        self.assertAlmostEqual(iteration.dt, float(self.dynamic.dt))
+                        mesh = iteration.meshes["J"]
+                        self.assertAlmostEqual(mesh.time_offset, -0.05)
+                        self.assertEqual(tuple(mesh.unit_dimension), dimensions)
+                        record = mesh["x"]
+                        self.assertEqual(tuple(record.shape), (8, 2, 1))
+                        self.assertEqual(tuple(record.position), position)
+                        values = record.load_chunk()
+                        series.flush()
+                        self.assertTrue(bool(jnp.array_equal(jnp.asarray(values), reference)))
+                    finally:
+                        series.close()
 
     def test_merged_fields_reproduce_the_whole_domain_mesh(self):
         field, reference = field_with_guard_sentinels(self.static, (8, 2, 1))
