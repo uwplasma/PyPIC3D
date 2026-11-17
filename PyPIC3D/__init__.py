@@ -1,4 +1,4 @@
-from .distributed import initialize_distributed
+from .utilities.distributed import initialize_distributed
 
 initialize_distributed()
 

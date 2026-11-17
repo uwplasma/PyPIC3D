@@ -6,35 +6,27 @@ import os
 def initialize_distributed():
     """Opt in with PYPIC_DISTRIBUTED=1 before importing PyPIC3D.
 
-    MPI and JAX share process numbering. Slurm may expose one GPU per task;
-    PYPIC_LOCAL_DEVICE_IDS overrides JAX's MPI local-rank selection in that case.
+    JAX detects Slurm and Open MPI launches on its own. PYPIC_COORDINATOR_ADDRESS,
+    PYPIC_PROCESS_ID and PYPIC_NUM_PROCESSES describe a launch it cannot detect.
+    Slurm may expose one GPU per task; PYPIC_LOCAL_DEVICE_IDS overrides JAX's
+    local-device selection in that case.
     """
     if os.environ.get("PYPIC_DISTRIBUTED", "0") != "1":
         return
-    from mpi4py import MPI
     import jax
 
-    if not jax.distributed.is_initialized():
-        ids = os.environ.get("PYPIC_LOCAL_DEVICE_IDS")
-        jax.distributed.initialize(
-            cluster_detection_method="mpi4py",
-            local_device_ids=None if ids is None else [int(v) for v in ids.split(",")],
-            initialization_timeout=int(os.environ.get("PYPIC_INITIALIZATION_TIMEOUT", "120")),
-        )
-    if (jax.process_index(), jax.process_count()) != (MPI.COMM_WORLD.rank, MPI.COMM_WORLD.size):
-        raise ValueError("MPI and JAX must use the same process numbering")
-
-
-def mpi_communicator():
-    """Return the simulation communicator only for a multiprocess JAX run."""
-    import jax
-    if jax.process_count() == 1:
-        return None
-    from mpi4py import MPI
-    comm = MPI.COMM_WORLD
-    if (jax.process_index(), jax.process_count()) != (comm.rank, comm.size):
-        raise ValueError("MPI and JAX must use the same process numbering")
-    return comm
+    if jax.distributed.is_initialized():
+        return
+    ids = os.environ.get("PYPIC_LOCAL_DEVICE_IDS")
+    processes = os.environ.get("PYPIC_NUM_PROCESSES")
+    process = os.environ.get("PYPIC_PROCESS_ID")
+    jax.distributed.initialize(
+        coordinator_address=os.environ.get("PYPIC_COORDINATOR_ADDRESS"),
+        num_processes=None if processes is None else int(processes),
+        process_id=None if process is None else int(process),
+        local_device_ids=None if ids is None else [int(v) for v in ids.split(",")],
+        initialization_timeout=int(os.environ.get("PYPIC_INITIALIZATION_TIMEOUT", "120")),
+    )
 
 
 def tiled_field_from_initializer(initializer, static, dynamic, *, location=("C", "C", "C")):

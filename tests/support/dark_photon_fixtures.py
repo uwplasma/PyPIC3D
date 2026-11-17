@@ -18,7 +18,8 @@ import openpmd_api as pmd
 
 from PyPIC3D.__main__ import run_PyPIC3D
 from PyPIC3D.boundary_conditions.ghost_cells import update_tiled_ghost_cells, update_tiled_ghost_cells
-from PyPIC3D.initialization import initialize_simulation, initialize_fields, _dark_timestep, default_parameters
+from PyPIC3D.utilities.simulation_helpers import dark_photon_courant_condition
+from PyPIC3D.initialization import initialize_simulation, initialize_fields, default_parameters
 from PyPIC3D.diagnostics.diagnostic_quantities import compute_dark_energy
 from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.diagnostics.output_adapters import build_field_output_map, field_map_for_output, scalar_field_for_output

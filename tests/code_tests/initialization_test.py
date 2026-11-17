@@ -1,5 +1,7 @@
 """Single-device numerical tests."""
 
+from types import SimpleNamespace
+
 from tests.support.initialization_fixtures import (
     BC_ABSORBING,
     BC_CONDUCTING,
@@ -131,6 +133,18 @@ class TestInitializationFunctions(InitializationFunctionsFixtures, unittest.Test
 
         self.assertEqual(wider, 512)
         self.assertEqual(narrower, 256)
+
+
+    def test_automatic_particle_batch_size_counts_only_local_mesh_devices(self):
+        particles = self._particles_with_active(jnp.ones((3, 1, 1, 1, 900), dtype=bool))
+        devices = tuple(SimpleNamespace(process_index=process) for process in (0, 1, 0))
+        mesh = SimpleNamespace(devices=SimpleNamespace(flat=devices))
+        with patch("PyPIC3D.initialization.jax.process_index", return_value=0):
+            batch_size, reason = _resolve_particle_batch_size(
+                particles, None, field_mesh=mesh, platform="cpu", available_cpu_threads=8,
+            )
+        self.assertEqual(batch_size, 512)
+        self.assertIn("2 local devices", reason)
 
 
     def test_available_cpu_threads_falls_back_to_os_cpu_count(self):

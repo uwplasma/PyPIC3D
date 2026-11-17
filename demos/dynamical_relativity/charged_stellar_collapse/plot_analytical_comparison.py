@@ -1,4 +1,4 @@
-"""Compare the final charged OS radial and time metrics with analytical RN.
+"""Compare the final charged-dust radial and time metrics with analytical RN.
 
 Use the stationary reconstruction
     g_rr = gamma_rr + beta_r**2 / (alpha**2 - beta_r * beta^r),
@@ -9,8 +9,10 @@ This treats the final snapshot as stationary; it is not an exact time
 coordinate transformation of a still-evolving spacetime.
 
 Run with no arguments. Paths and plot limits are set below. Only the final
-iteration is read, and M and Q are the initial stellar values, without fits
-or boundary rescaling. PyPIC3D uses Gaussian G = c = 1 units, with RN charge term Q**2/R**2.
+iteration is read, and M and Q come from the initial-data metadata, without
+fits or boundary rescaling. For the lattice initializer M is an ADM surface
+estimate on the finite outer cube, not an exactly prescribed asymptotic mass.
+PyPIC3D uses Gaussian G = c = 1 units, with RN charge term Q**2/R**2.
 """
 
 from pathlib import Path

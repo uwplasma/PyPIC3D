@@ -232,8 +232,7 @@ performs densitization and the leapfrog offset once. Nonzero prescribed
 external fields are rejected. The default pusher is
 ``hybrid_boris_geodesic``, current deposition is ``esirkepov``, and current
 filtering is disabled. Initial geometry is exactly flat, with harmonic lapse
-and initially zero frozen shift. This is not a matter constraint solve:
-the initial Hamiltonian and momentum residuals are reported explicitly.
+and initially zero frozen shift. 
 
 Python callers may provide ``bssn_state`` and ``bssn_evolution_parameters``
 to ``initialize_simulation`` or ``run_PyPIC3D``. The latter may be the native

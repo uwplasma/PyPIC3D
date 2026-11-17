@@ -26,7 +26,30 @@ from tests.kernel_fixtures import (
 )
 
 
-class FakeRecord:
+class FakeAttributable:
+    """openPMD attribute surface the writers and the merge tool both use."""
+
+    def _attributes(self):
+        store = self.__dict__.get("_attribute_store")
+        if store is None:
+            store = self.__dict__["_attribute_store"] = {}
+        return store
+
+    def set_attribute(self, name, value):
+        self._attributes()[name] = value
+
+    def get_attribute(self, name):
+        return self._attributes()[name]
+
+    def contains_attribute(self, name):
+        return name in self._attributes()
+
+    @property
+    def attributes(self):
+        return list(self._attributes())
+
+
+class FakeRecord(FakeAttributable):
     def __init__(self):
         self.shape = None
         self.dataset_shape = None
@@ -43,6 +66,10 @@ class FakeRecord:
     def store_chunk(self, array, offset, extent):
         self.chunks.append((tuple(offset), tuple(extent), array.copy()))
 
+    def load_chunk(self, offset, extent):
+        region = tuple(slice(start, start + length) for start, length in zip(offset, extent))
+        return np.asarray(self.data)[region]
+
     @property
     def data(self):
         values = jnp.zeros(self.dataset_shape)
@@ -52,7 +79,7 @@ class FakeRecord:
         return values
 
 
-class FakeMesh:
+class FakeMesh(FakeAttributable):
     def __init__(self):
         self.records = {}
         self.axis_labels = None
@@ -80,7 +107,7 @@ class FakeParticleRecord(dict):
         return dict.__getitem__(self, component)
 
 
-class FakeParticleSpecies(dict):
+class FakeParticleSpecies(FakeAttributable, dict):
     def __getitem__(self, record_name):
         if record_name not in self:
             if record_name in ("position", "positionOffset", "momentum"):
@@ -97,7 +124,7 @@ class FakeParticles(dict):
         return dict.__getitem__(self, species_name)
 
 
-class FakeIteration:
+class FakeIteration(FakeAttributable):
     def __init__(self):
         self.meshes = FakeMeshes()
         self.particles = FakeParticles()
@@ -113,12 +140,9 @@ class FakeIterations(dict):
         return dict.__getitem__(self, iteration)
 
 
-class FakeSeries:
+class FakeSeries(FakeAttributable):
     def __init__(self):
         self.iterations = FakeIterations()
-
-    def set_attribute(self, name, value):
-        pass
 
     def flush(self):
         pass

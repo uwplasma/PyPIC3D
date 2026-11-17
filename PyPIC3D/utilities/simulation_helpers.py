@@ -1,8 +1,10 @@
 import os
+import math
 
 import jax.numpy as jnp
 from jax.tree_util import tree_map
 
+from PyPIC3D.utilities.parameters import validate_dark_parameters
 from PyPIC3D.utilities.grids import grid_axis_width, grid_domain_bounds
 
 
@@ -88,3 +90,28 @@ def courant_condition(courant_number, dx, dy, dz, dynamic_parameters):
     dt = courant_number / (C * dx_inv)
 
     return dt
+
+
+def dark_photon_courant_condition(static_config, dynamic_config):
+    """Resolve a stable explicit Maxwell-Proca timestep before JAX tracing."""
+    validate_dark_parameters(static_config["sin_chi"], static_config["dark_mu"])
+    c = float(dynamic_config["C"])
+    eps = float(dynamic_config["eps"])
+    if not math.isfinite(c) or c <= 0 or not math.isfinite(eps) or eps <= 0:
+        raise ValueError("dark_matter_yee requires positive finite C and eps")
+    inverse_spacings = [1 / float(dynamic_config["d" + axis]) for axis in "xyz"
+                        if dynamic_config["N" + axis] > 1]
+    frequency = c * math.sqrt(float(static_config["dark_mu"])**2 + 4 * sum(v*v for v in inverse_spacings))
+    limit = 2 / frequency if frequency else math.inf
+    dt = dynamic_config["dt"]
+    if dt is None:
+        cfl = float(static_config["cfl"])
+        if not math.isfinite(cfl) or not 0 < cfl <= 1:
+            raise ValueError("dark_matter_yee requires 0 < cfl <= 1")
+        if not frequency:
+            raise ValueError("Specify dt for a massless dark field with all dimensions collapsed")
+        maxwell_dt = cfl / (c * sum(inverse_spacings)) if inverse_spacings else math.inf
+        dt = min(maxwell_dt, 0.99 * cfl * limit)
+    if not math.isfinite(float(dt)) or not 0 < float(dt) < limit:
+        raise ValueError(f"dark_matter_yee requires positive finite dt < {limit} (Proca stability limit)")
+    return float(dt)

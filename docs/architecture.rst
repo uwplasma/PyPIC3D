@@ -73,13 +73,20 @@ Execution Flow
 3. ``run_PyPIC3D`` closes over the static parameters, JIT-compiles the selected
    timestep, advances the simulation, checks particle-retile overflow, and
    schedules diagnostics.
-4. Asynchronous openPMD writers consume tile-local snapshots without changing
-   the live solver state.
+4. ``diagnostics.simulation_output`` manages writer lifetime, scalar diagnostics,
+   and tile-local snapshots. Every process writes its own series through
+   asynchronous writers, without changing solver state.
 
 Core Module Map
 ---------------
 
-- ``PyPIC3D/__main__.py``: CLI, run loop, writer scheduling, and diagnostics.
+- ``PyPIC3D/__main__.py``: CLI, run loop, and diagnostic scheduling.
+- ``PyPIC3D/diagnostics/simulation_output.py``: scalar output, snapshots, and
+  writer setup and cleanup.
+- ``PyPIC3D/utilities/distributed.py``: JAX distributed startup and
+  addressable-only field initialization.
+- ``PyPIC3D/diagnostics/merge_openpmd.py``: joins the per-process openPMD series
+  a multiprocess run writes into one file.
 - ``PyPIC3D/initialization.py``: configuration defaults, grid/device setup,
   particle and field initialization, and solver selection.
 - ``PyPIC3D/parameters.py``: ``StaticParameters``, ``DynamicParameters``, and
