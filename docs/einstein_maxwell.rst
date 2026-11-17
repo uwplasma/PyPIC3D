@@ -1,5 +1,11 @@
-Einstein--Maxwell and PIC coupling
-==================================
+Einstein--Maxwell Coupling Reference
+====================================
+
+The complete contract between PyPIC3D and JAX BSSN: ownership, units, time
+levels, source filtering and the work-energy diagnostic. For the
+configuration surface of the dynamical solver --- the ``[metric]`` table,
+gauge conditions and gravitational boundaries --- start at
+:doc:`dynamical_relativity`.
 
 Ownership and units
 -------------------

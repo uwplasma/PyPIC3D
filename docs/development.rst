@@ -10,6 +10,14 @@ Local Setup
    source .venv/bin/activate
    pip install -e .
 
+The ``dynamic_metric`` solver needs the optional ``JAX_BSSN`` dependency. Its
+tests skip without it, and the ``demos/dynamical_relativity/`` examples cannot
+run:
+
+.. code-block:: bash
+
+   pip install -e '.[relativity]'
+
 Run Tests
 ---------
 
@@ -51,11 +59,18 @@ Build Docs
 
 .. code-block:: bash
 
-   sphinx-autobuild docs _build/html --port 8008
+   pip install -r docs/requirements.in
+   sphinx-autobuild docs docs/_build/html --port 8008
 
-This command watches for changes in the source files and rebuilds 
-the docs automatically. Open a browser to http://localhost:8008 
-to view the docs.
+This watches the source files, rebuilds on every save, and live-reloads the
+open page. Open http://localhost:8008 to view the docs.
+
+For a one-shot build that fails on any warning --- the same check the
+``Documentation`` CI workflow runs --- use:
+
+.. code-block:: bash
+
+   python -m sphinx -b html -W --keep-going docs docs/_build/html
 
 Debugging Tips
 --------------

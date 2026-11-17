@@ -52,6 +52,11 @@ settings but maintain independent histories:
 particle gathering reconstruct ``A_prime`` and its curl at integer time.
 
 
+The GR solvers reuse the same prefix but store native densities rather than
+physical fields, and the dynamical solver's history slot carries the
+synchronized magnetic field, the half step and the absorber. See
+:doc:`dynamical_relativity` for that layout.
+
 See :doc:`tiling` for the array shapes, guard ownership, and sharding structure.
 
 ``boundary_conditions.ghost_cells`` holds the whole ghost-cell story in one
@@ -89,17 +94,23 @@ Core Module Map
   a multiprocess run writes into one file.
 - ``PyPIC3D/initialization.py``: configuration defaults, grid/device setup,
   particle and field initialization, and solver selection.
-- ``PyPIC3D/parameters.py``: ``StaticParameters``, ``DynamicParameters``, and
+- ``PyPIC3D/utilities/parameters.py``: ``StaticParameters``, ``DynamicParameters``, and
   grid parameter tuples.
 - ``PyPIC3D/particles/``: fixed-capacity particle state, initialization, and
   cross-tile communication.
 - ``PyPIC3D/pusher/``: field interpolation and particle pushers.
 - ``PyPIC3D/deposition/``: direct current, Esirkepov current, charge density,
   and particle shape functions.
-- ``PyPIC3D/solvers/``: algorithm-specific time loops and numerical kernels
-  for electrostatic, Yee, and prescribed-metric GR evolution.
+- ``PyPIC3D/solvers/``: algorithm-specific time loops and numerical kernels.
+  ``electrostatic/`` and ``yee/`` hold the flat-space paths, ``GR_yee/`` the
+  prescribed-metric and dynamical-metric loops, and ``dark_matter_yee/`` the
+  Maxwell-Proca sector.
+- ``PyPIC3D/relativity/``: 3+1 metric containers, the Hermite particle-metric
+  sampler, BSSN parameter construction, the stress-energy projection, matched
+  GR filtering, and the analytic charts in ``metrics/``.
 - ``PyPIC3D/boundary_conditions/``: field/current ghost cell communications,
   conducting PEC walls, grid stencils, and PML.
 - ``PyPIC3D/diagnostics/``: field maps, fluid velocity, energy/momentum, and
   openPMD output.
-- ``PyPIC3D/utilities/``: grid construction and numerical filters.
+- ``PyPIC3D/utilities/``: grid construction, numerical filters, the parameter
+  NamedTuples, TOML helpers, plasma quantities, and JAX distributed startup.

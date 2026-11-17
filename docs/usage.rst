@@ -98,7 +98,9 @@ Time and Grid Parameters
 
 - ``Nx``, ``Ny``, and ``Nz`` are the physical cell counts.
 - ``x_wind``, ``y_wind``, and ``z_wind`` are the physical domain widths. The
-  domain is centered on zero.
+  domain is centered on zero unless explicit bounds are given.
+- ``x_min``/``x_max`` (and the ``y`` and ``z`` pairs) place the domain
+  explicitly instead of centering it. The GR demos use this form.
 - If ``dt`` is omitted, it is computed from ``cfl`` and the active grid
   spacing.
 - If ``Nt`` is omitted, it is computed as ``int(t_wind / dt)``.
@@ -109,9 +111,15 @@ Time and Grid Parameters
 Numerical Choices
 -----------------
 
-- ``solver`` is ``electrodynamic_yee``, ``electrostatic``, ``static_metric``, or
-  ``dark_matter_yee``. The dark solver's equations and staggering are described
-  in :doc:`solvers`.
+- ``solver`` is ``electrodynamic_yee``, ``electrostatic``, ``static_metric``,
+  ``dynamic_metric``, or ``dark_matter_yee``. See :doc:`solvers` for the update
+  sequences, :doc:`dark_photon` for the dark sector, and
+  :doc:`dynamical_relativity` for evolving geometry.
+- ``metric`` selects the spacetime chart for the GR solvers: ``flat_cartesian``
+  (default), ``flat_cylindrical``, ``flat_spherical``,
+  ``kerr_schild_cartesian``, ``kerr_schild_spherical``, or ``numerical``. The
+  Kerr-Schild charts also read ``metric_mass`` (default ``1.0``) and
+  ``metric_spin`` (default ``0.0``). See :doc:`dynamical_relativity`.
 - ``particle_pusher`` is ``boris`` or ``higuera_cary``. The ``relativistic``
   switch selects relativistic or non-relativistic Boris; Higuera-Cary uses its
   relativistic update.
@@ -227,6 +235,11 @@ At ``plotting_interval`` cadence, the driver appends:
 - ``kinetic_energy.txt``
 - ``total_momentum.txt``
 
+``dark_matter_yee`` additionally appends ``dark_field_energy.txt`` and prints a
+``Dark Field Energy`` line. ``dynamic_metric`` instead writes the constraint
+norms ``hamiltonian_l2.txt`` and ``momentum_l2.txt``; flat-space energy
+conservation reports do not apply to a dynamical spacetime.
+
 Set ``plot_openpmd_fields = true`` to write ``data/fields.h5`` and
 ``plot_openpmd_particles = true`` to write ``data/particles.h5``. Writers copy
 only addressable device shards and store their chunks at global offsets,
@@ -241,8 +254,8 @@ own ``data/fields_pNNN.h5`` and ``data/particles_pNNN.h5`` through the same
 queues, and ``python -m PyPIC3D.diagnostics.merge_openpmd outputs/data`` joins a
 group afterwards into the unsuffixed file these analysis paths already read. A
 single-process run keeps the unsuffixed names and needs no merge. Multiprocess
-simulation initialization currently supports ``dynamic_metric`` only; see the
-distributed Cartesian guide for launch and validation commands.
+simulation initialization currently supports ``dynamic_metric`` only; see
+:doc:`distributed_cartesian` for launch and validation commands.
 
 Each snapshot is identified by its simulation step number, so openPMD iteration
 IDs are spaced by ``plotting_interval`` rather than numbered consecutively.
@@ -268,33 +281,14 @@ Final run parameters, species metadata, and timing statistics are written to
 Dark Photon Initial Data
 ------------------------
 
-Select the coupled solver and its static parameters under
-``[simulation_parameters]``. Ordinary ``fieldN`` blocks keep their existing
-meaning. Optional ``dark_fieldN`` blocks initialize the dark sector at ``t=0``:
+``dark_matter_yee`` adds ``[dark_fieldN]`` blocks for the dark sector and the
+``sin_chi`` / ``dark_mu`` static parameters. It also overrides the ordinary
+Courant condition with the Proca stability limit. See :doc:`dark_photon`.
 
-.. code-block:: toml
+Dynamical Geometry
+------------------
 
-   [simulation_parameters]
-   solver = "dark_matter_yee"
-   sin_chi = 0.01
-   dark_mu = 0.7  # inverse length in the configured units
-
-   [dark_field1]
-   name = "initial dark Ay"
-   type = 4
-   path = "dark_Ay.npy"
-
-Dark types 0, 1, 2 select ``Ex``, ``Ey``, ``Ez``; types 3, 4, 5 select
-``Ax``, ``Ay``, ``Az``; type 6 selects ``phi``. Each file contains a finite
-real array shaped ``(Nx, Ny, Nz)``, sampled at the component's Yee locations.
-Unspecified components are zero; repeated blocks add to the selected component.
-All dark fields evolve, so ``evolve=false`` is rejected. ``C`` and ``eps`` follow
-the existing unit configuration. The input ``A`` is automatically shifted to
-``t=-dt/2``; do not pre-stagger the input files.
-
-Python callers can use
-``PyPIC3D.solvers.dark_matter_yee.dark_photon_fields.initialize_dark_photon_fields``
-with ``(static_parameters, dynamic_parameters, E=None, A=None, phi=None)``.
-The optional inputs are full floating-point tiled arrays at ``t=0``; vector
-inputs contain three components. The helper refreshes halos and returns the
-staggered ``(E, A, phi)`` state.
+``dynamic_metric`` adds a ``[metric]`` table carrying the initial BSSN
+geometry, the gauge controls and the six gravitational boundary codes, and it
+forces ``C = eps = mu = 1`` with double precision. See
+:doc:`dynamical_relativity`.

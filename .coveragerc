@@ -1,8 +1,7 @@
 [run]
 source =
-    PyPIC3D/PyPIC3D
+    PyPIC3D
 omit =
-    PyPIC3D/tests/*
     tests/*
     */__pycache__/*
 
