@@ -1,9 +1,10 @@
-# Run initial_metric.py, initial_data.py, then PyPIC3D --config charged_star.toml.
+# Run initial_data.py, then PyPIC3D --config charged_star.toml.
 # Lapse deletion removes charge without correcting fields.
 # Geometrized Gaussian units: G=c=1, total Q=sum(q*weight).
-# Star: prescribed ADM M=1, initial areal surface R=10.
-# Keep the mesh and calibrated species values synchronized with both initializers.
-# A 150M run saves 150 snapshots (roughly 14 GB); this is a demo resolution.
+# Uniform coordinate sphere: rest mass=1, coordinate radius=10, total Q=0.2.
+# Cartesian lattice spacing=0.25; ADM mass and areal radius are measured outputs.
+# Keep the mesh and printed species values synchronized with initial_data.py.
+# A run to t=150 saves 150 snapshots (roughly 14 GB); this is a demo resolution.
 # Constant Maxwell halos are not an isolated-radiation boundary condition.
 
 
@@ -105,10 +106,10 @@ zr_bc = "sommerfeld"
 
 [particle1]
 name = "charged_dust"
-N_particles = 262144
+N_particles = 268096
 charge = 0.2
-mass = 0.99711270936837326
-weight = 4.0718187428556398e-06
+mass = 1.0
+weight = 3.7300071616137502e-06
 x_bc = "absorbing"
 y_bc = "absorbing"
 z_bc = "absorbing"
