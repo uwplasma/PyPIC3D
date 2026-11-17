@@ -10,7 +10,7 @@ import jax.numpy as jnp
 import openpmd_api as io
 
 from tests.kernel_fixtures import kernel_parameters
-from PyPIC3D.distributed import tiled_field_from_initializer
+from PyPIC3D.utilities.distributed import tiled_field_from_initializer
 from PyPIC3D.initialization import initialize_fields
 from PyPIC3D.utilities.toml_helpers import load_external_fields_from_toml
 from PyPIC3D.particles.distributed_initialization import load_distributed_particles

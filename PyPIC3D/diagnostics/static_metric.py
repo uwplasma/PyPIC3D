@@ -1,5 +1,6 @@
 """Finite-difference constraints and radial particle/charge budgets."""
 from typing import NamedTuple
+import jax
 import jax.numpy as jnp
 from PyPIC3D.utilities.grids import grid_domain_bounds
 from PyPIC3D.boundary_conditions.grid_and_stencil import BC_ABSORBING, BC_CONDUCTING
@@ -48,6 +49,14 @@ def bssn_constraint_norms(particles, species, fields, static, dynamic, *, source
     violations = compute_all_constraints_with_matter(
         bssn.state, bssn.evolution_parameters, rho, momentum)
     return compute_constraint_norms(violations)
+
+
+def print_bssn_constraints(label, particles, species, fields, static, dynamic):
+    """Evaluate common-time constraints collectively and report on rank zero."""
+    norms = bssn_constraint_norms(particles, species, fields, static, dynamic)
+    if jax.process_index() == 0:
+        print(f"{label} Einstein constraints: Hamiltonian RMS={float(norms['hamiltonian_l2']):.6e}, "
+              f"momentum RMS={float(norms['momentum_l2']):.6e}")
 
 
 def node_weights(static, template):

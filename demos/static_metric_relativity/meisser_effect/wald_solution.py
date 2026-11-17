@@ -112,7 +112,6 @@ def build_pypic_parameters(config):
         output_dir=config["output"]["directory"],
         Nt=total_steps,
         verbose=False,
-        benchmark=False,
         solver="static_metric",
         electrostatic=False,
         relativistic=True,

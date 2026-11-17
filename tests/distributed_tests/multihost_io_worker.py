@@ -15,7 +15,7 @@ import jax.numpy as jnp
 jax.config.update("jax_enable_x64", True)
 
 from tests.kernel_fixtures import kernel_parameters
-from PyPIC3D.distributed import tiled_field_from_initializer
+from PyPIC3D.utilities.distributed import tiled_field_from_initializer
 from PyPIC3D.relativity.core import D_FIELD_LOCATIONS
 from PyPIC3D.particles.distributed_initialization import load_distributed_particles
 from PyPIC3D.diagnostics.async_writer import make_tiled_field_snapshot, make_tiled_particle_snapshot
@@ -124,7 +124,7 @@ def main():
             "simulation_parameters": dict(solver="dynamic_metric", output_dir=os.path.join(args.directory, "evolution"),
                                           Nx=8, Ny=4, Nz=4, x_wind=4.0, y_wind=2.0, z_wind=2.0,
                                           particle_tile_nx=4, particle_tile_ny=4, particle_tile_nz=4,
-                                          Nt=2, dt=1.e-4, metric_backreaction=True, benchmark=True),
+                                          Nt=2, dt=1.e-4, metric_backreaction=True),
             "plotting": dict(plot_openpmd_fields=write, plot_openpmd_particles=write, plotting_interval=1,
                              dump_fields=write, dump_particles=write),
             "particle1": dict(block, charge=0.0),

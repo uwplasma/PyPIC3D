@@ -18,7 +18,6 @@ class StaticParameters(NamedTuple):
     output_dir: str
     Nt: int
     verbose: bool
-    benchmark: bool
     solver: str
     electrostatic: bool
     relativistic: bool
@@ -170,7 +169,6 @@ def build_static_parameters(static_config):
         output_dir=static_config.get("output_dir", "."),
         Nt=int(static_config.get("Nt", 0)),
         verbose=bool(static_config.get("verbose", False)),
-        benchmark=bool(static_config.get("benchmark", False)),
         solver=static_config.get("solver", "electrodynamic_yee"),
         electrostatic=bool(static_config.get("electrostatic", False)),
         relativistic=bool(static_config.get("relativistic", True)),

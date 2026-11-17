@@ -12,7 +12,7 @@ from jax.sharding import NamedSharding, PartitionSpec as P
 import openpmd_api as io
 
 from tests.kernel_fixtures import kernel_parameters
-from PyPIC3D.distributed import tiled_field_from_initializer
+from PyPIC3D.utilities.distributed import tiled_field_from_initializer
 from PyPIC3D.particles.particle_class import TiledParticles, SpeciesConfig
 from PyPIC3D.diagnostics.async_writer import make_tiled_field_snapshot, make_tiled_particle_snapshot
 from PyPIC3D.diagnostics import openPMD

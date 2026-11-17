@@ -3,7 +3,7 @@
 from tests.support.dark_photon_fixtures import (
     D_FIELD_LOCATIONS,
     DarkPhotonFixtures,
-    _dark_timestep,
+    dark_photon_courant_condition,
     build_field_output_map,
     build_static_parameters,
     build_tiled_particles,
@@ -260,17 +260,17 @@ class TestDarkPhoton(DarkPhotonFixtures, unittest.TestCase):
         dynamic.update(Nx=8, Ny=1, Nz=1, dx=.2, dy=1., dz=1., C=1.3, dt=None)
         static.update(dark_mu=20., sin_chi=.1)
         limit = 2/(1.3*math.sqrt(20**2+4/.2**2))
-        self.assertAlmostEqual(_dark_timestep(static, dynamic), .99*limit)
+        self.assertAlmostEqual(dark_photon_courant_condition(static, dynamic), .99*limit)
         dynamic["dt"] = limit
         with self.assertRaisesRegex(ValueError, "stability limit"):
-            _dark_timestep(static, dynamic)
+            dark_photon_courant_condition(static, dynamic)
         dynamic.update(Nx=1, dt=None)
-        self.assertAlmostEqual(_dark_timestep(static, dynamic), .99*2/(1.3*20))
+        self.assertAlmostEqual(dark_photon_courant_condition(static, dynamic), .99*2/(1.3*20))
         static["dark_mu"] = 0.
         with self.assertRaisesRegex(ValueError, "Specify dt"):
-            _dark_timestep(static, dynamic)
+            dark_photon_courant_condition(static, dynamic)
         dynamic["dt"] = .1
-        self.assertEqual(_dark_timestep(static, dynamic), .1)
+        self.assertEqual(dark_photon_courant_condition(static, dynamic), .1)
 
 
     def test_invalid_initial_field_shapes_and_types(self):
