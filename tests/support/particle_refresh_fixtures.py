@@ -9,7 +9,6 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
 from tests.kernel_fixtures import build_tiled_particles, particle_parameters_from_tile_values, particle_species
 from tests.kernel_fixtures import kernel_parameters_from_values
 from PyPIC3D.particles.particle_tile_communication import (
-    _adjacent_tile_offset,
     refresh_tiled_particle_tiles,
     update_tiled_particle_positions,
 )

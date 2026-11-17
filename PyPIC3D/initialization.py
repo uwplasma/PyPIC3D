@@ -109,14 +109,6 @@ def validate_field_solver(solver):
         )
 
 
-def _tile_shape_from_static_config(static_config):
-    return (
-        int(static_config["particle_tile_nx"]),
-        int(static_config["particle_tile_ny"]),
-        int(static_config["particle_tile_nz"]),
-    )
-
-
 def _encode_current_calculation(current_calculation):
     if current_calculation not in ("j_from_rhov", "esirkepov", "GR_direct_deposition"):
         raise ValueError(
@@ -166,7 +158,11 @@ def _validate_tiled_yee_configuration(static_config, dynamic_config):
         raise ValueError("Yee runtime currently supports only particle_pusher='boris' or 'higuera_cary'")
     if static_config["filter_j"] not in ("none", "digital", "bilinear"):
         raise ValueError("Yee runtime currently supports only filter_j='none', filter_j='digital', or 'bilinear'")
-    tile_shape = _tile_shape_from_static_config(static_config)
+    tile_shape = (
+        int(static_config["particle_tile_nx"]),
+        int(static_config["particle_tile_ny"]),
+        int(static_config["particle_tile_nz"]),
+    )
     grid_shape = (
         int(dynamic_config["Nx"]),
         int(dynamic_config["Ny"]),
@@ -209,17 +205,6 @@ def _available_cpu_threads():
     except (AttributeError, OSError):
         cpu_threads = os.cpu_count()
     return max(1, int(cpu_threads or 1))
-
-
-def _local_mesh_device_count(field_mesh):
-    """Count mesh devices owned by this JAX process."""
-
-    process_index = int(jax.process_index())
-    local_devices = sum(
-        int(device.process_index) == process_index
-        for device in field_mesh.devices.flat
-    )
-    return max(1, int(local_devices))
 
 
 def _resolve_particle_batch_size(
@@ -265,7 +250,11 @@ def _resolve_particle_batch_size(
         if local_device_count is None:
             if field_mesh is None:
                 raise ValueError("field_mesh is required to determine the local CPU device count.")
-            local_device_count = _local_mesh_device_count(field_mesh)
+            process_index = int(jax.process_index())
+            local_device_count = sum(
+                int(device.process_index) == process_index
+                for device in field_mesh.devices.flat
+            )
         available_cpu_threads = max(1, int(available_cpu_threads))
         local_device_count = max(1, int(local_device_count))
         threads_per_device = max(1, available_cpu_threads // local_device_count)

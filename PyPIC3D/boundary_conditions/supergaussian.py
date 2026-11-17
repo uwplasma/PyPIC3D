@@ -82,20 +82,6 @@ def load_supergaussian_from_toml(raw_supergaussian, dynamic_parameters):
     return bool(layers), sg_x, sg_y, sg_z, tuple(layers)
 
 
-def _shape_from_static_parameters(static_parameters):
-    tile_nx, tile_ny, tile_nz = [int(width) for width in static_parameters.tile_shape]
-    g = int(static_parameters.guard_cells)
-    mesh_shape = tuple(int(static_parameters.field_mesh.shape[axis]) for axis in ghost_cells.MESH_AXES)
-    return (
-        mesh_shape[0],
-        mesh_shape[1],
-        mesh_shape[2],
-        tile_nx + 2 * g,
-        tile_ny + 2 * g,
-        tile_nz + 2 * g,
-    )
-
-
 def _axis_envelope(shape, static_parameters, axis_index, side, width, order, sigma_max, step_dt):
     tile_width = int(static_parameters.tile_shape[axis_index])
     g = int(static_parameters.guard_cells)
@@ -135,7 +121,9 @@ def build_supergaussian_envelope(static_parameters, dynamic_parameters, step_dt,
     del dynamic_parameters
 
     if shape is None:
-        shape = _shape_from_static_parameters(static_parameters)
+        g = int(static_parameters.guard_cells)
+        mesh_shape = tuple(int(static_parameters.field_mesh.shape[axis]) for axis in ghost_cells.MESH_AXES)
+        shape = mesh_shape + tuple(int(width) + 2 * g for width in static_parameters.tile_shape)
 
     envelope = jnp.ones(tuple(int(value) for value in shape))
     for axis_index, side, width, order, sigma_max in static_parameters.supergaussian_layers:

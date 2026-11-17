@@ -83,29 +83,6 @@ def _axis_tuple(axis_values):
     )
 
 
-def _tile_shape(static_config):
-    if "tile_shape" in static_config:
-        return tuple(int(width) for width in static_config["tile_shape"])
-
-    return (
-        int(static_config["particle_tile_nx"]),
-        int(static_config["particle_tile_ny"]),
-        int(static_config["particle_tile_nz"]),
-    )
-
-
-def _field_mesh(static_config, tile_shape):
-    if static_config.get("field_mesh") is not None:
-        return static_config["field_mesh"]
-
-    tile_grid_shape = (
-        int(static_config["Nx"]) // int(tile_shape[0]),
-        int(static_config["Ny"]) // int(tile_shape[1]),
-        int(static_config["Nz"]) // int(tile_shape[2]),
-    )
-    return make_field_mesh(tile_grid_shape)
-
-
 def validate_dark_parameters(sin_chi, dark_mu):
     """Validate the dimensionless mixing and inverse-length Proca mass."""
     if not math.isfinite(float(sin_chi)) or abs(float(sin_chi)) > 1:
@@ -158,11 +135,27 @@ def build_static_parameters(static_config):
         raise ValueError("Tiled fields require at least one guard cell.")
     if hybrid and guard_cells < 3:
         raise ValueError("Hybrid Hermite particle metrics require guard_cells >= 3")
-    tile_shape = _tile_shape(static_config)
+    if "tile_shape" in static_config:
+        tile_shape = tuple(int(width) for width in static_config["tile_shape"])
+    else:
+        tile_shape = (
+            int(static_config["particle_tile_nx"]),
+            int(static_config["particle_tile_ny"]),
+            int(static_config["particle_tile_nz"]),
+        )
     particle_batch_size = static_config.get("particle_batch_size", 1)
     if (isinstance(particle_batch_size, bool) or not isinstance(particle_batch_size, Integral)
             or particle_batch_size <= 0):
         raise ValueError("particle_batch_size must be a positive integer.")
+
+    field_mesh = static_config.get("field_mesh")
+    if field_mesh is None:
+        tile_grid_shape = (
+            int(static_config["Nx"]) // tile_shape[0],
+            int(static_config["Ny"]) // tile_shape[1],
+            int(static_config["Nz"]) // tile_shape[2],
+        )
+        field_mesh = make_field_mesh(tile_grid_shape)
 
     return StaticParameters(
         name=static_config.get("name", "Default Simulation"),
@@ -192,7 +185,7 @@ def build_static_parameters(static_config):
         supergaussian_layers=tuple(static_config.get("supergaussian_layers", ())),
         boundary_conditions=_axis_tuple(static_config["boundary_conditions"]),
         particle_boundary_conditions=_axis_tuple(static_config.get("particle_boundary_conditions", (0, 0, 0))),
-        field_mesh=_field_mesh(static_config, tile_shape),
+        field_mesh=field_mesh,
         horizon_field_cells=int(horizon_cells),
         sin_chi=float(static_config.get("sin_chi", 0.0)),
         dark_mu=float(static_config.get("dark_mu", 0.0)),

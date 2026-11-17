@@ -101,14 +101,16 @@ def _particle_tile_indices(x1, x2, x3, dynamic_parameters, tile_nx, tile_ny, til
     return x_cell // tile_nx, y_cell // tile_ny, z_cell // tile_nz
 
 
-def _prepare_species_tile_data(species_arrays, dynamic_parameters, tile_shape):
+def _pack_species_arrays_into_tiles(species_arrays, dynamic_parameters, tile_shape, capacity_factor):
     tile_nx, tile_ny, tile_nz = tile_shape
     ntx = _tile_axis_count(dynamic_parameters.Nx, tile_nx)
     nty = _tile_axis_count(dynamic_parameters.Ny, tile_ny)
     ntz = _tile_axis_count(dynamic_parameters.Nz, tile_nz)
     n_tiles = ntx * nty * ntz
+    n_species = len(species_arrays)
 
-    tile_counts = np.zeros((ntx, nty, ntz, len(species_arrays)), dtype=int)
+    # Count active particles in each tile before choosing the shared slot capacity.
+    tile_counts = np.zeros((ntx, nty, ntz, n_species), dtype=int)
     species_tile_data = []
 
     for species_index, (x_array, u_array, active_mask) in enumerate(species_arrays):
@@ -133,17 +135,7 @@ def _prepare_species_tile_data(species_arrays, dynamic_parameters, tile_shape):
 
         species_tile_data.append((x_np, u_np, active_np, tx, ty, tz, flat_tile, active_indices))
 
-    return tile_counts, species_tile_data
-
-
-def _pack_species_arrays_into_tiles(species_arrays, dynamic_parameters, tile_shape, capacity_factor):
-    tile_nx, tile_ny, tile_nz = tile_shape
-    ntx = _tile_axis_count(dynamic_parameters.Nx, tile_nx)
-    nty = _tile_axis_count(dynamic_parameters.Ny, tile_ny)
-    ntz = _tile_axis_count(dynamic_parameters.Nz, tile_nz)
-    n_species = len(species_arrays)
-
-    tile_counts, species_tile_data = _prepare_species_tile_data(species_arrays, dynamic_parameters, tile_shape)
+    # Allocate fixed-capacity tiles, including the requested inactive headroom.
     max_particles_per_tile = int(np.max(tile_counts)) if tile_counts.size else 0
     max_particles_per_tile = int(math.ceil(max_particles_per_tile * capacity_factor))
 
@@ -151,6 +143,7 @@ def _pack_species_arrays_into_tiles(species_arrays, dynamic_parameters, tile_sha
     u_tiles = np.zeros_like(x_tiles)
     active_tiles = np.zeros((ntx, nty, ntz, n_species, max_particles_per_tile), dtype=bool)
 
+    # Stable sorting preserves the input particle order within each tile.
     for species_index, (x_np, u_np, active_np, tx, ty, tz, flat_tile, active_indices) in enumerate(species_tile_data):
         if active_indices.size == 0:
             continue

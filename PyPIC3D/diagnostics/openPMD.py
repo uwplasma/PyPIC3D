@@ -251,26 +251,10 @@ def _field_map_to_interior(field_map):
     return interior_map
 
 
-def _as_3tuple(value):
-    if isinstance(value, tuple):
-        return tuple(int(v) for v in value)
-    if isinstance(value, list):
-        return tuple(int(v) for v in value)
-    return (int(value), int(value), int(value))
-
-
 def _slice_start(index_entry):
     if isinstance(index_entry, slice):
         return 0 if index_entry.start is None else int(index_entry.start)
     return int(index_entry)
-
-
-def _tile_interior(tile, guard_cells):
-    gx, gy, gz = guard_cells
-    sx = slice(gx, -gx) if gx > 0 else slice(None)
-    sy = slice(gy, -gy) if gy > 0 else slice(None)
-    sz = slice(gz, -gz) if gz > 0 else slice(None)
-    return tile[sx, sy, sz]
 
 
 def _iter_tile_chunks_from_host_shard(shard_index, shard_data, *, layout):
@@ -285,7 +269,12 @@ def _iter_tile_chunks_from_host_shard(shard_index, shard_data, *, layout):
         )
 
     tile_shape = tuple(int(width) for width in layout.tile_shape)
-    guard_cells = _as_3tuple(layout.guard_cells)
+    if isinstance(layout.guard_cells, (tuple, list)):
+        guard_cells = tuple(int(g) for g in layout.guard_cells)
+    else:
+        guard_cells = (int(layout.guard_cells),) * 3
+    gx, gy, gz = guard_cells
+    interior_slices = tuple(slice(g, -g) if g > 0 else slice(None) for g in (gx, gy, gz))
 
     tx0 = _slice_start(shard_index[0])
     ty0 = _slice_start(shard_index[1])
@@ -300,7 +289,7 @@ def _iter_tile_chunks_from_host_shard(shard_index, shard_data, *, layout):
                 tz = tz0 + ltz
 
                 raw_tile = shard_data[ltx, lty, ltz]
-                interior = _tile_interior(raw_tile, guard_cells)
+                interior = raw_tile[interior_slices]
                 if tuple(interior.shape) != tile_shape:
                     raise ValueError(
                         f"Tile interior has shape {interior.shape}, expected {tile_shape}. "
