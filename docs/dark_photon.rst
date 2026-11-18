@@ -2,18 +2,9 @@ Dark Photon Sector
 ==================
 
 ``solver = "dark_matter_yee"`` evolves a massive, kinetically mixed vector
-field alongside the ordinary Maxwell fields. The dark sector is a full
-Maxwell--Proca system in its own right: it has its own potentials, its own
-boundary treatment, its own PML histories, and its own energy diagnostic. It is
-coupled to the visible sector only through the plasma current and the Lorentz
-force.
-
-Physical picture
-----------------
-
-The model is a hidden ``U(1)`` gauge field :math:`A'^\mu` that mixes
-kinetically with ordinary electromagnetism. In the kinetically mixed basis the
-Lagrangian is
+field alongside the ordinary Maxwell fields. The model is a hidden ``U(1)`` 
+gauge field :math:`A'^\mu` that mixes kinetically with ordinary electromagnetism. 
+In the kinetically mixed basis the Lagrangian is
 
 .. math::
 
@@ -55,39 +46,6 @@ pair picks up a repulsive Yukawa correction of relative size
 ``sin_chi = 0`` reproduces ``electrodynamic_yee`` bit for bit, with the dark
 sector evolving as a decoupled spectator.
 
-.. note::
-
-   The alternative *interaction basis*, reached by the shift
-   :math:`A'=\tilde A'-\varepsilon\tilde A`, puts the mixing in an off-diagonal
-   **mass** matrix instead. There the dark field carries no direct current
-   coupling and is populated only by oscillation through the
-   :math:`\varepsilon m^{2}\tilde A'\!\cdot\!\tilde A` term, while the visible
-   Ampere law picks up a compensating source. That is not what this solver
-   does: the presence of a ``J`` term in the dark Ampere law, together with an
-   unmodified visible sector, is the signature of the mass eigenbasis.
-
-Two configuration values control the sector:
-
-``sin_chi``
-   The dimensionless kinetic-mixing coefficient :math:`\varepsilon`, written
-   :math:`s` in the equations below. Default ``0.0``; it must be finite with
-   :math:`|s|\le 1`. It is the *sine* of the mixing angle, already taken ---
-   not the angle itself.
-
-``dark_mu``
-   The Proca mass :math:`m`, expressed as an **inverse length** (the Compton
-   wavenumber :math:`m_{A'}c/\hbar`). Default ``0.0``; it must be finite and
-   nonnegative. It is unrelated to the electromagnetic permeability ``mu``,
-   which is a separate configuration value.
-
-A nonzero mass gives the dispersion relation
-
-.. math::
-
-   \omega = c\sqrt{k^{2}+m^{2}},
-
-so the dark sector supports a longitudinal mode that ordinary electromagnetism
-does not. The longitudinal electric amplitude scales as :math:`c^{2}m^{2}/\omega`.
 
 Field equations
 ---------------
@@ -105,31 +63,7 @@ is never stored; it is recomputed as the curl of the vector potential. With
    \partial_t\phi' &= -c^{2}\,\nabla\cdot\mathbf A', \\
    \mathbf B' &= \nabla\times\mathbf A'.
 
-:math:`\mathbf J` is the ordinary particle current deposited during the same
-step, by either ``esirkepov`` or ``j_from_rhov``.
 
-The scalar equation is the Lorenz--Proca gauge condition promoted to an
-evolution equation, which is what makes the massive system well posed without a
-separate gauge fixing step. For :math:`m=0` the dark sector reduces to ordinary
-electromagnetism in Lorenz gauge.
-
-Gauss constraint
-~~~~~~~~~~~~~~~~
-
-The scheme preserves
-
-.. math::
-
-   \nabla\cdot\mathbf E'+m^{2}\phi' = -\frac{s\,\rho}{\epsilon_0}
-
-to round-off, as a consequence of the divergence of the :math:`\mathbf E'`
-update combined with the :math:`\phi'` equation and charge continuity.
-
-Preservation is not enforcement. ``initialize_dark_photon_fields`` **does not
-solve this constraint**: initial data supplied through ``[dark_fieldN]`` blocks
-must already satisfy it, or the violation persists for the whole run. Supplying
-only a vector potential (the usual case) is safe, because that leaves
-:math:`\mathbf E'` and :math:`\phi'` at zero with no charge present.
 
 Staggering and update order
 ---------------------------
@@ -168,9 +102,7 @@ frequency is bounded by the mass as well as the grid, so stability requires
 
 where the sum runs over resolved axes only. When ``dt`` is omitted it is taken
 as the smaller of the ordinary Maxwell CFL step and ``0.99 * cfl`` times this
-limit. An explicit ``dt`` at or above the limit is rejected. A massless dark
-field with every dimension collapsed has no limit, so ``dt`` must then be given
-explicitly.
+limit. An explicit ``dt`` at or above the limit is rejected.
 
 Initial data
 ------------
@@ -199,17 +131,9 @@ The component mapping is:
 
 Each file contains a finite real array shaped ``(Nx, Ny, Nz)``, sampled at the
 component's Yee locations. Unspecified components are zero; repeated blocks add
-to the selected component. All dark fields evolve, so ``evolve = false`` is
-rejected. ``dark_fieldN`` blocks with any other solver are an error. ``C`` and
-``eps`` follow the existing unit configuration. The input ``A`` is
+to the selected component. The input ``A`` is
 automatically shifted to ``t=-dt/2``; do not pre-stagger the input files.
 
-Python callers can use
-``PyPIC3D.solvers.dark_matter_yee.dark_photon_fields.initialize_dark_photon_fields``
-with ``(static_parameters, dynamic_parameters, E=None, A=None, phi=None)``.
-The optional inputs are full floating-point tiled arrays at ``t=0``; vector
-inputs contain three components. The helper refreshes halos and returns the
-staggered ``(E, A, phi)`` state.
 
 Boundaries
 ----------
@@ -254,23 +178,3 @@ Runs write:
   and a ``Dark Field Energy`` line in the printed energy report.
 - openPMD meshes ``dark_E``, ``dark_A``, ``dark_B`` and ``dark_phi`` when
   ``plot_openpmd_fields = true``, at integer time.
-
-Runtime state
--------------
-
-The dark solver preserves the ordinary field-tuple prefix and inserts its state
-before the overflow flag:
-
-.. code-block:: text
-
-   (E, B, J, rho, phi, external_fields, pml_state, dark_fields, overflow)
-
-``dark_fields`` is ``(E_prime, A_prime, phi_prime)``. See :doc:`architecture`
-for the shared parts of the tuple.
-
-Demos
------
-
-See :doc:`demos` for the two dark-sector examples: a warm Maxwell--Proca
-two-stream instability, and an electron-positron Harris sheet whose
-reconnecting field is supplied entirely through the mixing.

@@ -6,36 +6,12 @@ relativity while PyPIC3D keeps particles, Maxwell evolution, and the
 stress-energy projection. The plasma curves the spacetime, and the evolving
 spacetime moves the plasma.
 
-This page covers the configuration surface and the operational contract. For the
-full coupling specification --- unit conventions, time levels, source filtering,
-and the work-energy diagnostic --- see :doc:`einstein_maxwell`. For the
-prescribed-metric solver, see the GR Maxwell section of :doc:`solvers`.
-
-Requirements
-------------
-
 The BSSN equations are **not** part of this repository. They live in the
 optional ``JAX_BSSN`` dependency:
 
 .. code-block:: bash
 
    pip install -e '.[relativity]'
-
-Importing ordinary PyPIC3D solvers does not import JAX BSSN, and the dynamical
-test suite skips entirely when it is absent.
-
-The coupled solver rejects configurations that violate any of these; each is a
-hard error at initialization, not a warning:
-
-- **Geometrized Gaussian units**: ``C = eps = mu = 1``. The CLI sets these for
-  this solver.
-- **Double precision**: ``jax_enable_x64 = True``. The CLI enables it.
-- **Uniform spacing**: all resolved Cartesian axes must share one grid spacing,
-  and the BSSN and PIC ``dx``/``dt`` must agree.
-- **Fixed timestep**: ``dt`` must not change during a run.
-- Prescribed external fields, PML, and non-Cartesian charts are not supported.
-- Matched GR filtering additionally requires all six BSSN boundaries periodic
-  and a Cartesian chart.
 
 The particle path supports periodic Cartesian tiles on a shared device mesh,
 with one tile per device. BSSN and EM use identical tile ownership; BSSN retains
@@ -156,12 +132,6 @@ only to the Kerr-Schild charts. Dynamical runs must use ``numerical`` or
 ``flat_cartesian``. Matched GR filtering requires ``flat_cartesian`` or
 ``numerical``.
 
-The ``[metric]`` table
-----------------------
-
-``[metric]`` supplies the initial geometry, the gauge and evolution controls,
-and the gravitational boundary codes. It is the recommended initialization
-path, and the one every shipped dynamical demo uses.
 
 Initial-data arrays
 ~~~~~~~~~~~~~~~~~~~
@@ -184,19 +154,6 @@ Each state entry is either a ``.npy`` filename or the literal ``false``:
 Files contain **global C-node arrays without guards**, with tensor components
 first. In a multiprocess run each process reads only its own owned tiles from
 the same files.
-
-.. warning::
-
-   An omitted or ``false`` entry creates a **zero** array, not an identity. A
-   missing ``conformal_metric`` is therefore a zero matrix, not
-   :math:`\delta_{ij}`, and a missing ``conformal_factor`` is zero rather than
-   one. Both are rejected by the validation below, but the failure mode is worth
-   knowing: supply geometry explicitly rather than relying on defaults.
-
-Loading validates that every array is finite, that ``conformal_factor``
-contains positive :math:`W`, and that ``conformal_metric`` is symmetric and
-positive definite. These checks run before determinant normalization and
-inversion, so an omitted geometry file cannot be masked by a floor or a NaN.
 
 Gauge and evolution controls
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -258,16 +215,6 @@ Gravitational boundaries
    do not mean the same thing. Gravitational code ``1`` is Sommerfeld;
    electromagnetic code ``1`` is conducting.
 
-Rejected keys
-~~~~~~~~~~~~~
-
-``dx``, ``dt``, ``x_min``, ``y_min`` and ``z_min`` are derived from the PIC grid
-and timestep, and are rejected if supplied. Any unrecognized key is also
-rejected rather than silently ignored.
-
-``[metric]`` cannot be combined with the legacy ``[bssn_parameters]`` table, nor
-with the ``bssn_state`` or ``bssn_evolution_parameters`` Python arguments; pick
-one initialization source.
 
 Minimal configuration
 ---------------------
@@ -315,18 +262,6 @@ fields are physical contravariant D/B at native Yee sites, and initial particle
 momentum is covariant :math:`u_i` at the position time. Initialization performs
 densitization and the leapfrog offset once.
 
-Defaults, and the legacy table
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Without a ``[metric]`` table the initial geometry is exactly flat, with harmonic
-slicing and a frozen zero shift. **That is not a constraint solution for nonzero
-plasma**; supply BSSN variables explicitly whenever matter is present.
-
-The older ``[bssn_parameters]`` table is still honored when ``[metric]`` is
-absent. It takes raw numerical-relativity values --- integer ``gauge``,
-integer ``zero_shift`` --- and has no initial-data array support. Prefer
-``[metric]`` for new configurations.
-
 Forced defaults
 ---------------
 
@@ -339,41 +274,6 @@ defaults rather than inheriting them:
 - ``C = eps = mu = kb = 1``
 - ``guard_cells`` at least 3
 
-Options reachable only from Python
-----------------------------------
-
-Three documented capabilities have no TOML surface, because ``run_PyPIC3D`` does
-not forward them to the coupled loop:
-
-- ``source_filter="binomial"`` isolated-electrovacuum source filtering
-- ``prescribed_gauge(state, time)`` callbacks
-- ``gravity_boundary(state, time)`` callbacks
-
-Reaching any of them requires calling ``time_loop_dynamical_relativity``
-directly from a custom driver. See :doc:`einstein_maxwell` for their contracts.
-
-Runtime state and metric changes
---------------------------------
-
-``dynamic_parameters.bssn_parameters`` holds ``state``,
-``evolution_parameters`` and ``time``. The dynamic loop returns
-``particles, fields, dynamic_parameters``; other solver signatures are
-unchanged.
-
-Field slot 7 stores ``(D_previous, B_previous, B_synchronized, half_dt,
-absorber)``. Particle momentum and ``B`` are half a native step behind the
-integer position/D time. A metric change corrects these lagged samples without
-redensitizing the common-time fields or resetting the leapfrog. That correction
-assumes the metric changes smoothly: abrupt replacement, or changing ``dt``,
-requires a new initialization.
-
-Generic EM-only runs retain conducting and constant exterior boundaries and
-reference sponges. ``make_reference_sponge`` in
-``boundary_conditions/absorbing_sponge.py`` accepts fixed native D/B reference
-arrays, the static and dynamic parameters, and a coordinate ``width``. All
-particle box boundaries remain periodic in this coupling; the optional
-``lapse_deleting`` interior boundary can be used alongside them.
-
 The four coupling modules are:
 
 * ``relativity/bssn_parameters.py``: ``BSSNParameters`` and its constructor.
@@ -384,7 +284,6 @@ The four coupling modules are:
 * ``solvers/GR_yee/time_loop_dynamical_relativity.py``: the complete coupled
   step, calling the static-metric loop for each PIC half-step.
 
-Charged-black-hole setup, old checkpoints, and their migration are deferred.
 
 Diagnostics
 -----------
@@ -401,17 +300,7 @@ alongside them, using the retained synchronized ``B``.
 
 The optional work-energy budget is enabled with
 ``gr_work_energy_theorem = true``. It is off by default because it reconstructs
-synchronized matter sources every macro step. Its full balance equations,
-conventions and output names are in :doc:`einstein_maxwell`.
-
-Flat-space total-energy conservation reports are not applied to dynamical
-spacetimes.
-
-Output includes the BSSN fields and the physical common-time D/B. The existing
-``E`` mesh name denotes the physical contravariant displacement, as in the
-static GR solver. ``J`` retains the last half-step current and is marked with a
-time offset of ``-dt/4``; charge budgets across a full macro step must use the
-average of the two substep currents.
+synchronized matter sources every macro step.
 
 Particle deletion inside horizons
 ---------------------------------
@@ -421,20 +310,5 @@ falls below ``lapse_threshold`` (default ``0.1``). Both PIC half-steps apply the
 static-GR checks. Dynamical initialization deletes particles before the initial
 current deposition and momentum seeding. After a committed metric change,
 deletion is applied against the new native lapse before momentum
-synchronization. Midpoint positions, momenta and active masks remain fixed
-throughout the BSSN RK4 stages, so intermediate stage lapses do not delete
-particles. See :doc:`particles` for configuration and the resulting source
+synchronization. See :doc:`particles` for configuration and the resulting source
 sinks.
-
-Running across nodes
---------------------
-
-``dynamic_metric`` is currently the only solver with multiprocess simulation
-initialization. See :doc:`distributed_cartesian` for launch commands,
-environment variables, and how to merge the per-process openPMD series.
-
-Demos
------
-
-See :doc:`demos` for Oppenheimer--Snyder dust collapse, charged stellar
-collapse, and a fully relativistic two-stream instability.

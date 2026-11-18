@@ -249,21 +249,6 @@ asynchronous queues, including when it spans several devices or processes.
 host snapshots, not the number of output files. A full queue waits for disk
 writes; larger queues retain more host memory.
 
-Multiprocess output needs no MPI and exchanges nothing: each process writes its
-own ``data/fields_pNNN.h5`` and ``data/particles_pNNN.h5`` through the same
-queues, and ``python -m PyPIC3D.diagnostics.merge_openpmd outputs/data`` joins a
-group afterwards into the unsuffixed file these analysis paths already read. A
-single-process run keeps the unsuffixed names and needs no merge. Multiprocess
-simulation initialization currently supports ``dynamic_metric`` only; see
-:doc:`distributed_cartesian` for launch and validation commands.
-
-Each snapshot is identified by its simulation step number, so openPMD iteration
-IDs are spaced by ``plotting_interval`` rather than numbered consecutively.
-Record time offsets retain the solver's existing time-centering conventions.
-Every mesh component has shape ``(Nx, Ny, Nz)`` with singleton axes preserved,
-including at mixed periodic/conducting boundaries. Staggering is recorded in
-component positions. Ordinary openPMD readers need no extent-verification
-override.
 
 Field output contains ``E``, ``B``, and ``J``. ``plotchargedensity = true``
 deposits the scalar charge-density mesh ``rho`` from the current particle
