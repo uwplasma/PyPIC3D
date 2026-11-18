@@ -1,4 +1,4 @@
-Coupled Cartesian Runs Across Nodes
+Multi-node Simulations
 ===================================
 
 The distributed ``dynamic_metric`` path uses one logical field/particle/BSSN
