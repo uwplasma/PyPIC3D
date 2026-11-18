@@ -84,7 +84,9 @@ def main():
 
     # Omit the two origin-parity stencil cells on the final trumpet. Keep
     # gaps as NaNs so a plot cannot join across a pole or a turning point.
-    exterior = ((np.arange(R.size) >= max(2, int(np.argmin(R))))
+    # R(0)=0, so argmin cannot identify the outer branch of a trumpet.
+    outward_branch = np.max(np.where(R[1:] <= R[:-1], np.arange(1, R.size), 0))
+    exterior = ((np.arange(R.size) >= max(2, outward_branch))
                 & (dR_dr > 0.0) & (denominator > 0.0)
                 & np.isfinite(g_RR) & (g_RR > 0.0))
     g_RR = np.where(exterior, g_RR, np.nan)
@@ -96,7 +98,7 @@ def main():
     # RN has its own exterior mask, independent of the numerical pole.
     g_RR_RN = np.full_like(R, np.nan)
     g_tt_RN = np.full_like(R, np.nan)
-    rn_exterior = ((np.arange(R.size) >= np.argmin(R)) & (R > horizon))
+    rn_exterior = ((np.arange(R.size) >= outward_branch) & (R > horizon))
     R_exterior = R[rn_exterior]
     f_RN = 1.0 - 2.0 * mass / R_exterior + q_squared / R_exterior**2
     g_RR_RN[rn_exterior] = 1.0 / f_RN
