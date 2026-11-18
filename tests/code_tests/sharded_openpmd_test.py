@@ -110,6 +110,24 @@ class ShardedOpenPMDTests(unittest.TestCase):
     def assert_close(self, actual, expected):
         self.assertTrue(bool(jnp.allclose(jnp.asarray(actual), jnp.asarray(expected), rtol=1.e-12, atol=1.e-12)))
 
+    def test_tile_chunks_strip_scalar_and_per_axis_guards(self):
+        tile_shape = (2, 3, 1)
+        reference = jnp.arange(12, dtype=jnp.float64).reshape((2, 1, 1) + tile_shape)
+        shard_index = (slice(2, 4), slice(0, 1), slice(0, 1)) + (slice(None),) * 3
+        for guards, widths in ((0, (0, 0, 0)), (2, (2, 2, 2)),
+                               ((0, 1, 2), (0, 1, 2)), ([2, 0, 1], (2, 0, 1))):
+            with self.subTest(guards=guards):
+                data = jnp.pad(reference, ((0, 0),) * 3 + tuple((g, g) for g in widths),
+                               constant_values=-9999.)
+                layout = SimpleNamespace(tile_shape=tile_shape, guard_cells=guards)
+                chunks = list(openPMD._iter_tile_chunks_from_host_shard(shard_index, data, layout=layout))
+
+                self.assertEqual(len(chunks), 2)
+                for local_tile, (offset, interior) in enumerate(chunks):
+                    self.assertEqual(offset, [(2 + local_tile) * tile_shape[0], 0, 0])
+                    self.assertEqual(interior.shape, tile_shape)
+                    self.assertTrue(jnp.array_equal(interior, reference[local_tile, 0, 0]))
+
     def test_mesh_chunks_cover_periodic_mixed_and_singleton_grids(self):
         for num_tiles in (1, 2):
             if num_tiles > jax.local_device_count():

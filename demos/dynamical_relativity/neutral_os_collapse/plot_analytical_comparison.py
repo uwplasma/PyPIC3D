@@ -32,25 +32,31 @@ INNER_RADIUS_LIMIT = 6.0
 
 
 def read_final_state():
-    """Read only the final positive-x ray from native Cartesian output."""
+    """Read the final positive-x ray starting at the 3D lapse minimum."""
     series = io.Series(str(DATA_DIRECTORY / "fields.h5"), io.Access.read_only)
     step = max(series.iterations)
     iteration = series.iterations[step]
     scalar = io.Mesh_Record_Component.SCALAR
-    reference = iteration.meshes['conformal_factor']
+    reference = iteration.meshes['lapse']
     spacing = np.asarray(reference.grid_spacing)*reference.grid_unit_SI
     origin = np.asarray(reference.grid_global_offset)*reference.grid_unit_SI + np.asarray(reference[scalar].position)*spacing
-    center = np.rint(-origin/spacing).astype(int)
-    shape = reference[scalar].shape
-    count = [shape[0]-center[0],1,1]
+
+    lapse = reference[scalar].load_chunk()
+    series.flush()
+    center = np.unravel_index(np.nanargmin(lapse), lapse.shape)
+    ix, iy, iz = center
+    location = origin + spacing * center
+    print(f"Lapse minimum at grid index {list(map(int, center))}, coordinates {location.tolist()}")
+
+    count = [lapse.shape[0] - ix, 1, 1]
     def read(name, component=scalar):
-        return iteration.meshes[name][component].load_chunk(center.tolist(),count)
-    pending = {name:read(name) for name in ('lapse','conformal_factor','conformal_metric_xx','conformal_metric_yy','conformal_metric_zz')}
+        return iteration.meshes[name][component].load_chunk(center, count)
+    pending = {name:read(name) for name in ('conformal_factor','conformal_metric_xx','conformal_metric_yy','conformal_metric_zz')}
     pending['beta'] = read('shift','x')
     series.flush()
     values = {name:np.asarray(value).reshape(-1) for name,value in pending.items()}
-    fields = dict(r=origin[0]+np.arange(center[0],shape[0])*spacing[0],
-                  alpha=values['lapse'],beta=values['beta'],chi=values['conformal_factor']**2,
+    fields = dict(r=np.arange(count[0]) * spacing[0],
+                  alpha=lapse[ix:, iy, iz].copy(),beta=values['beta'],chi=values['conformal_factor']**2,
                   conformal_grr=values['conformal_metric_xx'],
                   conformal_gt=.5*(values['conformal_metric_yy']+values['conformal_metric_zz']))
     series.close()

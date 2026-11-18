@@ -20,10 +20,10 @@ build/
 .vscode/
 run_dir/
 test_output/
+docs/_build/
 .coverage
-demos/two_stream/*/
-demos/weibel/*/
-demos/ot_vortex/*/
+demos/*/*/data/
+demos/*/*/outputs/
 *.mpg
 *.h5
 *.mp4

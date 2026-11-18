@@ -88,37 +88,6 @@ def update_tiled_particle_positions(tiled_particles, species_config, dt):
     return tiled_particles._replace(x=x)
 
 
-def _adjacent_tile_offset(dest_tile, source_tile, tile_count):
-    """
-    Signed adjacent offset from the source tile to the destination tile.
-
-    The tiled particle step assumes particles move by at most one cell, so tile
-    ownership can only change by one neighboring tile along any active axis.
-    Periodic end points are represented with the physical crossing direction:
-    first -> last is -1, last -> first is +1.
-    """
-
-    if tile_count == 1:
-        return jnp.zeros_like(dest_tile)
-
-    offset = dest_tile - source_tile
-    if tile_count == 2:
-        return offset
-
-    offset = jnp.where(offset == tile_count - 1, -1, offset)
-    offset = jnp.where(offset == -(tile_count - 1), 1, offset)
-
-    return offset
-
-
-def _particle_axis_tile_index(position, axis_min, cell_width, tile_width, tile_count):
-    """Return the owner tile along one axis for bounded particle positions."""
-
-    cell = jnp.floor((position - axis_min) / cell_width).astype(int)
-    cell = jnp.clip(cell, 0, int(tile_width) * int(tile_count) - 1)
-    return jnp.clip(cell // int(tile_width), 0, int(tile_count) - 1)
-
-
 def _particle_face_packet_capacity(n_slots, tile_shape, axis, n_directions=1):
     """
     Choose a static mover capacity from the tile slot density and face area.
@@ -160,12 +129,6 @@ def _pack_particle_packet(x, u, moving, packet_capacity):
     return packet, jnp.any(overflow)
 
 
-def _unpack_particle_packet(packet):
-    """Split a homogeneous mover packet into the local particle representation."""
-
-    return packet[..., :3], packet[..., 3:6], packet[..., 6] != 0.0
-
-
 def _exchange_particle_axis(
     x,
     u,
@@ -188,14 +151,16 @@ def _exchange_particle_axis(
 
     axis_name = MESH_AXES[int(axis)]
     source_tile = jax.lax.axis_index(axis_name)
-    destination_tile = _particle_axis_tile_index(
-        x[..., int(axis)],
-        axis_min,
-        cell_width,
-        tile_width,
-        tile_count,
-    )
-    offset = _adjacent_tile_offset(destination_tile, source_tile, tile_count)
+    cell = jnp.floor((x[..., int(axis)] - axis_min) / cell_width).astype(int)
+    cell = jnp.clip(cell, 0, int(tile_width) * tile_count - 1)
+    destination_tile = jnp.clip(cell // int(tile_width), 0, tile_count - 1)
+
+    offset = destination_tile - source_tile
+    # Periodic first -> last crossings go left; last -> first crossings go right.
+    # With two tiles, both faces reach the same peer and use one combined packet.
+    if tile_count > 2:
+        offset = jnp.where(offset == tile_count - 1, -1, offset)
+        offset = jnp.where(offset == -(tile_count - 1), 1, offset)
     invalid = active & (jnp.abs(offset) > 1)
     moving_negative = active & (offset == -1)
     moving_positive = active & (offset == 1)
@@ -255,7 +220,9 @@ def _exchange_particle_axis(
         )
         packet_overflow = negative_overflow | positive_overflow
 
-    incoming_x, incoming_u, incoming_active = _unpack_particle_packet(incoming_packet)
+    incoming_x = incoming_packet[..., :3]
+    incoming_u = incoming_packet[..., 3:6]
+    incoming_active = incoming_packet[..., 6] != 0.0
     new_x, new_u, new_active, capacity_overflow = _fill_incoming_particles(
         stay_x,
         stay_u,

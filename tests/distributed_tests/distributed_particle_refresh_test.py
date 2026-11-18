@@ -119,6 +119,35 @@ class TestDistributedParticleRefresh(DistributedParticleRefreshFixtures, unittes
         self.assert_allclose(refreshed.x[1, 1, 0, 0, 0, :2], jnp.asarray([0.25, 0.25]))
 
 
+    def test_refresh_routes_both_periodic_crossings_on_two_and_four_tiles(self):
+        for tile_count in (2, 4):
+            with self.subTest(tile_count=tile_count):
+                mesh_shape = (tile_count, 1, 1)
+                tile_shape = (2, 1, 1)
+                static_parameters = _static_parameters(mesh_shape, tile_shape)
+                dynamic_parameters = _dynamic_parameters(mesh_shape, tile_shape)
+                half_width = float(tile_count)
+                particles = _empty_particles(mesh_shape)
+                particles = _put_particle(particles, (0, 0, 0), 0,
+                                          (-half_width - 0.25, 0.0, 0.0), u=(-1.0, 2.0, 3.0))
+                particles = _put_particle(particles, (tile_count - 1, 0, 0), 0,
+                                          (half_width + 0.25, 0.0, 0.0), u=(4.0, 5.0, 6.0))
+                particles = _shard_particles(particles, static_parameters)
+
+                refreshed, overflow = jax.jit(
+                    lambda p: particle_comm.refresh_tiled_particle_tiles(p, static_parameters, dynamic_parameters)
+                )(particles)
+
+                self.assertFalse(bool(overflow))
+                self.assertEqual(int(jnp.sum(refreshed.active)), 2)
+                self.assertEqual(int(jnp.sum(refreshed.active[0, 0, 0])), 1)
+                self.assertEqual(int(jnp.sum(refreshed.active[-1, 0, 0])), 1)
+                self.assert_allclose(refreshed.x[0, 0, 0, 0, 0], jnp.array([-half_width + 0.25, 0.0, 0.0]))
+                self.assert_allclose(refreshed.x[-1, 0, 0, 0, 0], jnp.array([half_width - 0.25, 0.0, 0.0]))
+                self.assert_allclose(refreshed.u[0, 0, 0, 0, 0], jnp.array([4.0, 5.0, 6.0]))
+                self.assert_allclose(refreshed.u[-1, 0, 0, 0, 0], jnp.array([-1.0, 2.0, 3.0]))
+
+
     def test_refresh_reports_destination_capacity_overflow(self):
         mesh_shape = (2, 1, 1)
         tile_shape = (2, 1, 1)

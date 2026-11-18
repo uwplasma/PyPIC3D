@@ -1,6 +1,24 @@
 import jax.numpy as jnp
 
 
+def compute_energy_components(particles, E, B, external_fields, static_parameters,
+                              dynamic_parameters, species_config, *, dark_fields=None, dark_pml=None):
+    """Flat-space energy including prescribed fields and optional Proca fields.
+
+    Use the supplied particle time level: initial reporting precedes the
+    backward leapfrog seed, while runtime diagnostics use the evolved state.
+    """
+    from PyPIC3D.utilities.field_helpers import add_external_fields
+
+    total_E, total_B = add_external_fields(E, B, external_fields)
+    electric, magnetic, kinetic = compute_energy(
+        particles, total_E, total_B, static_parameters, dynamic_parameters,
+        species_config=species_config)
+    dark = (compute_dark_energy(dark_fields, static_parameters, dynamic_parameters, dark_pml)
+            if dark_fields is not None else 0.0)
+    return electric, magnetic, kinetic, dark
+
+
 def compute_dark_energy(dark_fields, static_parameters, dynamic_parameters, pml_state=None):
     """Physical Proca energy at integer time, using reconstructed A and B.
 

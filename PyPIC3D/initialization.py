@@ -10,12 +10,14 @@ from PyPIC3D.collisions import load_collisions_from_toml
 from PyPIC3D.particles.particle_initialization import load_particles_from_toml
 from PyPIC3D.pusher.particle_push import seed_leapfrog_velocity
 from PyPIC3D.particles.particle_tile_communication import shard_tiled_particles
-from PyPIC3D.diagnostics.diagnostic_quantities import compute_energy, compute_dark_energy
+from PyPIC3D.diagnostics.diagnostic_quantities import compute_energy_components
+from PyPIC3D.diagnostics.simulation_output import print_energy
 from PyPIC3D.utilities.field_helpers import add_external_fields, yee_push_fields
 from PyPIC3D.utilities.plasma_quantities import build_plasma_parameters_dict
 from PyPIC3D.utilities.simulation_helpers import (
     convert_to_jax_compatible,
     courant_condition,
+    dark_photon_courant_condition,
     make_dir,
     particle_sanity_check,
     print_stats,
@@ -55,7 +57,7 @@ from PyPIC3D.boundary_conditions.grid_and_stencil import (
 )
 from PyPIC3D.boundary_conditions.PML import initialize_tiled_pml_state, load_pml_from_toml
 from PyPIC3D.boundary_conditions.supergaussian import load_supergaussian_from_toml
-from PyPIC3D.utilities.parameters import build_dynamic_parameters, build_static_parameters, validate_dark_parameters
+from PyPIC3D.utilities.parameters import build_dynamic_parameters, build_static_parameters
 from PyPIC3D.relativity.core import B_FIELD_LOCATIONS, D_FIELD_LOCATIONS
 from PyPIC3D.relativity.metrics.flat import (
     initialize_flat_cartesian_metric,
@@ -108,39 +110,6 @@ def validate_field_solver(solver):
         )
 
 
-def _dark_timestep(static_config, dynamic_config):
-    """Resolve a stable explicit Maxwell-Proca timestep before JAX tracing."""
-    validate_dark_parameters(static_config["sin_chi"], static_config["dark_mu"])
-    c = float(dynamic_config["C"])
-    eps = float(dynamic_config["eps"])
-    if not math.isfinite(c) or c <= 0 or not math.isfinite(eps) or eps <= 0:
-        raise ValueError("dark_matter_yee requires positive finite C and eps")
-    inverse_spacings = [1 / float(dynamic_config["d" + axis]) for axis in "xyz"
-                        if dynamic_config["N" + axis] > 1]
-    frequency = c * math.sqrt(float(static_config["dark_mu"])**2 + 4 * sum(v*v for v in inverse_spacings))
-    limit = 2 / frequency if frequency else math.inf
-    dt = dynamic_config["dt"]
-    if dt is None:
-        cfl = float(static_config["cfl"])
-        if not math.isfinite(cfl) or not 0 < cfl <= 1:
-            raise ValueError("dark_matter_yee requires 0 < cfl <= 1")
-        if not frequency:
-            raise ValueError("Specify dt for a massless dark field with all dimensions collapsed")
-        maxwell_dt = cfl / (c * sum(inverse_spacings)) if inverse_spacings else math.inf
-        dt = min(maxwell_dt, 0.99 * cfl * limit)
-    if not math.isfinite(float(dt)) or not 0 < float(dt) < limit:
-        raise ValueError(f"dark_matter_yee requires positive finite dt < {limit} (Proca stability limit)")
-    return float(dt)
-
-
-def _tile_shape_from_static_config(static_config):
-    return (
-        int(static_config["particle_tile_nx"]),
-        int(static_config["particle_tile_ny"]),
-        int(static_config["particle_tile_nz"]),
-    )
-
-
 def _encode_current_calculation(current_calculation):
     if current_calculation not in ("j_from_rhov", "esirkepov", "GR_direct_deposition"):
         raise ValueError(
@@ -190,7 +159,11 @@ def _validate_tiled_yee_configuration(static_config, dynamic_config):
         raise ValueError("Yee runtime currently supports only particle_pusher='boris' or 'higuera_cary'")
     if static_config["filter_j"] not in ("none", "digital", "bilinear"):
         raise ValueError("Yee runtime currently supports only filter_j='none', filter_j='digital', or 'bilinear'")
-    tile_shape = _tile_shape_from_static_config(static_config)
+    tile_shape = (
+        int(static_config["particle_tile_nx"]),
+        int(static_config["particle_tile_ny"]),
+        int(static_config["particle_tile_nz"]),
+    )
     grid_shape = (
         int(dynamic_config["Nx"]),
         int(dynamic_config["Ny"]),
@@ -233,17 +206,6 @@ def _available_cpu_threads():
     except (AttributeError, OSError):
         cpu_threads = os.cpu_count()
     return max(1, int(cpu_threads or 1))
-
-
-def _local_mesh_device_count(field_mesh):
-    """Count mesh devices owned by this JAX process."""
-
-    process_index = int(jax.process_index())
-    local_devices = sum(
-        int(device.process_index) == process_index
-        for device in field_mesh.devices.flat
-    )
-    return max(1, int(local_devices))
 
 
 def _resolve_particle_batch_size(
@@ -289,7 +251,11 @@ def _resolve_particle_batch_size(
         if local_device_count is None:
             if field_mesh is None:
                 raise ValueError("field_mesh is required to determine the local CPU device count.")
-            local_device_count = _local_mesh_device_count(field_mesh)
+            process_index = int(jax.process_index())
+            local_device_count = sum(
+                int(device.process_index) == process_index
+                for device in field_mesh.devices.flat
+            )
         available_cpu_threads = max(1, int(available_cpu_threads))
         local_device_count = max(1, int(local_device_count))
         threads_per_device = max(1, available_cpu_threads // local_device_count)
@@ -306,9 +272,9 @@ def _resolve_particle_batch_size(
 
     resolved = max(1, min(max_active_per_tile, compute_target, tile_capacity))
     if jax.process_count() > 1:
-        from mpi4py import MPI
+        from jax.experimental import multihost_utils
         # One static batch shape is required even on differently sized hosts.
-        resolved = MPI.COMM_WORLD.allreduce(resolved, op=MPI.MIN)
+        resolved = int(min(multihost_utils.process_allgather(resolved)))
     return resolved, reason
 
 
@@ -395,7 +361,6 @@ def default_parameters():
         "Nt": None,
         "relativistic": True,
         "particle_pusher": "boris",
-        "benchmark": False,
         "verbose": False,
         "GPUs": False,  # Accepted for input compatibility; JAX selects devices.
         "metric": "flat_cartesian",
@@ -509,15 +474,8 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
     gr_metric = static_metric or dynamic_metric
     dark_matter = solver == "dark_matter_yee"
     distributed = jax.process_count() > 1
-    from PyPIC3D.distributed import mpi_communicator
-    comm = mpi_communicator()
     if distributed and not dynamic_metric:
         raise ValueError("Multiprocess initialization currently supports solver='dynamic_metric'")
-    if distributed and any(bool(plotting_parameters[name]) for name in
-                           ("plot_openpmd_fields", "plot_openpmd_particles", "dump_fields", "dump_particles")):
-        import openpmd_api as io
-        if not io.variants.get("mpi", False):
-            raise RuntimeError("Shared distributed output requires MPI-enabled openpmd-api and parallel HDF5")
     if "metric" in config and not dynamic_metric:
         raise ValueError("[metric] initialization requires solver='dynamic_metric'")
     if static_metric:
@@ -540,12 +498,6 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
                 raise ValueError("dynamic_metric requires common-time D/B; previous_field history is seeded internally")
             if key.startswith("field") and block.get("type") in (6, 7, 8):
                 raise ValueError("dynamic_metric seeds current from common-time particles; initial J field files are unsupported")
-        particle_blocks = tuple(block for key, block in config.items() if key.startswith("particle"))
-        field_boundaries = tuple(static_config[axis + "_bc"] for axis in "xyz")
-        particle_boundaries = tuple(static_config["particle_" + axis + "_bc"] for axis in "xyz")
-        species_boundaries = tuple(block.get(axis + "_bc", "periodic")
-                                   for block in particle_blocks for axis in "xyz")
-
         # The GR Maxwell/pusher kernels use Gaussian units with c=1.
         for key, value in (("C", 1.0), ("eps", 1.0), ("mu", 1.0), ("kb", 1.0)):
             if key not in config.get("simulation_parameters", {}) and key not in config.get("dynamic_parameters", {}):
@@ -594,7 +546,7 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
     dynamic_config["dz"] = dz
 
     if dark_matter:
-        dt = _dark_timestep(static_config, dynamic_config)
+        dt = dark_photon_courant_condition(static_config, dynamic_config)
         dynamic_config["dt"] = dt
     elif dynamic_config["dt"] is not None:
         print(f"Using user defined dt: {dynamic_config['dt']}")
@@ -767,7 +719,6 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
             species_config=species_config,
             species_names=particle_species_names,
             metric=metric,
-            comm=comm,
         )
 
     E, B, J, phi, rho = initialize_fields(static_parameters, dynamic_parameters)
@@ -786,7 +737,7 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
     )
     E, B, J = field_components[:3], field_components[3:6], field_components[6:9]
     if field_initializers:
-        from PyPIC3D.distributed import tiled_field_from_initializer
+        from PyPIC3D.utilities.distributed import tiled_field_from_initializer
         components = list(E) + list(B)
         names = ("Ex", "Ey", "Ez", "Bx", "By", "Bz")
         for index, (name, location) in enumerate(zip(names, D_FIELD_LOCATIONS + B_FIELD_LOCATIONS)):
@@ -849,25 +800,11 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
             dark_fields, dark_pml = initialize_dark_pml(dark_fields, static_parameters, dynamic_parameters, pml_profiles)
             pml_state = pml_state, dark_pml
 
-    if gr_metric:
-        print("Skipping flat-space energy diagnostics for GR fields and covariant particle u_i\n")
-    else:
-        total_E, total_B = add_external_fields(E, B, external_fields)
-        e_energy, b_energy, kinetic_energy = compute_energy(
-            particles,
-            total_E,
-            total_B,
-            static_parameters,
-            dynamic_parameters,
-            species_config=species_config,
-        )
-        print(f"Initial Electric Field Energy: {e_energy:.2e} J")
-        print(f"Initial Magnetic Field Energy: {b_energy:.2e} J")
-        print(f"Initial Kinetic Energy: {kinetic_energy:.2e} J")
-        dark_energy = compute_dark_energy(dark_fields, static_parameters, dynamic_parameters, dark_pml) if dark_matter else 0.0
-        if dark_matter:
-            print(f"Initial Dark Field Energy: {dark_energy:.2e} J")
-        print(f"Total Initial Energy: {e_energy + b_energy + kinetic_energy + dark_energy:.2e} J\n")
+    if not gr_metric:
+        energies = compute_energy_components(
+            particles, E, B, external_fields, static_parameters, dynamic_parameters,
+            species_config, dark_fields=dark_fields, dark_pml=dark_pml)
+        print_energy("Initial", energies, dark_matter=dark_matter)
 
     if dark_matter:
         seed_E, seed_B = dark_photon_push_fields(E, B, dark_fields, external_fields, static_parameters, dynamic_parameters, dark_pml)
@@ -922,15 +859,14 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
     overflow = jnp.asarray(False)
     if dynamic_metric:
         from PyPIC3D.relativity.dynamical_relativity import initialize_dynamical_relativity
-        from PyPIC3D.diagnostics.static_metric import bssn_constraint_norms
+        from PyPIC3D.diagnostics.static_metric import print_bssn_constraints
 
         fields = (E, B, J, rho, phi, external_fields, metric, None, overflow)
         particles, fields, dynamic_parameters = initialize_dynamical_relativity(
             particles, species_config, fields, static_parameters, dynamic_parameters,
         )
-        norms = bssn_constraint_norms(particles, species_config, fields, static_parameters, dynamic_parameters)
-        print(f"Initial Einstein constraints: Hamiltonian RMS={float(norms['hamiltonian_l2']):.6e}, "
-              f"momentum RMS={float(norms['momentum_l2']):.6e}")
+        print_bssn_constraints("Initial", particles, species_config, fields,
+                               static_parameters, dynamic_parameters)
     elif static_metric:
         fields = (E, B, J, rho, phi, external_fields, metric, static_metric_state, overflow)
     elif electrostatic:
@@ -961,7 +897,6 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
             dynamic_parameters,
             static_parameters.output_dir,
             filename="initial_fields.h5",
-            comm=comm,
         )
 
     return (

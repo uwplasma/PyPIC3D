@@ -1,18 +1,12 @@
-"""Analytic time-symmetric Oppenheimer-Snyder geometry on global C nodes.
+"""
+Christopher Woolford November 2026
 
-Writes the three native ``[metric]`` arrays that os_collapse.toml loads. The
-prescribed ADM mass fixes the continuum geometry; no discrete constraint solve
-adjusts it to the deposited particle density. The stored conformal factor is
-**W = psi**-2**, not chi, and the conformal metric is exactly the identity, so
-the slice is momentarily static (A_ij = K = Gamma^i = 0, alpha = 1, beta^i = 0).
+Lapse and conformal metric are minkowski, the conformal factor is the 
+analytically defined OS solution given by:
 
-Those four zero variables stay literal ``false`` in the TOML, which creates
-zeros. ``conformal_metric`` and ``lapse`` cannot be omitted the same way:
-omission would create zeros and fail the positive-definite and W > 0 checks in
-PyPIC3D.relativity.bssn_parameters.
-
-Edit the globals below and run ``python initial_metric.py``. Keep them
-consistent with os_collapse.toml; nothing synchronizes the two automatically.
+Wu, J., & Most, E. R. (2026). Numerical-Relativity Particle-in-Cell Simulations: 
+Self-Gravitating Collisionless Matter in Dynamical Spacetimes. arXiv preprint 
+arXiv:2611.12831.
 """
 
 from pathlib import Path
@@ -76,30 +70,25 @@ def build_initial_metric(*, nx=NX, half_width=HALF_WIDTH, total_mass=TOTAL_MASS,
     x, y, z = jnp.meshgrid(axis, axis, axis, indexing="ij")
     radius = jnp.sqrt(x**2 + y**2 + z**2)
 
-    one = jnp.ones((nx, nx, nx), dtype=jnp.float64)
-    conformal_factor = conformal_factor_psi(radius, total_mass, surface_areal_radius)**-2
-    conformal_metric = jnp.eye(3, dtype=jnp.float64)[:, :, None, None, None] * one
-    return dict(conformal_metric=conformal_metric,
-                conformal_factor=jnp.broadcast_to(conformal_factor, one.shape),
-                lapse=one)
-
-
-def save_initial_metric(output_dir, arrays):
-    """Write the native .npy inputs, replacing files from an earlier run."""
-    directory = Path(output_dir)
-    directory.mkdir(parents=True, exist_ok=True)
-    for name, value in arrays.items():
-        jnp.save(directory / f"{name}.npy", value)
+    lapse = jnp.ones((nx, nx, nx), dtype=jnp.float64)
+    conformal_factor = 1.0 / ( conformal_factor_psi(radius, total_mass, surface_areal_radius) )**2
+    conformal_metric = jnp.eye(3, dtype=jnp.float64)[:, :, None, None, None] * lapse
+    return lapse, conformal_metric, conformal_factor
 
 
 def main():
     jax.config.update("jax_enable_x64", True)
-    arrays = build_initial_metric()
-    save_initial_metric(OUTPUT_DIR, arrays)
-    factor = arrays["conformal_factor"]
+    lapse, conformal_metric, conformal_factor = build_initial_metric()
+    # define the initial metric arrays
+
+    jnp.save(OUTPUT_DIR / "lapse.npy", lapse)
+    jnp.save(OUTPUT_DIR / "conformal_metric.npy", conformal_metric)
+    jnp.save(OUTPUT_DIR / "conformal_factor.npy", conformal_factor)
+    # save the arrays to .npy files in the output directory
+
     print(f"Saved initial metric in {Path(OUTPUT_DIR).resolve()}")
     print(f"  surface isotropic radius {surface_isotropic_radius():.16g}")
-    print(f"  W in [{float(jnp.min(factor)):.16g}, {float(jnp.max(factor)):.16g}]")
+    print(f"  W in [{float(jnp.min(conformal_factor)):.16g}, {float(jnp.max(conformal_factor)):.16g}]")
 
 
 if __name__ == "__main__":

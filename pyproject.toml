@@ -10,6 +10,7 @@ authors = [
     { name = "Christopher Woolford", email = "clwoolford@wisc.edu" }
 ]
 license = { file = "LICENSE" }
+requires-python = ">=3.9"
 
 dependencies = [
     "jax",
@@ -21,9 +22,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-distributed = [
-    "mpi4py",
-]
 relativity = [
     "JAX_BSSN @ git+https://github.com/cwoolfo1/JAX_BSSN.git",
 ]
@@ -36,3 +34,4 @@ include = ["PyPIC3D*"]
 
 [project.scripts]
 PyPIC3D = "PyPIC3D.__main__:main"
+PyPIC3D-merge-openpmd = "PyPIC3D.diagnostics.merge_openpmd:main"

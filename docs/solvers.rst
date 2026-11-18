@@ -6,6 +6,7 @@ PyPIC3D provides these solver names:
 - ``electrodynamic_yee``
 - ``electrostatic``
 - ``static_metric``
+- ``dynamic_metric``
 - ``dark_matter_yee``
 
 Electrodynamic Yee Step
@@ -48,49 +49,17 @@ The field equations are:
    - \frac{\Delta t}{2}\nabla\times\mathbf{E}^{n+1}.
 
 Dark Photon Maxwell-Proca Solver
-------------------------------
+--------------------------------
 
-``dark_matter_yee`` evolves an additional massive vector field alongside the
-ordinary Maxwell fields, using periodic or conducting field boundaries and
-optional PML layers. The same boundary configuration applies to both sectors.
-``sin_chi`` is the dimensionless mixing coefficient (default zero, between
--1 and 1); ``dark_mu`` is a dark photon mass (default zero), distinct
-from the electromagnetic permeability ``mu``.
+``dark_matter_yee`` evolves an additional massive, kinetically mixed vector
+field alongside the ordinary Maxwell fields, using periodic or conducting field
+boundaries and optional PML layers. The same boundary configuration applies to
+both sectors, which keep independent histories.
 
-With :math:`s=\mathtt{sin\_chi}` and :math:`m=\mathtt{dark\_mu}`, the equations are
-
-.. math::
-
-   \dot{\mathbf E}'=\nabla \times\mathbf B'
-      +\mu^2\mathbf A'+sin(\chi_0) \mathbf J,\qquad
-   \mathbf B'=\nabla \times\mathbf A',
-
-.. math::
-
-   \dot{\mathbf A}'=-\mathbf E'- \nabla \phi',\qquad
-   \dot\phi'=- \nabla \cdot \mathbf A'.
-
-
-
-
-
-``A`` and ``E`` share componentwise electric-edge locations; ``phi`` lives at
-``(C,C,C)`` nodes. Particles feel ``E - sin_chi*dark_E`` and ``B - sin_chi*dark_B``, plus prescribed
-external fields. For the integer-time particle push, ``dark_B`` is the curl of
-the average of the adjacent half-step vector potentials. The electric gather
-uses the same filter as direct-current deposition.
-
-Conducting walls impose homogeneous reflecting Proca conditions: zero scalar
-potential, tangential vector potential and electric field, and normal magnetic
-field. Across each physical wall, ``phi`` and tangential ``A/E`` have odd
-parity, normal ``A/E`` have even parity, and ``B`` has the opposite vector
-parities. Reflections use the actual Yee endpoints, including edges and corners.
-
-The existing ``[[pml]]`` wall configuration also absorbs transverse and
-longitudinal dark waves. The dark solver stretches both curls, the scalar
-gradient, and the vector divergence. Its auxiliary state stores a magnetic
-field at half time and 18 derivative histories, separate from the Maxwell PML
-histories.
+Ordinary Maxwell evolution is unchanged; particles feel
+``E - sin_chi*dark_E`` and ``B - sin_chi*dark_B`` plus prescribed external
+fields. The field equations, the Gauss constraint, the Proca timestep limit,
+initial data and diagnostics are in :doc:`dark_photon`.
 
 Electrostatic Step
 ------------------
@@ -153,6 +122,13 @@ endpoints and does not need a separate particle-metric sample.
 The sampler reconstructs lapse, shift, and the covariant spatial metric from
 ``YeeMetric.center`` using Hermite interpolation.
 
+The chart is selected with the ``metric`` key, which accepts
+``flat_cartesian``, ``flat_cylindrical``, ``flat_spherical``,
+``kerr_schild_cartesian`` and ``kerr_schild_spherical``; the Kerr-Schild charts
+also read ``metric_mass`` and ``metric_spin``. See
+:doc:`dynamical_relativity` for the full table, including the ``numerical``
+chart used by the dynamical solver.
+
 The optional ``lapse_deleting`` particle boundary samples the native center
 lapse and deactivates particles below ``lapse_threshold``; see :doc:`particles`
 for configuration and the resulting particle-source sinks. Each static-GR
@@ -182,117 +158,18 @@ or:
 See :doc:`chargeconservation` for deposition timing and filter behavior.
 
 Dynamical BSSN-PIC Solver
-------------------------
+-------------------------
 
-``solver = "dynamic_metric"`` evolves geometry with JAX BSSN while keeping
-Maxwell, particles, and stress-energy in PyPIC3D. Install JAX BSSN separately
-or use the ``relativity`` optional dependency. Importing ordinary PyPIC3D
-solvers does not import JAX BSSN.
+``dynamic_metric`` evolves geometry with JAX BSSN while keeping Maxwell,
+particles, and stress-energy in PyPIC3D. Install JAX BSSN separately or use the
+``relativity`` optional dependency; importing ordinary PyPIC3D solvers does not
+import it.
 
-The particle path supports periodic Cartesian tiles on a shared device mesh,
-with one tile per device and equal spacing on resolved axes. BSSN and EM use
-identical tile ownership; BSSN retains wider local guards for its stencils and
-C-to-Yee geometry transfer. Enable JAX float64 (the CLI does this), use
-Gaussian electromagnetic units with ``C = eps = mu = 1``, and keep ``dt``
-fixed. ``metric_backreaction = false`` instead
-hands BSSN exact zeros, giving the two-half-step fixed-background control when
-the initial geometry is stationary. It does not freeze arbitrary vacuum BSSN
-initial data.
+One macro step is PIC(dt/2), BSSN(dt), PIC(dt/2). The BSSN interval uses RK4,
+but the coupled Strang split is second order overall. Each gravity stage
+resamples particle geometry and recomputes particle stress from fixed midpoint
+positions and covariant momenta.
 
-A minimal configuration is:
-
-.. code-block:: toml
-
-   [static_parameters]
-   solver = "dynamic_metric"
-   Nt = 10
-   output_dir = "dynamic_run"
-
-   [dynamic_parameters]
-   Nx = 16
-   Ny = 1
-   Nz = 1
-   x_wind = 4.0
-   y_wind = 0.25
-   z_wind = 0.25
-   dt = 0.01
-
-   [simulation_parameters]
-   metric_backreaction = true
-
-   [bssn_parameters]
-   gauge = 0
-   zero_shift = 1
-   nu = 0.002
-
-Normal particle blocks and evolved ``fieldN`` blocks may be added. Initial
-fields are physical contravariant D/B at native Yee sites, and initial
-particle momentum is covariant ``u_i`` at the position time. Initialization
-performs densitization and the leapfrog offset once. Nonzero prescribed
-external fields are rejected. The default pusher is
-``hybrid_boris_geodesic``, current deposition is ``esirkepov``, and current
-filtering is disabled. Initial geometry is exactly flat, with harmonic lapse
-and initially zero frozen shift. This is not a matter constraint solve:
-the initial Hamiltonian and momentum residuals are reported explicitly.
-
-Python callers may provide ``bssn_state`` and ``bssn_evolution_parameters``
-to ``initialize_simulation`` or ``run_PyPIC3D``. The latter may be the native
-JAX BSSN parameter tuple or a dictionary of overrides. Its six gravity face
-codes are independent of the three EM boundary codes: BSSN code 1 means
-Sommerfeld, whereas EM code 1 means conducting.
-
-The four coupling modules are:
-
-* ``relativity/bssn_parameters.py``: ``BSSNParameters`` and its constructor.
-* ``relativity/dynamical_relativity.py``: metric/grid transfer, initialization,
-  common-time views, and history corrections after a metric change.
-* ``relativity/energy_momentum_tensor.py``: Gaussian EM moments and PIC
-  deposition of physical Eulerian ``rho``, ``S_i``, and ``S_ij``.
-* ``solvers/GR_yee/time_loop_dynamical_relativity.py``: the complete coupled step,
-  calling the static-metric loop for each PIC half-step.
-
-The loop performs PIC+EM for ``h=dt/2``, projected BSSN RK4 for ``dt``, then
-PIC+EM for ``h``. Its overall order is two. Each gravity RK stage resamples
-particle geometry and recomputes particle stress from fixed midpoint
-positions and covariant momenta. EM sources average native field products
-before contracting with the stage metric; averaging fields before squaring
-would erase unresolved field energy. Particle sources include rest mass and
-neutral species, and are not smoothed by the current filter.
-
-``dynamic_parameters.bssn_parameters`` holds ``state``,
-``evolution_parameters``, and ``time``. The dynamic loop returns
-``particles, fields, dynamic_parameters``; other solver signatures are
-unchanged. Field slot 7 stores
-``(D_previous, B_previous, B_synchronized, half_dt, absorber)``. Particle
-momentum and B are half a native step behind the integer position/D time.
-Metric changes correct these lagged samples without redensitizing the
-common-time fields or resetting the leapfrog. This assumes smooth metric
-changes; abrupt replacement or changing ``dt`` requires a new initialization.
-
-With ``lapse_deleting = true``, both PIC half-steps use the static-GR checks.
-Dynamic initialization deletes particles before initial current deposition and
-momentum seeding, including when called directly. After a committed metric
-change, ``rephase_pic_state`` applies deletion against the new native lapse
-before momentum synchronization or generator evaluation. Any supplied
-synchronized-particle active mask is intersected with the surviving mask.
-Midpoint positions, momenta, and active masks remain fixed throughout the BSSN
-RK4 stages; intermediate stage lapses do not delete particles.
-
-Output includes the BSSN fields and physical common-time D/B. The existing
-``E`` mesh name denotes the physical contravariant displacement as in the
-static GR solver. Particle output synchronizes momentum to the position time.
-J retains the last half-step current and is marked with a time offset
-of ``-dt/4`` (zero for the common-time initial seed). The native endpoint
-Esirkepov current remains unchanged by the
-predictor-history correction; charge budgets across a full macro step must
-use the average of the two substep currents. Gaussian normalization is
-recorded in field and parameter metadata. Flat-space total-energy conservation
-reports are not applied to dynamical spacetime.
-
-Generic EM-only runs retain conducting and constant exterior boundaries and
-reference sponges. ``make_reference_sponge`` in
-``boundary_conditions/reference_sponge.py`` accepts fixed native D/B reference
-arrays, the static and dynamic parameters, and a coordinate ``width``. All
-particle box boundaries remain periodic in this first coupling; the optional
-``lapse_deleting`` interior boundary can be used alongside them.
-Charged-black-hole setup, old checkpoints, and their migration are deferred.
+Configuration --- the ``[metric]`` table, gauge conditions, gravitational
+boundaries, forced defaults and diagnostics --- is in
+:doc:`dynamical_relativity`.

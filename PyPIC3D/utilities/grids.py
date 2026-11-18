@@ -122,40 +122,6 @@ def build_yee_grid(dynamic_parameters):
     return center_grid, vertex_grid
 
 
-def _tile_grid_axis(global_axis_grid, dynamic_parameters, tile_shape, tile_counts, axis_index, num_guard_cells):
-    tile_width = tile_shape[axis_index]
-    tile_count = tile_counts[axis_index]
-    g = num_guard_cells
-
-    d = jax.lax.cond(
-        axis_index == 0,
-        lambda _: dynamic_parameters.dx,
-        lambda _: jax.lax.cond(
-            axis_index == 1,
-            lambda _: dynamic_parameters.dy,
-            lambda _: dynamic_parameters.dz,
-            None,
-        ),
-        None,
-    )
-    # determine the grid spacing for the given axis index
-
-    offsets = jnp.arange(tile_width + 2 * g, dtype=global_axis_grid.dtype)
-    # determine the offsets for the tile including guard cells
-    tile_indices = jnp.arange(tile_count, dtype=global_axis_grid.dtype)
-    # get the tile indices for the given axis
-    axis_lines = global_axis_grid[0] + (
-        offsets[jnp.newaxis, :] + tile_indices[:, jnp.newaxis] * tile_width - (g - 1)
-    ) * d
-    # build the local tile axes
-
-    axis_shape = [1, 1, 1, tile_width + 2 * g]
-    axis_shape[axis_index] = tile_count
-    tiled_shape = tuple(tile_counts) + (tile_width + 2 * g,)
-
-    return jnp.broadcast_to(axis_lines.reshape(axis_shape), tiled_shape)
-
-
 def _tile_grid_axes(grid, dynamic_parameters, tile_shape, num_guard_cells=2, mesh=None):
     """
     Build tile-local coordinate lines for a center or vertex grid.
@@ -188,10 +154,25 @@ def _tile_grid_axes(grid, dynamic_parameters, tile_shape, num_guard_cells=2, mes
                 tile_counts + (width+2*g,), sharding, local_line, dtype=np.float64))
         return tuple(coordinates)
 
-    return tuple(
-        _tile_grid_axis(grid[axis], dynamic_parameters, tile_shape, tile_counts, axis, num_guard_cells)
-        for axis in range(3)
-    )
+    spacings = (dynamic_parameters.dx, dynamic_parameters.dy, dynamic_parameters.dz)
+    g = num_guard_cells
+    coordinates = []
+    for axis in range(3):
+        global_axis_grid = grid[axis]
+        tile_width = tile_shape[axis]
+        tile_count = tile_counts[axis]
+        offsets = jnp.arange(tile_width + 2 * g, dtype=global_axis_grid.dtype)
+        tile_indices = jnp.arange(tile_count, dtype=global_axis_grid.dtype)
+        # Shift the global grid's first guard sample to the requested guard depth.
+        axis_lines = global_axis_grid[0] + (
+            offsets[jnp.newaxis, :] + tile_indices[:, jnp.newaxis] * tile_width - (g - 1)
+        ) * spacings[axis]
+
+        axis_shape = [1, 1, 1, tile_width + 2 * g]
+        axis_shape[axis] = tile_count
+        tiled_shape = tuple(tile_counts) + (tile_width + 2 * g,)
+        coordinates.append(jnp.broadcast_to(axis_lines.reshape(axis_shape), tiled_shape))
+    return tuple(coordinates)
 
 
 def build_tiled_yee_grids(static_parameters, dynamic_parameters):

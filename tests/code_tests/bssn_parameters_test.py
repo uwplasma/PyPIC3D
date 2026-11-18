@@ -142,13 +142,16 @@ assert not any(name.startswith("JAX_BSSN") for name in sys.modules)
         with self.assertRaisesRegex(ValueError, "external fields"):
             initialize_dynamical_relativity(particles, species, prescribed, static, dynamic)
         for incompatible, message in (
-            (static._replace(particle_boundary_conditions=(2, 0, 0)), "periodic"),
-            (static._replace(boundary_conditions=(3, 0, 0)), "periodic"),
             (static._replace(metric="flat_spherical"), "Cartesian"),
             (static._replace(pml_active=True), "PML"),
         ):
             with self.assertRaisesRegex(ValueError, message):
                 initialize_dynamical_relativity(particles, species, fields, incompatible, dynamic)
+        # Open walls are supported: the collapse demos run charged species with
+        # constant field and absorbing particle boundaries.
+        open_box = static._replace(boundary_conditions=(3, 0, 0),
+                                   particle_boundary_conditions=(2, 0, 0))
+        initialize_dynamical_relativity(particles, species, fields, open_box, dynamic)
 
     def test_metric_rephase_preserves_common_fields_and_identity(self):
         static, dynamic, particles, species, fields = runtime()
@@ -223,7 +226,6 @@ assert not any(name.startswith("JAX_BSSN") for name in sys.modules)
             ({"C": 2.}, {}, "C=1"),
             ({}, {"previous_field1": {"type": 0}}, "common-time D/B"),
             ({}, {"field1": {"type": 6}}, "seeds current"),
-            ({}, {"particle1": {"x_bc": "reflecting"}}, "periodic"),
         )
         with tempfile.TemporaryDirectory() as directory:
             for options, blocks, message in cases:

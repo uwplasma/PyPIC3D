@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from typing import Any, Tuple, Union
 
 import importlib.metadata
+import json
 import os
-import traceback
 
 import jax
 import numpy as np
@@ -64,50 +64,80 @@ def _ensure_openpmd_array(data, dtype=np.float64, squeeze=False):
     return arr
 
 
-def _abort_parallel_write(comm):
-    """Stop peers before a rank-local failure leaves them in collective I/O."""
-    if comm is not None:
-        traceback.print_exc()
-        comm.Abort(1)
+def process_series_filename(filename, process_index, process_count):
+    """One process keeps the historical name; N>1 inserts a _pNNN suffix.
+
+    Each process writes its own series, so nothing is shared and nothing is
+    collective. ``PyPIC3D.diagnostics.merge_openpmd`` reassembles the group.
+    """
+    if int(process_count) <= 1:
+        return filename
+    width = max(3, len(str(int(process_count) - 1)))
+    stem, extension = os.path.splitext(filename)
+    return f"{stem}_p{int(process_index):0{width}d}{extension}"
 
 
-def _open_openpmd_series(output_path, filename, file_extension=".bp", comm=None, access_mode=None):
+def _mesh_dataset(layout):
+    """Tile-shaped HDF5 chunks keep a per-process file proportional to its tiles.
+
+    Every record keeps the global extent, so each file stays a valid whole-domain
+    mesh; only the chunks a process actually stores are allocated. "auto" chunks
+    would straddle tile boundaries and allocate cells owned by another process.
+    """
+    dtype = np.dtype(layout.dtype)
+    chunks = [int(width) for width in layout.tile_shape]
+    options = "{}"
+    if all(width > 0 for width in chunks) and int(np.prod(chunks))*dtype.itemsize < (1 << 32):
+        options = json.dumps({"hdf5": {"dataset": {"chunks": chunks}}})
+    return io.Dataset(dtype, list(layout.global_shape), options)
+
+
+def _set_iteration_ownership(iteration, *, owned_tiles, tile_counts, tile_shape, global_shape):
+    """Record which global tiles this process stored.
+
+    The HDF5 backend reports every dataset as one whole chunk, so a merge cannot
+    discover written regions; ownership has to be written down.
+    """
+    owned = np.sort(np.asarray(owned_tiles, dtype=np.int64))
+    iteration.set_attribute("pypic3dTileCounts", [int(n) for n in tile_counts])
+    iteration.set_attribute("pypic3dTileShape", [int(n) for n in tile_shape])
+    iteration.set_attribute("pypic3dGlobalShape", [int(n) for n in global_shape])
+    iteration.set_attribute("pypic3dOwnedTileCount", int(owned.size))
+    if owned.size:
+        iteration.set_attribute("pypic3dOwnedTiles", owned)
+    return owned
+
+
+def _owned_tile_ids(host_shards, tile_counts):
+    """Flattened global tile ids covered by one component's addressable shards."""
+    ids = []
+    for index, data in host_shards:
+        origin = tuple(_slice_start(part) for part in index[:3])
+        for local in np.ndindex(tuple(int(n) for n in data.shape[:3])):
+            ids.append(np.ravel_multi_index(
+                tuple(start + offset for start, offset in zip(origin, local)), tile_counts))
+    return np.sort(np.asarray(ids, dtype=np.int64))
+
+
+def _open_openpmd_series(output_path, filename, file_extension=".bp", access_mode=None):
     if file_extension is not None:
         filename = "_".join(filename.split()) + file_extension
+    filename = process_series_filename(filename, jax.process_index(), jax.process_count())
     series_path = os.path.join(output_path, filename)
-    try:
-        if comm is None:
-            os.makedirs(output_path, exist_ok=True)
-            if access_mode is None:
-                access_mode = io.Access.append if os.path.exists(series_path) else io.Access.create
-            series = io.Series(series_path, access_mode)
-        else:
-            if not io.variants.get("mpi", False):
-                raise RuntimeError("Shared distributed output requires MPI-enabled openpmd-api and parallel HDF5")
-            if comm.rank == 0:
-                os.makedirs(output_path, exist_ok=True)
-            comm.Barrier()
-            if access_mode is None:
-                exists = comm.bcast(os.path.exists(series_path) if comm.rank == 0 else None, root=0)
-                access_mode = io.Access.append if exists else io.Access.create
-            # Ranks may own different numbers of chunks, including no particles.
-            # Metadata, flushes and close still execute collectively.
-            series = io.Series(series_path, access_mode, comm,
-                               '{"hdf5":{"independent_stores":true}}')
-        series.set_attribute("software", "PyPIC3D")
-        series.set_attribute("softwareVersion", importlib.metadata.version("PyPIC3D"))
-        return series
-    except BaseException:
-        _abort_parallel_write(comm)
-        raise
+    os.makedirs(output_path, exist_ok=True)
+    if access_mode is None:
+        access_mode = io.Access.append if os.path.exists(series_path) else io.Access.create
+    series = io.Series(series_path, access_mode)
+    series.set_attribute("software", "PyPIC3D")
+    series.set_attribute("softwareVersion", importlib.metadata.version("PyPIC3D"))
+    series.set_attribute("pypic3dProcessIndex", int(jax.process_index()))
+    series.set_attribute("pypic3dProcessCount", int(jax.process_count()))
+    return series
 
 
-def _close_openpmd_series(series, comm=None):
-    try:
-        series.close()
-    except BaseException:
-        _abort_parallel_write(comm)
-        raise
+def _close_openpmd_series(series):
+    series.close()
+
 
 def _configure_openpmd_mesh(
     mesh,
@@ -221,26 +251,10 @@ def _field_map_to_interior(field_map):
     return interior_map
 
 
-def _as_3tuple(value):
-    if isinstance(value, tuple):
-        return tuple(int(v) for v in value)
-    if isinstance(value, list):
-        return tuple(int(v) for v in value)
-    return (int(value), int(value), int(value))
-
-
 def _slice_start(index_entry):
     if isinstance(index_entry, slice):
         return 0 if index_entry.start is None else int(index_entry.start)
     return int(index_entry)
-
-
-def _tile_interior(tile, guard_cells):
-    gx, gy, gz = guard_cells
-    sx = slice(gx, -gx) if gx > 0 else slice(None)
-    sy = slice(gy, -gy) if gy > 0 else slice(None)
-    sz = slice(gz, -gz) if gz > 0 else slice(None)
-    return tile[sx, sy, sz]
 
 
 def _iter_tile_chunks_from_host_shard(shard_index, shard_data, *, layout):
@@ -255,7 +269,12 @@ def _iter_tile_chunks_from_host_shard(shard_index, shard_data, *, layout):
         )
 
     tile_shape = tuple(int(width) for width in layout.tile_shape)
-    guard_cells = _as_3tuple(layout.guard_cells)
+    if isinstance(layout.guard_cells, (tuple, list)):
+        guard_cells = tuple(int(g) for g in layout.guard_cells)
+    else:
+        guard_cells = (int(layout.guard_cells),) * 3
+    gx, gy, gz = guard_cells
+    interior_slices = tuple(slice(g, -g) if g > 0 else slice(None) for g in (gx, gy, gz))
 
     tx0 = _slice_start(shard_index[0])
     ty0 = _slice_start(shard_index[1])
@@ -270,7 +289,7 @@ def _iter_tile_chunks_from_host_shard(shard_index, shard_data, *, layout):
                 tz = tz0 + ltz
 
                 raw_tile = shard_data[ltx, lty, ltz]
-                interior = _tile_interior(raw_tile, guard_cells)
+                interior = raw_tile[interior_slices]
                 if tuple(interior.shape) != tile_shape:
                     raise ValueError(
                         f"Tile interior has shape {interior.shape}, expected {tile_shape}. "
@@ -294,7 +313,7 @@ def _reset_scalar_mesh_record(iteration, name, *, dynamic_parameters, layout):
         quantity_name=name,
     )
     record = mesh[io.Mesh_Record_Component.SCALAR]
-    record.reset_dataset(io.Dataset(np.dtype(layout.dtype), list(layout.global_shape)))
+    record.reset_dataset(_mesh_dataset(layout))
     record.unit_SI = 1.0
     _set_mesh_position(record, name, 0, layout.active_dims, dynamic_parameters)
     return record
@@ -309,7 +328,7 @@ def _reset_vector_mesh_record(iteration, name, component_name, *, dynamic_parame
         quantity_name=name,
     )
     record = mesh[component_name]
-    record.reset_dataset(io.Dataset(np.dtype(layout.dtype), list(layout.global_shape)))
+    record.reset_dataset(_mesh_dataset(layout))
     record.unit_SI = 1.0
     _set_mesh_position(record, name, "xyz".index(component_name), layout.active_dims, dynamic_parameters)
     return record
@@ -377,6 +396,19 @@ def write_tiled_field_snapshot_to_iteration(iteration, snapshot, *, dynamic_para
                 iteration, name, value, dynamic_parameters=dynamic_parameters, layout=layout)
         buffers.extend(chunks)
 
+    if snapshot.fields:
+        sample = snapshot.fields[sorted(snapshot.fields)[0]]
+        host_shards = sample[0] if isinstance(sample, tuple) and len(sample) == 3 else sample
+        tile_counts = tuple(int(extent)//int(width)
+                            for extent, width in zip(layout.global_shape, layout.tile_shape))
+        _set_iteration_ownership(
+            iteration,
+            owned_tiles=_owned_tile_ids(host_shards, tile_counts),
+            tile_counts=tile_counts,
+            tile_shape=tuple(int(width) for width in layout.tile_shape),
+            global_shape=tuple(int(extent) for extent in layout.global_shape),
+        )
+
     current_offset = getattr(snapshot, "current_time_offset", None)
     if current_offset is not None and "J" in snapshot.fields:
         iteration.meshes["J"].time_offset = current_offset
@@ -391,9 +423,8 @@ def write_tiled_field_snapshot_openpmd(
     dynamic_parameters,
     layout,
     file_extension=".bp",
-    comm=None,
 ):
-    series = _open_openpmd_series(output_dir, filename, file_extension=file_extension, comm=comm)
+    series = _open_openpmd_series(output_dir, filename, file_extension=file_extension)
 
     try:
         iteration = series.iterations[int(snapshot.step)]
@@ -404,11 +435,8 @@ def write_tiled_field_snapshot_openpmd(
         buffers = write_tiled_field_snapshot_to_iteration(
             iteration, snapshot, dynamic_parameters=dynamic_parameters, layout=layout)
         series.flush()
-    except BaseException:
-        _abort_parallel_write(comm)
-        raise
     finally:
-        _close_openpmd_series(series, comm)
+        _close_openpmd_series(series)
 
 
 def write_openpmd_fields_to_iteration(iteration, field_map, dynamic_parameters, active_dims=(1,1,1)):
@@ -449,23 +477,6 @@ def _diagnostic_position_array(x, u, static_parameters, dynamic_parameters):
         ),
         axis=-1,
     )
-
-
-def _count_snapshot_particles_by_species(snapshot):
-    counts = [0] * len(snapshot.species_names)
-
-    for active_index, active_chunk in snapshot.active_shards:
-        if active_chunk.ndim != 5:
-            raise ValueError(
-                "Expected active particle shard with shape "
-                "(ntx, nty, ntz, nspecies, max_particles_per_tile). "
-                f"Got {active_chunk.shape}."
-            )
-        s0 = _slice_start(active_index[3])
-        for local_s in range(active_chunk.shape[3]):
-            counts[s0 + local_s] += int(np.count_nonzero(active_chunk[:, :, :, local_s, :]))
-
-    return counts
 
 
 def _particle_shards_by_index(shards):
@@ -627,24 +638,46 @@ def _store_particle_record_chunk(
 
 
 def write_tiled_particle_snapshot_to_iteration(
-    iteration, snapshot, static_parameters, dynamic_parameters, dtype=np.float64, comm=None, species_index=None,
+    iteration, snapshot, static_parameters, dynamic_parameters, dtype=np.float64, species_index=None,
 ):
-    """Compact local slots and place records in global tile order on every rank."""
+    """Compact local slots into locally sized records kept in global tile order.
+
+    Each process writes its own series, so records hold only its own particles.
+    ``pypic3dOwnedTiles``/``pypic3dOwnedTileCounts`` let the merge restore the
+    single-file global tile order without exchanging anything between processes.
+    """
     n_species = len(snapshot.species_names)
     tile_counts = tuple(int(getattr(dynamic_parameters, "N" + axis)) // int(width)
                         for axis, width in zip("xyz", static_parameters.tile_shape))
-    counts = np.zeros(tile_counts + (n_species,), dtype=np.int64)
-    for index, active in snapshot.active_shards:
-        counts[index[:4]] += np.count_nonzero(active, axis=-1)
-    local_counts = counts
-    if comm is not None:
-        from mpi4py import MPI
-        counts = np.empty_like(local_counts)
-        comm.Allreduce(local_counts, counts, op=MPI.SUM)
 
-    flat_counts = counts.reshape((int(np.prod(tile_counts)), n_species))
-    offsets = (np.cumsum(flat_counts, axis=0) - flat_counts).reshape(counts.shape)
-    totals = np.sum(flat_counts, axis=0)
+    # Owned tiles need not be contiguous in the flattened global tile order, so
+    # counts are keyed by tile rather than sliced out of a global array.
+    local_counts = {}
+    for index, active in snapshot.active_shards:
+        origin = tuple(_slice_start(part) for part in index[:3])
+        s0 = _slice_start(index[3])
+        per_tile = np.count_nonzero(np.asarray(active), axis=-1)
+        for local in np.ndindex(per_tile.shape[:3]):
+            tile = tuple(start + offset for start, offset in zip(origin, local))
+            entry = local_counts.setdefault(tile, np.zeros(n_species, dtype=np.int64))
+            entry[s0:s0 + per_tile.shape[3]] += per_tile[local]
+
+    owned = sorted(local_counts)
+    owned_ids = np.asarray([np.ravel_multi_index(tile, tile_counts) for tile in owned], dtype=np.int64)
+    offsets, running = {}, np.zeros(n_species, dtype=np.int64)
+    for tile in owned:
+        offsets[tile] = running.copy()
+        running = running + local_counts[tile]
+    totals = running
+
+    _set_iteration_ownership(
+        iteration,
+        owned_tiles=owned_ids,
+        tile_counts=tile_counts,
+        tile_shape=tuple(int(width) for width in static_parameters.tile_shape),
+        global_shape=tuple(int(getattr(dynamic_parameters, "N" + axis)) for axis in "xyz"),
+    )
+
     selected_species = range(n_species) if species_index is None else (species_index,)
     for species in selected_species:
         species_group = iteration.particles[snapshot.species_names[species].replace(" ", "_")]
@@ -653,6 +686,9 @@ def write_tiled_particle_snapshot_to_iteration(
             dtype=dtype,
             num_particles=int(totals[species]),
         )
+        species_group.set_attribute("pypic3dOwnedTiles", owned_ids)
+        species_group.set_attribute("pypic3dOwnedTileCounts", np.asarray(
+            [local_counts[tile][species] for tile in owned], dtype=np.int64))
 
     buffers = []
     stored = [0] * n_species
@@ -663,7 +699,7 @@ def write_tiled_particle_snapshot_to_iteration(
         species_group = iteration.particles[snapshot.species_names[species].replace(" ", "_")]
         _store_particle_record_chunk(
             species_group,
-            int(offsets[tile_species]),
+            int(offsets[tile_species[:3]][species]),
             x,
             momentum,
             charge,
@@ -675,11 +711,10 @@ def write_tiled_particle_snapshot_to_iteration(
         )
         stored[species] += int(x.shape[0])
 
-    expected = local_counts.sum(axis=(0, 1, 2))
     for species in selected_species:
-        if stored[species] != int(expected[species]):
+        if stored[species] != int(totals[species]):
             raise RuntimeError(f"Stored {stored[species]} local particles for {snapshot.species_names[species]}, "
-                               f"expected {expected[species]}.")
+                               f"expected {totals[species]}.")
     return buffers
 
 
@@ -692,9 +727,8 @@ def write_tiled_particle_snapshot_openpmd(
     dynamic_parameters,
     file_extension=".bp",
     dtype=np.float64,
-    comm=None,
 ):
-    series = _open_openpmd_series(output_dir, filename, file_extension=file_extension, comm=comm)
+    series = _open_openpmd_series(output_dir, filename, file_extension=file_extension)
 
     try:
         iteration = series.iterations[int(snapshot.step)]
@@ -708,15 +742,11 @@ def write_tiled_particle_snapshot_openpmd(
             static_parameters,
             dynamic_parameters,
             dtype=dtype,
-            comm=comm,
         )
 
         series.flush()
-    except BaseException:
-        _abort_parallel_write(comm)
-        raise
     finally:
-        _close_openpmd_series(series, comm)
+        _close_openpmd_series(series)
 
 
 def write_openpmd_initial_particles(
@@ -728,96 +758,80 @@ def write_openpmd_initial_particles(
     species_config=None,
     species_names=None,
     metric=None,
-    comm=None,
 ):
     """Write initial owned particle chunks to the existing per-species files."""
     from PyPIC3D.diagnostics.async_writer import make_tiled_particle_snapshot
 
-    try:
-        gamma = None if metric is None else particle_lorentz_factor(
-            particles, metric, static_parameters, dynamic_parameters)
-        bssn = getattr(dynamic_parameters, "bssn_parameters", None)
-        time = float(bssn.time) if bssn is not None else 0.0
-        snapshot = make_tiled_particle_snapshot(
-            particles, step=0, time=time, species_names=species_names,
-            species_config=species_config, gamma=gamma, initial=True)
-        # Initial positions and velocities precede the leapfrog seed. The
-        # snapshot's initial flag keeps x unchanged even for non-GR particles.
-        output_path = os.path.join(output_dir, "data", "initial_particles")
-        for species, name in enumerate(snapshot.species_names):
-            series_filename = f"{name.replace(' ', '_')}_{filename}"
-            series = _open_openpmd_series(
-                output_path, series_filename, file_extension=None, comm=comm, access_mode=io.Access.create)
-            try:
-                iteration = series.iterations[0]
-                iteration.time = time
-                iteration.dt = float(dynamic_parameters.dt)
-                iteration.time_unit_SI = 1.0
-                buffers = write_tiled_particle_snapshot_to_iteration(
-                    iteration, snapshot, static_parameters, dynamic_parameters,
-                    comm=comm, species_index=species)
-                series.flush()
-            except BaseException:
-                _abort_parallel_write(comm)
-                raise
-            finally:
-                _close_openpmd_series(series, comm)
-    except BaseException:
-        _abort_parallel_write(comm)
-        raise
-
-
-def write_openpmd_initial_fields(
-    field_map, static_parameters, dynamic_parameters, output_dir, filename="initial_fields.h5", comm=None,
-):
-    """Write initial tile interiors without globally assembling tiled fields."""
-    from PyPIC3D.diagnostics.async_writer import make_tiled_field_snapshot
-
-    try:
-        tiled_fields = {}
-        ordinary_fields = {}
-        for name, value in field_map.items():
-            vector = isinstance(value, (list, tuple)) and len(value) == 3
-            component = value[0] if vector else value
-            if component.ndim == 6:
-                tiled_fields[name] = value
-            else:
-                ordinary_fields[name] = value
-        if comm is not None and ordinary_fields:
-            raise ValueError("MPI initial field output requires tile-major fields.")
-
-        bssn = getattr(dynamic_parameters, "bssn_parameters", None)
-        time = float(bssn.time) if bssn is not None else 0.0
-        if tiled_fields:
-            snapshot = make_tiled_field_snapshot(
-                tiled_fields, step=0, time=time, current_time_offset=0.0 if bssn is not None else None)
-            layout = TiledMeshLayout(
-                global_shape=tuple(int(getattr(dynamic_parameters, "N" + axis)) for axis in "xyz"),
-                tile_shape=tuple(int(width) for width in static_parameters.tile_shape),
-                guard_cells=int(static_parameters.guard_cells),
-            )
-        output_path = os.path.join(output_dir, "data", "initial_fields")
+    gamma = None if metric is None else particle_lorentz_factor(
+        particles, metric, static_parameters, dynamic_parameters)
+    bssn = getattr(dynamic_parameters, "bssn_parameters", None)
+    time = float(bssn.time) if bssn is not None else 0.0
+    snapshot = make_tiled_particle_snapshot(
+        particles, step=0, time=time, species_names=species_names,
+        species_config=species_config, gamma=gamma, initial=True)
+    # Initial positions and velocities precede the leapfrog seed. The
+    # snapshot's initial flag keeps x unchanged even for non-GR particles.
+    output_path = os.path.join(output_dir, "data", "initial_particles")
+    for species, name in enumerate(snapshot.species_names):
+        series_filename = f"{name.replace(' ', '_')}_{filename}"
         series = _open_openpmd_series(
-            output_path, filename, file_extension=None, comm=comm, access_mode=io.Access.create)
+            output_path, series_filename, file_extension=None, access_mode=io.Access.create)
         try:
             iteration = series.iterations[0]
             iteration.time = time
             iteration.dt = float(dynamic_parameters.dt)
             iteration.time_unit_SI = 1.0
-            buffers = []
-            if tiled_fields:
-                buffers.extend(write_tiled_field_snapshot_to_iteration(
-                    iteration, snapshot, dynamic_parameters=dynamic_parameters, layout=layout))
-            buffers.extend(write_openpmd_fields_to_iteration(
-                iteration, _field_map_to_interior(ordinary_fields), dynamic_parameters))
-            if bssn is not None and "J" in field_map:
-                iteration.meshes["J"].time_offset = 0.0
+            buffers = write_tiled_particle_snapshot_to_iteration(
+                iteration, snapshot, static_parameters, dynamic_parameters, species_index=species)
             series.flush()
-        except BaseException:
-            _abort_parallel_write(comm)
-            raise
         finally:
-            _close_openpmd_series(series, comm)
-    except BaseException:
-        _abort_parallel_write(comm)
-        raise
+            _close_openpmd_series(series)
+
+
+def write_openpmd_initial_fields(
+    field_map, static_parameters, dynamic_parameters, output_dir, filename="initial_fields.h5",
+):
+    """Write initial tile interiors without globally assembling tiled fields."""
+    from PyPIC3D.diagnostics.async_writer import make_tiled_field_snapshot
+
+    tiled_fields = {}
+    ordinary_fields = {}
+    for name, value in field_map.items():
+        vector = isinstance(value, (list, tuple)) and len(value) == 3
+        component = value[0] if vector else value
+        if component.ndim == 6:
+            tiled_fields[name] = value
+        else:
+            ordinary_fields[name] = value
+    if jax.process_count() > 1 and ordinary_fields:
+        raise ValueError("Multiprocess initial field output requires tile-major fields.")
+
+    bssn = getattr(dynamic_parameters, "bssn_parameters", None)
+    time = float(bssn.time) if bssn is not None else 0.0
+    if tiled_fields:
+        snapshot = make_tiled_field_snapshot(
+            tiled_fields, step=0, time=time, current_time_offset=0.0 if bssn is not None else None)
+        layout = TiledMeshLayout(
+            global_shape=tuple(int(getattr(dynamic_parameters, "N" + axis)) for axis in "xyz"),
+            tile_shape=tuple(int(width) for width in static_parameters.tile_shape),
+            guard_cells=int(static_parameters.guard_cells),
+        )
+    output_path = os.path.join(output_dir, "data", "initial_fields")
+    series = _open_openpmd_series(
+        output_path, filename, file_extension=None, access_mode=io.Access.create)
+    try:
+        iteration = series.iterations[0]
+        iteration.time = time
+        iteration.dt = float(dynamic_parameters.dt)
+        iteration.time_unit_SI = 1.0
+        buffers = []
+        if tiled_fields:
+            buffers.extend(write_tiled_field_snapshot_to_iteration(
+                iteration, snapshot, dynamic_parameters=dynamic_parameters, layout=layout))
+        buffers.extend(write_openpmd_fields_to_iteration(
+            iteration, _field_map_to_interior(ordinary_fields), dynamic_parameters))
+        if bssn is not None and "J" in field_map:
+            iteration.meshes["J"].time_offset = 0.0
+        series.flush()
+    finally:
+        _close_openpmd_series(series)

@@ -130,7 +130,7 @@ def load_external_fields_from_toml(fields, external_fields, config, static_param
         print(f"Loading field: {field_name} from {field_path}")
 
         if static_parameters.field_mesh.size > 1:
-            from PyPIC3D.distributed import tiled_field_from_initializer
+            from PyPIC3D.utilities.distributed import tiled_field_from_initializer
             from PyPIC3D.relativity.core import D_FIELD_LOCATIONS, B_FIELD_LOCATIONS
             locations = D_FIELD_LOCATIONS + B_FIELD_LOCATIONS + D_FIELD_LOCATIONS
             if not 0 <= field_type < len(locations):

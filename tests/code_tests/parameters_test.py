@@ -11,6 +11,7 @@ from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
 from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.utilities.parameters import (
+    build_static_parameters,
     DynamicParameters,
     GridParameters,
     StaticParameters,
@@ -19,6 +20,21 @@ from tests.kernel_fixtures import kernel_parameters
 
 
 class TestKernelParameters(unittest.TestCase):
+    def test_tile_configuration_preserves_legacy_shape_and_explicit_mesh(self):
+        config = dict(Nx=4, Ny=2, Nz=1, particle_tile_nx=4, particle_tile_ny=2,
+                      particle_tile_nz=1, shape_factor=1, boundary_conditions=(0, 0, 0))
+        legacy = build_static_parameters(config)
+        self.assertEqual(legacy.tile_shape, (4, 2, 1))
+        self.assertEqual(legacy.field_mesh.devices.shape, (1, 1, 1))
+
+        # An explicit shape overrides legacy values; a supplied mesh needs no grid dimensions.
+        config.update(tile_shape=[4, 2, 1], particle_tile_nx=1, field_mesh=legacy.field_mesh)
+        for name in ("Nx", "Ny", "Nz"):
+            del config[name]
+        explicit = build_static_parameters(config)
+        self.assertEqual(explicit.tile_shape, (4, 2, 1))
+        self.assertIs(explicit.field_mesh, legacy.field_mesh)
+
     def test_static_and_dynamic_parameters_split_kernel_contract(self):
         static_parameters, dynamic_parameters = kernel_parameters(
             dt=0.1,

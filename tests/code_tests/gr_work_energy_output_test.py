@@ -47,8 +47,9 @@ class GREnergyOutputTests(unittest.TestCase):
         data_dir.mkdir()
 
         with patch("PyPIC3D.__main__.initialize_simulation", return_value=runtime), \
-             patch("PyPIC3D.__main__.tqdm", side_effect=lambda values: values), \
-             patch("PyPIC3D.diagnostics.static_metric.bssn_constraint_norms", return_value={}):
+             patch("PyPIC3D.__main__.tqdm", side_effect=lambda values, **kwargs: values), \
+             patch("PyPIC3D.diagnostics.static_metric.bssn_constraint_norms",
+                   return_value={"hamiltonian_l2": 0., "momentum_l2": 0.}):
             result = run_PyPIC3D({})
 
         final = result[1].work_energy_tracker

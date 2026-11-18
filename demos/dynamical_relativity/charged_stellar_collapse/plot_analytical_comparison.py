@@ -1,4 +1,4 @@
-"""Compare the final charged OS radial and time metrics with analytical RN.
+"""Compare the final charged-dust radial and time metrics with analytical RN.
 
 Use the stationary reconstruction
     g_rr = gamma_rr + beta_r**2 / (alpha**2 - beta_r * beta^r),
@@ -9,8 +9,10 @@ This treats the final snapshot as stationary; it is not an exact time
 coordinate transformation of a still-evolving spacetime.
 
 Run with no arguments. Paths and plot limits are set below. Only the final
-iteration is read, and M and Q are the initial stellar values, without fits
-or boundary rescaling. PyPIC3D uses Gaussian G = c = 1 units, with RN charge term Q**2/R**2.
+iteration is read, and M and Q come from the initial-data metadata, without
+fits or boundary rescaling. For the lattice initializer M is an ADM surface
+estimate on the finite outer cube, not an exactly prescribed asymptotic mass.
+PyPIC3D uses Gaussian G = c = 1 units, with RN charge term Q**2/R**2.
 """
 
 from pathlib import Path
@@ -30,25 +32,31 @@ INNER_RADIUS_LIMIT = 10.0
 
 
 def read_final_state():
-    """Read only the final positive-x ray from native Cartesian output."""
+    """Read the final positive-x ray starting at the 3D lapse minimum."""
     series = io.Series(str(STAR_DIRECTORY / "fields.h5"), io.Access.read_only)
     step = max(series.iterations)
     iteration = series.iterations[step]
     scalar = io.Mesh_Record_Component.SCALAR
-    reference = iteration.meshes['conformal_factor']
+    reference = iteration.meshes['lapse']
     spacing = np.asarray(reference.grid_spacing)*reference.grid_unit_SI
     origin = np.asarray(reference.grid_global_offset)*reference.grid_unit_SI + np.asarray(reference[scalar].position)*spacing
-    center = np.rint(-origin/spacing).astype(int)
-    shape = reference[scalar].shape
-    count = [shape[0]-center[0],1,1]
+
+    lapse = reference[scalar].load_chunk()
+    series.flush()
+    center = np.unravel_index(np.nanargmin(lapse), lapse.shape)
+    ix, iy, iz = center
+    location = origin + spacing * center
+    print(f"Lapse minimum at grid index {list(map(int, center))}, coordinates {location.tolist()}")
+
+    count = [lapse.shape[0] - ix, 1, 1]
     def read(name, component=scalar):
-        return iteration.meshes[name][component].load_chunk(center.tolist(),count)
-    pending = {name:read(name) for name in ('lapse','conformal_factor','conformal_metric_xx','conformal_metric_yy','conformal_metric_zz')}
+        return iteration.meshes[name][component].load_chunk(center, count)
+    pending = {name:read(name) for name in ('conformal_factor','conformal_metric_xx','conformal_metric_yy','conformal_metric_zz')}
     pending['beta'] = read('shift','x')
     series.flush()
     values = {name:np.asarray(value).reshape(-1) for name,value in pending.items()}
-    fields = dict(r=origin[0]+np.arange(center[0],shape[0])*spacing[0],
-                  alpha=values['lapse'],beta=values['beta'],chi=values['conformal_factor']**2,
+    fields = dict(r=np.arange(count[0]) * spacing[0],
+                  alpha=lapse[ix:, iy, iz].copy(),beta=values['beta'],chi=values['conformal_factor']**2,
                   conformal_grr=values['conformal_metric_xx'],
                   conformal_gt=.5*(values['conformal_metric_yy']+values['conformal_metric_zz']))
     series.close()
@@ -76,7 +84,9 @@ def main():
 
     # Omit the two origin-parity stencil cells on the final trumpet. Keep
     # gaps as NaNs so a plot cannot join across a pole or a turning point.
-    exterior = ((np.arange(R.size) >= max(2, int(np.argmin(R))))
+    # R(0)=0, so argmin cannot identify the outer branch of a trumpet.
+    outward_branch = np.max(np.where(R[1:] <= R[:-1], np.arange(1, R.size), 0))
+    exterior = ((np.arange(R.size) >= max(2, outward_branch))
                 & (dR_dr > 0.0) & (denominator > 0.0)
                 & np.isfinite(g_RR) & (g_RR > 0.0))
     g_RR = np.where(exterior, g_RR, np.nan)
@@ -84,14 +94,15 @@ def main():
     g_tt = np.where(np.isfinite(g_RR), -denominator, np.nan)
     q_squared = charge**2
     horizon = mass + np.sqrt(mass**2 - q_squared)
-    f_RN = 1.0 - 2.0 * mass / R + q_squared / R**2
 
     # RN has its own exterior mask, independent of the numerical pole.
     g_RR_RN = np.full_like(R, np.nan)
     g_tt_RN = np.full_like(R, np.nan)
-    rn_exterior = ((np.arange(R.size) >= np.argmin(R)) & (R > horizon))
-    g_RR_RN[rn_exterior] = 1.0 / f_RN[rn_exterior]
-    g_tt_RN[rn_exterior] = -f_RN[rn_exterior]
+    rn_exterior = ((np.arange(R.size) >= outward_branch) & (R > horizon))
+    R_exterior = R[rn_exterior]
+    f_RN = 1.0 - 2.0 * mass / R_exterior + q_squared / R_exterior**2
+    g_RR_RN[rn_exterior] = 1.0 / f_RN
+    g_tt_RN[rn_exterior] = -f_RN
     radius = R / mass
 
     OUTPUT_DIRECTORY.mkdir(parents=True, exist_ok=True)
