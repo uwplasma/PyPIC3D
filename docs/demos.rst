@@ -130,6 +130,10 @@ Maxwell section of :doc:`solvers`.
 
 Blandford-Znajek Monopole
 ~~~~~~~~~~~~~~~~~~~~~~~~~
+.. figure:: images/bz_monopole.png
+   :alt: Blandford-Znajek monopole
+   :align: center
+   :width: 100%
 
 A monopole magnetosphere around a spinning Kerr black hole in
 horizon-penetrating spherical Kerr-Schild coordinates, following Entity
