@@ -221,7 +221,7 @@ def evolve(particles, species, fields, key, p, static, dynamic, background, outp
     np.savez(output/'diagnostics.npz', **data)
     save_final_state(output/'final_state.npz', particles, species, fields, target,
                      metadata, dynamic, budget.as_array())
-    plot_diagnostics(data, output/'figure6_diagnostics.png')
+    plot_diagnostics(data, output/'bz_monopole.png')
     return particles, fields, key, target
 
 

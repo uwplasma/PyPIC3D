@@ -34,7 +34,7 @@ import numpy as np
 # Spelled out here so plotting never imports JAX.
 DATA_DIR = Path('data')
 FINAL_DIAGNOSTICS = 'diagnostics.npz'
-FIGURE_NAME = 'figure6_diagnostics.png'
+FIGURE_NAME = 'bz_monopole.png'
 RADII = (2., 3., 4., 5.)
 DPI = 150
 
@@ -188,7 +188,7 @@ def make_figure(data, norm, *, radii=RADII):
         for ax in axes[1:]:
             ax.grid(alpha=.15, lw=.6)
             ax.ticklabel_format(axis='y', style='sci', scilimits=(-3, 3), useMathText=True)
-        title = (rf'BZ monopole - Entity Fig. 6 diagnostics    $t={float(data["time"]):g}\,r_g/c$'
+        title = (rf'BZ monopole   $t={float(data["time"]):g}\,r_g/c$'
                  rf'    $a={norm.spin:g}$')
         fig.suptitle(title, fontsize=13)
         if has_masked:

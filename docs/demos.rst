@@ -23,9 +23,6 @@ Runnable examples live under ``demos/``, grouped into four families by solver:
      - ``dynamic_metric``
      - OS collapse, charged stellar collapse, relativistic two-stream
 
-Run the ``standard_yee`` configurations from the repository root. **Every other
-demo must be run from its own directory**, because its initial-data, metric and
-dark-field paths are relative to the configuration file.
 
 Standard Yee
 ------------
@@ -144,10 +141,6 @@ Paper II (Section 4.5).
    python run_bz_monopole.py
    python plot_bz.py
 
-Neither script takes arguments; every run setting lives in
-``simulation_parameters.py``. ``plot_bz.py`` replots the final saved
-diagnostics and needs only NumPy and Matplotlib.
-
 The demo uses the general static-metric finite-difference field updates and
 standard metric-weighted E/H interpolation. Set ``theta_start`` and
 ``theta_end`` in radians; defaults are 10 and 170 degrees.
@@ -197,12 +190,6 @@ particles with ``initial_data.py``, then runs. See
 :doc:`dynamical_relativity` for the ``[metric]`` table these configurations
 use.
 
-.. note::
-
-   Nothing synchronizes the generator scripts with the TOML file. If you change
-   the mesh, keep ``Nx``/``x_min``/``x_max`` consistent with
-   ``initial_metric.py``, and ``N_particles``/``weight`` consistent with
-   ``initial_data.py``.
 
 Oppenheimer-Snyder Dust Collapse
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -240,13 +227,6 @@ iteration and a Robin outer condition, rather than starting flat.
    PyPIC3D --config charged_star.toml
    python plot_analytical_comparison.py
 
-.. warning::
-
-   A run to ``t = 150`` saves 150 snapshots, roughly 14 GB. Reduce ``t_wind``
-   or raise ``plotting_interval`` before running it casually. Lapse deletion
-   removes charge without correcting the fields, and the constant Maxwell halos
-   are not an isolated-radiation boundary condition --- both are visible in the
-   Gauss-law budget.
 
 Fully Relativistic Two-Stream
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -264,14 +244,3 @@ work-energy budget described in :doc:`einstein_maxwell`.
    python initial_data.py
    PyPIC3D --config two_stream.toml
    python plot.py
-
-Notes
------
-
-- Demos that load ``.npy`` arrays generate them with their own
-  ``initial_conditions.py``, ``initial_data.py`` or ``initial_metric.py``
-  script; run those first.
-- Output locations come from each demo's ``output_dir`` setting or default to
-  the directory where the command is launched.
-- A multi-tile demo needs one exposed JAX device per tile. See :doc:`tiling`
-  before reducing the configured tile widths.
