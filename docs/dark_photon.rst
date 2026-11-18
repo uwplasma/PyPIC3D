@@ -3,48 +3,100 @@ Dark Photon Sector
 
 ``solver = "dark_matter_yee"`` evolves a massive, kinetically mixed vector
 field alongside the ordinary Maxwell fields. The model is a hidden ``U(1)`` 
-gauge field :math:`A'^\mu` that mixes kinetically with ordinary electromagnetism. 
+gauge field :math:`A'^\mu` that mixes kinetically with ordinary electromagnetism. [1]_
 In the kinetically mixed basis the Lagrangian is
 
 .. math::
 
-   \mathcal L = -\tfrac{1}{4}F_{\mu\nu}F^{\mu\nu}
-     -\tfrac{1}{4}F'_{\mu\nu}F'^{\mu\nu}
-     -\tfrac{\varepsilon}{2}F_{\mu\nu}F'^{\mu\nu}
-     +\tfrac{1}{2}m^{2}A'_\mu A'^\mu
-     +J^\mu A_\mu .
+   \mathcal{L} ={}&
+   -\frac{1}{4} F_{\alpha\beta} F^{\alpha\beta}
+   -\frac{1}{4} F'_{\alpha\beta} F'^{\alpha\beta}
+   -\frac{\mu^2}{2} A'_{\alpha} A'^{\alpha} \\
+   &+\frac{\sin\chi_0}{2} F'_{\alpha\beta} F^{\alpha\beta}
+   -J^{\alpha} A_{\alpha}.
+
 
 PyPIC3D solves this in the **mass eigenbasis**, reached by the shift
-:math:`A=\tilde A-\varepsilon\tilde A'`, :math:`A'=\tilde A'`. That
+:math:`A=\tilde A-\sin\chi_0\tilde A' + \mathcal{O}(\sin^2\chi_0)`, :math:`A'=\tilde A'`. [1]_ That
+diagonalizes both the kinetic and the mass terms, leaving :math:`\tilde A`
+massless and :math:`\tilde A'` a pure Proca field of mass :math:`m`, and moves
+the entire mixing into the matter coupling:
+
+Dark Photon Sector
+==================
+
+``solver = "dark_matter_yee"`` evolves a massive, kinetically mixed vector
+field alongside the ordinary Maxwell fields. The model is a hidden ``U(1)`` 
+gauge field :math:`A'^\mu` that mixes kinetically with ordinary electromagnetism. [1]_ 
+In the kinetically mixed basis the Lagrangian is
+
+.. math::
+
+   \mathcal{L} ={}&
+   -\frac{1}{4} F_{\alpha\beta} F^{\alpha\beta}
+   -\frac{1}{4} F'_{\alpha\beta} F'^{\alpha\beta}
+   -\frac{\mu^2}{2} A'_{\alpha} A'^{\alpha} \\
+   &+\frac{\sin\chi_0}{2} F'_{\alpha\beta} F^{\alpha\beta}
+   -J^{\alpha} A_{\alpha}.
+
+
+PyPIC3D solves this in the **mass eigenbasis**, reached by the shift
+:math:`A=\tilde A-\sin\chi_0\tilde A' + \mathcal{O}(\sin^2\chi_0)`, :math:`A'=\tilde A'`. [1]_ That
 diagonalizes both the kinetic and the mass terms, leaving :math:`\tilde A`
 massless and :math:`\tilde A'` a pure Proca field of mass :math:`m`, and moves
 the entire mixing into the matter coupling:
 
 .. math::
 
-   \mathcal L = -\tfrac{1}{4}\tilde F^{2}-\tfrac{1}{4}\tilde F'^{2}
-     +\tfrac{1}{2}m^{2}\tilde A'^{2}
-     + J^\mu\left(\tilde A_\mu-\varepsilon\tilde A'_\mu\right).
+   \mathcal{L}_{\mathrm{mass}} ={}&
+   -\frac{1}{4} F_{\alpha\beta} F^{\alpha\beta}
+   -\frac{1}{4} F'_{\alpha\beta} F'^{\alpha\beta}
+   -\frac{\mu^2}{2} A'_{\alpha} A'^{\alpha} \\
+   &-J^{\alpha}\left(A_{\alpha}+\sin\chi_0\,A'_{\alpha}\right).
 
-Three consequences follow, and they are exactly what the solver implements:
+The evolution equations for the mass eigenbasis are the following:
 
-#. **Ordinary Maxwell evolution is untouched.** The kinetic terms are
-   diagonal, so :math:`\partial_\mu\tilde F^{\mu\nu}=J^\nu` with no dark
-   back-reaction in the visible Ampere law.
-#. **The dark field is sourced directly by the plasma current**, with strength
-   :math:`\varepsilon`:
-   :math:`\partial_\mu\tilde F'^{\mu\nu}+m^{2}\tilde A'^\nu=-\varepsilon J^\nu`.
-#. **Matter couples to the combination** :math:`\tilde A-\varepsilon\tilde A'`,
-   so particles feel :math:`\mathbf E-\varepsilon\mathbf E'` and
-   :math:`\mathbf B-\varepsilon\mathbf B'`.
+.. math::
 
-``sin_chi`` is this :math:`\varepsilon`. Because a charge both sources the dark
-field and responds to it with the same coefficient, every observable dark
-effect enters at :math:`\mathcal O(\varepsilon^{2})` --- a static like-charge
-pair picks up a repulsive Yukawa correction of relative size
-:math:`\varepsilon^{2}` at separations below :math:`1/m`. Setting
-``sin_chi = 0`` reproduces ``electrodynamic_yee`` bit for bit, with the dark
-sector evolving as a decoupled spectator.
+   \nabla_{\alpha} F^{\alpha\beta} = J^{\beta}.
+
+   \nabla_{\alpha} F'^{\alpha\beta}
+   = \sin\chi_0\,J^{\beta} + \mu^2 A'^{\beta}.
+
+   u^{\beta}\nabla_{\beta}u^{\alpha}
+   = \frac{e}{m_e}
+   \left(F^{\alpha\beta} + \sin\chi_0\,F'^{\alpha\beta}\right)u_{\beta}.
+
+Maxwell's equations remain unchanged, and the Proca fields act as linear source terms 
+for the Lorentz force. [1]_
+
+
+
+
+   \mathcal{L}_{\mathrm{mass}} ={}&
+   -\frac{1}{4} F_{\alpha\beta} F^{\alpha\beta}
+   -\frac{1}{4} F'_{\alpha\beta} F'^{\alpha\beta}
+   -\frac{\mu^2}{2} A'_{\alpha} A'^{\alpha} \\
+   &-J^{\alpha}\left(A_{\alpha}+\sin\chi_0\,A'_{\alpha}\right).
+
+The evolution equations for the mass eigenbasis are the following:
+
+.. math::
+
+   \nabla_{\alpha} F^{\alpha\beta} = J^{\beta}.
+
+   \nabla_{\alpha} F'^{\alpha\beta}
+   = \sin\chi_0\,J^{\beta} + \mu^2 A'^{\beta}.
+
+   u^{\beta}\nabla_{\beta}u^{\alpha}
+   = \frac{e}{m_e}
+   \left(F^{\alpha\beta} + \sin\chi_0\,F'^{\alpha\beta}\right)u_{\beta}.
+
+Maxwell's equations remain unchanged, and the Proca fields act as linear source terms 
+for the Lorentz force. [1]_
+
+.. [1] Corelli, F., Cannizzaro, E., Caputo, A., & Pani, P. (2025). Beyond the standard model electrodynamics in the time domain. Physical Review D, 111(3), 035019.
+
 
 
 Field equations
