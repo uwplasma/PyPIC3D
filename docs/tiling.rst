@@ -172,40 +172,11 @@ single static slot capacity. A value greater than one leaves room for later
 particle motion. Inactive slots remain allocated so array shapes stay fixed
 under JIT compilation.
 
-The particle pusher constructs a temporary fixed-shape active-index list in
-each tile and processes it in ``particle_batch_size`` chunks. The six Yee field
-gathers and the selected velocity pusher therefore skip inactive slots, while
-``x``, ``u``, and ``active`` retain their fixed-capacity layout. Because tiles
-are mapped together, a compiled multi-tile push can execute up to the largest
-active batch count among the mapped tiles; no global particle compaction or
-cross-device gather is performed.
-
 When ``particle_batch_size`` is omitted, the batch shape is resolved after
 particle packing and remains static for the run. A one-tile run uses its full
 active population in one batch, regardless of spare inactive capacity. A
 multi-tile CPU run estimates the available compute from process CPU affinity
 and the number of local mesh devices, targeting 128 particles per available
 logical thread and never exceeding the largest initial active tile population.
-Accelerators use a conservative target of 1024 particles. This is a
-deterministic throughput heuristic rather than an exact hardware-performance
-model; an explicit positive ``particle_batch_size`` remains the override for
-machine-specific tuning.
-
-After a position update, particles are sent to adjacent owner tiles and packed
-into free slots. A destination without enough slots, or a particle crossing
-more than one tile in a single refresh, sets the overflow flag. The Python
-driver then raises a hard error rather than dropping particles.
-
-Runtime and Output Boundaries
------------------------------
-
-Particle pushing, direct and Esirkepov current deposition, Yee curls, charge
-deposition, filtering, and fluid-velocity deposition are all sharded across 
-tiles.
-
-Runtime openPMD writers transfer sharded tile snapshots to host memory and
-write physical tile interiors into their global mesh offsets. The live solver
-arrays remain tiled. Global assembly helpers are reserved for synchronous
-output adapters, tests, and validation references. The production
-electrostatic Poisson path remains in tiled storage and communicates only
-through scalar halo refreshes.
+Accelerators use a conservative target of 1024 particles. An explicit positive 
+``particle_batch_size`` remains the override for machine-specific tuning.

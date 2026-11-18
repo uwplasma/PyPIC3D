@@ -61,6 +61,18 @@ Quick navigation
 
       Define species and understand fixed-capacity tiled storage.
 
+   .. grid-item-card:: Curve the spacetime
+      :link: dynamical_relativity
+      :link-type: doc
+
+      Evolve geometry with BSSN alongside the plasma.
+
+   .. grid-item-card:: Add a dark sector
+      :link: dark_photon
+      :link-type: doc
+
+      Configure the kinetically mixed Maxwell-Proca solver.
+
    .. grid-item-card:: Develop PyPIC3D
       :link: development
       :link-type: doc
@@ -77,7 +89,10 @@ Contents
    usage
    tiling
    solvers
-   einstein_maxwell
+   dark_photon
+   dynamical_relativity
+   distributed_cartesian
+   pair_injection
    chargeconservation
    grid
    particles
