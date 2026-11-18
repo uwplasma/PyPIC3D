@@ -1,4 +1,4 @@
-Static-Metric Pair Injection
+Pair Injection
 ============================
 
 ``PyPIC3D.relativity.pair_injection.insert_pairs`` inserts neutral pairs into
@@ -54,15 +54,6 @@ Here is a small source that inserts one cold pair per tile per event:
    run_PyPIC3D(config, pair_injector=inject,
                injection_key=jax.random.PRNGKey(42), injection_interval_steps=10)
 
-For random sources, split the key once per event and return the next key. Fold
-in ``event`` and global cell/candidate indices for reproducible sampling. Use
-``maxwell_juttner_momentum`` from ``PyPIC3D.particles.velocity_distribution``
-for orthonormal spatial four-velocities. It shares the particle module's sampler
-with ``maxwell_juttner``, which returns three-velocities. For dimensionless
-isotropic temperature T, pass ``mass=kb=c=1`` and ``Tx=Ty=Tz=T``; all-zero
-temperatures give cold momenta. The BZ model uses this shared sampler, so its
-fixed-seed samples differ from the former demo rejection sampler.
-
 A custom runner can pass the same callback directly to
 ``time_loop_static_metric``:
 
@@ -75,24 +66,3 @@ A custom runner can pass the same callback directly to
        pair_injector=inject, injection_key=key, step=step,
        injection_interval_steps=10,
    )
-
-Close over the callable and positive integer interval when using ``jax.jit``,
-and carry ``step`` and ``key`` as dynamic inputs. ``jax.lax.cond`` injects at
-step zero and every interval thereafter; skipped steps preserve the key and
-return two zero count arrays. With ``return_diagnostics=True``, the output is
-``(particles, fields, boundary_diagnostics, key, counts)``. Without an injector
-the original solver output contract is unchanged. Custom runners must unpack
-``requested, inserted = jax.device_get(counts)`` and fail when any
-``requested - inserted`` is nonzero; ``run_PyPIC3D`` and the BZ runner already
-do this.
-
-Injection precedes the original solver step and its old-position capture for
-charge-conserving deposition. Supply the intended native densitized D/B fields
-for seeding (including external fields if the source model requires them). The
-BZ example retains its original entry-time D and staggered B inputs. This
-extraction does not change the solver's field centering or deposition method.
-
-The BZ model remains in
-``demos/static_metric_relativity/bz_monopole/plasma_injector.py``. It retains
-Kerr geometry, magnetization gating, proper-volume sampling, and its radial
-tiling restriction; these restrictions do not apply to the shared inserter.

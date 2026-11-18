@@ -66,78 +66,6 @@ The default initialization timeout is 120 seconds;
 ``PYPIC_INITIALIZATION_TIMEOUT`` overrides it. Run all processes through the
 same simulation and output schedule.
 
-Native inputs and local callbacks
----------------------------------
-
-Existing field ``.npy`` files keep shape ``(Nx, Ny, Nz)`` without guards. Each
-process memory-maps these files and reads only its addressable tile interiors.
-The ordinary boundary preparation supplies physical wall values and tile halos.
-Metric files keep the existing global C-node shape, including owned upper
-endpoints where configured; they are likewise read by addressable tile.
-
-Python callers can supply ``field_initializers`` to ``initialize_simulation`` or
-``run_PyPIC3D``. Keys are ``Ex``, ``Ey``, ``Ez``, ``Bx``, ``By``, ``Bz``. A
-value is a callable ``initializer(x, y, z)`` returning a scalar or broadcastable
-local array. Arguments are coordinate lines broadcast to three dimensions at the
-component's native Yee location, including its guards. Callbacks replace the
-corresponding file initialization and are evaluated only for addressable tiles.
-They supply the same physical vectors as native field inputs, before GR
-densitization/seeding.
-
-Distributed particles currently require all six native one-dimensional files:
-``initial_x``, ``initial_y``, ``initial_z``, ``initial_vx``, ``initial_vy``,
-``initial_vz``. Their lengths must equal ``N_particles``. Every process reads
-every bounded block in file order and keeps only the particles whose spatial
-tile it owns, so tile occupancy, capacity and the derived temperature come out
-identical everywhere without an exchange. The cost is that each process reads
-the whole file. Capacity and weights retain the serial convention. Built-in
-random particle generation is explicitly unsupported for multiprocess
-initialization; pre-generate the same native files when a random realization is
-required. Empty particle storage is supported.
-
-Sharded field and particle output
----------------------------------
-
-``plot_openpmd_fields`` writes ``data/fields.h5``, and
-``plot_openpmd_particles`` writes ``data/particles.h5``. A single-process run
-writes exactly those names, as before. With N processes, each one writes its own
-``data/fields_p000.h5`` ... ``data/fields_pNNN.h5``; the same ``_pNNN`` suffix
-applies to the initial dumps. Each process copies only its addressable device
-shards to host buffers, then stores their chunks through bounded asynchronous
-queues. It does not assemble global field or particle arrays on a host or
-device, and it does not wait on any other process.
-``openpmd_field_queue_size`` and ``openpmd_particle_queue_size`` bound the
-pending local snapshots per process.
-
-Every mesh component keeps the full ``(Nx, Ny, Nz)`` shape in every per-process
-file, including singleton axes and mixed periodic/conducting boundaries, so each
-file is a valid whole-domain mesh that ordinary readers open directly. Only the
-tiles a process owns are stored; field records use tile-shaped HDF5 chunks, so a
-file costs space proportional to the tiles it actually holds. Writers strip
-guards and retain the existing physical-interior output selection and
-component-position metadata. Read any file with the ordinary
-``io.Series(path, io.Access.read_only)`` constructor.
-
-Particle records are sized to the particles a process actually holds and are
-kept in global tile order within each file. Each file records which global tiles
-it owns, and per species how many particles each of those tiles holds, as
-``pypic3dOwnedTiles`` / ``pypic3dOwnedTileCounts`` attributes. The HDF5 backend
-reports every dataset as one whole chunk, so this metadata is the only way a
-reader can tell which regions a file wrote. Scalar diagnostics use solver
-reductions and are written by process zero.
-
-``dump_fields`` writes ``data/initial_fields/initial_fields.h5``, and
-``dump_particles`` writes one
-``data/initial_particles/<species>_initial_particles.h5`` file per species.
-Initial particle dumps preserve the configured positions and velocities before
-the leapfrog seed, with no diagnostic half-step position shift. These initial
-dumps also work with ``Nt=0``. Single-process initial histogram plots use local
-shard extrema and 50-bin counts without flattening all particles.
-
-Runtime snapshots retain the simulation step as the iteration identifier and the
-existing solver time-centering and record time offsets. Output cadence and the
-solver's final-endpoint rules are unchanged. These files are scientific
-diagnostics, not complete restart checkpoints.
 
 Assembling a multiprocess run
 -----------------------------
@@ -161,15 +89,6 @@ The ``.pmd`` pointer is written beside the merged series with the same basename:
 destination has a different pointer path. Without ``--output``, the usual
 ``data/fields.pmd`` still points to ``fields.h5``. Use ``--no-pmd`` to leave all
 pointers untouched.
-
-The merge rejects a group whose process indices are not exactly
-``0 .. pypic3dProcessCount - 1``, which catches stale files left by an earlier
-run with a different process count, and it checks that the owned tiles partition
-the global tile grid exactly once. It then overlays each file's owned tiles into
-one global-extent mesh, concatenates the particle records back into global tile
-order independent of which process wrote what, and rewrites the ``.pmd``
-pointer. A multiprocess run leaves the pointer to the merge rather than writing
-one that dangles until then.
 
 Validation
 ----------

@@ -25,42 +25,29 @@ nodes:
 
 .. list-table::
    :header-rows: 1
-   :widths: 30 15 55
+   :widths: 30 70
 
-   * - Variable
-     - Symbol
-     - Meaning
-   * - ``conformal_metric``
-     - :math:`\tilde\gamma_{ij}`
-     - symmetric 3x3, unit determinant
-   * - ``conformal_factor``
-     - :math:`W`
-     - :math:`\gamma_{ij}=\tilde\gamma_{ij}/W^{2}`
-   * - ``traceless_K``
-     - :math:`\tilde A_{ij}`
-     - symmetric 3x3, traceless
-   * - ``trace_K``
-     - :math:`K`
-     - scalar
-   * - ``conformal_connection``
-     - :math:`\tilde\Gamma^{i}`
-     - 3-vector
-   * - ``lapse``
-     - :math:`\alpha`
-     - scalar
-   * - ``shift``
-     - :math:`\beta^{i}`
-     - 3-vector
+   * - Symbol
+     - Variable
+   * - :math:`\tilde\gamma_{ij}`
+     - ``conformal_metric``
+   * - :math:`W`
+     - ``conformal_factor``
+   * - :math:`\tilde A_{ij}`
+     - ``traceless_K``
+   * - :math:`K`
+     - ``trace_K``
+   * - :math:`\tilde\Gamma^{i}`
+     - ``conformal_connection``
+   * - :math:`\alpha`
+     - ``lapse``
+   * - :math:`\beta^{i}`
+     - ``shift``
 
 The conformal factor convention is **W**, so the physical spatial metric is
 :math:`\gamma_{ij}=\tilde\gamma_{ij}/W^{2}`. The extrinsic-curvature convention
 is :math:`K_{ij}=-\tfrac{1}{2}\mathcal L_n\gamma_{ij}`.
 
-Matter enters only the :math:`\tilde A_{ij}`, :math:`K` and
-:math:`\tilde\Gamma^{i}` equations; the conformal metric, conformal factor,
-lapse and shift have no matter source. Algebraic constraints ---
-:math:`\det\tilde\gamma=1` and :math:`\mathrm{tr}\,\tilde A=0` --- are projected
-at every stage.
 
 Gauge conditions
 ~~~~~~~~~~~~~~~~
@@ -95,7 +82,7 @@ intermediate stage, but the coupled Strang split is **second order** overall.
 Each gravity stage resamples the particle geometry and recomputes the particle
 stress from fixed midpoint positions and covariant momenta.
 
-Selecting the chart
+Selecting the metric
 -------------------
 
 The ``metric`` key under ``[simulation_parameters]`` chooses the spacetime
@@ -151,9 +138,6 @@ Each state entry is either a ``.npy`` filename or the literal ``false``:
    shift = false
    time = 0.0
 
-Files contain **global C-node arrays without guards**, with tensor components
-first. In a multiprocess run each process reads only its own owned tiles from
-the same files.
 
 Gauge and evolution controls
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -262,29 +246,6 @@ fields are physical contravariant D/B at native Yee sites, and initial particle
 momentum is covariant :math:`u_i` at the position time. Initialization performs
 densitization and the leapfrog offset once.
 
-Forced defaults
----------------
-
-Selecting ``dynamic_metric`` forces several choices, overriding the ordinary
-defaults rather than inheriting them:
-
-- ``particle_pusher = "hybrid_boris_geodesic"``
-- ``current_calculation = "esirkepov"``
-- ``filter_j = "none"`` (matched filtering is opt-in, and constrained)
-- ``C = eps = mu = kb = 1``
-- ``guard_cells`` at least 3
-
-The four coupling modules are:
-
-* ``relativity/bssn_parameters.py``: ``BSSNParameters`` and its constructor.
-* ``relativity/dynamical_relativity.py``: metric/grid transfer, initialization,
-  common-time views, and history corrections after a metric change.
-* ``relativity/energy_momentum_tensor.py``: Gaussian EM moments and PIC
-  deposition of physical Eulerian ``rho``, ``S_i``, and ``S_ij``.
-* ``solvers/GR_yee/time_loop_dynamical_relativity.py``: the complete coupled
-  step, calling the static-metric loop for each PIC half-step.
-
-
 Diagnostics
 -----------
 
@@ -298,17 +259,25 @@ The electromagnetic constraints --- the densitized Gauss residual
 :math:`\nabla\cdot D-4\pi\rho` and :math:`\nabla\cdot B` --- are reported
 alongside them, using the retained synchronized ``B``.
 
-The optional work-energy budget is enabled with
-``gr_work_energy_theorem = true``. It is off by default because it reconstructs
-synchronized matter sources every macro step.
+
+A generalization of the work energy theorem in curved spacetime is 
+used to track the conservation of energy in the simulations (see 
+equation 39 of Chabonov et al. 2021).
+
+
+.. math::
+
+    P_K &= \int_V \alpha K_{ij}S^{ij}\sqrt{\gamma}\,d^3x, \\
+    P_\alpha &= -\int_V S^i\partial_i\alpha\sqrt{\gamma}\,d^3x, \\
+    F_{\rm out} &= \oint_{\partial V}
+      (\alpha S^i-\beta^i\rho)s_i\,dA, \\
+    E(t) &= E(t=0) + \int_{t_0}^t(P_K+P_\alpha-F_{\rm out})\,dt'
+
+
 
 Particle deletion inside horizons
 ---------------------------------
 
 ``lapse_deleting = true`` deactivates particles where the interpolated lapse
 falls below ``lapse_threshold`` (default ``0.1``). Both PIC half-steps apply the
-static-GR checks. Dynamical initialization deletes particles before the initial
-current deposition and momentum seeding. After a committed metric change,
-deletion is applied against the new native lapse before momentum
-synchronization. See :doc:`particles` for configuration and the resulting source
-sinks.
+static-GR checks. See :doc:`particles` for configuration.

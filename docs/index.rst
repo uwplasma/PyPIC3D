@@ -91,7 +91,6 @@ Contents
    solvers
    dark_photon
    dynamical_relativity
-   einstein_maxwell
    distributed_cartesian
    pair_injection
    chargeconservation
