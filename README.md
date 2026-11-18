@@ -80,8 +80,6 @@ The Sphinx documentation lives in `docs/`:
   configuration.
 - `dynamical_relativity.rst`: the BSSN-PIC solver, the `[metric]` table, gauge
   conditions, and gravitational boundaries.
-- `einstein_maxwell.rst`: the full PyPIC3D/JAX_BSSN coupling contract and the
-  work-energy diagnostic.
 - `distributed_cartesian.rst`: multi-node coupled runs and openPMD merging.
 - `pair_injection.rst`: optional compiled pair sources for the static-metric
   solver.

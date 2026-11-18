@@ -237,9 +237,7 @@ Fully Relativistic Two-Stream
 
 A 1D periodic two-stream instability with the geometry evolving alongside it,
 run with harmonic slicing, a frozen zero shift, periodic gravitational faces
-and the matched GR current filter. It enables
-``gr_work_energy_theorem = true``, so it doubles as the end-to-end check of the
-work-energy budget described in :doc:`einstein_maxwell`.
+and the matched GR current filter.
 
 .. code-block:: bash
 

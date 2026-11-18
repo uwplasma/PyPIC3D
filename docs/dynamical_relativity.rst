@@ -13,8 +13,7 @@ optional ``JAX_BSSN`` dependency:
 
    pip install -e '.[relativity]'
 
-The particle path supports periodic Cartesian tiles on a shared device mesh,
-with one tile per device. BSSN and EM use identical tile ownership; BSSN retains
+BSSN and EM use identical tile ownership; BSSN retains
 wider local guards for its stencils and for the C-to-Yee geometry transfer.
 
 Formulation
@@ -83,7 +82,7 @@ Each gravity stage resamples the particle geometry and recomputes the particle
 stress from fixed midpoint positions and covariant momenta.
 
 Selecting the metric
--------------------
+--------------------
 
 The ``metric`` key under ``[simulation_parameters]`` chooses the spacetime
 chart. It is distinct from the ``[metric]`` table described below.

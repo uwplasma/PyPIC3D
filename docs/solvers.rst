@@ -172,6 +172,4 @@ positions and covariant momenta.
 
 Configuration --- the ``[metric]`` table, gauge conditions, gravitational
 boundaries, forced defaults and diagnostics --- is in
-:doc:`dynamical_relativity`. The full coupling contract, source filtering and
-work-energy diagnostic are in :doc:`einstein_maxwell`. Multi-node launching is
-in :doc:`distributed_cartesian`.
+:doc:`dynamical_relativity`.
