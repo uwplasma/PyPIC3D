@@ -21,8 +21,19 @@ class BSSNParameters(NamedTuple):
     """
 
     state: object
-    evolution_parameters: object
     time: object
+
+
+BSSN_FACE_NAMES = ("xl_bc", "xr_bc", "yl_bc", "yr_bc", "zl_bc", "zr_bc")
+
+
+def _face_code(name, value):
+    """Normalize one [metric] face entry to the JAX_BSSN code 0 or 1."""
+    if isinstance(value, str) and value in ("periodic", "sommerfeld"):
+        return {"periodic": 0, "sommerfeld": 1}[value]
+    if isinstance(value, Integral) and not isinstance(value, bool) and value in (0, 1):
+        return int(value)
+    raise ValueError(f"[metric] {name} must be 'periodic', 'sommerfeld', 0, or 1")
 
 
 def load_bssn_parameters_from_toml(config, static_parameters, dynamic_parameters,
@@ -36,6 +47,10 @@ def load_bssn_parameters_from_toml(config, static_parameters, dynamic_parameters
 
     Without ``[metric]``, retain the legacy flat default, ``[bssn_parameters]``
     table, and Python override behavior.
+
+    Returns ``(static_parameters, bssn)``: the evolution controls are run
+    constants that JAX_BSSN reads concretely, so they ride on the static
+    parameters rather than through jit as traced leaves.
     """
     if "metric" not in config:
         legacy = dict(config.get("bssn_parameters", {}))
@@ -54,7 +69,7 @@ def load_bssn_parameters_from_toml(config, static_parameters, dynamic_parameters
         raise ValueError("[metric] must be a TOML table")
 
     state_names = BSSNVariables._fields
-    boundary_names = ("xl_bc", "xr_bc", "yl_bc", "yr_bc", "zl_bc", "zr_bc")
+    boundary_names = BSSN_FACE_NAMES
     numeric_names = ("time", "eta", "kappa", "nu", "g", "mad_q")
     derived_names = {"dx", "dt", "x_min", "y_min", "z_min"}
     forbidden = set(metric_config) & derived_names
@@ -85,13 +100,7 @@ def load_bssn_parameters_from_toml(config, static_parameters, dynamic_parameters
     for name in boundary_names:
         if name not in metric_config:
             continue
-        value = metric_config[name]
-        if isinstance(value, str) and value in ("periodic", "sommerfeld"):
-            controls[name] = {"periodic": 0, "sommerfeld": 1}[value]
-        elif isinstance(value, Integral) and not isinstance(value, bool) and value in (0, 1):
-            controls[name] = int(value)
-        else:
-            raise ValueError(f"[metric] {name} must be 'periodic', 'sommerfeld', 0, or 1")
+        controls[name] = _face_code(name, metric_config[name])
 
     time = controls.pop("time", 0.0)
     if static_parameters.field_mesh.size > 1:
@@ -100,15 +109,15 @@ def load_bssn_parameters_from_toml(config, static_parameters, dynamic_parameters
         for name, value in sources.items():
             if value is not False and not isinstance(value, str):
                 raise ValueError(f"[metric] {name} must be an initialization filename or literal false")
-        parameters = build_bssn_parameters(
+        static_parameters, parameters = build_bssn_parameters(
             static_parameters, dynamic_parameters, state=sources,
             evolution_parameters=controls, time=time)
         state = parameters.state
         from JAX_BSSN.parallel import map_tiled, owned_mask
         from PyPIC3D.relativity.dynamical_relativity import bssn_tile_layout
         mask = map_tiled(lambda value, params: owned_mask(value.shape, params),
-                         state.conformal_factor, parameters.evolution_parameters,
-                         **bssn_tile_layout(static_parameters))
+                         state.conformal_factor, static_parameters.bssn_evolution_parameters,
+                         bssn_tile_layout(static_parameters))
         if not all(bool(jnp.all(jnp.where(mask, jnp.isfinite(v), True))) for v in state):
             raise ValueError("[metric] initial geometry must contain finite values")
         if not bool(jnp.all(jnp.where(mask, state.conformal_factor > 0, True))):
@@ -119,11 +128,11 @@ def load_bssn_parameters_from_toml(config, static_parameters, dynamic_parameters
             raise ValueError("[metric] conformal_metric must be symmetric")
         if not bool(jnp.all(jnp.where(mask[..., None], jnp.linalg.eigvalsh(gamma) > 0, True))):
             raise ValueError("[metric] conformal_metric must be positive definite")
-        return parameters
+        return static_parameters, parameters
 
     # Keep the established serial global-array input contract.
 
-    parameters = build_bssn_parameters(
+    static_parameters, parameters = build_bssn_parameters(
         static_parameters, dynamic_parameters,
         evolution_parameters=controls, time=time,
     )
@@ -157,7 +166,7 @@ def load_bssn_parameters_from_toml(config, static_parameters, dynamic_parameters
         raise ValueError("[metric] conformal_metric must be symmetric")
     if not bool(jnp.all(jnp.linalg.eigvalsh(gamma) > 0)):
         raise ValueError("[metric] conformal_metric must be positive definite; omitted/false creates zeros")
-    return parameters._replace(state=state)
+    return static_parameters, parameters._replace(state=state)
 
 
 def build_bssn_parameters(static_parameters, dynamic_parameters, *, state=None,
@@ -201,14 +210,20 @@ def build_bssn_parameters(static_parameters, dynamic_parameters, *, state=None,
                for name in ("xl_bc", "xr_bc", "yl_bc", "yr_bc", "zl_bc", "zr_bc")):
             raise ValueError("Matched GR filtering requires all six BSSN boundaries to be periodic")
 
-    evolution_parameters = jax.tree.map(jnp.asarray, evolution_parameters)
+    # Native Python scalars, the inverse of an asarray sweep: these are run
+    # constants carried on static_parameters, JAX_BSSN reads several of them with
+    # int()/float(), and an array leaf would make StaticParameters unhashable and
+    # so unusable as a static jit argument.
+    evolution_parameters = jax.tree.map(
+        lambda value: value.item() if hasattr(value, "item") else value,
+        evolution_parameters)
     if tiled:
         from JAX_BSSN.parallel import initialize_tiled_bssn
         from PyPIC3D.relativity.dynamical_relativity import bssn_tile_layout
 
         layout = bssn_tile_layout(static_parameters)
         if not hasattr(state, "conformal_factor") or state.conformal_factor.ndim != 6:
-            state = initialize_tiled_bssn(state, evolution_parameters, **layout)
+            state = initialize_tiled_bssn(state, evolution_parameters, layout)
         else:
             expected = tuple(tile_counts) + tuple(width + 2 * layout["guard_cells"]
                                                   for width in static_parameters.tile_shape)
@@ -224,4 +239,6 @@ def build_bssn_parameters(static_parameters, dynamic_parameters, *, state=None,
         elif state.conformal_factor.shape != shape:
             raise ValueError("BSSN state must match the physical PIC center-node allocation")
 
-    return BSSNParameters(state, evolution_parameters, jnp.asarray(time))
+    static_parameters = static_parameters._replace(
+        bssn_evolution_parameters=evolution_parameters)
+    return static_parameters, BSSNParameters(state, jnp.asarray(time))

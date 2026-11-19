@@ -650,7 +650,9 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
         from PyPIC3D.relativity.bssn_parameters import load_bssn_parameters_from_toml
         from PyPIC3D.relativity.dynamical_relativity import build_bssn_metric
 
-        bssn = load_bssn_parameters_from_toml(
+        # The evolution controls are run constants that JAX_BSSN reads concretely,
+        # so the loader hands them back on static_parameters.
+        static_parameters, bssn = load_bssn_parameters_from_toml(
             config, static_parameters, dynamic_parameters, state=bssn_state,
             evolution_parameters=bssn_evolution_parameters,
         )

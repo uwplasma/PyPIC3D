@@ -302,7 +302,7 @@ def compute_energy_momentum_tensor(
         if tiled:
             from PyPIC3D.relativity.dynamical_relativity import bssn_tile_layout
             filter_parameters = static_parameters._replace(
-                guard_cells=bssn_tile_layout(static_parameters)["guard_cells"])
+                guard_cells=bssn_tile_layout(static_parameters).guard_cells)
         components = filter_gr_grid(volume * components, filter_parameters, dynamic_parameters,
                                     tiled=tiled) / volume
     stress = jnp.stack((

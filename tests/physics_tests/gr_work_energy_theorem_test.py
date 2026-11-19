@@ -45,10 +45,9 @@ def maxwell_state(n=24, *, dt=None, shift=0., pulse=False, enabled=True, backrea
     )
     static = static._replace(gr_work_energy_theorem=enabled,
                              metric_backreaction=backreaction)
-    bssn = build_bssn_parameters(static, dynamic)
+    static, bssn = build_bssn_parameters(static, dynamic, evolution_parameters={"nu": 0.})
     state = bssn.state._replace(shift=bssn.state.shift.at[0].set(shift))
-    bssn = bssn._replace(state=state,
-                         evolution_parameters=bssn.evolution_parameters._replace(nu=0.))
+    bssn = bssn._replace(state=state)
     dynamic = dynamic._replace(bssn_parameters=bssn)
 
     zero = empty_tiled_vector(static, dynamic)

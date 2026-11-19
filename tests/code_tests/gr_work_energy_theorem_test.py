@@ -52,7 +52,7 @@ def parameters(**kwargs):
 
 def native_runtime(static, dynamic, *, gamma=None, curvature=None):
     """Initialize genuine native histories from common-time uniform EM data."""
-    bssn = build_bssn_parameters(static, dynamic)
+    static, bssn = build_bssn_parameters(static, dynamic, evolution_parameters={"nu": 0.})
     state = bssn.state
     if gamma is not None:
         W = jnp.linalg.det(gamma) ** (-1. / 6.)
@@ -70,7 +70,7 @@ def native_runtime(static, dynamic, *, gamma=None, curvature=None):
             traceless_K=traceless[:, :, None, None, None]
             * jnp.ones_like(state.conformal_factor),
         )
-    bssn = bssn._replace(state=state, evolution_parameters=bssn.evolution_parameters._replace(nu=0.))
+    bssn = bssn._replace(state=state)
     dynamic = dynamic._replace(bssn_parameters=bssn)
     metric = build_bssn_metric(state, static, dynamic)
     electric = tuple(jnp.full_like(metric.D[i].lapse, (.5, -.3, .2)[i]) for i in range(3))

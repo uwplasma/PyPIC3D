@@ -47,7 +47,7 @@ def time_loop_dynamical_relativity(
     """
     bssn = dynamic_parameters.bssn_parameters
     dt, time = dynamic_parameters.dt, bssn.time
-    evolution_parameters = bssn.evolution_parameters
+    evolution_parameters = static_parameters.bssn_evolution_parameters
     tiled = bssn.state.conformal_factor.ndim == 6
     if tiled:
         from JAX_BSSN.parallel import (
@@ -65,8 +65,8 @@ def time_loop_dynamical_relativity(
                         lapse, shift, _, _ = prescribed_gauge(local_state, stage_time, params=local_parameters)
                         local_state = local_state._replace(lapse=lapse, shift=shift)
                     return local_state
-                state = map_tiled(apply_callbacks, state, evolution_parameters, **layout)
-            return prepare_tiled_state(state, evolution_parameters, **layout)
+                state = map_tiled(apply_callbacks, state, evolution_parameters, layout)
+            return prepare_tiled_state(state, evolution_parameters, layout)
         if gravity_boundary is not None:
             state = gravity_boundary(state, stage_time)
         if prescribed_gauge is not None:
@@ -125,7 +125,7 @@ def time_loop_dynamical_relativity(
         )
         if tiled:
             rhs = compute_tiled_bssn_rhs_with_matter(
-                stage_state, evolution_parameters, rho, momentum, stress, **layout)
+                stage_state, evolution_parameters, layout, rho, momentum, stress)
         else:
             rhs = compute_bssn_rhs_with_matter(
                 stage_state, evolution_parameters, rho, momentum, stress)
@@ -137,7 +137,7 @@ def time_loop_dynamical_relativity(
                         local_state, stage_time, params=local_parameters)
                     return local_rhs._replace(lapse=lapse_dot, shift=shift_dot)
                 rhs = map_tiled(gauge_rhs, (stage_state, rhs), evolution_parameters,
-                                **layout, output_template=rhs)
+                                layout, output_template=rhs)
             else:
                 _, _, lapse_dot, shift_dot = prescribed_gauge(stage_state, stage_time)
                 rhs = rhs._replace(lapse=lapse_dot, shift=shift_dot)

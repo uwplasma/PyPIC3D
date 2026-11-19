@@ -283,9 +283,9 @@ class TestGRMatchedFilter(unittest.TestCase):
                         build_bssn_parameters(static, dynamic, evolution_parameters=controls)
                     # The existing unfiltered solver still permits independent
                     # gravitational boundaries, including Sommerfeld faces.
-                    unfiltered = build_bssn_parameters(static._replace(current_filter="none"),
-                                                       dynamic, evolution_parameters=controls)
-                    self.assertEqual(int(getattr(unfiltered.evolution_parameters, face)), 1)
+                    unfiltered, _ = build_bssn_parameters(static._replace(current_filter="none"),
+                                                         dynamic, evolution_parameters=controls)
+                    self.assertEqual(int(getattr(unfiltered.bssn_evolution_parameters, face)), 1)
 
 
 if __name__ == "__main__":

@@ -43,8 +43,7 @@ def coupled_state(*, dt=0.02, backreaction=False, particles=False, boundaries=(0
         current_filter="none", boundary_conditions=boundaries, particle_batch_size=8,
     )
     static = static._replace(metric_backreaction=backreaction)
-    bssn = build_bssn_parameters(static, dynamic)
-    bssn = bssn._replace(evolution_parameters=bssn.evolution_parameters._replace(nu=0.))
+    static, bssn = build_bssn_parameters(static, dynamic, evolution_parameters={"nu": 0.})
     if varying_geometry:
         phase = 2 * jnp.pi * jnp.arange(8)[:, None, None] / 8
         q = bssn.state
@@ -125,7 +124,7 @@ class DynamicalRelativityTests(unittest.TestCase):
         fields = (zero, zero, zero) + fields[3:7] + (
             (zero, zero, zero, fields[7][3], None), fields[8],
         )
-        expected = rk4_step(state, bssn.evolution_parameters)
+        expected = rk4_step(state, static.bssn_evolution_parameters)
         actual_p, actual_f, actual_d = jax.jit(
             lambda p, f, d: time_loop_dynamical_relativity(p, species, f, static, d)
         )(particles, fields, dynamic)

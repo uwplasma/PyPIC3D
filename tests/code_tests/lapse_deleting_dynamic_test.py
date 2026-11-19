@@ -35,7 +35,7 @@ def dynamic_lapse_state(*, varying_lapse=False):
         particle_batch_size=2,
     )
     static = static._replace(lapse_deleting=True, lapse_threshold=.1, metric_backreaction=False)
-    bssn = build_bssn_parameters(static, dynamic, evolution_parameters={"nu": 0.})
+    static, bssn = build_bssn_parameters(static, dynamic, evolution_parameters={"nu": 0.})
     if varying_lapse:
         phase = 2 * jnp.pi * jnp.arange(8)[:, None, None] / 8
         bssn = bssn._replace(state=bssn.state._replace(lapse=.15 + .1 * jnp.cos(phase)))

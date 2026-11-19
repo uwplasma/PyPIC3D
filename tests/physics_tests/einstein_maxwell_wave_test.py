@@ -58,8 +58,9 @@ def native_runtime(shape, params, *, boundaries=(0, 0, 0), bssn=None,
         C=1., eps=1., mu=1., kb=1., alpha=1.,
         grids=dict(center=center, vertex=vertex, tiled_center_grid=tc, tiled_vertex_grid=tv)))
     bssn = flat_bssn_variables(shape) if bssn is None else bssn
-    dynamic = dynamic._replace(bssn_parameters=build_bssn_parameters(
-        static, dynamic, state=bssn, evolution_parameters=params))
+    static, bssn_record = build_bssn_parameters(
+        static, dynamic, state=bssn, evolution_parameters=params)
+    dynamic = dynamic._replace(bssn_parameters=bssn_record)
     zero = jnp.zeros((3,) + shape)
     displacement = zero if displacement is None else displacement
     magnetic = zero if magnetic is None else magnetic

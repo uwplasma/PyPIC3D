@@ -36,7 +36,7 @@ def runtime(boundaries=(0, 0, 0)):
         x_min=0., y_min=0., z_min=0., dt=.01, guard_cells=3,
         solver="dynamic_metric", metric="numerical", current_deposition="GR_direct",
         particle_pusher="hybrid_boris_geodesic", boundary_conditions=boundaries)
-    parameters = build_bssn_parameters(static, dynamic, evolution_parameters={"nu": 0.})
+    static, parameters = build_bssn_parameters(static, dynamic, evolution_parameters={"nu": 0.})
     dynamic = dynamic._replace(bssn_parameters=parameters)
     scalar = jnp.zeros((1, 1, 1, 14, 7, 7))
     zero = (scalar,) * 3
@@ -54,9 +54,9 @@ class BSSNParametersTest(unittest.TestCase):
         static, dynamic, *_ = runtime()
         parameters = dynamic.bssn_parameters
         self.assertEqual(parameters.state.conformal_factor.shape, (8, 1, 1))
-        self.assertEqual(int(parameters.evolution_parameters.zero_shift), 1)
-        self.assertEqual(int(parameters.evolution_parameters.gauge), 0)
-        self.assertEqual(float(parameters.evolution_parameters.x_min), float(dynamic.grids.center[0][1]))
+        self.assertEqual(int(static.bssn_evolution_parameters.zero_shift), 1)
+        self.assertEqual(int(static.bssn_evolution_parameters.gauge), 0)
+        self.assertEqual(float(static.bssn_evolution_parameters.x_min), float(dynamic.grids.center[0][1]))
         for leaf in jax.tree.leaves(parameters):
             self.assertTrue(isinstance(leaf, jax.Array))
         with self.assertRaisesRegex(ValueError, "C=1"):
@@ -75,14 +75,15 @@ class BSSNParametersTest(unittest.TestCase):
         static, dynamic, *_ = runtime()
         initial = dynamic.bssn_parameters
         state = initial.state._replace(trace_K=jnp.full_like(initial.state.trace_K, .03))
-        evolution = initial.evolution_parameters._replace(xl_bc=1, xr_bc=1, gauge=1, zero_shift=0, eta=.7)
-        parameters = build_bssn_parameters(static, dynamic, state=state,
-                                           evolution_parameters=evolution, time=3.)
+        evolution = static.bssn_evolution_parameters._replace(
+            xl_bc=1, xr_bc=1, gauge=1, zero_shift=0, eta=.7)
+        updated, parameters = build_bssn_parameters(static, dynamic, state=state,
+                                                   evolution_parameters=evolution, time=3.)
         self.assertIs(parameters.state, state)
         self.assertEqual(static.boundary_conditions, (0, 0, 0))
-        self.assertEqual(int(parameters.evolution_parameters.xl_bc), 1)
-        self.assertEqual(int(parameters.evolution_parameters.xr_bc), 1)
-        for actual, expected in zip(jax.tree.leaves(parameters.evolution_parameters), jax.tree.leaves(evolution)):
+        self.assertEqual(int(updated.bssn_evolution_parameters.xl_bc), 1)
+        self.assertEqual(int(updated.bssn_evolution_parameters.xr_bc), 1)
+        for actual, expected in zip(jax.tree.leaves(updated.bssn_evolution_parameters), jax.tree.leaves(evolution)):
             self.assertTrue(bool(jnp.array_equal(actual, expected)))
         self.assertEqual(float(parameters.time), 3.)
 

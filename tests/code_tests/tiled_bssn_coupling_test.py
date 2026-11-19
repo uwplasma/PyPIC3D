@@ -44,8 +44,8 @@ def coupled_example(tiles, *, particles=False, current_filter="none", crossing=F
     state = BSSNVariables(identity, 1. + .003 * jnp.cos(phase), identity * 0,
                           .001 * jnp.sin(phase), vector, 1. + .002 * jnp.sin(phase),
                           vector.at[0].set(.01 * jnp.cos(phase)))
-    bssn = build_bssn_parameters(static, dynamic, state=state,
-                                 evolution_parameters={"nu": .002, "kappa": .03})
+    static, bssn = build_bssn_parameters(static, dynamic, state=state,
+                                         evolution_parameters={"nu": .002, "kappa": .03})
     dynamic = dynamic._replace(bssn_parameters=bssn)
     D = tuple(bssn_to_tiles(value, static) for value in
               (.03 + .002 * jnp.sin(phase), .01 * jnp.cos(phase), zero))
@@ -75,7 +75,7 @@ def coupled_example(tiles, *, particles=False, current_filter="none", crossing=F
 
 
 def gather_bssn(value, static):
-    return tiles_to_bssn(value, static._replace(guard_cells=bssn_tile_layout(static)["guard_cells"]))
+    return tiles_to_bssn(value, static._replace(guard_cells=bssn_tile_layout(static).guard_cells))
 
 
 @unittest.skipUnless(jax.device_count() >= 2, "requires two JAX devices")
@@ -152,11 +152,11 @@ class TiledBSSNCouplingTest(unittest.TestCase):
                     tile_shape=(8, 1, 1), guard_cells=3,
                     solver="dynamic_metric", metric="numerical",
                     boundary_conditions=(boundary, 0, 0))
-                bssn = build_bssn_parameters(static, dynamic)
+                static, bssn = build_bssn_parameters(static, dynamic)
                 dynamic = dynamic._replace(bssn_parameters=bssn)
                 x = jnp.arange(16 + (boundary == 1))[:, None, None]
                 values = 1 + .02 * x**2
-                parameters = static._replace(guard_cells=bssn_tile_layout(static)["guard_cells"])
+                parameters = static._replace(guard_cells=bssn_tile_layout(static).guard_cells)
                 tiled = bssn_to_tiles(values, parameters)
                 actual = binomial_source_filter(tiled, static.boundary_conditions,
                                                 static_parameters=static, dynamic_parameters=dynamic)
@@ -175,7 +175,7 @@ class TiledBSSNCouplingTest(unittest.TestCase):
                 guard_cells=3, solver="dynamic_metric", metric="numerical",
                 particle_pusher="hybrid_boris_geodesic", particle_batch_size=8)
             static = static._replace(metric_backreaction=True)
-            bssn = build_bssn_parameters(static, dynamic)
+            static, bssn = build_bssn_parameters(static, dynamic)
             dynamic = dynamic._replace(bssn_parameters=bssn)
             metric = build_bssn_metric(bssn.state, static, dynamic)
             positions = (8 + phase).reshape((count,) * 3 + (1, 8 // count**3, 3))
@@ -207,7 +207,7 @@ class TiledBSSNCouplingTest(unittest.TestCase):
             return local_state
 
         actual = map_tiled(lambda q, p: prescribe(q, dynamic.dt, params=p)[0], state,
-                           dynamic.bssn_parameters.evolution_parameters, **bssn_tile_layout(static),
+                           static.bssn_evolution_parameters, bssn_tile_layout(static),
                            output_template=state.lapse)
         expected = 1 + .002 * jnp.cos(2 * jnp.pi * jnp.arange(16)[:, None, None] / 16)
         self.assertClose(gather_bssn(actual, static), expected)
