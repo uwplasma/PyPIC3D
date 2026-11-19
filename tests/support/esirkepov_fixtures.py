@@ -207,7 +207,8 @@ class TiledEsirkepovCurrentFixtures:
             int(parameter_set["Ny"]) // int(tile_shape[1]),
             int(parameter_set["Nz"]) // int(tile_shape[2]),
         ))
-        grid_static_parameters = SimpleNamespace(tile_shape=tile_shape, guard_cells=g)
+        grid_static_parameters = SimpleNamespace(tile_shape=tile_shape, guard_cells=g,
+                                                field_mesh=parameter_set["field_mesh"])
         grid_dynamic_parameters = SimpleNamespace(
             dx=parameter_set["dx"],
             dy=parameter_set["dy"],

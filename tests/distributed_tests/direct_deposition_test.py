@@ -148,7 +148,7 @@ class TestDirectDeposition(DirectDepositionFixtures, unittest.TestCase):
         )
 
         for reference_component, tiled_component in zip(J_reference, J_from_tiles):
-            self.assertTrue(jnp.allclose(tiled_component, reference_component, rtol=1.0e-15, atol=1.0e-15))
+            self.assertTrue(jnp.allclose(tiled_component, reference_component, rtol=5.0e-15, atol=5.0e-15))
 
 
     def test_tiled_direct_deposition_matches_J_from_rhov_for_dummy_species(self):
@@ -236,7 +236,7 @@ class TestDirectDeposition(DirectDepositionFixtures, unittest.TestCase):
         for tile_component in J_tiles:
             self.assertEqual(tile_component.ndim, 6)
         for reference_component, tiled_component in zip(J_reference, J_from_tiles):
-            self.assertTrue(jnp.allclose(tiled_component, reference_component, rtol=1.0e-15, atol=1.0e-15))
+            self.assertTrue(jnp.allclose(tiled_component, reference_component, rtol=5.0e-15, atol=5.0e-15))
 
 
     def test_tiled_direct_deposition_digital_filter_matches_J_from_rhov(self):

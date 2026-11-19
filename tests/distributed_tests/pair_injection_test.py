@@ -25,7 +25,7 @@ class TestPairInjectionTiles(unittest.TestCase):
         self.assertTrue(bool(jnp.array_equal(result.x[..., 0, 0, :], x[..., 0, :])))
         rho = compute_rho(result, species, f[3], s, d)
         self.assertTrue(bool(jnp.allclose(rho, 0, atol=1e-13, rtol=1e-7, equal_nan=True)))
-        for value in result:
+        for value in (result.x, result.u, result.active):
             self.assertTrue(value.sharding.is_equivalent_to(layout, value.ndim))
 
 

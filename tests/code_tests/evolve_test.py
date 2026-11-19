@@ -27,7 +27,8 @@ def add_tiled_grids_to_parameters(parameter_set, tile_shape):
         int(parameter_set["Nz"]) // int(tile_shape[2]),
     )
     parameter_set["field_mesh"] = make_field_mesh(tile_grid_shape)
-    static_parameters = SimpleNamespace(tile_shape=tile_shape, guard_cells=g)
+    static_parameters = SimpleNamespace(tile_shape=tile_shape, guard_cells=g,
+                                        field_mesh=parameter_set["field_mesh"])
     dynamic_parameters = SimpleNamespace(
         dx=parameter_set["dx"],
         dy=parameter_set["dy"],
