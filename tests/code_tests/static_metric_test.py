@@ -1124,7 +1124,7 @@ class TestStaticMetricTimeLoop(StaticMetricTimeLoopFixtures, unittest.TestCase):
                         self.assertTrue(jnp.all(value == 0))
                 else:
                     new, updated = result
-                for actual, original in zip(new, particles):
+                for actual, original in zip(jax.tree.leaves(new), jax.tree.leaves(particles)):
                     self.assertTrue(jnp.array_equal(actual, original))
                 for actual_vector, expected_vector in zip(updated[:3], expected[:3]):
                     for actual, reference in zip(actual_vector, expected_vector):

@@ -293,7 +293,7 @@ class ShardedOpenPMDTests(unittest.TestCase):
         device_get = jax.device_get
 
         def local_device_get(value):
-            if any(value is array for array in particles):
+            if any(value is array for array in (particles.x, particles.u, particles.active)):
                 raise AssertionError("Histogram transferred a complete distributed array")
             return device_get(value)
 
@@ -421,7 +421,9 @@ class ShardedOpenPMDTests(unittest.TestCase):
             return SimpleNamespace(shape=array.shape, addressable_shards=array.addressable_shards[:1])
 
         field_snapshot = async_writer.make_tiled_field_snapshot({"rho": local_view(scalar)}, step=0, time=0.)
-        particle_snapshot = async_writer.make_tiled_particle_snapshot(TiledParticles(*(local_view(array) for array in particles)),
+        viewed = TiledParticles(*(local_view(array) for array in
+                                  (particles.x, particles.u, particles.active)))
+        particle_snapshot = async_writer.make_tiled_particle_snapshot(viewed,
             step=0, time=0., species_names=names, species_config=species)
         for array, host_shards in ((scalar, field_snapshot.fields["rho"]),
                                   (particles.x, particle_snapshot.x_shards),

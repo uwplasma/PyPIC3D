@@ -7,10 +7,14 @@ Particle collisions on tiled particle storage.
                    stays accurate for large per-step scattering.
 ``background_mcc`` Monte Carlo collisions with a uniform Maxwellian neutral gas
                    (elastic, back, charge_exchange, excitation, ionization) as
-                   in WarpX's background MCC module.
+                   in WarpX's background MCC module. Ionization products are
+                   created with their own species' macro-particle weight, so both
+                   must share the projectile's weight; the loader enforces this.
 
 Velocities are treated non-relativistically; ``particles.u`` holds 3-velocity.
 """
+
+import math
 
 import jax
 import jax.numpy as jnp
@@ -20,13 +24,15 @@ E_CHARGE = 1.602176634e-19
 MCC_PROCESSES = ("elastic", "back", "charge_exchange", "excitation", "ionization")
 
 
-def load_collisions_from_toml(config, species_names):
+def load_collisions_from_toml(config, species_names, species_weights=None):
     """Translate ``[collisions.<name>]`` tables into hashable static specs.
 
     Args:
         config (dict): Parsed TOML configuration; only its ``collisions`` tables are read.
         species_names (list[str]): Particle species names in species-index order, used to
             turn the ``species`` and ``product_species`` names into indices.
+        species_weights (sequence[float] | None): Macro-particle weight of each species in
+            species-index order. When given, ionization products are checked against it.
 
     Returns:
         tuple: One spec per table, ``("binary", a, b, coulomb_log)`` or
@@ -44,7 +50,15 @@ def load_collisions_from_toml(config, species_names):
             processes = []
             for p in (p for p in MCC_PROCESSES if p in c):
                 energy, sigma = _cross_section(c[p]["cross_section"])
-                products = [index[s] for s in c[p].get("product_species", [])] + [-1, -1]
+                products = [index[s] for s in c[p].get("product_species", [])]
+                if p == "ionization":
+                    # One event makes one real pair per real projectile and weight is per
+                    # species, so unequal weights would create charge from nothing.
+                    w = [] if species_weights is None else [float(species_weights[i]) for i in (species[0], *products)]
+                    if len(products) != 2 or any(not math.isclose(v, w[0], rel_tol=1e-9) for v in w[1:]):
+                        raise ValueError(f"[collisions.{name}.ionization] product_species must name two "
+                                         f"species sharing the weight of {species_names[species[0]]}")
+                products = products + [-1, -1]
                 processes.append((p, float(c[p].get("energy", 0.0)), energy, sigma, products[0], products[1]))
             specs.append(("mcc", species[0], float(c["background_density"]),
                           float(c.get("background_temperature", 0.0)), float(c["background_mass"]), tuple(processes)))

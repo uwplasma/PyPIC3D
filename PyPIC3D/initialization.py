@@ -679,7 +679,7 @@ def initialize_simulation(toml_file, *, bssn_state=None, bssn_evolution_paramete
         )
     static_parameters = static_parameters._replace(
         particle_batch_size=effective_batch_size,
-        collisions=load_collisions_from_toml(config, particle_species_names),
+        collisions=load_collisions_from_toml(config, particle_species_names, species_config.weight),
     )
     particles = particles._replace(key=jax.random.PRNGKey(int(config.get("simulation_parameters", {}).get("seed", 0))))
     particles = shard_tiled_particles(particles, static_parameters)

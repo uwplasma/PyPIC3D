@@ -84,6 +84,28 @@ class TestCollisions(unittest.TestCase):
         self.assertEqual([p[0] for p in specs[1][5]], ["elastic", "ionization"])
         self.assertEqual(specs[1][5][1][4:], (0, 1))
 
+    def ionization_config(self, product_species=("e", "i")):
+        return {"collisions": {"en": {"type": "background_mcc", "species": "e", "background_density": 1e20,
+                                      "background_mass": 6.6e-26,
+                                      "ionization": {"cross_section": [[15.0, 0.0], [100.0, 1e-20]],
+                                                     "energy": 15.0, "product_species": list(product_species)}}}}
+
+    def test_toml_loader_requires_ionization_products_to_share_the_projectile_weight(self):
+        names = ("e", "i")
+        config = self.ionization_config()
+        # One event makes one real pair per real projectile, and weight is per species,
+        # so unequal weights would deposit a net charge that was never there.
+        self.assertEqual(load_collisions_from_toml(config, names, [1e11, 1e11])[0][5][0][4:], (0, 1))
+        self.assertEqual(load_collisions_from_toml(config, names, [1e15 / 15, 2e15 / 30])[0][5][0][4:], (0, 1))
+        with self.assertRaisesRegex(ValueError, "must name two species sharing the weight"):
+            load_collisions_from_toml(config, names, [1e11, 5e10])
+        with self.assertRaisesRegex(ValueError, "must name two species sharing the weight"):
+            load_collisions_from_toml(self.ionization_config(()), names, [1e11, 1e11])
+        # Processes that create nothing are unaffected by the product-species rules.
+        elastic = {"collisions": {"en": {"type": "background_mcc", "species": "e", "background_density": 1e20,
+                                         "background_mass": 6.6e-26, "elastic": {"cross_section": 1e-19}}}}
+        self.assertEqual(load_collisions_from_toml(elastic, names, [1e11, 5e10])[0][5][0][4:], (-1, -1))
+
 
 if __name__ == "__main__":
     unittest.main()
