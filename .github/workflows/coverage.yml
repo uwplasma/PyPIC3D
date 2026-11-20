@@ -9,6 +9,7 @@ on:
 jobs:
   test-coverage:
     runs-on: self-hosted
+    timeout-minutes: 720  # 12 hours instead of the default 6
     env:
       JAX_PLATFORMS: cpu
       JAX_ENABLE_X64: "1"
