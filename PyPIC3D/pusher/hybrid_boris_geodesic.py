@@ -5,7 +5,6 @@ import jax
 import jax.numpy as jnp
 from jax.sharding import PartitionSpec as P
 
-from PyPIC3D.particles.particle_class import TiledParticles
 from PyPIC3D.particles.particle_batching import (
     prepare_particle_batches, particle_batch_indices, number_of_particle_batches,
 )
@@ -318,6 +317,6 @@ def hybrid_boris_geodesic_push(
         particles.x, particles.u, particles.active, prepared_fields,
         (species_q_over_m, species_config.update_x, dt))
 
-    full_step = TiledParticles(x=x_new, u=u_new, active=particles.active)
-    half_step = TiledParticles(x=x_half, u=u_new, active=particles.active)
+    full_step = particles._replace(x=x_new, u=u_new)
+    half_step = particles._replace(x=x_half, u=u_new)
     return full_step, half_step

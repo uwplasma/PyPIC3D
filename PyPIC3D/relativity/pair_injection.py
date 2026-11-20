@@ -6,7 +6,6 @@ four-velocities at the birth time. All field inputs are native D/B densities.
 import jax
 import jax.numpy as jnp
 
-from PyPIC3D.particles.particle_class import TiledParticles
 from PyPIC3D.pusher.particle_push import seed_leapfrog_velocity
 from PyPIC3D.relativity.interpolate_metric import (
     interpolate_metric, particle_active_axes, safe_inactive_positions,
@@ -89,7 +88,7 @@ def insert_pairs(particles, species, positions, momenta, requested, D, B, metric
         metric.center, dynamic.grids.tiled_center_grid)
     # Insertion only activates slots; identify births before any push or migration.
     newborn = active & ~particles.active
-    result = TiledParticles(x, u, active)
+    result = particles._replace(x=x, u=u, active=active)
     seeded = seed_leapfrog_velocity(
         result._replace(active=newborn), species, D, B, static, dynamic, metric)
     result = result._replace(u=jnp.where(newborn[..., None], seeded.u, result.u))

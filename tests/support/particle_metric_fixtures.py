@@ -128,7 +128,7 @@ def sample_metric(q,m,s,d):
 
 def gather_B(q,B,s,d):
     return gather_vector(tuple(b[0,0,0] for b in B),B_FIELD_LOCATIONS,q,*tile_grids(d),
-                         s.shape_factor,(True,True,False),(3,3,3))
+                         s,(True,True,False),(3,3,3))
 
 
 def norm(u,m):

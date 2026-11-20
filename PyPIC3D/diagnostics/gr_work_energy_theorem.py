@@ -263,10 +263,10 @@ def sample_energy(particles, species, fields, static, dynamic):
         from PyPIC3D.relativity.dynamical_relativity import bssn_tile_layout
         lapse_gradient = map_tiled(
             lambda lapse, params: jnp.stack(tuple(diff1_physical(lapse, axis, params) for axis in range(3))),
-            state.lapse, bssn.evolution_parameters, **bssn_tile_layout(static),
+            state.lapse, static.bssn_evolution_parameters, bssn_tile_layout(static),
             output_template=jnp.zeros((3,) + state.lapse.shape, dtype=state.lapse.dtype))
     else:
-        lapse_gradient = jnp.stack(tuple(diff1_physical(state.lapse, axis, bssn.evolution_parameters)
+        lapse_gradient = jnp.stack(tuple(diff1_physical(state.lapse, axis, static.bssn_evolution_parameters)
                                         for axis in range(3)))
     curvature_power = volume_integral(
         volume * state.lapse * jnp.einsum("ij...,ij...->...", K, stress_up), static, dynamic)

@@ -52,7 +52,7 @@ def parameters(**kwargs):
 
 def native_runtime(static, dynamic, *, gamma=None, curvature=None):
     """Initialize genuine native histories from common-time uniform EM data."""
-    bssn = build_bssn_parameters(static, dynamic)
+    static, bssn = build_bssn_parameters(static, dynamic, evolution_parameters={"nu": 0.})
     state = bssn.state
     if gamma is not None:
         W = jnp.linalg.det(gamma) ** (-1. / 6.)
@@ -70,7 +70,7 @@ def native_runtime(static, dynamic, *, gamma=None, curvature=None):
             traceless_K=traceless[:, :, None, None, None]
             * jnp.ones_like(state.conformal_factor),
         )
-    bssn = bssn._replace(state=state, evolution_parameters=bssn.evolution_parameters._replace(nu=0.))
+    bssn = bssn._replace(state=state)
     dynamic = dynamic._replace(bssn_parameters=bssn)
     metric = build_bssn_metric(state, static, dynamic)
     electric = tuple(jnp.full_like(metric.D[i].lapse, (.5, -.3, .2)[i]) for i in range(3))
@@ -85,7 +85,7 @@ def native_runtime(static, dynamic, *, gamma=None, curvature=None):
               (electric, magnetic), jnp.asarray(False))
     particles, fields, dynamic = initialize_dynamical_relativity(
         particles, species, fields, static, dynamic)
-    return particles, species, fields, dynamic
+    return particles, species, fields, static, dynamic
 
 
 class WorkEnergyAssertions(unittest.TestCase):
@@ -228,7 +228,7 @@ class WorkEnergySamplingTests(WorkEnergyAssertions):
         static, dynamic = parameters()
         gamma = jnp.asarray(((1.4, .2, .1), (.2, .9, -.12), (.1, -.12, 1.2)))
         curvature = jnp.asarray(((.03, -.02, .01), (-.02, -.04, .015), (.01, .015, .02)))
-        particles, species, fields, dynamic = native_runtime(
+        particles, species, fields, static, dynamic = native_runtime(
             static, dynamic, gamma=gamma, curvature=curvature)
         sample = jax.jit(lambda p, f, d: sample_energy(p, species, f, static, d))(
             particles, fields, dynamic)
@@ -247,7 +247,7 @@ class WorkEnergySamplingTests(WorkEnergyAssertions):
     def test_lapse_power_uses_raised_momentum_and_negative_sign(self):
         static, dynamic = parameters(Nx=16, x_wind=8., tile_shape=(16, 1, 1))
         gamma = jnp.asarray(((1.4, .2, .1), (.2, .9, -.12), (.1, -.12, 1.2)))
-        particles, species, fields, dynamic = native_runtime(static, dynamic, gamma=gamma)
+        particles, species, fields, static, dynamic = native_runtime(static, dynamic, gamma=gamma)
         wave_number = 2*jnp.pi / 8.
         x = jnp.arange(16)[:, None, None] * dynamic.dx
         bssn = dynamic.bssn_parameters
@@ -271,7 +271,7 @@ class WorkEnergySamplingTests(WorkEnergyAssertions):
 
     def test_synchronized_magnetic_history_is_used(self):
         static, dynamic = parameters()
-        particles, species, fields, dynamic = native_runtime(static, dynamic)
+        particles, species, fields, static, dynamic = native_runtime(static, dynamic)
         first = sample_energy(particles, species, fields, static, dynamic)
         # The stored half-step B deliberately disagrees with the retained B(t).
         changed = fields[:1] + (tuple(100*value for value in fields[1]),) + fields[2:]
@@ -280,7 +280,7 @@ class WorkEnergySamplingTests(WorkEnergyAssertions):
 
     def test_native_absorber_reports_signed_damping_and_reference_power(self):
         static, dynamic = parameters()
-        particles, species, fields, dynamic = native_runtime(static, dynamic)
+        particles, species, fields, static, dynamic = native_runtime(static, dynamic)
         initial = sample_energy(particles, species, fields, static, dynamic)
         sigma = .12
         for reference_factor in (0., 2.):
@@ -298,7 +298,7 @@ class WorkEnergySamplingTests(WorkEnergyAssertions):
     def test_supergaussian_power_uses_native_damping_profile(self):
         static, dynamic = parameters(
             supergaussian_active=True, supergaussian_layers=((0, -1, 8, 2., .12),))
-        particles, species, fields, dynamic = native_runtime(static, dynamic)
+        particles, species, fields, static, dynamic = native_runtime(static, dynamic)
         sample = sample_energy(particles, species, fields, static, dynamic)
         mean_sigma = jnp.mean(.12*((8-jnp.arange(8))/8)**2)
         self.assertClose(sample.absorbing_boundary_power, -2*mean_sigma*sample.electromagnetic)
@@ -306,7 +306,7 @@ class WorkEnergySamplingTests(WorkEnergyAssertions):
     def test_particle_energy_includes_rest_mass_weight_and_offdiagonal_metric(self):
         static, dynamic = parameters()
         gamma = jnp.asarray(((1.4, .2, .1), (.2, .9, -.12), (.1, -.12, 1.2)))
-        _, _, fields, dynamic = native_runtime(static, dynamic, gamma=gamma)
+        _, _, fields, static, dynamic = native_runtime(static, dynamic, gamma=gamma)
         x = jnp.asarray((1.25, 0., 0.)).reshape(1, 1, 1, 1, 1, 3)
         u = jnp.asarray((.3, -.2, .1)).reshape(x.shape)
         particles = TiledParticles(x, u, jnp.ones(x.shape[:-1], dtype=bool))
@@ -320,7 +320,7 @@ class WorkEnergySamplingTests(WorkEnergyAssertions):
 
     def test_only_active_frozen_species_invalidates_the_total_budget(self):
         static, dynamic = parameters()
-        _, _, fields, dynamic = native_runtime(static, dynamic)
+        _, _, fields, static, dynamic = native_runtime(static, dynamic)
         static = static._replace(gr_work_energy_theorem=True)
         x = jnp.asarray((1.25, 0., 0.)).reshape(1, 1, 1, 1, 1, 3)
         particles = TiledParticles(x, jnp.zeros_like(x), jnp.ones(x.shape[:-1], dtype=bool))
@@ -334,7 +334,7 @@ class WorkEnergySamplingTests(WorkEnergyAssertions):
 
     def test_prescribed_flrw_volume_work_and_second_order_budget(self):
         static, dynamic = parameters()
-        particles, species, fields, dynamic = native_runtime(static, dynamic)
+        particles, species, fields, static, dynamic = native_runtime(static, dynamic)
         initial_state = dynamic.bssn_parameters.state
         hubble = .3
 
@@ -377,13 +377,13 @@ class WorkEnergySamplingTests(WorkEnergyAssertions):
         samples = []
         for guard in (3, 5):
             static, dynamic = parameters(Nx=16, x_wind=16., tile_shape=(16, 1, 1), guard_cells=guard)
-            particles, species, fields, dynamic = native_runtime(static, dynamic)
+            particles, species, fields, static, dynamic = native_runtime(static, dynamic)
             samples.append(sample_energy(particles, species, fields, static, dynamic))
         self.assertClose(samples[0].electromagnetic, samples[1].electromagnetic)
 
     def test_empty_energy_requires_positive_explicit_normalization(self):
         static, dynamic = parameters()
-        particles, species, fields, dynamic = native_runtime(static, dynamic)
+        particles, species, fields, static, dynamic = native_runtime(static, dynamic)
         zero = tuple(jnp.zeros_like(value) for value in fields[0])
         fields = (zero, zero, zero) + fields[3:7] + ((zero, zero, zero, fields[7][3], None), fields[8])
         static = static._replace(gr_work_energy_theorem=True)

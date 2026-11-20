@@ -1,7 +1,6 @@
 import jax
 import jax.numpy as jnp
 
-from PyPIC3D.particles.particle_class import TiledParticles
 from PyPIC3D.particles.particle_batching import (
     number_of_particle_batches,
     particle_batch_indices,
@@ -236,11 +235,7 @@ def particle_push(particles, species_config, E_tiles, B_tiles, static_parameters
         Bz_tiles,
     )
 
-    return TiledParticles(
-        x=particles.x,
-        u=new_u,
-        active=particles.active,
-    )
+    return particles._replace(u=new_u)
 
 
 def seed_leapfrog_velocity(

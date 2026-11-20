@@ -50,6 +50,12 @@ class StaticParameters(NamedTuple):
     metric_backreaction: bool = True
     lapse_deleting: bool = False
     lapse_threshold: float = 0.1
+    collisions: tuple = ()
+    bssn_evolution_parameters: object = None
+    # JAX_BSSN's own BSSNParameters: every field is a run constant, and JAX_BSSN
+    # reads several of them with int()/float() to key its cached halo operator.
+    # Held static so they stay native Python scalars; jit turns every leaf of a
+    # dynamic argument into a tracer regardless of how it was stored.
 
 
 class DynamicParameters(NamedTuple):
@@ -250,16 +256,22 @@ def _output_value(value):
 
 
 def static_parameters_for_output(static_parameters):
-    skip = {"field_mesh"}
+    skip = {"field_mesh", "collisions", "bssn_evolution_parameters"}
     static_items = static_parameters._asdict()
     if static_parameters.solver in ("static_metric", "dynamic_metric"):
         from PyPIC3D.relativity.interpolate_metric import RECONSTRUCTION
         static_items["particle_metric_reconstruction"] = RECONSTRUCTION
-    return {
+    result = {
         key: _output_value(value)
         for key, value in static_items.items()
         if key not in skip
     }
+    if static_parameters.bssn_evolution_parameters is not None:
+        result["bssn_evolution_parameters"] = {
+            key: _output_value(value) for key, value
+            in static_parameters.bssn_evolution_parameters._asdict().items()
+        }
+    return result
 
 
 def dynamic_parameters_for_output(dynamic_parameters):
@@ -273,7 +285,6 @@ def dynamic_parameters_for_output(dynamic_parameters):
     if dynamic_parameters.bssn_parameters is not None:
         bssn = dynamic_parameters.bssn_parameters
         result["bssn_parameters"] = {
-            **{key: _output_value(value) for key, value in bssn.evolution_parameters._asdict().items()},
             "time": _output_value(bssn.time),
             "units": "geometrized Gaussian, G=c=1",
         }

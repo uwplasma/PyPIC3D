@@ -76,7 +76,8 @@ class TestDistributedInputOutput(unittest.TestCase):
             config = {"particle1": block}
             serial = load_particles_from_toml(config, self.static, self.dynamic)
             distributed = load_distributed_particles(config, self.static, self.dynamic, chunk_size=2)
-        for reference, actual in zip(serial[0], distributed[0]):
+        for field in ('x', 'u', 'active'):
+            reference, actual = getattr(serial[0], field), getattr(distributed[0], field)
             self.assertTrue(bool(jnp.array_equal(reference, actual)))
         self.assertEqual(serial[0].active.shape, distributed[0].active.shape)
         self.assertTrue(bool(jnp.array_equal(serial[1].weight, distributed[1].weight)))

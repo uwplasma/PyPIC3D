@@ -1,3 +1,4 @@
+from PyPIC3D.collisions import apply_collisions
 from PyPIC3D.deposition.Esirkepov import Esirkepov_current
 from PyPIC3D.deposition.J_from_rhov import J_from_rhov
 from PyPIC3D.particles.particle_tile_communication import (
@@ -43,6 +44,9 @@ def time_loop_electrodynamic(
         dynamic_parameters,
     )
     # use the selected tiled pusher for particle velocities
+    particles, collision_overflow = apply_collisions(particles, species_config, static_parameters, dynamic_parameters)
+    overflow_previous = overflow_previous | collision_overflow
+    # collide particles at x^n with the freshly pushed u^{n+1/2}
 
     def direct_deposition_step(state):
         particles, J_tiles, overflow_previous = state

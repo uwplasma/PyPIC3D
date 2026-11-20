@@ -44,10 +44,10 @@ def bssn_constraint_norms(particles, species, fields, static, dynamic, *, source
     if tiled:
         from JAX_BSSN.parallel import tiled_constraint_norms
         from PyPIC3D.relativity.dynamical_relativity import bssn_tile_layout
-        return tiled_constraint_norms(bssn.state, bssn.evolution_parameters, rho=rho,
-                                      momentum=momentum, **bssn_tile_layout(static))
+        return tiled_constraint_norms(bssn.state, static.bssn_evolution_parameters,
+                                      bssn_tile_layout(static), rho=rho, momentum=momentum)
     violations = compute_all_constraints_with_matter(
-        bssn.state, bssn.evolution_parameters, rho, momentum)
+        bssn.state, static.bssn_evolution_parameters, rho, momentum)
     return compute_constraint_norms(violations)
 
 

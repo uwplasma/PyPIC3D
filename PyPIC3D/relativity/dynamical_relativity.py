@@ -21,12 +21,15 @@ from PyPIC3D.utilities.field_helpers import add_external_fields
 
 def bssn_tile_layout(static_parameters):
     """Share PIC ownership and devices, with enough halo for C-to-Yee transfer."""
+    from JAX_BSSN.parallel import TileLayout
+
     endpoints = tuple(bc == 1 for bc in static_parameters.boundary_conditions)
     # An owned upper endpoint occupies one of the nominal upper ghost slots.
     guard = max(4 + int(any(endpoints)), static_parameters.guard_cells + 1)
-    return dict(mesh=static_parameters.field_mesh,
-                tile_shape=static_parameters.tile_shape,
-                guard_cells=guard, upper_endpoints=endpoints)
+    # A layout is the cache key of the halo sweep, so every field must be hashable.
+    return TileLayout(mesh=static_parameters.field_mesh,
+                      tile_shape=tuple(static_parameters.tile_shape),
+                      guard_cells=guard, upper_endpoints=endpoints)
 
 
 def resize_bssn_halos(values, static_parameters, dynamic_parameters, *, exterior="linear",
@@ -36,19 +39,19 @@ def resize_bssn_halos(values, static_parameters, dynamic_parameters, *, exterior
 
     layout = bssn_tile_layout(static_parameters)
     old_guard = (values.shape[-3] - static_parameters.tile_shape[0]) // 2
-    difference = layout["guard_cells"] - old_guard
+    difference = layout.guard_cells - old_guard
     if difference > 0:
         values = jnp.pad(values, ((0, 0),) * (values.ndim - 3) + ((difference, difference),) * 3)
     elif difference < 0:
         trim = -difference
         values = values[..., trim:-trim, trim:-trim, trim:-trim]
-    parameters = dynamic_parameters.bssn_parameters.evolution_parameters
+    parameters = static_parameters.bssn_evolution_parameters
     if boundary_conditions is not None:
         boundary = tuple(int(bc != 0) for bc in boundary_conditions)
         parameters = parameters._replace(xl_bc=boundary[0], xr_bc=boundary[0],
                                           yl_bc=boundary[1], yr_bc=boundary[1],
                                           zl_bc=boundary[2], zr_bc=boundary[2])
-    return refresh_tiled_field(values, parameters, **layout, exterior=exterior)
+    return refresh_tiled_field(values, parameters, layout, exterior=exterior)
 
 
 def crop_bssn_halos(values, static_parameters, *, extra_guard=0):
@@ -120,11 +123,11 @@ def build_bssn_metric(state, static_parameters, dynamic_parameters):
             # The established C-to-Yee exterior follows the EM domain, which
             # can differ from the BSSN evolution boundary codes.
             boundaries = tuple(int(bc != 0) for bc in static_parameters.boundary_conditions)
-            parameters = dynamic_parameters.bssn_parameters.evolution_parameters._replace(
+            parameters = static_parameters.bssn_evolution_parameters._replace(
                 xl_bc=boundaries[0], xr_bc=boundaries[0],
                 yl_bc=boundaries[1], yr_bc=boundaries[1],
                 zl_bc=boundaries[2], zr_bc=boundaries[2])
-            value = refresh_tiled_field(value, parameters, **bssn_tile_layout(static_parameters))
+            value = refresh_tiled_field(value, parameters, bssn_tile_layout(static_parameters))
             return crop_bssn_halos(value, static_parameters, extra_guard=1)
         return bssn_to_tiles(value, static_parameters, extra_guard=1)
 
@@ -204,13 +207,13 @@ def initialize_dynamical_relativity(particles, species, fields, static_parameter
         from PyPIC3D.relativity.filtering import validate_gr_filter
 
         validate_gr_filter(static_parameters)
-        if any(int(getattr(bssn.evolution_parameters, name)) != 0
+        if any(int(getattr(static_parameters.bssn_evolution_parameters, name)) != 0
                for name in ("xl_bc", "xr_bc", "yl_bc", "yr_bc", "zl_bc", "zr_bc")):
             raise ValueError("Matched GR filtering requires all six BSSN boundaries to be periodic")
     if bssn.state.conformal_factor.ndim == 6:
         from JAX_BSSN.parallel import prepare_tiled_state
-        state = prepare_tiled_state(bssn.state, bssn.evolution_parameters,
-                                    **bssn_tile_layout(static_parameters))
+        state = prepare_tiled_state(bssn.state, static_parameters.bssn_evolution_parameters,
+                                    bssn_tile_layout(static_parameters))
     else:
         state = enforce_algebraic_constraints(bssn.state)
     dynamic_parameters = dynamic_parameters._replace(bssn_parameters=bssn._replace(state=state))

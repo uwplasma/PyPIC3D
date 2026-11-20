@@ -50,7 +50,7 @@ class TestTiledParticleDiagnosticVelocity(unittest.TestCase):
 
     def test_nonuniform_metric_matches_analytic_and_serial_particle_velocities(self):
         velocity = particle_three_velocity(self.particles, self.metric, self.static, self.dynamic)
-        x, u, active = self.particles
+        x, u, active = self.particles.x, self.particles.u, self.particles.active
         diagonal = jnp.stack((2.0 + 0.03*x[..., 0], 1.2 + 0.02*x[..., 1],
                               1.8 + 0.04*x[..., 2]), axis=-1)
         expected = (u/diagonal) / jnp.sqrt(1.0 + jnp.sum(u*u/diagonal, axis=-1))[..., None]
@@ -113,7 +113,7 @@ class TestTiledParticleDiagnosticVelocity(unittest.TestCase):
             particles, metric, self.static, self.dynamic))
         executable = sample.lower(self.particles, metric).compile()
         gamma = executable(self.particles, metric)
-        x, u, active = self.particles
+        x, u, active = self.particles.x, self.particles.u, self.particles.active
         diagonal = jnp.stack((2.0 + 0.03*x[..., 0], 1.2 + 0.02*x[..., 1],
                               1.8 + 0.04*x[..., 2]), axis=-1)
         expected = jnp.where(active, jnp.sqrt(1.0 + jnp.sum(u*u/diagonal, axis=-1)), 1.0)

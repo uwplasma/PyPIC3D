@@ -23,7 +23,7 @@ dependencies = [
 
 [project.optional-dependencies]
 relativity = [
-    "JAX_BSSN @ git+https://github.com/cwoolfo1/JAX_BSSN.git",
+    "JAX_BSSN @ git+https://github.com/uwplasma/JAX_BSSN.git",
 ]
 test = [
     "coverage",

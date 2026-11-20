@@ -37,3 +37,5 @@ class TiledParticles(NamedTuple):
     # velocities at half time steps, u^{n-1/2}; covariant u_i for static_metric
     active: jax.Array # (ntx, nty, ntz, species, max_particles_per_tile)
     # boolean array indicating whether the particle is active or not
+    key: jax.Array = None
+    # PRNG key advanced by stochastic operators such as collisions
