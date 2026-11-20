@@ -13,7 +13,7 @@ permissions:
 jobs:
   build:
 
-    runs-on: self-hosted
+    runs-on: [self-hosted, workstation]
     env:
       JAX_PLATFORMS: cpu
       JAX_ENABLE_X64: "1"
