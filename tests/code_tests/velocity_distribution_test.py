@@ -17,12 +17,6 @@ class TestMaxwellJuttnerMomentum(unittest.TestCase):
         self.assertTrue(bool(jnp.allclose(velocity, expected, rtol=1e-13, atol=1e-14, equal_nan=True)))
         self.assertTrue(bool(jnp.all(jnp.linalg.norm(velocity, axis=-1) < 4)))
 
-    def test_dimensionless_temperature_scaling(self):
-        key = jax.random.PRNGKey(11)
-        actual = jnp.stack(maxwell_juttner_momentum(128, 2., 4., 4., 4., 3., key, 2.))
-        expected = jnp.stack(maxwell_juttner_momentum(128, 1., 1.5, 1.5, 1.5, 1., key))
-        self.assertTrue(bool(jnp.allclose(actual, expected, rtol=1e-13, atol=1e-14, equal_nan=True)))
-
     def test_cold_invalid_and_hot_temperatures_under_jit_vmap(self):
         keys = jax.random.split(jax.random.PRNGKey(3), 4)
         def sample(key, temperature):
@@ -45,5 +39,5 @@ class TestMaxwellJuttnerMomentum(unittest.TestCase):
         self.assertFalse(bool(jnp.all(actual[0] == actual[1])))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

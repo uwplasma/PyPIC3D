@@ -1,10 +1,8 @@
-"""Single-device numerical tests."""
+"""One-tile API contracts."""
 
 from tests.support.openpmd_fixtures import (
-    FakeIteration,
     FakeSeries,
     OpenPMDDiagnosticsTestsFixtures,
-    SimpleNamespace,
     _ensure_openpmd_array,
     _parameter_values,
     _record_data,
@@ -41,7 +39,6 @@ class OpenPMDDiagnosticsTests(OpenPMDDiagnosticsTestsFixtures, unittest.TestCase
                     self.assertTrue(actual.flags.writeable)
                     np.testing.assert_array_equal(actual, np.asarray(data, dtype=dtype))
 
-
     def test_host_float64_conversion_does_not_depend_on_jax_precision(self):
         original = np.array([1. + 2.**-40], dtype=np.float64)
         with jax.enable_x64(False), \
@@ -50,46 +47,12 @@ class OpenPMDDiagnosticsTests(OpenPMDDiagnosticsTestsFixtures, unittest.TestCase
         np.testing.assert_array_equal(actual, original)
         self.assertEqual(actual.dtype, np.dtype('float64'))
 
-
-    def test_host_particle_snapshot_preserves_chunks_and_empty_species_without_jax_arrays(self):
-        static, dynamic = particle_parameters_from_values(
-            _parameter_values(), dynamic_values={'C': 10.})
-        static = static._replace(tile_shape=(2, 2, 1))
-        x = np.zeros((2, 1, 1, 2, 2, 3), dtype=np.float64)
-        x[0, 0, 0, 0, 0, 0] = -1.5
-        x[1, 0, 0, 0, 1, 0] = .5 + 2.**-40
-        active = np.zeros(x.shape[:-1], dtype=bool)
-        active[0, 0, 0, 0, 0] = active[1, 0, 0, 0, 1] = True
-        index = (slice(None),)*6
-        snapshot = SimpleNamespace(
-            species_names=('live particles', 'empty species'),
-            species_charge=np.array([-1., 1.]), species_mass=np.array([2., 3.]),
-            species_weight=np.array([4., 5.]), x_shards=[(index, x)],
-            u_shards=[(index, np.zeros_like(x))], active_shards=[(index[:-1], active)])
-        iteration = FakeIteration()
-        with jax.enable_x64(False), \
-             patch.object(jnp, 'asarray', side_effect=AssertionError('host snapshot sent to JAX')), \
-             patch.object(jax, 'device_put', side_effect=AssertionError('unexpected device transfer')):
-            openPMD.write_tiled_particle_snapshot_to_iteration(iteration, snapshot, static, dynamic)
-        record = iteration.particles['live_particles']['position']['x']
-        self.assertEqual([(offset, extent) for offset, extent, _ in record.chunks],
-                         [((0,), (1,)), ((1,), (1,))])
-        actual = np.concatenate([data for _, _, data in record.chunks])
-        np.testing.assert_array_equal(actual, [-1.5, .5 + 2.**-40])
-        self.assertEqual(actual.dtype, np.dtype('float64'))
-        empty = iteration.particles['empty_species']['position']['x']
-        self.assertEqual(empty.dataset_shape, (0,))
-        self.assertEqual(empty.chunks, [])
-        self.assertEqual(record.unit_SI, 1.)
-
-
     def test_openpmd_field_array_preserves_thin_y_axis(self):
         field_component = jnp.ones((4, 1, 6))
 
         array = _ensure_openpmd_array(field_component)
 
         self.assertEqual(array.shape, (4, 1, 6))
-
 
     def test_initial_fields_preserve_thin_y_mesh_metadata(self):
         shape_with_ghosts = (6, 3, 8)
@@ -126,7 +89,6 @@ class OpenPMDDiagnosticsTests(OpenPMDDiagnosticsTestsFixtures, unittest.TestCase
         self.assertEqual(B_mesh.grid_spacing, [0.25, 0.5, 0.75])
         self.assertTrue(jnp.allclose(jnp.asarray(B_mesh.grid_global_offset), jnp.array([-0.5, -1.0, -1.5])))
         self.assertEqual(B_mesh.records["x"].shape, (4, 1, 6))
-
 
     def test_field_meshes_encode_physical_si_unit_dimensions(self):
         shape_with_ghosts = (6, 3, 8)
@@ -174,7 +136,6 @@ class OpenPMDDiagnosticsTests(OpenPMDDiagnosticsTestsFixtures, unittest.TestCase
                 unit_dimension,
             )
 
-
     def test_initial_fields_use_shifted_grid_lower_bounds_for_offsets(self):
         shape_with_ghosts = (6, 3, 3)
         E = _zero_field(shape_with_ghosts)
@@ -204,7 +165,6 @@ class OpenPMDDiagnosticsTests(OpenPMDDiagnosticsTestsFixtures, unittest.TestCase
         E_mesh = series.iterations[0].meshes["E"]
         self.assertEqual(E_mesh.grid_spacing, [0.5, 1.0, 1.0])
         self.assertEqual(E_mesh.grid_global_offset, [1.0, -0.5, 2.0])
-
 
     def test_enqueue_openpmd_field_output_preserves_selected_field_map(self):
         class RecordingFieldWriter:
@@ -238,7 +198,6 @@ class OpenPMDDiagnosticsTests(OpenPMDDiagnosticsTestsFixtures, unittest.TestCase
         self.assertEqual(writer.time, 4 * float(dynamic_parameters.dt))
         self.assertTrue(writer.block)
 
-
     def test_async_field_writer_queue_size_caps_pending_snapshots(self):
         static_parameters, dynamic_parameters = kernel_parameters_from_values(_parameter_values())
         writer = async_writer.AsyncTiledOpenPMDFieldWriter(
@@ -256,7 +215,6 @@ class OpenPMDDiagnosticsTests(OpenPMDDiagnosticsTestsFixtures, unittest.TestCase
         self.assertTrue(writer.enqueue(snapshot, block=False))
         self.assertFalse(writer.enqueue(snapshot, block=False))
         writer.close(raise_errors=False)
-
 
     def test_async_field_writer_raises_worker_errors_on_close(self):
         static_parameters, dynamic_parameters = kernel_parameters_from_values(_parameter_values())
@@ -277,7 +235,6 @@ class OpenPMDDiagnosticsTests(OpenPMDDiagnosticsTestsFixtures, unittest.TestCase
             self.assertTrue(writer.enqueue(snapshot))
             with self.assertRaisesRegex(RuntimeError, "Async openPMD writer failed"):
                 writer.close()
-
 
     def test_tiled_particle_snapshot_writes_expected_flat_records(self):
         parameter_values = _parameter_values()
@@ -331,7 +288,6 @@ class OpenPMDDiagnosticsTests(OpenPMDDiagnosticsTestsFixtures, unittest.TestCase
                 np.testing.assert_allclose(_record_data(group["charge"]), charge)
                 np.testing.assert_allclose(_record_data(group["mass"]), mass)
 
-
     def test_async_particle_writer_queue_size_caps_pending_snapshots(self):
         static_parameters, dynamic_parameters = particle_parameters_from_values(
             _parameter_values(),
@@ -359,7 +315,6 @@ class OpenPMDDiagnosticsTests(OpenPMDDiagnosticsTestsFixtures, unittest.TestCase
         self.assertTrue(writer.enqueue(snapshot, block=False))
         self.assertFalse(writer.enqueue(snapshot, block=False))
         writer.close(raise_errors=False)
-
 
     def test_async_particle_writer_raises_worker_errors_on_close(self):
         static_parameters, dynamic_parameters = particle_parameters_from_values(
@@ -390,7 +345,6 @@ class OpenPMDDiagnosticsTests(OpenPMDDiagnosticsTestsFixtures, unittest.TestCase
             self.assertTrue(writer.enqueue(snapshot))
             with self.assertRaisesRegex(RuntimeError, "Async openPMD particle writer failed"):
                 writer.close()
-
 
     def test_field_and_particle_async_writers_serialize_openpmd_calls(self):
         static_parameters, dynamic_parameters = kernel_parameters_from_values(
@@ -457,7 +411,6 @@ class OpenPMDDiagnosticsTests(OpenPMDDiagnosticsTestsFixtures, unittest.TestCase
 
         self.assertEqual(overlaps, [])
 
-
     def test_write_openpmd_initial_particles_preserves_species_records_from_tile_chunks(self):
         static_parameters, dynamic_parameters = particle_parameters_from_values(
             _parameter_values(),
@@ -493,7 +446,6 @@ class OpenPMDDiagnosticsTests(OpenPMDDiagnosticsTestsFixtures, unittest.TestCase
         expected_gamma = 1.0 / jnp.sqrt(1.0 - 0.1**2 / 10.0**2)
         expected_momentum_x = expected_electron_mass * 0.1 * expected_gamma
         self.assertTrue(jnp.allclose(electron_group["momentum"]["x"].data, expected_momentum_x))
-
 
 
 if __name__ == "__main__":

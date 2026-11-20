@@ -12,7 +12,7 @@ import jax.numpy as jnp
 import openpmd_api as io
 
 from PyPIC3D.diagnostics import async_writer, merge_openpmd, openPMD
-from tests.code_tests.sharded_openpmd_test import (
+from tests.distributed_tests.fixtures.sharded_openpmd import (
     field_with_guard_sentinels,
     parameters,
     particle_fixture,

@@ -1,10 +1,10 @@
+from tests.distributed_tests.fixtures.esirkepov import TiledEsirkepovCurrentFixtures
 """Focused cross-device regression tests."""
 
 from tests.support.esirkepov_fixtures import (
     BC_ABSORBING,
     BC_PERIODIC,
     Esirkepov_current,
-    TiledEsirkepovCurrentFixtures,
     TiledParticles,
     assemble_tiled_vector_field,
     compute_rho,

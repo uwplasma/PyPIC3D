@@ -1,4 +1,4 @@
-"""Single-device numerical tests."""
+"""One-tile API contracts."""
 
 from tests.support.fluid_quantities_fixtures import (
     BC_CONDUCTING,
@@ -11,7 +11,6 @@ from tests.support.fluid_quantities_fixtures import (
     compute_velocity_field,
     fluid_velocity,
     fold_tiled_ghost_cells,
-    jax,
     jnp,
     particle_species,
     particle_vector_reflecting_parity,
@@ -20,25 +19,6 @@ from tests.support.fluid_quantities_fixtures import (
 
 
 class TestTiledFluidQuantities(TiledFluidQuantitiesFixtures, unittest.TestCase):
-    def test_fluid_velocity_computes_weighted_local_average(self):
-        static_parameters, dynamic_parameters = self._build_parameters(shape_factor=1)
-        particles = self._weighted_average_particles()
-        tiled_particles, species_config = build_tiled_particles(particles, static_parameters, dynamic_parameters)
-
-        velocity_tiles = fluid_velocity(
-            tiled_particles,
-            species_config,
-            self._scalar_tiles(static_parameters, dynamic_parameters),
-            0,
-            static_parameters,
-            dynamic_parameters,
-        )
-
-        occupied = jnp.abs(velocity_tiles) > 0.0
-        self.assertTrue(jnp.any(occupied))
-        self.assertTrue(jnp.allclose(velocity_tiles[occupied], 8.0, rtol=1.0e-12, atol=1.0e-12))
-
-
     def test_compute_velocity_field_uses_selected_direction(self):
         static_parameters, dynamic_parameters = self._build_parameters(shape_factor=1)
         particles = self._weighted_average_particles()
@@ -56,7 +36,6 @@ class TestTiledFluidQuantities(TiledFluidQuantitiesFixtures, unittest.TestCase):
         occupied = jnp.abs(velocity_tiles) > 0.0
         self.assertTrue(jnp.any(occupied))
         self.assertTrue(jnp.allclose(velocity_tiles[occupied], 2.0, rtol=1.0e-12, atol=1.0e-12))
-
 
     def test_field_output_map_adds_requested_particle_diagnostics(self):
         static_parameters, dynamic_parameters = self._build_parameters(shape_factor=1)
@@ -125,7 +104,6 @@ class TestTiledFluidQuantities(TiledFluidQuantitiesFixtures, unittest.TestCase):
                 )
             )
 
-
     def test_inactive_slots_do_not_contribute_to_fluid_velocity(self):
         static_parameters, dynamic_parameters = self._build_parameters(shape_factor=1)
         particles = self._weighted_average_particles()
@@ -156,7 +134,6 @@ class TestTiledFluidQuantities(TiledFluidQuantitiesFixtures, unittest.TestCase):
         self.assertTrue(jnp.any(occupied))
         self.assertTrue(jnp.allclose(velocity_tiles[occupied], 8.0, rtol=1.0e-12, atol=1.0e-12))
 
-
     def test_empty_cells_are_zero(self):
         static_parameters, dynamic_parameters = self._build_parameters(shape_factor=1)
         particles = self._weighted_average_particles()
@@ -173,9 +150,6 @@ class TestTiledFluidQuantities(TiledFluidQuantitiesFixtures, unittest.TestCase):
 
         self.assertTrue(jnp.any(velocity_tiles == 0.0))
         self.assertFalse(jnp.any(jnp.isnan(velocity_tiles)))
-
-
-
 
     def test_fluid_velocity_uses_particle_boundary_conditions(self):
         periodic_static, dynamic_parameters = self._build_parameters(shape_factor=1)
@@ -238,7 +212,6 @@ class TestTiledFluidQuantities(TiledFluidQuantitiesFixtures, unittest.TestCase):
         z_index = int(jnp.argmin(jnp.abs(dynamic_parameters.grids.center[2])))
         self.assertAlmostEqual(float(velocity[x_index, y_index, z_index]), 6.0)
 
-
     def test_reflecting_wall_uses_even_weight_and_tangential_moment_parity(self):
         periodic_static, dynamic_parameters = self._build_parameters(shape_factor=2)
         reflecting_static = periodic_static._replace(
@@ -285,63 +258,6 @@ class TestTiledFluidQuantities(TiledFluidQuantitiesFixtures, unittest.TestCase):
         self.assertTrue(bool(jnp.allclose(even_fold[owned], jnp.array([2.0, 10.0, 10.0]))))
         self.assertTrue(bool(jnp.allclose(tangential_fold[owned], jnp.array([2.0, 10.0, 10.0]))))
         self.assertTrue(bool(jnp.allclose(normal_fold[owned], jnp.array([2.0, -4.0, 0.0]))))
-
-
-    def test_reflecting_wall_fluid_velocity_remains_a_bounded_particle_average(self):
-        periodic_static, dynamic_parameters = self._build_parameters(shape_factor=2)
-        reflecting_static = periodic_static._replace(
-            particle_boundary_conditions=(
-                BC_PERIODIC,
-                BC_PERIODIC,
-                BC_CONDUCTING,
-            ),
-        )
-        particles = [
-            particle_species(
-                name="plasma",
-                charge=1.0,
-                mass=1.0,
-                weight=1.0,
-                x1=jnp.array([-0.2, 0.2, -0.2, 0.2]),
-                x2=jnp.zeros(4),
-                x3=jnp.array([-0.99, -0.76, 0.76, 0.99]),
-                v1=jnp.array([-0.4, 0.2, 0.1, 0.3]),
-                v3=jnp.array([0.25, -0.15, 0.05, -0.2]),
-            )
-        ]
-        tiled_particles, species_config = build_tiled_particles(
-            particles,
-            reflecting_static,
-            dynamic_parameters,
-        )
-        g = int(reflecting_static.guard_cells)
-
-        ux = fluid_velocity(
-            tiled_particles,
-            species_config,
-            self._scalar_tiles(reflecting_static, dynamic_parameters),
-            0,
-            reflecting_static,
-            dynamic_parameters,
-        )
-        uz = fluid_velocity(
-            tiled_particles,
-            species_config,
-            self._scalar_tiles(reflecting_static, dynamic_parameters),
-            2,
-            reflecting_static,
-            dynamic_parameters,
-        )
-
-        self.assertLessEqual(float(jnp.max(jnp.abs(ux[:, :, :, g:-g, g:-g, g:-g]))), 0.4 + 1.0e-12)
-        self.assertLessEqual(float(jnp.max(jnp.abs(uz[:, :, :, g:-g, g:-g, g:-g]))), 0.25 + 1.0e-12)
-        self.assertFalse(bool(jnp.any(jnp.isnan(ux))))
-        self.assertFalse(bool(jnp.any(jnp.isnan(uz))))
-        # nodal images about the lower wall node g: ghost g-k mirrors g+k
-        for k in range(1, g + 1):
-            self.assertTrue(bool(jnp.allclose(ux[0, 0, 0, g:-g, g:-g, g - k], ux[0, 0, 0, g:-g, g:-g, g + k])))
-            self.assertTrue(bool(jnp.allclose(uz[0, 0, 0, g:-g, g:-g, g - k], -uz[0, 0, 0, g:-g, g:-g, g + k])))
-
 
 
 if __name__ == "__main__":

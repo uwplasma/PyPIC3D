@@ -23,7 +23,7 @@ from PyPIC3D.diagnostics.gr_work_energy_theorem import (
     initialize_tracker,
 )
 from PyPIC3D.solvers.GR_yee.time_loop_dynamical_relativity import time_loop_dynamical_relativity
-from tests.code_tests.dynamical_relativity_test import coupled_state
+from tests.support.dynamical_relativity_runtime_fixtures import coupled_state
 
 
 jax.config.update("jax_enable_x64", True)

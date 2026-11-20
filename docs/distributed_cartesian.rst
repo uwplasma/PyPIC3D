@@ -99,7 +99,7 @@ Run local input/chunk and initial histogram tests on two logical CPU devices:
 
    JAX_PLATFORMS=cpu JAX_NUM_CPU_DEVICES=2 JAX_ENABLE_X64=true \
        python -m unittest tests.distributed_tests.distributed_io_test \
-       tests.code_tests.sharded_histogram_test
+       tests.distributed_tests.sharded_histogram_test
 
 Per-process naming, ownership metadata and the merge round trip run on one
 process and need no launcher:
@@ -108,7 +108,7 @@ process and need no launcher:
 
    JAX_PLATFORMS=cpu JAX_NUM_CPU_DEVICES=8 JAX_ENABLE_X64=true \
        python -m unittest tests.distributed_tests.merge_openpmd_test \
-       tests.code_tests.sharded_openpmd_test
+       tests.distributed_tests.sharded_openpmd_test
 
 A real two-process check needs two shells sharing a coordinator address and a
 directory visible to both, with ``PYPIC_PROCESS_ID`` 0 and 1. Confirm the run

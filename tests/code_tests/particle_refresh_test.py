@@ -1,4 +1,4 @@
-"""Single-device numerical tests."""
+"""One-tile API contracts."""
 
 from PyPIC3D.boundary_conditions.ghost_cells import make_field_mesh
 
@@ -51,7 +51,6 @@ class TestTiledParticleRefresh(TiledParticleRefreshFixtures, unittest.TestCase):
         self.assertEqual(int(jnp.sum(refreshed.active)), 2)
         self.assertTrue(jnp.allclose(x[:, 0], jnp.array([-1.75, 1.75])))
         self.assertTrue(jnp.array_equal(u[:, 0], jnp.array([0.25, -0.5])))
-
 
 
 if __name__ == "__main__":

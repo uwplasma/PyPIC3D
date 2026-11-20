@@ -1,7 +1,7 @@
+from tests.distributed_tests.fixtures.rho import TiledRhoFixtures
 """Focused cross-device regression tests."""
 
 from tests.support.rho_fixtures import (
-    TiledRhoFixtures,
     unittest,
 )
 

@@ -1,1 +1,1 @@
-"""Numerical physics validation tests for PyPIC3D."""
+"""One-tile mathematical and physical validation."""

@@ -13,7 +13,8 @@ from tests.kernel_fixtures import kernel_parameters_from_values
 
 
 class TestYeeConvergence(unittest.TestCase):
-    def _parameter_values(self, Nx, tile_shape):
+    def _parameter_values(self, Nx):
+        tile_shape = (Nx, 1, 1)
         x_wind = 2.0 * math.pi
         parameter_set = {
             "Nx": Nx,
@@ -50,8 +51,8 @@ class TestYeeConvergence(unittest.TestCase):
         parameter_set["grids"]["tiled_vertex_grid"] = tiled_vertex_grid
         return parameter_set
 
-    def call_updateB(self, Nx, tile_shape):
-        parameter_set = self._parameter_values(Nx, tile_shape)
+    def call_updateB(self, Nx):
+        parameter_set = self._parameter_values(Nx)
         static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set, {"alpha": 1.0})
         E, B, _J, _phi, _rho = initialize_fields(static_parameters, dynamic_parameters)
         Ex, Ey, Ez = E
@@ -72,26 +73,13 @@ class TestYeeConvergence(unittest.TestCase):
 
         return float(jnp.sqrt(jnp.mean(diff**2)))
 
-    def test_public_tiled_update_B_converges_for_one_tile_and_multi_tile_layouts(self):
-        # A no-particle periodic E_z = sin(x) mode isolates the Yee curl
-        # dE_z/dx used in the B_y update.  Errors are evaluated on tile-local
-        # B_y interiors before any global field assembly.
-        layouts = (
-            lambda Nx: (Nx, 1, 1),
-        )
-
-        for layout in layouts:
-            errors = []
-            for Nx in (32, 64, 128):
-                errors.append(self.call_updateB(Nx, layout(Nx)))
-                # step through one timestep of the update B method
-
-            first_order = math.log(errors[0] / errors[1], 2.0)
-            second_order = math.log(errors[1] / errors[2], 2.0)
-            # calculate the observed order of convergence for the first and second refinement steps
-
-            self.assertGreater(first_order, 1.8)
-            self.assertGreater(second_order, 1.8)
+    def test_public_update_B_converges_on_one_tile(self):
+        # E_z = sin(x) isolates the Yee derivative at the native B_y locations.
+        errors = [self.call_updateB(Nx) for Nx in (32, 64, 128)]
+        first_order = math.log(errors[0] / errors[1], 2.0)
+        second_order = math.log(errors[1] / errors[2], 2.0)
+        self.assertGreater(first_order, 1.8)
+        self.assertGreater(second_order, 1.8)
 
 
 if __name__ == "__main__":

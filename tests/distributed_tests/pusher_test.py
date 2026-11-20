@@ -1,7 +1,7 @@
+from tests.distributed_tests.fixtures.pusher import TiledParticlePusherFixtures
 """Focused cross-device regression tests."""
 
 from tests.support.pusher_fixtures import (
-    TiledParticlePusherFixtures,
     jax,
     jnp,
     np,

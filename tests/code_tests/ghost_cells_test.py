@@ -1,4 +1,4 @@
-"""Single-device numerical tests."""
+"""One-tile API contracts."""
 
 from tests.support.ghost_cells_fixtures import (
     BC_CONDUCTING,
@@ -276,7 +276,6 @@ class TestGhostCells(GhostCellsFixtures, unittest.TestCase):
                 parameters,
                 reflecting_parity=(1, 1, 1),
             )
-
 
 
 if __name__ == "__main__":

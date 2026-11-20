@@ -19,7 +19,7 @@ except ModuleNotFoundError as error:
     raise
 
 from PyPIC3D.diagnostics.gr_work_energy_theorem import tracker_values
-from tests.physics_tests.gr_work_energy_theorem_test import evolve_scan, maxwell_state
+from tests.support.gr_work_energy_evolution_fixtures import evolve_scan, maxwell_state
 
 jax.config.update("jax_enable_x64", True)
 

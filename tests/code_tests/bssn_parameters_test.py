@@ -1,52 +1,24 @@
-"""Geometry transfer and leapfrog initialization for native BSSN coupling."""
-
-import unittest
-import contextlib
-import io
-import subprocess
-import sys
-import tempfile
-from pathlib import Path
-
-import jax
-jax.config.update("jax_enable_x64", True)
-import jax.numpy as jnp
-
-try:
-    import JAX_BSSN
-except ModuleNotFoundError as error:
-    if error.name == "JAX_BSSN":
-        raise unittest.SkipTest("Optional JAX_BSSN dependency is not installed") from error
-    raise
-
-from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
-from PyPIC3D.deposition.GR_direct_deposition import GR_direct_deposition
-from PyPIC3D.pusher.hybrid_boris_geodesic import hybrid_boris_geodesic_push
-from PyPIC3D.relativity.bssn_parameters import build_bssn_parameters
-from PyPIC3D.relativity.dynamical_relativity import (
-    bssn_to_tiles, tiles_to_bssn, build_bssn_metric,
-    initialize_dynamical_relativity, synchronize_particles, rephase_pic_state,
+from tests.support.bssn_parameters_runtime_fixtures import (
+    GR_direct_deposition,
+    Path,
+    bssn_to_tiles,
+    build_bssn_metric,
+    build_bssn_parameters,
+    contextlib,
+    hybrid_boris_geodesic_push,
+    initialize_dynamical_relativity,
+    io,
+    jax,
+    jnp,
+    rephase_pic_state,
+    runtime,
+    subprocess,
+    synchronize_particles,
+    sys,
+    tempfile,
+    tiles_to_bssn,
+    unittest,
 )
-from tests.kernel_fixtures import kernel_parameters
-
-
-def runtime(boundaries=(0, 0, 0)):
-    static, dynamic = kernel_parameters(
-        Nx=8, Ny=1, Nz=1, x_wind=2., y_wind=.25, z_wind=.25,
-        x_min=0., y_min=0., z_min=0., dt=.01, guard_cells=3,
-        solver="dynamic_metric", metric="numerical", current_deposition="GR_direct",
-        particle_pusher="hybrid_boris_geodesic", boundary_conditions=boundaries)
-    static, parameters = build_bssn_parameters(static, dynamic, evolution_parameters={"nu": 0.})
-    dynamic = dynamic._replace(bssn_parameters=parameters)
-    scalar = jnp.zeros((1, 1, 1, 14, 7, 7))
-    zero = (scalar,) * 3
-    electric = (scalar + .04, scalar, scalar)
-    fields = (electric, zero, zero, scalar, scalar, (zero, zero), None, (zero, zero), jnp.asarray(False))
-    position = jnp.array([.7, 0., 0.]).reshape(1, 1, 1, 1, 1, 3)
-    momentum = jnp.array([.2, .05, 0.]).reshape(position.shape)
-    particles = TiledParticles(position, momentum, jnp.ones(position.shape[:-1], dtype=bool))
-    species = SpeciesConfig(jnp.array([.4]), jnp.array([1.]), jnp.array([.01]), jnp.ones((1, 3), dtype=bool))
-    return static, dynamic, particles, species, fields
 
 
 class BSSNParametersTest(unittest.TestCase):
@@ -61,15 +33,6 @@ class BSSNParametersTest(unittest.TestCase):
             self.assertTrue(isinstance(leaf, jax.Array))
         with self.assertRaisesRegex(ValueError, "C=1"):
             build_bssn_parameters(static, dynamic._replace(C=jnp.asarray(2.)))
-
-    def test_component_leading_tile_roundtrip(self):
-        static, *_ = runtime()
-        static = static._replace(tile_shape=(4, 2, 1), field_mesh=None)
-        values = jnp.arange(2 * 3 * 8 * 4).reshape(2, 3, 8, 4, 1)
-        tiles = bssn_to_tiles(values, static)
-        self.assertEqual(tiles.shape, (2, 3, 2, 2, 1, 10, 8, 7))
-        self.assertTrue(bool(jnp.array_equal(tiles_to_bssn(tiles, static), values)))
-        self.assertTrue(bool(jnp.array_equal(tiles[..., 0, 0, 0, 2, 3, 3], values[..., -1, 0, 0])))
 
     def test_gravity_boundaries_and_caller_state_are_independent_of_em(self):
         static, dynamic, *_ = runtime()

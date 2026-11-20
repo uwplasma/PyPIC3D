@@ -239,7 +239,4 @@ def _relative_phi_error(phi_tiles, phi_true, g):
     return jnp.linalg.norm(phi - phi_true) / jnp.linalg.norm(phi_true)
 
 
-class TiledLocalSchwarzFixtures:
-    def _require_devices(self, count):
-        if jax.device_count() < count:
-            raise RuntimeError(f"Need {count} JAX devices, got {jax.device_count()}")
+class TiledLocalSchwarzFixtures:    pass

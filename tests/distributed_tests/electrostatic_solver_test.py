@@ -1,7 +1,7 @@
+from tests.distributed_tests.fixtures.electrostatic_solver import TiledLocalSchwarzFixtures
 """Focused cross-device regression tests."""
 
 from tests.support.electrostatic_solver_fixtures import (
-    TiledLocalSchwarzFixtures,
     _periodic_mode_problem,
     _relative_phi_error,
     _tile_field,

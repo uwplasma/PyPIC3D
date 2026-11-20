@@ -1,4 +1,4 @@
-"""Single-device numerical tests."""
+"""One-tile API contracts."""
 
 from tests.support.esirkepov_fixtures import (
     BC_CONDUCTING,
@@ -9,12 +9,10 @@ from tests.support.esirkepov_fixtures import (
     TiledParticles,
     assemble_tiled_vector_field,
     build_static_parameters,
-    compute_rho,
     initialize_simulation,
     jnp,
     kernel_parameters_from_values,
     os,
-    refresh_tiled_particle_tiles,
     tempfile,
     tile_vector_field,
     unittest,
@@ -25,27 +23,6 @@ from tests.support.esirkepov_fixtures import (
 
 
 class TestTiledEsirkepovCurrent(TiledEsirkepovCurrentFixtures, unittest.TestCase):
-    def test_esirkepov_continuity_for_dimensions_and_shapes(self):
-        for shape_factor in (1, 2):
-            two_dimensional_case = (8, 8, 1) if shape_factor == 1 else (1, 8, 8)
-            cases = (
-                (8, 1, 1),
-                (1, 8, 1),
-                (1, 1, 8),
-                two_dimensional_case,
-                (4, 4, 4),
-            )
-            for Nx, Ny, Nz in cases:
-                with self.subTest(shape_factor=shape_factor, shape=(Nx, Ny, Nz)):
-                    parameter_set = self._build_parameter_values(Nx=Nx, Ny=Ny, Nz=Nz, dt=0.05, shape_factor=shape_factor)
-                    active_axes = sum(int(width > 1) for width in (Nx, Ny, Nz))
-                    # The production tiled Yee startup promotes Esirkepov current storage to two guards.
-                    if shape_factor == 2 or active_axes == 3:
-                        parameter_set["guard_cells"] = 2
-                    x_old, u = self._basic_positions_and_velocities(parameter_set)
-                    self._assert_single_tile_continuity(parameter_set, x_old, u)
-
-
     def test_initialize_fields_builds_tiled_current_with_startup_guard_cells(self):
         parameter_set = self._build_parameter_values(Nx=8, Ny=1, Nz=1)
         parameter_set["guard_cells"] = 2
@@ -56,7 +33,6 @@ class TestTiledEsirkepovCurrent(TiledEsirkepovCurrentFixtures, unittest.TestCase
 
         self.assertEqual(J_tiles[0].shape, (1, 1, 1, 12, 5, 5))
         self.assertTrue(jnp.allclose(J_tiles[0], 0.0))
-
 
     def test_shared_guard_current_tiles_assemble_to_one_guard_global_current(self):
         parameter_set = self._build_parameter_values(Nx=8, Ny=1, Nz=1)
@@ -72,7 +48,6 @@ class TestTiledEsirkepovCurrent(TiledEsirkepovCurrentFixtures, unittest.TestCase
 
         self.assertEqual(assembled[0].shape, (10, 3, 3))
         self.assertEqual(float(assembled[0][3, 1, 1]), 3.0)
-
 
     def test_output_adapter_uses_parameter_guard_cells(self):
         parameter_set = self._build_parameter_values(Nx=8, Ny=1, Nz=1)
@@ -98,7 +73,6 @@ class TestTiledEsirkepovCurrent(TiledEsirkepovCurrentFixtures, unittest.TestCase
         self.assertEqual(float(output_current[0][3, 1, 1]), 7.0)
         self.assertEqual(fields[2][0].shape[-3:], (12, 5, 5))
 
-
     def test_update_E_reads_two_guard_current_interior(self):
         parameter_set = self._build_parameter_values(Nx=4, Ny=1, Nz=1, dt=0.25)
         dynamic_values = {"C": 1.0, "eps": 2.0}
@@ -119,7 +93,6 @@ class TestTiledEsirkepovCurrent(TiledEsirkepovCurrentFixtures, unittest.TestCase
 
         self.assertIsNone(pml_state)
         self.assertTrue(jnp.allclose(E_after[0][:, :, :, g:-g, g:-g, g:-g], -0.5))
-
 
     def test_tiled_esirkepov_masks_current_per_species_direction(self):
         parameter_set = self._build_parameter_values(Nx=4, Ny=4, Nz=4, dt=0.05)
@@ -180,7 +153,6 @@ class TestTiledEsirkepovCurrent(TiledEsirkepovCurrentFixtures, unittest.TestCase
             self.assertTrue(jnp.allclose(masked_component, reference_component))
             self.assertGreater(float(jnp.max(jnp.abs(masked_component))), 0.0)
 
-
     def test_tiled_esirkepov_zeroes_disabled_current_in_reduced_dimensions(self):
         parameter_set = self._build_parameter_values(Nx=8, Ny=1, Nz=1, dt=0.05)
         parameter_set["guard_cells"] = 2
@@ -217,7 +189,6 @@ class TestTiledEsirkepovCurrent(TiledEsirkepovCurrentFixtures, unittest.TestCase
         for component in current:
             self.assertTrue(jnp.allclose(component, 0.0))
 
-
     def test_public_Esirkepov_current_dispatches_tiled_particles_to_tile_local_current(self):
         parameter_set = self._build_parameter_values(Nx=8, Ny=1, Nz=1, dt=0.05, shape_factor=1)
         parameter_set["guard_cells"] = 2
@@ -243,7 +214,6 @@ class TestTiledEsirkepovCurrent(TiledEsirkepovCurrentFixtures, unittest.TestCase
         self._assert_single_tile_continuity(
             parameter_set, tiled_particles.x[tiled_particles.active],
             tiled_particles.u[tiled_particles.active], current=J_tiles)
-
 
     def test_esirkepov_current_refresh_uses_reflecting_vector_parity(self):
         parameter_set = self._build_parameter_values(
@@ -310,57 +280,6 @@ class TestTiledEsirkepovCurrent(TiledEsirkepovCurrentFixtures, unittest.TestCase
         self.assertTrue(jnp.allclose(current[g:-g, g:-g, -g:],
                                      -jnp.flip(current[g:-g, g:-g, -2 * g:-g], axis=-1), atol=1.0e-12))
 
-
-    def test_tiled_esirkepov_satisfies_discrete_continuity_at_conducting_particle_walls(self):
-        walls = {"x": BC_CONDUCTING, "y": BC_PERIODIC, "z": BC_PERIODIC}
-        parameter_set = self._build_parameter_values(
-            Nx=8, Ny=1, Nz=1, dt=0.05, shape_factor=1, particle_boundary_conditions=walls)
-        dynamic_values = {"C": 1.0, "eps": 1.0, "alpha": 1.0}
-        tile_shape = self._one_tile_shape_for_parameters(parameter_set)
-        parameter_set = self._parameters_with_tiled_grids(parameter_set, tile_shape)
-        dx, dt = parameter_set["dx"], parameter_set["dt"]
-        x_min = -0.5 * parameter_set["x_wind"]
-        x_max = 0.5 * parameter_set["x_wind"]
-        # two particles cross a wall during the step and reflect; one stays inside
-        x_old = jnp.array([[x_min + 0.3 * dx, 0.0, 0.0],
-                           [x_max - 0.2 * dx, 0.0, 0.0],
-                           [0.1 * dx, 0.0, 0.0]])
-        u = jnp.array([[-0.7 * dx / dt, 0.0, 0.0],
-                       [0.6 * dx / dt, 0.0, 0.0],
-                       [0.4 * dx / dt, 0.0, 0.0]])
-        tiled_particles, species_config = self._particles_from_arrays(parameter_set, tile_shape, x_old, u)
-        g = int(parameter_set["guard_cells"])
-        n = tile_shape[0]
-        rho_tiles = self._build_tiled_array(parameter_set, dynamic_values)
-        static_parameters, dynamic_parameters = kernel_parameters_from_values(parameter_set, dynamic_values)
-
-        rho_old = compute_rho(tiled_particles, species_config, rho_tiles, static_parameters, dynamic_parameters)
-        _, _, J_template, _, _ = self._initialize_fields(parameter_set, dynamic_values)
-        J_tiles = Esirkepov_current(
-            tiled_particles,
-            update_tiled_particle_positions(tiled_particles, species_config, dynamic_parameters.dt),
-            species_config,
-            J_template,
-            static_parameters,
-            dynamic_parameters,
-            coordinate_velocity=tiled_particles.u,
-        )
-        new_particles = update_tiled_particle_positions(tiled_particles, species_config, dt)
-        new_particles, overflow = refresh_tiled_particle_tiles(new_particles, static_parameters, dynamic_parameters)
-        rho_new = compute_rho(new_particles, species_config, rho_tiles, static_parameters, dynamic_parameters)
-
-        self.assertFalse(bool(overflow))
-        # every owned C node, including both wall nodes g and g+n
-        owned = (slice(None),) * 3 + (slice(g, g + n + 1), slice(g, -g), slice(g, -g))
-        before = (slice(None),) * 3 + (slice(g - 1, g + n), slice(g, -g), slice(g, -g))
-        drhodt = (rho_new[owned] - rho_old[owned]) / dt
-        dJxdx = (J_tiles[0][owned] - J_tiles[0][before]) / dx
-        continuity = drhodt + dJxdx
-        scale = jnp.maximum(1.0, jnp.max(jnp.abs(drhodt)) + jnp.max(jnp.abs(dJxdx)))
-        self.assertGreater(float(jnp.max(jnp.abs(rho_new[owned][0, 0, 0, 0]))), 0.0)
-        self.assertLessEqual(float(jnp.max(jnp.abs(continuity))), float(1.0e-12 * scale))
-
-
     def test_initialize_rejects_filtered_esirkepov_current(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             x_path = os.path.join(tmpdir, "x.npy")
@@ -384,7 +303,7 @@ class TestTiledEsirkepovCurrent(TiledEsirkepovCurrentFixtures, unittest.TestCase
                     "dt": 0.01,
                     "Nt": 1,
                     "shape_factor": 1,
-                    "particle_tile_nx": 2,
+                    "particle_tile_nx": 8,
                     "particle_tile_ny": 1,
                     "particle_tile_nz": 1,
                     "current_calculation": "esirkepov",
@@ -411,7 +330,6 @@ class TestTiledEsirkepovCurrent(TiledEsirkepovCurrentFixtures, unittest.TestCase
 
             with self.assertRaisesRegex(ValueError, "Esirkepov current filtering is not supported"):
                 initialize_simulation(config)
-
 
 
 if __name__ == "__main__":

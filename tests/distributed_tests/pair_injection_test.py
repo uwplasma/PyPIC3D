@@ -8,7 +8,7 @@ from jax.sharding import NamedSharding, PartitionSpec
 from PyPIC3D.deposition.rho import compute_rho
 from PyPIC3D.particles.particle_tile_communication import shard_tiled_particles
 from PyPIC3D.relativity.pair_injection import insert_pairs
-from tests.code_tests.pair_injection_test import setup
+from tests.support.pair_injection_runtime_fixtures import setup
 
 
 @unittest.skipUnless(jax.device_count() >= 4, 'requires four devices')

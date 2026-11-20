@@ -21,7 +21,13 @@ run:
 Run Tests
 ---------
 
-Run the complete suite, including numerical and convergence tests:
+The code suite tests API contracts on one tile. The physics suite tests
+mathematical identities, physical references, conservation, and convergence on
+one tile. All tile-decomposition comparisons, communication, ownership, and
+sharded-output tests belong in the distributed suite, including synthetic
+multi-tile arrays that do not require communication.
+
+Run all three suites:
 
 .. code-block:: bash
 

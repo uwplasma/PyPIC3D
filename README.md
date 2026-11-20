@@ -111,15 +111,20 @@ PyPIC3D/
   utilities/                  # parameters, grid construction, and filters
 
 demos/                        # runnable configurations and initial conditions
-tests/code_tests/             # focused implementation tests
-tests/physics_tests/          # numerical and convergence tests
-tests/distributed_tests/      # multi-device and sharded-output tests
+tests/code_tests/             # one-tile API contracts
+tests/physics_tests/          # one-tile numerical and convergence tests
+tests/distributed_tests/      # tile decomposition, communication, and sharded output
 ```
 
 ## Testing
 
 Run each suite in its own interpreter so JAX initializes with the right device
 count:
+
+Code tests exercise API contracts on one tile; physics tests validate numerical
+and physical behavior on one tile. All decomposition comparisons, communication,
+and synthetic multi-tile cases belong in the distributed suite. See
+[test suite ownership](tests/README.md) for fixture conventions.
 
 ```bash
 JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 JAX_NUM_CPU_DEVICES=1 python -m unittest discover -s tests/code_tests -t . -p '*test*.py'

@@ -1,56 +1,14 @@
-"""Pair birth, capacity, and compiled scheduling on the production GR path."""
-import unittest
-from unittest.mock import patch
-
-import jax
-import jax.numpy as jnp
-
-from PyPIC3D.__main__ import run_PyPIC3D
-from PyPIC3D.deposition.rho import compute_rho
-from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
-from PyPIC3D.pusher.particle_push import seed_leapfrog_velocity
-from PyPIC3D.relativity.metrics.flat import initialize_flat_cartesian_metric
-from PyPIC3D.relativity.pair_injection import insert_pairs, birth_covariant_momentum
-from PyPIC3D.solvers.GR_yee.time_loop import time_loop_static_metric
-from tests.kernel_fixtures import empty_tiled_vector, kernel_parameters
-
-jax.config.update('jax_enable_x64', True)
-
-
-def setup(tile_shape=(4, 4, 4), slots=6, cells=(4, 4, 4)):
-    static, dynamic = kernel_parameters(
-        Nx=cells[0], Ny=cells[1], Nz=cells[2], tile_shape=tile_shape, dt=.01,
-        solver='static_metric', current_deposition='esirkepov',
-        particle_pusher='hybrid_boris_geodesic')
-    metric = initialize_flat_cartesian_metric(static, dynamic)
-    zero = empty_tiled_vector(static, dynamic)
-    fields = (zero, zero, zero, zero[0], zero[0], (zero, zero), metric,
-              (zero, zero), jnp.asarray(False))
-    # Each candidate lies strictly inside its own tile, including y and z tiles.
-    center = jnp.stack([axis[..., static.guard_cells] + (axis[..., 1]-axis[..., 0])*.4
-                        for axis in dynamic.grids.tiled_center_grid], axis=-1)
-    shape = center.shape[:3] + (3, slots)
-    x = jnp.broadcast_to(center[..., None, None, :], shape+(3,))
-    particles = TiledParticles(x, jnp.zeros_like(x), jnp.zeros(shape, bool))
-    species = SpeciesConfig(jnp.array([-1., 2., 1.]), jnp.ones(3),
-                            jnp.ones(3), jnp.ones((3, 3), bool))
-    positions = jnp.broadcast_to(center[..., None, :], center.shape[:3]+(3, 3))
-    momenta = jnp.broadcast_to(jnp.array([.1, .2, -.1]), positions.shape)
-    return static, dynamic, particles, species, fields, positions, momenta
-
-
-def source(positions, momenta):
-    def inject(particles, species, fields, static, dynamic, key, event):
-        next_key, sample_key = jax.random.split(key)
-        sample_key = jax.random.fold_in(sample_key, event)
-        # A random momentum makes event/key progression observable.
-        u = momenta * jax.random.uniform(sample_key, (), minval=.5, maxval=1.)
-        requested = jnp.ones(particles.active.shape[:3], jnp.int32)
-        result, counts = insert_pairs(
-            particles, species, positions, u, requested, fields[0], fields[1],
-            fields[6], static, dynamic, species_indices=(0, 2))
-        return result, next_key, counts
-    return inject
+from tests.support.pair_injection_runtime_fixtures import (
+    insert_pairs,
+    jax,
+    jnp,
+    patch,
+    run_PyPIC3D,
+    setup,
+    source,
+    time_loop_static_metric,
+    unittest,
+)
 
 
 class TestPairInjection(unittest.TestCase):
@@ -72,9 +30,6 @@ class TestPairInjection(unittest.TestCase):
         self.assertTrue(bool(jnp.array_equal(result.u[p.active], p.u[p.active])))
         self.assertFalse(bool(jnp.any((result.active & ~p.active)[..., 1, :])))
         self.assertTrue(bool(jnp.array_equal(result.x[..., 0, 4:6, :], result.x[..., 2, 1:3, :])))
-        before = compute_rho(p, species, f[3], s, d)
-        after = compute_rho(result, species, f[3], s, d)
-        self.assertTrue(bool(jnp.allclose(after, before, atol=1e-13, rtol=1e-7, equal_nan=True)))
 
     def test_candidate_capacity_and_incompatible_species_reject_pairs(self):
         s, d, p, species, f, x, u = setup()
@@ -90,37 +45,6 @@ class TestPairInjection(unittest.TestCase):
             result, counts = inject(bad)
             self.assertTreeClose(result, p)
             self.assertTrue(bool(jnp.all(counts[0] - counts[1] == 5)))
-
-    def test_newborn_only_backward_seed_in_electric_field(self):
-        s, d, p, species, f, x, u = setup()
-        D = tuple(jnp.ones_like(a)*v for a, v in zip(f[0], (1., .2, 0.)))
-        p = p._replace(active=p.active.at[..., 1, 0].set(True), u=p.u+.3)
-        result, counts = insert_pairs(p, species, x, u, jnp.ones((1, 1, 1)),
-                                      D, f[1], f[6], s, d, (0, 2))
-        newborn = result.active & ~p.active
-        physical = result._replace(u=jnp.where(newborn[..., None], u[..., :1, :][..., None, :, :], result.u),
-                                   active=newborn)
-        seeded = seed_leapfrog_velocity(physical, species, D, f[1], s, d, f[6])
-        self.assertTrue(bool(jnp.allclose(result.u[newborn], seeded.u[newborn], atol=1e-13, rtol=1e-7, equal_nan=True)))
-        self.assertTrue(bool(jnp.array_equal(result.u[~newborn], p.u[~newborn])))
-        self.assertGreater(float(jnp.max(jnp.abs(result.u[..., 0, 0, :]-result.u[..., 2, 0, :]))), 0)
-
-    def test_covariant_transform_preserves_metric_norm(self):
-        s, d, p, species, f, x, u = setup()
-        gamma = jnp.array([[2., .3, .1], [.3, 3., .2], [.1, .2, 1.]])
-        metric = jax.tree.map(lambda a: a[0, 0, 0], f[6].center)
-        metric = metric._replace(gamma=jnp.broadcast_to(gamma, metric.gamma.shape))
-        grid = tuple(a[0, 0, 0] for a in d.grids.tiled_center_grid)
-        active = jnp.array([True, True, False])
-        positions = x[0, 0, 0].at[-1].set(jnp.nan)
-        momenta = u[0, 0, 0].at[-1].set(jnp.nan)
-        cov = jax.jit(lambda q, u: birth_covariant_momentum(
-            u, q, active, metric, grid, s, (True, True, True)))(positions, momenta)
-        expected = jnp.einsum('ij,nj->ni', jnp.linalg.cholesky(gamma), momenta[:2])
-        self.assertTrue(bool(jnp.allclose(cov[:2], expected, atol=1e-14, rtol=1e-7, equal_nan=True)))
-        norm = jnp.einsum('ni,ij,nj->n', cov[:2], jnp.linalg.inv(gamma), cov[:2])
-        self.assertTrue(bool(jnp.allclose(norm, jnp.sum(momenta[:2]**2, axis=-1), atol=1e-14, rtol=1e-7, equal_nan=True)))
-        self.assertTrue(bool(jnp.all(cov[-1] == 0.)))
 
     def test_zero_capacity_reports_rejection(self):
         s, d, p, species, f, x, u = setup(slots=0)
@@ -224,5 +148,5 @@ class TestPairInjection(unittest.TestCase):
                             injection_key=jax.random.PRNGKey(0))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

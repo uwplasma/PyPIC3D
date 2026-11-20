@@ -1,8 +1,8 @@
+from tests.distributed_tests.fixtures.yee import YeeTiledFixtures
 """Focused cross-device regression tests."""
 
 from tests.support.yee_fixtures import (
     SimpleNamespace,
-    YeeTiledFixtures,
     assemble_tiled_vector_field,
     ghost_cells,
     build_tiled_yee_grids,

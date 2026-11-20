@@ -18,15 +18,11 @@ from PyPIC3D.utilities.grids import build_tiled_yee_grids, build_yee_grid
 from tests.kernel_fixtures import kernel_parameters_from_values
 
 
-def add_tiled_grids_to_parameters(parameter_set, tile_shape):
+def add_single_tile_grids_to_parameters(parameter_set):
+    tile_shape = (parameter_set["Nx"], parameter_set["Ny"], parameter_set["Nz"])
     g = int(parameter_set["guard_cells"])
     parameter_set["tile_shape"] = tile_shape
-    tile_grid_shape = (
-        int(parameter_set["Nx"]) // int(tile_shape[0]),
-        int(parameter_set["Ny"]) // int(tile_shape[1]),
-        int(parameter_set["Nz"]) // int(tile_shape[2]),
-    )
-    parameter_set["field_mesh"] = make_field_mesh(tile_grid_shape)
+    parameter_set["field_mesh"] = make_field_mesh((1, 1, 1))
     static_parameters = SimpleNamespace(tile_shape=tile_shape, guard_cells=g,
                                         field_mesh=parameter_set["field_mesh"])
     dynamic_parameters = SimpleNamespace(
@@ -96,7 +92,7 @@ class TestEvolveExternalFields(unittest.TestCase):
 
         tile_shape = (parameter_set["Nx"], parameter_set["Ny"], parameter_set["Nz"])
         parameter_set["guard_cells"] = 2
-        add_tiled_grids_to_parameters(parameter_set, tile_shape)
+        add_single_tile_grids_to_parameters(parameter_set)
         field_static, field_dynamic = kernel_parameters_from_values(parameter_set, dynamic_values)
         E, B, J, phi, rho = initialize_fields(field_static, field_dynamic)
         external_E = tuple(jnp.zeros_like(comp) for comp in E)
@@ -179,7 +175,7 @@ class TestEvolveExternalFields(unittest.TestCase):
 
         tile_shape = (parameter_set["Nx"], parameter_set["Ny"], parameter_set["Nz"])
         parameter_set["guard_cells"] = 2
-        add_tiled_grids_to_parameters(parameter_set, tile_shape)
+        add_single_tile_grids_to_parameters(parameter_set)
         field_static, field_dynamic = kernel_parameters_from_values(parameter_set, dynamic_values)
         E, B, J, phi, rho = initialize_fields(field_static, field_dynamic)
         external_fields = (
@@ -242,7 +238,7 @@ class TestEvolveExternalFields(unittest.TestCase):
 
         tile_shape = (parameter_set["Nx"], parameter_set["Ny"], parameter_set["Nz"])
         parameter_set["guard_cells"] = 2
-        add_tiled_grids_to_parameters(parameter_set, tile_shape)
+        add_single_tile_grids_to_parameters(parameter_set)
         field_static, field_dynamic = kernel_parameters_from_values(parameter_set, dynamic_values)
         E, B, J, phi, rho = initialize_fields(field_static, field_dynamic)
         external_fields = (

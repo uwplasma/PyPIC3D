@@ -40,13 +40,6 @@ class SimulationOutputTests(unittest.TestCase):
                 if failure != "setup":
                     particle_writer.close.assert_called_once_with(raise_errors=failure == "close")
 
-    def test_constraint_reduction_runs_on_nonprinting_ranks(self):
-        with patch("PyPIC3D.diagnostics.static_metric.bssn_constraint_norms",
-                   return_value={"hamiltonian_l2": 2., "momentum_l2": 3.}) as compute, \
-             patch("jax.process_index", return_value=1), redirect_stdout(StringIO()) as output:
-            print_bssn_constraints("Final", None, None, None, None, None)
-        compute.assert_called_once()
-        self.assertEqual(output.getvalue(), "")
 
     def test_initial_and_final_constraints_match_common_time_states(self):
         try:

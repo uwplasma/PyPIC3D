@@ -12,7 +12,6 @@ from tests.support.dark_photon_fixtures import (
     jnp,
     math,
     np,
-    parameters,
     particle_species,
     scalar_field_for_output,
     time_loop_dark_photon,
@@ -23,6 +22,15 @@ from tests.support.dark_photon_fixtures import (
     update_dark_phi,
     wave,
 )
+from tests.kernel_fixtures import kernel_parameters
+
+
+def parameters(n=32, dt=1/128, tiles=1, **kwargs):
+    return kernel_parameters(
+        Nx=n, Ny=1, Nz=1, x_wind=2*math.pi, y_wind=1., z_wind=1.,
+        tile_shape=(n//tiles, 1, 1), dt=dt, solver="dark_matter_yee",
+        C=kwargs.pop("C", 1.3), dark_mu=kwargs.pop("dark_mu", 0.7), **kwargs,
+    )
 
 
 class TestDarkPhoton(DarkPhotonFixtures, unittest.TestCase):

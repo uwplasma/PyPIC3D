@@ -1,6 +1,11 @@
 """Focused cross-device regression tests."""
 
 from tests.support.openpmd_fixtures import (
+    SimpleNamespace,
+    jax,
+    particle_parameters_from_values,
+)
+from tests.support.openpmd_fixtures import (
     FakeIteration,
     FakeSeries,
     OpenPMDDiagnosticsTestsFixtures,
@@ -173,6 +178,38 @@ class OpenPMDDiagnosticsTests(OpenPMDDiagnosticsTestsFixtures, unittest.TestCase
             position = np.concatenate([data for _, _, data in group['position'][component].chunks])
             np.testing.assert_allclose(momentum, 2. * u_live[:, axis], rtol=1e-6)
             np.testing.assert_allclose(position, x_live[:, axis], rtol=1e-6)
+
+
+    def test_host_particle_snapshot_preserves_chunks_and_empty_species_without_jax_arrays(self):
+        static, dynamic = particle_parameters_from_values(
+            _parameter_values(), dynamic_values={'C': 10.})
+        static = static._replace(tile_shape=(2, 2, 1))
+        x = np.zeros((2, 1, 1, 2, 2, 3), dtype=np.float64)
+        x[0, 0, 0, 0, 0, 0] = -1.5
+        x[1, 0, 0, 0, 1, 0] = .5 + 2.**-40
+        active = np.zeros(x.shape[:-1], dtype=bool)
+        active[0, 0, 0, 0, 0] = active[1, 0, 0, 0, 1] = True
+        index = (slice(None),)*6
+        snapshot = SimpleNamespace(
+            species_names=('live particles', 'empty species'),
+            species_charge=np.array([-1., 1.]), species_mass=np.array([2., 3.]),
+            species_weight=np.array([4., 5.]), x_shards=[(index, x)],
+            u_shards=[(index, np.zeros_like(x))], active_shards=[(index[:-1], active)])
+        iteration = FakeIteration()
+        with jax.enable_x64(False), \
+             patch.object(jnp, 'asarray', side_effect=AssertionError('host snapshot sent to JAX')), \
+             patch.object(jax, 'device_put', side_effect=AssertionError('unexpected device transfer')):
+            openPMD.write_tiled_particle_snapshot_to_iteration(iteration, snapshot, static, dynamic)
+        record = iteration.particles['live_particles']['position']['x']
+        self.assertEqual([(offset, extent) for offset, extent, _ in record.chunks],
+                         [((0,), (1,)), ((1,), (1,))])
+        actual = np.concatenate([data for _, _, data in record.chunks])
+        np.testing.assert_array_equal(actual, [-1.5, .5 + 2.**-40])
+        self.assertEqual(actual.dtype, np.dtype('float64'))
+        empty = iteration.particles['empty_species']['position']['x']
+        self.assertEqual(empty.dataset_shape, (0,))
+        self.assertEqual(empty.chunks, [])
+        self.assertEqual(record.unit_SI, 1.)
 
 
 if __name__ == "__main__":

@@ -1,1 +1,1 @@
-"""Code-contract tests for PyPIC3D tiled runtime ownership."""
+"""One-tile API and configuration contracts."""

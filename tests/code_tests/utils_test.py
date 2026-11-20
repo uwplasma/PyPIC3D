@@ -1,60 +1,29 @@
-import unittest
-import os
-import tempfile
-from types import SimpleNamespace
-import jax.numpy as jnp
-import numpy as np
-import toml
-from PyPIC3D.initialization import initialize_fields
-from PyPIC3D.particles.particle_class import SpeciesConfig, TiledParticles
-from tests.kernel_fixtures import (
-    build_tiled_particles,
-    particle_parameters_from_tile_values,
-    particle_species,
-)
-from PyPIC3D.diagnostics import plotting
-from PyPIC3D.utilities.parameters import build_dynamic_parameters, build_static_parameters
-from PyPIC3D.diagnostics.diagnostic_quantities import compute_energy
-from PyPIC3D.utilities.field_helpers import add_external_fields
-from PyPIC3D.utilities.grids import build_yee_grid
-from PyPIC3D.utilities.plasma_quantities import (
-    T_to_vth,
+from tests.support.utils_runtime_fixtures import (
+    SimpleNamespace,
+    SpeciesConfig,
+    TiledParticles,
+    _active_interior,
+    _field_parameter_values,
+    add_external_fields,
+    build_dynamic_parameters,
     build_plasma_parameters_dict,
+    build_static_parameters,
+    build_yee_grid,
     check_stability,
-    vth_to_T,
-)
-from PyPIC3D.utilities.simulation_helpers import (
+    compute_energy,
     courant_condition,
-    particle_sanity_check,
-)
-from PyPIC3D.utilities.toml_helpers import (
     dump_parameters_to_toml,
+    initialize_fields,
+    jnp,
+    kernel_parameters_from_values,
     load_external_fields_from_toml,
+    np,
+    os,
+    particle_sanity_check,
+    tempfile,
+    toml,
+    unittest,
 )
-from tests.kernel_fixtures import kernel_parameters_from_values
-
-
-def _field_parameter_values(Nx, Ny, Nz):
-        return {
-            "Nx": Nx,
-            "Ny": Ny,
-            "Nz": Nz,
-            "tile_shape": (Nx, Ny, Nz),
-        "guard_cells": 2,
-        "boundary_conditions": {"x": 0, "y": 0, "z": 0},
-    }
-
-
-def _active_interior(parameter_set):
-    g = int(parameter_set["guard_cells"])
-    return (
-        0,
-        0,
-        0,
-        slice(g, g + int(parameter_set["Nx"])),
-        slice(g, g + int(parameter_set["Ny"])),
-        slice(g, g + int(parameter_set["Nz"])),
-    )
 
 
 class TestUtilsFunctions(unittest.TestCase):
@@ -104,23 +73,10 @@ class TestUtilsFunctions(unittest.TestCase):
                 center_grid[0][1:-1] + 0.5 * self.parameter_set["dx"],
             )
         )
-        # Legacy PyPIC3D names: center is the collocated/base grid, and
-        # vertex is the staggered half-cell grid.
 
     def test_check_stability(self):
         # Should not raise
         check_stability(self.plasma_parameters, 0.01)
-        # Check that the stability check does not raise an error
-
-    def test_temperature_thermal_velocity_conversion_round_trip(self):
-        temperature = 8.0
-        mass = 2.0
-        kb = 4.0
-
-        thermal_velocity = T_to_vth(temperature, mass, kb)
-
-        self.assertTrue(jnp.allclose(thermal_velocity, 4.0))
-        self.assertTrue(jnp.allclose(vth_to_T(thermal_velocity, mass, kb), temperature))
 
     def test_build_plasma_parameters_dict(self):
         dynamic_parameters = SimpleNamespace(
@@ -175,7 +131,6 @@ class TestUtilsFunctions(unittest.TestCase):
         )
         # Should not raise
         particle_sanity_check(particles)
-        # Check that the particle sanity check does not raise an error
 
     def test_add_external_fields_adds_components(self):
         E = (jnp.ones((2, 2, 2)), jnp.ones((2, 2, 2)) * 2, jnp.ones((2, 2, 2)) * 3)
@@ -417,122 +372,6 @@ class TestUtilsFunctions(unittest.TestCase):
         self.assertEqual(config["particles"][1]["active_particles"], 1)
         self.assertEqual(config["particles"][0]["tile_shape"], [2, 1, 1])
 
-    def test_plot_positions_flattens_tiled_particles_and_preserves_species_names(self):
-        species = particle_species(
-            name="beam electrons",
-            charge=-1.0,
-            mass=1.0,
-            weight=2.0,
-            x1=jnp.array([-0.25, 0.25]),
-            x2=jnp.array([0.0, 0.0]),
-            x3=jnp.array([0.0, 0.0]),
-            u1=jnp.array([0.1, 0.2]),
-            u2=jnp.array([0.0, 0.0]),
-            u3=jnp.array([0.0, 0.0]),
-        )
-        parameter_set = {
-            "Nx": 4,
-            "Ny": 2,
-            "Nz": 1,
-            "dx": 0.25,
-            "dy": 0.5,
-            "dz": 1.0,
-            "dt": 0.1,
-            "x_wind": 1.0,
-            "y_wind": 1.0,
-            "z_wind": 1.0,
-            "tile_shape": (2, 1, 1),
-            "particle_boundary_conditions": {"x": 0, "y": 0, "z": 0},
-        }
-        simulation_parameters = {
-            "particle_tile_nx": 2,
-            "particle_tile_ny": 1,
-            "particle_tile_nz": 1,
-        }
-        static_parameters, dynamic_parameters = particle_parameters_from_tile_values(parameter_set, simulation_parameters)
-        tiled_particles, species_config = build_tiled_particles([species], static_parameters, dynamic_parameters)
 
-        class FakeFigure:
-            def __init__(self):
-                self.trace_names = []
-
-            def add_trace(self, trace):
-                self.trace_names.append(trace.name)
-
-            def update_layout(self, *args, **kwargs):
-                pass
-
-            def write_html(self, *args, **kwargs):
-                pass
-
-        figure = FakeFigure()
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with unittest.mock.patch.object(plotting.go, "Figure", return_value=figure):
-                plotting.plot_positions(
-                    tiled_particles,
-                    0,
-                    static_parameters,
-                    dynamic_parameters,
-                    tmpdir,
-                    species_config=species_config,
-                    species_names=("beam electrons",),
-                )
-
-        self.assertEqual(figure.trace_names, ["beam electrons"])
-
-    def test_particles_phase_space_flattens_tiled_particles(self):
-        species = particle_species(
-            name="electrons",
-            charge=-1.0,
-            mass=1.0,
-            weight=1.0,
-            x1=jnp.array([0.0]),
-            x2=jnp.array([0.0]),
-            x3=jnp.array([0.0]),
-            u1=jnp.array([0.2]),
-            u2=jnp.array([0.0]),
-            u3=jnp.array([0.0]),
-        )
-        parameter_set = {
-            "Nx": 4,
-            "Ny": 2,
-            "Nz": 1,
-            "dx": 0.25,
-            "dy": 0.5,
-            "dz": 1.0,
-            "dt": 0.1,
-            "x_wind": 1.0,
-            "y_wind": 1.0,
-            "z_wind": 1.0,
-            "tile_shape": (2, 1, 1),
-            "particle_boundary_conditions": {"x": 0, "y": 0, "z": 0},
-        }
-        simulation_parameters = {
-            "particle_tile_nx": 2,
-            "particle_tile_ny": 1,
-            "particle_tile_nz": 1,
-        }
-        static_parameters, dynamic_parameters = particle_parameters_from_tile_values(parameter_set, simulation_parameters)
-        tiled_particles, species_config = build_tiled_particles([species], static_parameters, dynamic_parameters)
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            os.makedirs(os.path.join(tmpdir, "data/phase_space/x"))
-            os.makedirs(os.path.join(tmpdir, "data/phase_space/y"))
-            os.makedirs(os.path.join(tmpdir, "data/phase_space/z"))
-            with unittest.mock.patch.object(plotting.plt, "scatter") as scatter:
-                with unittest.mock.patch.object(plotting.plt, "savefig"):
-                    plotting.particles_phase_space(
-                        tiled_particles,
-                        static_parameters,
-                        dynamic_parameters,
-                        0,
-                        "electrons",
-                        tmpdir,
-                        species_config=species_config,
-                        species_names=("electrons",),
-                    )
-
-        self.assertEqual(scatter.call_count, 3)
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

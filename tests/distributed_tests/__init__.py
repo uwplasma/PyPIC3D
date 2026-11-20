@@ -1,1 +1,1 @@
-"""Communication tests requiring JAX_NUM_CPU_DEVICES=8 for unittest discovery."""
+"""Tile decomposition, communication, ownership, and sharded output tests; run with eight devices."""
