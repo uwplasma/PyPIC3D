@@ -99,7 +99,7 @@ def report_cache():
     print(f"JAX cache: {cache_dir}; {count} files; {size} bytes (including metadata)", flush=True)
 
 
-def configure(per_fork_cache=False):
+def configure():
     gpu_count = 0
     if cuda13_available():
         version = importlib.metadata.version("jax")
@@ -118,24 +118,10 @@ def configure(per_fork_cache=False):
         XLA_PYTHON_CLIENT_PREALLOCATE="false",
     )
 
-    repository = os.environ["GITHUB_REPOSITORY"]
-    event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
-    pull_request = event.get("pull_request")
-    head_repo = (pull_request.get("head", {}).get("repo") or {}) if pull_request else {}
-    fork = pull_request is not None and head_repo.get("full_name") != repository
-    cache_root = Path.home() / ".cache" / "pypic3d-ci" / repository
-    cache_dir = None
-    if not fork:
-        cache_dir = cache_root / "jax-v1"
-    elif per_fork_cache and isinstance(head_repo.get("id"), int):
-        cache_dir = cache_root / "forks" / str(head_repo["id"]) / "jax-v1"
-
-    settings["JAX_ENABLE_COMPILATION_CACHE"] = "true" if cache_dir else "false"
-    settings["JAX_COMPILATION_CACHE_DIR"] = ""
-    if cache_dir:
-        cache_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        cache_dir.chmod(0o700)
-        settings["JAX_COMPILATION_CACHE_DIR"] = str(cache_dir)
+    cache_dir = Path(os.environ["RUNNER_TEMP"]) / "pypic-jax"
+    cache_dir.mkdir(mode=0o700, exist_ok=True)
+    settings["JAX_ENABLE_COMPILATION_CACHE"] = "true"
+    settings["JAX_COMPILATION_CACHE_DIR"] = str(cache_dir)
 
     with open(os.environ["GITHUB_ENV"], "a") as environment_file:
         for name, value in settings.items():
@@ -159,9 +145,8 @@ def configure(per_fork_cache=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", action="store_true", help="Report the current cache size only.")
-    parser.add_argument("--per-fork-cache", action="store_true", help="Reuse a separate cache for each fork.")
     args = parser.parse_args()
     if args.report:
         report_cache()
     else:
-        configure(args.per_fork_cache)
+        configure()
