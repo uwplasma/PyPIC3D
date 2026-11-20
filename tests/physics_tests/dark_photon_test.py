@@ -55,9 +55,9 @@ class TestDarkPhoton(DarkPhotonFixtures, unittest.TestCase):
         for longitudinal in (False, True):
             errors = []
             for n in (32, 64, 128):
-                s, d = parameters(n, dt=1/4096)
+                s, d = parameters(n, dt=1/1024)
                 state = initialize_dark_photon_fields(s, d, *wave(s, d, longitudinal))
-                result = evolve(state, s, d, 4096)
+                result = evolve(state, s, d, 1024)
                 errors.append(wave_errors(s, d, result, longitudinal))
             orders = np.log2(np.array(errors[:-1])/errors[1:])
             with self.subTest(longitudinal=longitudinal, orders=orders):

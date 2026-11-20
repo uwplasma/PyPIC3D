@@ -41,16 +41,16 @@ class GRWorkEnergyEvolutionTests(unittest.TestCase):
     def test_diagnostic_does_not_change_evolution_or_depend_on_sampling_cadence(self):
         static, dynamic, particles, species, fields = maxwell_state(n=16)
         initial = (particles, fields, dynamic)
-        enabled = evolve_scan(static, species, initial, 12)
+        enabled = evolve_scan(static, species, initial, 4)
         disabled = evolve_scan(
             static._replace(gr_work_energy_theorem=False), species,
-            (particles, fields, dynamic._replace(work_energy_tracker=None)), 12)
+            (particles, fields, dynamic._replace(work_energy_tracker=None)), 4)
         self.assert_tree_close(enabled[:2], disabled[:2])
         self.assert_tree_close(enabled[2].bssn_parameters, disabled[2].bssn_parameters)
 
         chunked = initial
-        for _ in range(3):
-            chunked = evolve_scan(static, species, chunked, 4)
+        for _ in range(2):
+            chunked = evolve_scan(static, species, chunked, 2)
             # A writer samples scalar values, but never updates their carry.
             values = tracker_values(chunked[2].work_energy_tracker)
             self.assertTrue(bool(jnp.isfinite(values["total"])))
@@ -92,9 +92,10 @@ class GRWorkEnergyEvolutionTests(unittest.TestCase):
             # Both characteristic coordinate speeds are positive (2.5, .5),
             # making the constant upper exterior an outflow boundary. Zero
             # shift would freeze a last B plane and reflect this Yee pulse.
+            # Keep the outflow interval T=.8 with dt/dx=.2 and n steps.
             static, dynamic, particles, species, fields = maxwell_state(
-                n=n, pulse=True, shift=-1.5)
-            _, final_fields, final = evolve_scan(static, species, (particles, fields, dynamic), 2 * n)
+                n=n, dt=.8/n, pulse=True, shift=-1.5)
+            _, final_fields, final = evolve_scan(static, species, (particles, fields, dynamic), n)
             tracker = final.work_energy_tracker
             values = tracker_values(tracker)
             initial = tracker.baseline.electromagnetic

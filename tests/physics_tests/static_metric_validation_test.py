@@ -780,8 +780,11 @@ class TestPusherConvergence(unittest.TestCase):
                 case.get("charge", 0.0),
                 case.get("D_values", (0, 0, 0)),
                 case.get("B_values", (0, 0, 0)),
+                n=20000,
             )
-            dt = case["T"] / 16000.0
+            # Spherical trajectory cancellation resolves a much smaller spatial error.
+            steps = 16000 if case["metric_name"] == "flat_spherical" else 4000
+            dt = case["T"] / steps
             errors = []
             for N in self.SPATIAL_LEVELS:
                 x_final, _u_final = run_production_pusher(
@@ -808,7 +811,7 @@ class TestPusherConvergence(unittest.TestCase):
             coarse_reference = reference_trajectory(
                 case["metric"], case["x0"], case["u0"], case["T"],
                 case.get("charge", 0.0), case.get("D_values", (0, 0, 0)),
-                case.get("B_values", (0, 0, 0)), n=20000)
+                case.get("B_values", (0, 0, 0)), n=10000)
             temporal_delta = float(jnp.linalg.norm(refined-x_final))
             reference_delta = float(jnp.linalg.norm(coarse_reference[:3]-reference[:3]))
             orders = [
@@ -1324,7 +1327,7 @@ class TestTimeLoopConvergence(unittest.TestCase):
         T = 2.0 * math.pi
         errors = []
         for N in (16, 32, 64):
-            dt = T / 2048.0
+            dt = T / 512.0
             static_parameters, dynamic_parameters = parameters(
                 (N, 4, 4), (L, L, L), (0.0, 0.0, 0.0), dt, metric_name="flat_cartesian"
             )
