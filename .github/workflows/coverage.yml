@@ -1,10 +1,9 @@
 name: Test Coverage
 
 on:
-  push:
-    branches: [ "**" ]
-  pull_request:
-    branches: [ main ]
+  schedule:
+    - cron: "17 6 * * 0"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -48,19 +47,35 @@ jobs:
         id: coverage_setup
         run: python -m coverage erase
 
-      - name: Code test coverage
-        run: python -m coverage run --append --context code -m unittest discover -s tests/code_tests -t . -p '*test*.py'
-
-      - name: Physics test coverage
+      - name: Light code test coverage
         if: ${{ !cancelled() && steps.coverage_setup.outcome == 'success' }}
-        run: python -m coverage run --append --context physics -m unittest discover -s tests/physics_tests -t . -p '*test*.py'
+        run: python -m coverage run --append --context light-code -m unittest discover -s tests/light_tests/code_tests -t . -p '*test*.py'
 
-      - name: Distributed test coverage
+      - name: Light physics test coverage
+        if: ${{ !cancelled() && steps.coverage_setup.outcome == 'success' }}
+        run: python -m coverage run --append --context light-physics -m unittest discover -s tests/light_tests/physics_tests -t . -p '*test*.py'
+
+      - name: Light distributed test coverage
         if: ${{ !cancelled() && steps.coverage_setup.outcome == 'success' }}
         env:
           JAX_PLATFORMS: ${{ steps.jax_setup.outputs.distributed_platform }}
           JAX_NUM_CPU_DEVICES: "8"
-        run: python -m coverage run --append --context distributed -m unittest discover -s tests/distributed_tests -t . -p '*test*.py'
+        run: python -m coverage run --append --context light-distributed -m unittest discover -s tests/light_tests/distributed_tests -t . -p '*test*.py'
+
+      - name: Heavy code test coverage
+        if: ${{ !cancelled() && steps.coverage_setup.outcome == 'success' }}
+        run: python -m coverage run --append --context heavy-code -m unittest discover -s tests/heavy_tests/code_tests -t . -p '*test*.py'
+
+      - name: Heavy physics test coverage
+        if: ${{ !cancelled() && steps.coverage_setup.outcome == 'success' }}
+        run: python -m coverage run --append --context heavy-physics -m unittest discover -s tests/heavy_tests/physics_tests -t . -p '*test*.py'
+
+      - name: Heavy distributed test coverage
+        if: ${{ !cancelled() && steps.coverage_setup.outcome == 'success' }}
+        env:
+          JAX_PLATFORMS: ${{ steps.jax_setup.outputs.distributed_platform }}
+          JAX_NUM_CPU_DEVICES: "8"
+        run: python -m coverage run --append --context heavy-distributed -m unittest discover -s tests/heavy_tests/distributed_tests -t . -p '*test*.py'
 
       - name: Generate coverage report
         id: coverage_report

@@ -21,22 +21,23 @@ run:
 Run Tests
 ---------
 
-The code suite tests API contracts on one tile. The physics suite tests
-mathematical identities, physical references, conservation, and convergence on
-one tile. All tile-decomposition comparisons, communication, ownership, and
-sharded-output tests belong in the distributed suite, including synthetic
-multi-tile arrays that do not require communication.
+Tests have two cost tiers, ``light_tests`` and ``heavy_tests``, each with
+``code_tests``, ``physics_tests``, and ``distributed_tests``. Code tests exercise
+one-tile API contracts; physics tests check one-tile identities, physical
+references, conservation, and convergence. Decomposition, communication,
+ownership, and sharded-output tests belong in the distributed category,
+including synthetic multi-tile arrays without communication.
 
-Run all three suites:
+Run the three light suites, followed by the three heavy suites:
 
 .. code-block:: bash
 
-   JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 JAX_NUM_CPU_DEVICES=1 \
-     python -m unittest discover -s tests/code_tests -t . -p '*test*.py'
-   JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 JAX_NUM_CPU_DEVICES=1 \
-     python -m unittest discover -s tests/physics_tests -t . -p '*test*.py'
-   JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 JAX_NUM_CPU_DEVICES=8 \
-     python -m unittest discover -s tests/distributed_tests -t . -p '*test*.py'
+   JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 JAX_NUM_CPU_DEVICES=1 python -m unittest discover -s tests/light_tests/code_tests -t . -p '*test*.py'
+   JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 JAX_NUM_CPU_DEVICES=1 python -m unittest discover -s tests/light_tests/physics_tests -t . -p '*test*.py'
+   JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 JAX_NUM_CPU_DEVICES=8 python -m unittest discover -s tests/light_tests/distributed_tests -t . -p '*test*.py'
+   JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 JAX_NUM_CPU_DEVICES=1 python -m unittest discover -s tests/heavy_tests/code_tests -t . -p '*test*.py'
+   JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 JAX_NUM_CPU_DEVICES=1 python -m unittest discover -s tests/heavy_tests/physics_tests -t . -p '*test*.py'
+   JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 JAX_NUM_CPU_DEVICES=8 python -m unittest discover -s tests/heavy_tests/distributed_tests -t . -p '*test*.py'
 
 Run these commands sequentially in separate interpreters so JAX initializes with
 the appropriate device count. The discovery pattern includes both filename
@@ -45,20 +46,23 @@ environment overrides still work:
 
 .. code-block:: bash
 
-   JAX_PLATFORMS=cuda python -m unittest tests.code_tests.yee_test
-   JAX_NUM_CPU_DEVICES=8 python -m unittest discover -s tests/distributed_tests -t . -p '*test*.py'
+   JAX_PLATFORMS=cuda python -m unittest tests.light_tests.code_tests.boris_test
 
-For coverage, install ``coverage``, run ``python -m coverage erase``, then prefix
-each discovery command with ``python -m coverage run --append --context <group>``
-in place of ``python``. Use contexts ``code``, ``physics``, and ``distributed``;
-then run ``python -m coverage report`` or ``python -m coverage xml``.
+PRs run the ``ci`` workflow and only the light tier. Weekly ``Test Coverage``
+runs both tiers on Sunday at 06:17 UTC. Both workflows support manual dispatch,
+install the optional relativity dependency, and use isolated virtual environments
+with the existing bounded runner-local compilation cache. Ordinary tests use CUDA
+when available; distributed tests use eight CPU devices unless at least eight
+CUDA devices are available. Fork PRs use separate compilation caches.
 
-Time fresh-process runs on the same machine with
-``JAX_ENABLE_COMPILATION_CACHE=false``. Use unittest's elapsed time, CI step
-durations, or GNU ``/usr/bin/time -v`` for wall time and peak resident memory.
-Do not compare a cold run with a warmed compilation cache or concurrent workloads.
-The ten-minute target never takes precedence over physics cases, refinement
-levels, or numerical tolerances.
+For coverage, install ``coverage`` and run ``python -m coverage erase``. Replace
+``python -m unittest`` in each command above with
+``python -m coverage run --append --context <tier>-<category> -m unittest``.
+The six contexts are ``light-code``, ``light-physics``, ``light-distributed``,
+``heavy-code``, ``heavy-physics``, and ``heavy-distributed``. Then run
+``python -m coverage report`` and ``python -m coverage xml``. Weekly coverage
+attempts every group even when another group fails and reports the overall run
+as failed while retaining available coverage data.
 
 Build Docs
 ----------
