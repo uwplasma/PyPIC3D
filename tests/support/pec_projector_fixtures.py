@@ -1,4 +1,4 @@
-"""Surface placement and distributed staggered PEC contracts."""
+"""Shared metric setup for staggered PEC boundary tests."""
 import unittest
 from functools import partial
 

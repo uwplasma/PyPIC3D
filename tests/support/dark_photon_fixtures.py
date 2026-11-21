@@ -1,6 +1,6 @@
 """Proca wave, constraint, convergence, and public-runtime regression tests.
 
-Run with JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 JAX_NUM_CPU_DEVICES=16.
+Shared one-tile modes and analytical references.
 """
 
 import contextlib
@@ -36,10 +36,10 @@ from PyPIC3D.utilities.toml_helpers import load_dark_fields_from_toml
 from tests.kernel_fixtures import kernel_parameters, build_tiled_particles, particle_species
 
 
-def parameters(n=32, dt=1/128, tiles=1, **kwargs):
+def parameters(n=32, dt=1/128, **kwargs):
     return kernel_parameters(
         Nx=n, Ny=1, Nz=1, x_wind=2*math.pi, y_wind=1., z_wind=1.,
-        tile_shape=(n//tiles, 1, 1), dt=dt, solver="dark_matter_yee",
+        tile_shape=(n, 1, 1), dt=dt, solver="dark_matter_yee",
         C=kwargs.pop("C", 1.3), dark_mu=kwargs.pop("dark_mu", 0.7), **kwargs,
     )
 

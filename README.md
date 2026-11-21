@@ -111,29 +111,39 @@ PyPIC3D/
   utilities/                  # parameters, grid construction, and filters
 
 demos/                        # runnable configurations and initial conditions
-tests/code_tests/             # focused implementation tests
-tests/physics_tests/          # numerical and convergence tests
-tests/distributed_tests/      # multi-device and sharded-output tests
+tests/light_tests/            # short PR checks
+  code_tests/                 # one-tile API contracts
+  physics_tests/              # one-tile numerical and physical checks
+  distributed_tests/          # decomposition, communication, and sharded output
+tests/heavy_tests/            # longer checks in the same three categories
+tests/support/                # shared fixtures without test methods
 ```
 
 ## Testing
 
-Run each suite in its own interpreter so JAX initializes with the right device
-count:
+PRs run `ci`, which executes the three light suites. Weekly coverage runs both
+tiers on Sunday at 06:17 UTC; both workflows also support manual dispatch.
+The light tier targets about ten minutes of test execution, excluding dependency
+installation. Tier placement does not change numerical cases or tolerances.
+
+Run each group in a separate interpreter so JAX initializes with the correct
+device count. The first three commands run the light tier; the remaining three
+run the heavy tier:
 
 ```bash
-JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 JAX_NUM_CPU_DEVICES=1 python -m unittest discover -s tests/code_tests -t . -p '*test*.py'
+JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 JAX_NUM_CPU_DEVICES=1 python -m unittest discover -s tests/light_tests/code_tests -t . -p '*test*.py'
+JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 JAX_NUM_CPU_DEVICES=1 python -m unittest discover -s tests/light_tests/physics_tests -t . -p '*test*.py'
+JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 JAX_NUM_CPU_DEVICES=8 python -m unittest discover -s tests/light_tests/distributed_tests -t . -p '*test*.py'
+JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 JAX_NUM_CPU_DEVICES=1 python -m unittest discover -s tests/heavy_tests/code_tests -t . -p '*test*.py'
+JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 JAX_NUM_CPU_DEVICES=1 python -m unittest discover -s tests/heavy_tests/physics_tests -t . -p '*test*.py'
+JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 JAX_NUM_CPU_DEVICES=8 python -m unittest discover -s tests/heavy_tests/distributed_tests -t . -p '*test*.py'
 ```
 
-```bash
-JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 JAX_NUM_CPU_DEVICES=1 python -m unittest discover -s tests/physics_tests -t . -p '*test*.py'
-```
-
-```bash
-JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 JAX_NUM_CPU_DEVICES=8 python -m unittest discover -s tests/distributed_tests -t . -p '*test*.py'
-```
-
-See `docs/development.rst` for coverage contexts and timing guidance.
+Code tests exercise one-tile API contracts; physics tests check one-tile numerical
+and physical behavior. All decomposition comparisons, communication, and
+synthetic multi-tile cases belong in distributed tests, in either tier. See
+[test suite ownership](tests/README.md) for shared fixture conventions and
+`docs/development.rst` for coverage and timing guidance.
 
 ## Build Docs
 

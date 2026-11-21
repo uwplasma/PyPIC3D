@@ -420,40 +420,6 @@ def initialized_fields(static_parameters, dynamic_parameters, dtype=jnp.float64)
     return E, B, J, phi, rho
 
 
-def retiled_parameters(static_parameters, dynamic_parameters, tile_shape, guard_cells=None, **static_updates):
-    tile_shape = tuple(int(width) for width in tile_shape)
-    if guard_cells is None:
-        guard_cells = int(static_parameters.guard_cells)
-
-    tile_grid_shape = (
-        int(dynamic_parameters.Nx) // tile_shape[0],
-        int(dynamic_parameters.Ny) // tile_shape[1],
-        int(dynamic_parameters.Nz) // tile_shape[2],
-    )
-    static_parameters = static_parameters._replace(
-        tile_shape=tile_shape,
-        guard_cells=int(guard_cells),
-        field_mesh=make_field_mesh(tile_grid_shape),
-        **static_updates,
-    )
-    dynamic_parameters = dynamic_parameters._replace(
-        grids=GridParameters(
-            vertex=dynamic_parameters.grids.vertex,
-            center=dynamic_parameters.grids.center,
-            tiled_vertex_grid=(),
-            tiled_center_grid=(),
-        )
-    )
-    tiled_center_grid, tiled_vertex_grid = build_tiled_yee_grids(static_parameters, dynamic_parameters)
-    dynamic_parameters = dynamic_parameters._replace(
-        grids=GridParameters(
-            vertex=dynamic_parameters.grids.vertex,
-            center=dynamic_parameters.grids.center,
-            tiled_vertex_grid=tiled_vertex_grid,
-            tiled_center_grid=tiled_center_grid,
-        )
-    )
-    return static_parameters, dynamic_parameters
 
 
 def active_interior(static_parameters, dynamic_parameters):

@@ -1,6 +1,6 @@
 """Proca PEC images, PML state contracts, and public runtime integration.
 
-Run with JAX_PLATFORMS=cpu JAX_ENABLE_X64=1 JAX_NUM_CPU_DEVICES=4.
+Shared wall modes and native field histories; no device-count requirement.
 """
 import contextlib
 import io
